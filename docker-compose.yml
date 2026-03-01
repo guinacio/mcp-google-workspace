@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  google-workspace-mcp:
+    build: .
+    container_name: google-workspace-mcp
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+    ports:
+      - "8000:8000"
+    command: ["python", "-m", "mcp_google_workspace.server_sse"]

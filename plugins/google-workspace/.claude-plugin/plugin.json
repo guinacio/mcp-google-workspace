@@ -1,0 +1,11 @@
+{
+  "name": "google-workspace",
+  "description": "Complete Gmail and Google Calendar integration via MCP",
+  "version": "1.0.0",
+  "mcpServers": {
+    "google-workspace": {
+      "command": "uv",
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/../../", "python", "-m", "mcp_google_workspace"]
+    }
+  }
+}
