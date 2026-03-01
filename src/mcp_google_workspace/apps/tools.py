@@ -389,8 +389,24 @@ def register_tools(server: FastMCP) -> None:
         },
         meta={"ui/resourceUri": "ui://apps/dashboard-ui"},
     )
-    async def apps_get_morning_briefing(request: MorningBriefingRequest, ctx: Context) -> dict[str, Any]:
+    async def apps_get_morning_briefing(
+        session_id: str | None = None,
+        date_override: date | None = None,
+        timezone: str | None = None,
+        max_priorities: int = 5,
+        max_quick_wins: int = 5,
+        include_inbox: bool = True,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Build deterministic morning briefing with priorities, risks, and actions."""
+        request = MorningBriefingRequest(
+            session_id=session_id,
+            date=date_override,
+            timezone=timezone,
+            max_priorities=max_priorities,
+            max_quick_wins=max_quick_wins,
+            include_inbox=include_inbox,
+        )
         sid = _resolve_session_id(request.session_id, ctx)
         state = get_state(sid, timezone=request.timezone)
         payload = await build_morning_briefing_payload_with_progress(state, request, ctx)
