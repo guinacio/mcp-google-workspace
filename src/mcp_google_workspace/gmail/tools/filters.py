@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from ..client import gmail_service
-from ..schemas import CreateFilterRequest, DeleteFilterRequest
+from ..schemas import CreateFilterRequest, DeleteFilterRequest, FilterActionInput, FilterCriteriaInput
 
 
 def register(server: FastMCP) -> None:
@@ -21,30 +21,44 @@ def register(server: FastMCP) -> None:
         return {"filters": filters, "count": len(filters)}
 
     @server.tool(name="create_filter")
-    async def create_filter(request: CreateFilterRequest, ctx: Context) -> dict[str, Any]:
+    async def create_filter(
+        criteria: dict[str, Any],
+        action: dict[str, Any],
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Create a Gmail filter from criteria and action blocks."""
+        request = CreateFilterRequest(
+            criteria=criteria,
+            action=action,
+        )
         service = gmail_service()
-        criteria = request.criteria.to_api()
-        action = request.action.to_api()
-        if not criteria:
+        criteria_api = request.criteria.to_api()
+        action_api = request.action.to_api()
+        if not criteria_api:
             raise ValueError("criteria must include at least one match field.")
-        if not action:
+        if not action_api:
             raise ValueError("action must include add/remove labels or forward.")
 
-        await ctx.info("Creating Gmail filter.")
+        if ctx is not None:
+            await ctx.info("Creating Gmail filter.")
         created = (
             service.users()
             .settings()
             .filters()
-            .create(userId="me", body={"criteria": criteria, "action": action})
+            .create(userId="me", body={"criteria": criteria_api, "action": action_api})
             .execute()
         )
         return {"filter": created}
 
     @server.tool(name="delete_filter")
-    async def delete_filter(request: DeleteFilterRequest, ctx: Context) -> dict[str, Any]:
+    async def delete_filter(
+        filter_id: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Delete a Gmail filter by ID."""
+        request = DeleteFilterRequest(filter_id=filter_id)
         service = gmail_service()
-        await ctx.info(f"Deleting Gmail filter {request.filter_id}.")
+        if ctx is not None:
+            await ctx.info(f"Deleting Gmail filter {request.filter_id}.")
         service.users().settings().filters().delete(userId="me", id=request.filter_id).execute()
         return {"status": "ok", "filter_id": request.filter_id}

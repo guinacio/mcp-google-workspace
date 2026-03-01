@@ -96,10 +96,35 @@ async def _execute_resumable_upload_with_progress(
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_files")
-    async def list_files(request: ListFilesRequest, ctx: Context) -> dict[str, Any]:
+    async def list_files(
+        query: str | None = None,
+        page_size: int = 25,
+        page_token: str | None = None,
+        order_by: str | None = None,
+        corpora: str | None = None,
+        drive_id: str | None = None,
+        include_items_from_all_drives: bool = True,
+        supports_all_drives: bool = True,
+        spaces: str | None = None,
+        fields: str = "nextPageToken, files(id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink)",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """List/search files with Shared Drives-aware query options."""
+        request = ListFilesRequest(
+            query=query,
+            page_size=page_size,
+            page_token=page_token,
+            order_by=order_by,
+            corpora=corpora,
+            drive_id=drive_id,
+            include_items_from_all_drives=include_items_from_all_drives,
+            supports_all_drives=supports_all_drives,
+            spaces=spaces,
+            fields=fields,
+        )
         service = drive_service()
-        await ctx.info("Listing Google Drive files.")
+        if ctx is not None:
+            await ctx.info("Listing Google Drive files.")
         result = (
             service.files()
             .list(
@@ -117,7 +142,8 @@ def register(server: FastMCP) -> None:
             .execute()
         )
         files = result.get("files", [])
-        await ctx.report_progress(len(files), request.page_size, "Drive files page loaded")
+        if ctx is not None:
+            await ctx.report_progress(len(files), request.page_size, "Drive files page loaded")
         return {
             "files": files,
             "next_page_token": result.get("nextPageToken"),
@@ -125,10 +151,21 @@ def register(server: FastMCP) -> None:
         }
 
     @server.tool(name="get_file")
-    async def get_file(request: GetFileRequest, ctx: Context) -> dict[str, Any]:
+    async def get_file(
+        file_id: str,
+        supports_all_drives: bool = True,
+        fields: str = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink,capabilities",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Get metadata for a single Drive file."""
+        request = GetFileRequest(
+            file_id=file_id,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
-        await ctx.info(f"Fetching Drive file {request.file_id}.")
+        if ctx is not None:
+            await ctx.info(f"Fetching Drive file {request.file_id}.")
         file_obj = (
             service.files()
             .get(
@@ -141,8 +178,20 @@ def register(server: FastMCP) -> None:
         return {"file": file_obj}
 
     @server.tool(name="create_folder")
-    async def create_folder(request: CreateFolderRequest, ctx: Context) -> dict[str, Any]:
+    async def create_folder(
+        name: str,
+        parent_ids: list[str] = [],
+        supports_all_drives: bool = True,
+        fields: str = "id,name,mimeType,parents,driveId,webViewLink",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Create a folder in Drive."""
+        request = CreateFolderRequest(
+            name=name,
+            parent_ids=parent_ids,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
         body: dict[str, Any] = {
             "name": request.name,
@@ -150,7 +199,8 @@ def register(server: FastMCP) -> None:
         }
         if request.parent_ids:
             body["parents"] = request.parent_ids
-        await ctx.info(f"Creating Drive folder '{request.name}'.")
+        if ctx is not None:
+            await ctx.info(f"Creating Drive folder '{request.name}'.")
         created = (
             service.files()
             .create(
@@ -163,11 +213,32 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "file": created}
 
     @server.tool(name="create_file_metadata")
-    async def create_file_metadata(request: CreateFileMetadataRequest, ctx: Context) -> dict[str, Any]:
+    async def create_file_metadata(
+        name: str,
+        mime_type: str | None = None,
+        parent_ids: list[str] = [],
+        description: str | None = None,
+        app_properties: dict[str, Any] | None = None,
+        properties: dict[str, Any] | None = None,
+        supports_all_drives: bool = True,
+        fields: str = "id,name,mimeType,parents,driveId,webViewLink",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Create a Drive file shell (metadata only, no media upload)."""
+        request = CreateFileMetadataRequest(
+            name=name,
+            mime_type=mime_type,
+            parent_ids=parent_ids,
+            description=description,
+            app_properties=app_properties,
+            properties=properties,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
         body = _build_metadata_body(request)
-        await ctx.info(f"Creating Drive metadata-only file '{request.name}'.")
+        if ctx is not None:
+            await ctx.info(f"Creating Drive metadata-only file '{request.name}'.")
         created = (
             service.files()
             .create(
@@ -180,8 +251,28 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "file": created}
 
     @server.tool(name="upload_file")
-    async def upload_file(request: UploadFileRequest, ctx: Context) -> dict[str, Any]:
+    async def upload_file(
+        local_path: str,
+        name: str | None = None,
+        parent_ids: list[str] = [],
+        mime_type: str | None = None,
+        resumable: bool = True,
+        if_exists: str = "rename",
+        supports_all_drives: bool = True,
+        fields: str = "id,name,mimeType,size,parents,driveId,webViewLink",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Upload a local file to Drive."""
+        request = UploadFileRequest(
+            local_path=local_path,
+            name=name,
+            parent_ids=parent_ids,
+            mime_type=mime_type,
+            resumable=resumable,
+            if_exists=if_exists,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
         src = Path(request.local_path)
         if not src.exists():
@@ -194,9 +285,10 @@ def register(server: FastMCP) -> None:
             supports_all_drives=request.supports_all_drives,
         )
         if existing_file and request.if_exists == "skip":
-            await ctx.info(
-                f"Skipping upload: file '{requested_name}' already exists as {existing_file.get('id')}."
-            )
+            if ctx is not None:
+                await ctx.info(
+                    f"Skipping upload: file '{requested_name}' already exists as {existing_file.get('id')}."
+                )
             return {
                 "status": "skipped",
                 "reason": "file_exists",
@@ -205,13 +297,15 @@ def register(server: FastMCP) -> None:
         target_name = requested_name
         if existing_file and request.if_exists == "rename":
             target_name = _renamed_filename(requested_name)
-            await ctx.info(f"File exists; renaming upload target to '{target_name}'.")
+            if ctx is not None:
+                await ctx.info(f"File exists; renaming upload target to '{target_name}'.")
         body: dict[str, Any] = {"name": target_name}
         if request.parent_ids:
             body["parents"] = request.parent_ids
         media = media_file_upload(request.local_path, request.mime_type, request.resumable)
         if existing_file and request.if_exists == "overwrite":
-            await ctx.info(f"Overwriting existing Drive file {existing_file.get('id')}.")
+            if ctx is not None:
+                await ctx.info(f"Overwriting existing Drive file {existing_file.get('id')}.")
             update_request = (
                 service.files().update(
                     fileId=existing_file["id"],
@@ -229,9 +323,11 @@ def register(server: FastMCP) -> None:
                 )
             else:
                 updated = update_request.execute()
-                await ctx.report_progress(100, 100, "Overwriting Drive file completed")
+                if ctx is not None:
+                    await ctx.report_progress(100, 100, "Overwriting Drive file completed")
             return {"status": "ok", "mode": "overwrite", "file": updated}
-        await ctx.info(f"Uploading local file '{src.name}' to Drive.")
+        if ctx is not None:
+            await ctx.info(f"Uploading local file '{src.name}' to Drive.")
         create_request = (
             service.files()
             .create(
@@ -249,12 +345,35 @@ def register(server: FastMCP) -> None:
             )
         else:
             created = create_request.execute()
-            await ctx.report_progress(100, 100, "Uploading Drive file completed")
+            if ctx is not None:
+                await ctx.report_progress(100, 100, "Uploading Drive file completed")
         return {"status": "ok", "mode": "create", "file": created}
 
     @server.tool(name="update_file_metadata")
-    async def update_file_metadata(request: UpdateFileMetadataRequest, ctx: Context) -> dict[str, Any]:
+    async def update_file_metadata(
+        file_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        app_properties: dict[str, Any] | None = None,
+        properties: dict[str, Any] | None = None,
+        remove_property_keys: list[str] = [],
+        remove_app_property_keys: list[str] = [],
+        supports_all_drives: bool = True,
+        fields: str = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Patch file metadata (name/description/properties)."""
+        request = UpdateFileMetadataRequest(
+            file_id=file_id,
+            name=name,
+            description=description,
+            app_properties=app_properties,
+            properties=properties,
+            remove_property_keys=remove_property_keys,
+            remove_app_property_keys=remove_app_property_keys,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
         body: dict[str, Any] = {}
         if request.name is not None:
@@ -273,7 +392,8 @@ def register(server: FastMCP) -> None:
             body.setdefault("appProperties", {})
             for key in request.remove_app_property_keys:
                 body["appProperties"][key] = None
-        await ctx.info(f"Updating metadata for Drive file {request.file_id}.")
+        if ctx is not None:
+            await ctx.info(f"Updating metadata for Drive file {request.file_id}.")
         updated = (
             service.files()
             .update(
@@ -287,11 +407,30 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "file": updated}
 
     @server.tool(name="update_file_content")
-    async def update_file_content(request: UpdateFileContentRequest, ctx: Context) -> dict[str, Any]:
+    async def update_file_content(
+        file_id: str,
+        local_path: str,
+        mime_type: str | None = None,
+        resumable: bool = True,
+        keep_revision_forever: bool | None = None,
+        supports_all_drives: bool = True,
+        fields: str = "id,name,mimeType,size,parents,driveId,webViewLink,modifiedTime",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Replace file binary content from a local file."""
+        request = UpdateFileContentRequest(
+            file_id=file_id,
+            local_path=local_path,
+            mime_type=mime_type,
+            resumable=resumable,
+            keep_revision_forever=keep_revision_forever,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
         media = media_file_upload(request.local_path, request.mime_type, request.resumable)
-        await ctx.info(f"Uploading replacement content for file {request.file_id}.")
+        if ctx is not None:
+            await ctx.info(f"Uploading replacement content for file {request.file_id}.")
         update_request = (
             service.files()
             .update(
@@ -310,14 +449,30 @@ def register(server: FastMCP) -> None:
             )
         else:
             updated = update_request.execute()
-            await ctx.report_progress(100, 100, "Uploading replacement Drive content completed")
+            if ctx is not None:
+                await ctx.report_progress(100, 100, "Uploading replacement Drive content completed")
         return {"status": "ok", "file": updated}
 
     @server.tool(name="move_file")
-    async def move_file(request: MoveFileRequest, ctx: Context) -> dict[str, Any]:
+    async def move_file(
+        file_id: str,
+        add_parent_ids: list[str] = [],
+        remove_parent_ids: list[str] = [],
+        supports_all_drives: bool = True,
+        fields: str = "id,name,parents,driveId,webViewLink",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Move file by adding/removing parent folders."""
+        request = MoveFileRequest(
+            file_id=file_id,
+            add_parent_ids=add_parent_ids,
+            remove_parent_ids=remove_parent_ids,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
-        await ctx.info(f"Moving Drive file {request.file_id}.")
+        if ctx is not None:
+            await ctx.info(f"Moving Drive file {request.file_id}.")
         updated = (
             service.files()
             .update(
@@ -332,8 +487,24 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "file": updated}
 
     @server.tool(name="copy_file")
-    async def copy_file(request: CopyFileRequest, ctx: Context) -> dict[str, Any]:
+    async def copy_file(
+        file_id: str,
+        name: str | None = None,
+        parent_ids: list[str] = [],
+        description: str | None = None,
+        supports_all_drives: bool = True,
+        fields: str = "id,name,mimeType,parents,driveId,webViewLink",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Copy a Drive file to a new file."""
+        request = CopyFileRequest(
+            file_id=file_id,
+            name=name,
+            parent_ids=parent_ids,
+            description=description,
+            supports_all_drives=supports_all_drives,
+            fields=fields,
+        )
         service = drive_service()
         body: dict[str, Any] = {}
         if request.name is not None:
@@ -342,7 +513,8 @@ def register(server: FastMCP) -> None:
             body["parents"] = request.parent_ids
         if request.description is not None:
             body["description"] = request.description
-        await ctx.info(f"Copying Drive file {request.file_id}.")
+        if ctx is not None:
+            await ctx.info(f"Copying Drive file {request.file_id}.")
         copied = (
             service.files()
             .copy(
@@ -356,11 +528,24 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "file": copied}
 
     @server.tool(name="delete_file")
-    async def delete_file(request: DeleteFileRequest, ctx: Context) -> dict[str, Any]:
+    async def delete_file(
+        file_id: str,
+        delete_mode: str = "trash",
+        confirm_permanent: bool = True,
+        supports_all_drives: bool = True,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Delete a Drive file safely (trash by default, permanent optional)."""
+        request = DeleteFileRequest(
+            file_id=file_id,
+            delete_mode=delete_mode,
+            confirm_permanent=confirm_permanent,
+            supports_all_drives=supports_all_drives,
+        )
         service = drive_service()
         if request.delete_mode == "trash":
-            await ctx.info(f"Moving Drive file {request.file_id} to trash.")
+            if ctx is not None:
+                await ctx.info(f"Moving Drive file {request.file_id} to trash.")
             updated = service.files().update(
                 fileId=request.file_id,
                 body={"trashed": True},
@@ -375,7 +560,8 @@ def register(server: FastMCP) -> None:
             )
             if response.action != "accept" or not bool(response.data):
                 return {"status": "cancelled", "mode": "permanent"}
-        await ctx.warning(f"Permanently deleting Drive file {request.file_id}.")
+        if ctx is not None:
+            await ctx.warning(f"Permanently deleting Drive file {request.file_id}.")
         service.files().delete(
             fileId=request.file_id,
             supportsAllDrives=request.supports_all_drives,
@@ -383,8 +569,22 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "mode": "permanent", "file_id": request.file_id}
 
     @server.tool(name="download_file")
-    async def download_file(request: DownloadFileRequest, ctx: Context) -> dict[str, Any]:
+    async def download_file(
+        file_id: str,
+        output_path: str,
+        overwrite: bool = False,
+        acknowledge_abuse: bool = False,
+        supports_all_drives: bool = True,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Download binary file content to local path."""
+        request = DownloadFileRequest(
+            file_id=file_id,
+            output_path=output_path,
+            overwrite=overwrite,
+            acknowledge_abuse=acknowledge_abuse,
+            supports_all_drives=supports_all_drives,
+        )
         service = drive_service()
         out = Path(request.output_path)
         if out.exists() and not request.overwrite:
@@ -402,11 +602,12 @@ def register(server: FastMCP) -> None:
         while not done:
             status, done = downloader.next_chunk()
             if status is not None:
-                await ctx.report_progress(
-                    int(status.progress() * 100),
-                    100,
-                    "Downloading Drive file",
-                )
+                if ctx is not None:
+                    await ctx.report_progress(
+                        int(status.progress() * 100),
+                        100,
+                        "Downloading Drive file",
+                    )
         data = buf.getvalue()
         out.write_bytes(data)
         return {
@@ -417,10 +618,23 @@ def register(server: FastMCP) -> None:
         }
 
     @server.tool(name="export_google_file")
-    async def export_google_file(request: ExportGoogleFileRequest, ctx: Context) -> dict[str, Any]:
+    async def export_google_file(
+        file_id: str,
+        mime_type: str,
+        output_path: str,
+        overwrite: bool = False,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Export Google-native file format (Docs/Sheets/Slides) to local path."""
+        request = ExportGoogleFileRequest(
+            file_id=file_id,
+            mime_type=mime_type,
+            output_path=output_path,
+            overwrite=overwrite,
+        )
         service = drive_service()
-        await ctx.info(f"Exporting Google file {request.file_id} as {request.mime_type}.")
+        if ctx is not None:
+            await ctx.info(f"Exporting Google file {request.file_id} as {request.mime_type}.")
         media_req = service.files().export_media(fileId=request.file_id, mimeType=request.mime_type)
         stream = io.BytesIO()
         downloader = MediaIoBaseDownload(stream, media_req)
@@ -428,11 +642,12 @@ def register(server: FastMCP) -> None:
         while not done:
             status, done = downloader.next_chunk()
             if status is not None:
-                await ctx.report_progress(
-                    int(status.progress() * 100),
-                    100,
-                    "Exporting Google-native file",
-                )
+                if ctx is not None:
+                    await ctx.report_progress(
+                        int(status.progress() * 100),
+                        100,
+                        "Exporting Google-native file",
+                    )
         path = write_bytes_to_path(stream.getvalue(), request.output_path, request.overwrite)
         return {
             "status": "ok",
@@ -444,12 +659,18 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="get_file_content_capabilities")
     async def get_file_content_capabilities(
-        request: GetFileContentCapabilitiesRequest,
-        ctx: Context,
+        file_id: str,
+        supports_all_drives: bool = True,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Return whether file can be downloaded/exported and available export links."""
+        request = GetFileContentCapabilitiesRequest(
+            file_id=file_id,
+            supports_all_drives=supports_all_drives,
+        )
         service = drive_service()
-        await ctx.info(f"Inspecting content capabilities for file {request.file_id}.")
+        if ctx is not None:
+            await ctx.info(f"Inspecting content capabilities for file {request.file_id}.")
         file_obj = (
             service.files()
             .get(

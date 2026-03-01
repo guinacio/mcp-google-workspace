@@ -15,10 +15,15 @@ from ..schemas import DownloadAttachmentRequest, ListAttachmentsRequest
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_attachments")
-    async def list_attachments(request: ListAttachmentsRequest, ctx: Context) -> dict[str, Any]:
+    async def list_attachments(
+        message_id: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """List attachment metadata for a given Gmail message."""
+        request = ListAttachmentsRequest(message_id=message_id)
         service = gmail_service()
-        await ctx.info(f"Reading attachment metadata for {request.message_id}.")
+        if ctx is not None:
+            await ctx.info(f"Reading attachment metadata for {request.message_id}.")
         message = (
             service.users()
             .messages()
@@ -43,10 +48,21 @@ def register(server: FastMCP) -> None:
         return {"message_id": request.message_id, "attachments": attachments}
 
     @server.tool(name="download_attachment")
-    async def download_attachment(request: DownloadAttachmentRequest, ctx: Context) -> dict[str, Any]:
+    async def download_attachment(
+        message_id: str,
+        attachment_id: str,
+        output_path: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Download one Gmail attachment and save it to the local filesystem path."""
+        request = DownloadAttachmentRequest(
+            message_id=message_id,
+            attachment_id=attachment_id,
+            output_path=output_path,
+        )
         service = gmail_service()
-        await ctx.info(f"Downloading attachment {request.attachment_id}.")
+        if ctx is not None:
+            await ctx.info(f"Downloading attachment {request.attachment_id}.")
         response = (
             service.users()
             .messages()
@@ -62,7 +78,9 @@ def register(server: FastMCP) -> None:
         output.parent.mkdir(parents=True, exist_ok=True)
         blob = base64.urlsafe_b64decode(data.encode("utf-8"))
         size = len(blob)
-        await ctx.report_progress(25, 100, "Attachment downloaded from API")
+        if ctx is not None:
+            await ctx.report_progress(25, 100, "Attachment downloaded from API")
         output.write_bytes(blob)
-        await ctx.report_progress(100, 100, "Attachment saved to filesystem")
+        if ctx is not None:
+            await ctx.report_progress(100, 100, "Attachment saved to filesystem")
         return {"status": "ok", "saved_to": str(output), "bytes_written": size}

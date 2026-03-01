@@ -25,8 +25,26 @@ from ..schemas import (
 
 def register(server: FastMCP) -> None:
     @server.tool(name="send_email")
-    async def send_email(request: SendEmailRequest, ctx: Context) -> dict[str, Any]:
+    async def send_email(
+        subject: str,
+        to: list[str],
+        cc: list[str] = [],
+        bcc: list[str] = [],
+        text_body: str | None = None,
+        html_body: str | None = None,
+        attachments: list[dict[str, Any]] = [],
+        confirm_send: bool = True,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Send an email with TO/CC/BCC, text/HTML body, and optional attachments."""
+        request = SendEmailRequest(
+            recipients={"to": to, "cc": cc, "bcc": bcc},
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+            attachments=attachments,
+            confirm_send=confirm_send,
+        )
         service = gmail_service()
         if request.confirm_send:
             @dataclass
@@ -48,7 +66,8 @@ def register(server: FastMCP) -> None:
             if not confirmed:
                 return {"status": "cancelled", "message": "User cancelled send."}
 
-        await ctx.info("Building MIME email payload.")
+        if ctx is not None:
+            await ctx.info("Building MIME email payload.")
         attachment_payloads: list[dict[str, str]] = []
         total = max(len(request.attachments), 1)
         for i, item in enumerate(request.attachments, start=1):
@@ -59,7 +78,8 @@ def register(server: FastMCP) -> None:
                     "mime_type": item.mime_type or "application/octet-stream",
                 }
             )
-            await ctx.report_progress(i, total, f"Prepared attachment {i}/{total}")
+            if ctx is not None:
+                await ctx.report_progress(i, total, f"Prepared attachment {i}/{total}")
 
         email_message = build_email_message(
             subject=request.subject,
@@ -71,7 +91,8 @@ def register(server: FastMCP) -> None:
             attachments=attachment_payloads,
         )
         raw = email_to_gmail_raw(email_message)
-        await ctx.info("Sending email through Gmail API.")
+        if ctx is not None:
+            await ctx.info("Sending email through Gmail API.")
         sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
         return {
             "status": "sent",
@@ -81,14 +102,16 @@ def register(server: FastMCP) -> None:
         }
 
     @server.tool(name="read_email")
-    async def read_email(request: ReadEmailRequest, ctx: Context) -> dict[str, Any]:
-        """Fetch one Gmail message by ID.
-
-        Input must be an object shaped like:
-        {"message_id": "<gmail_message_id>"}
-        """
+    async def read_email(
+        message_id: str,
+        summary_mode: bool = False,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Fetch one Gmail message by ID."""
+        request = ReadEmailRequest(message_id=message_id, summary_mode=summary_mode)
         service = gmail_service()
-        await ctx.info(f"Reading message {request.message_id}.")
+        if ctx is not None:
+            await ctx.info(f"Reading message {request.message_id}.")
         message = (
             service.users()
             .messages()
@@ -114,7 +137,8 @@ def register(server: FastMCP) -> None:
                     }
                 )
 
-        await ctx.info(f"Parsed MIME structure with {len(attachments)} attachment(s).")
+        if ctx is not None:
+            await ctx.info(f"Parsed MIME structure with {len(attachments)} attachment(s).")
         return {
             "id": message.get("id"),
             "thread_id": message.get("threadId"),
@@ -158,10 +182,21 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "message_id": message_id, "operation": "mark_as_unread"}
 
     @server.tool(name="move_email")
-    async def move_email(request: ModifyMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def move_email(
+        message_id: str,
+        add_label_ids: list[str] = [],
+        remove_label_ids: list[str] = [],
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Modify a message's labels to move/classify it across mailbox states."""
+        request = ModifyMessageRequest(
+            message_id=message_id,
+            add_label_ids=add_label_ids,
+            remove_label_ids=remove_label_ids,
+        )
         service = gmail_service()
-        await ctx.info(f"Moving message {request.message_id}.")
+        if ctx is not None:
+            await ctx.info(f"Moving message {request.message_id}.")
         result = service.users().messages().modify(
             userId="me",
             id=request.message_id,
@@ -173,8 +208,13 @@ def register(server: FastMCP) -> None:
         return {"status": "ok", "message": result}
 
     @server.tool(name="delete_email")
-    async def delete_email(request: DeleteMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def delete_email(
+        message_id: str,
+        permanent: bool = False,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Trash or permanently delete a message based on the request mode."""
+        request = DeleteMessageRequest(message_id=message_id, permanent=permanent)
         service = gmail_service()
         if request.permanent:
             response = await ctx.elicit(

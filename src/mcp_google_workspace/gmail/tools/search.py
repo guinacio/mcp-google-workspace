@@ -34,17 +34,44 @@ def _build_search_query(request: SearchEmailRequest) -> str | None:
 
 def register(server: FastMCP) -> None:
     @server.tool(name="search_emails")
-    async def search_emails(request: SearchEmailRequest, ctx: Context) -> dict[str, Any]:
+    async def search_emails(
+        query: str | None = None,
+        label_ids: list[str] = [],
+        max_results: int = 25,
+        page_token: str | None = None,
+        include_spam_trash: bool = False,
+        from_email: str | None = None,
+        to_email: str | None = None,
+        subject_contains: str | None = None,
+        has_attachment: bool = False,
+        is_unread: bool = False,
+        newer_than_days: int | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Search Gmail messages using Gmail query syntax and optional label filters."""
+        request = SearchEmailRequest(
+            query=query,
+            label_ids=label_ids,
+            max_results=max_results,
+            page_token=page_token,
+            include_spam_trash=include_spam_trash,
+            from_email=from_email,
+            to_email=to_email,
+            subject_contains=subject_contains,
+            has_attachment=has_attachment,
+            is_unread=is_unread,
+            newer_than_days=newer_than_days,
+        )
         service = gmail_service()
-        query = _build_search_query(request)
-        await ctx.info("Running Gmail search query.")
+        query_str = _build_search_query(request)
+        if ctx is not None:
+            await ctx.info("Running Gmail search query.")
         result = (
             service.users()
             .messages()
             .list(
                 userId="me",
-                q=query,
+                q=query_str,
                 labelIds=request.label_ids or None,
                 maxResults=request.max_results,
                 pageToken=request.page_token,
@@ -53,24 +80,38 @@ def register(server: FastMCP) -> None:
             .execute()
         )
         messages = result.get("messages", [])
-        await ctx.report_progress(len(messages), request.max_results, "Search results loaded")
+        if ctx is not None:
+            await ctx.report_progress(len(messages), request.max_results, "Search results loaded")
         return {
             "messages": messages,
             "result_size_estimate": result.get("resultSizeEstimate", 0),
             "next_page_token": result.get("nextPageToken"),
-            "effective_query": query,
+            "effective_query": query_str,
         }
 
     @server.tool(name="list_emails")
-    async def list_emails(request: ListEmailsRequest, ctx: Context) -> dict[str, Any]:
+    async def list_emails(
+        label_id: str = "INBOX",
+        max_results: int = 5,
+        unread_only: bool = False,
+        page_token: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """List messages from a label with optional unread-only filtering."""
+        request = ListEmailsRequest(
+            label_id=label_id,
+            max_results=max_results,
+            unread_only=unread_only,
+            page_token=page_token,
+        )
         service = gmail_service()
         label_ids = [request.label_id] if request.label_id else []
         if request.unread_only and "UNREAD" not in label_ids:
             label_ids.append("UNREAD")
-        await ctx.info(
-            f"Listing emails from labels {label_ids or ['INBOX']} (max_results={request.max_results})."
-        )
+        if ctx is not None:
+            await ctx.info(
+                f"Listing emails from labels {label_ids or ['INBOX']} (max_results={request.max_results})."
+            )
         result = (
             service.users()
             .messages()
@@ -83,7 +124,8 @@ def register(server: FastMCP) -> None:
             .execute()
         )
         messages = result.get("messages", [])
-        await ctx.report_progress(len(messages), request.max_results, "Messages listed")
+        if ctx is not None:
+            await ctx.report_progress(len(messages), request.max_results, "Messages listed")
         return {
             "messages": messages,
             "next_page_token": result.get("nextPageToken"),

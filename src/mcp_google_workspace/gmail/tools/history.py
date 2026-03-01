@@ -12,10 +12,25 @@ from ..schemas import ListHistoryRequest
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_history")
-    async def list_history(request: ListHistoryRequest, ctx: Context) -> dict[str, Any]:
+    async def list_history(
+        start_history_id: str,
+        history_types: list[str] = [],
+        label_id: str | None = None,
+        max_results: int = 100,
+        page_token: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """List mailbox history events starting at a given history ID."""
+        request = ListHistoryRequest(
+            start_history_id=start_history_id,
+            history_types=history_types,
+            label_id=label_id,
+            max_results=max_results,
+            page_token=page_token,
+        )
         service = gmail_service()
-        await ctx.info(f"Listing Gmail history from {request.start_history_id}.")
+        if ctx is not None:
+            await ctx.info(f"Listing Gmail history from {request.start_history_id}.")
         result = (
             service.users()
             .history()
@@ -30,7 +45,8 @@ def register(server: FastMCP) -> None:
             .execute()
         )
         history = result.get("history", [])
-        await ctx.report_progress(len(history), request.max_results, "History page loaded")
+        if ctx is not None:
+            await ctx.report_progress(len(history), request.max_results, "History page loaded")
         return {
             "history": history,
             "history_id": result.get("historyId"),

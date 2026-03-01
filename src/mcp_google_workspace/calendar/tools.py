@@ -265,14 +265,33 @@ def _apply_working_hours(
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_events")
-    async def get_events(request: ListEventsRequest, ctx: Context) -> dict[str, Any]:
+    async def get_events(
+        calendar_id: str = "primary",
+        time_min: str | None = None,
+        time_max: str | None = None,
+        max_results: int = 25,
+        single_events: bool = True,
+        order_by: str = "startTime",
+        range_preset: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """List calendar events for a time window.
 
         Input must be an object shaped like:
         {"calendar_id":"primary","time_min":"2026-03-01T00:00:00Z","time_max":"2026-03-08T00:00:00Z"}
         """
+        request = ListEventsRequest(
+            calendar_id=calendar_id,
+            time_min=time_min,
+            time_max=time_max,
+            max_results=max_results,
+            single_events=single_events,
+            order_by=order_by,
+            range_preset=range_preset,
+        )
         service = build_calendar_service()
-        await ctx.info(f"Listing events for calendar {request.calendar_id}.")
+        if ctx is not None:
+            await ctx.info(f"Listing events for calendar {request.calendar_id}.")
         user_timezone = service.settings().get(setting="timezone").execute().get("value", "UTC")
         preset_min, preset_max = _resolve_relative_range(request.range_preset, user_timezone)
         effective_time_min = request.time_min or preset_min
@@ -299,10 +318,23 @@ def register_tools(server: FastMCP) -> None:
         return result
 
     @server.tool(name="get_event")
-    async def get_event(request: GetEventRequest, ctx: Context) -> dict[str, Any]:
+    async def get_event(
+        event_id: str,
+        calendar_id: str = "primary",
+        time_zone: str | None = None,
+        max_attendees: int | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Fetch a single event by ID for deterministic state verification."""
+        request = GetEventRequest(
+            calendar_id=calendar_id,
+            event_id=event_id,
+            time_zone=time_zone,
+            max_attendees=max_attendees,
+        )
         service = build_calendar_service()
-        await ctx.info(f"Reading event {request.event_id}.")
+        if ctx is not None:
+            await ctx.info(f"Reading event {request.event_id}.")
         event = (
             service.events()
             .get(
@@ -354,17 +386,47 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="check_availability")
-    async def check_availability(request: FreeBusyRequest) -> dict[str, Any]:
+    async def check_availability(
+        time_min: str,
+        time_max: str,
+        items: list[dict[str, Any]],
+        time_zone: str | None = None,
+    ) -> dict[str, Any]:
         """Run a FreeBusy query for one or more calendars."""
+        request = FreeBusyRequest(
+            timeMin=time_min,
+            timeMax=time_max,
+            items=items,
+            timeZone=time_zone,
+        )
         service = build_calendar_service()
         return service.freebusy().query(body=request.model_dump(exclude_none=True)).execute()
 
     @server.tool(name="find_common_free_slots")
     async def find_common_free_slots(
-        request: FindCommonFreeSlotsRequest,
-        ctx: Context,
+        participants: list[str],
+        time_min: str,
+        time_max: str,
+        slot_duration_minutes: int = 30,
+        granularity_minutes: int = 15,
+        max_results: int = 10,
+        time_zone: str | None = None,
+        working_hours_start: str = "08:00",
+        working_hours_end: str = "17:00",
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Suggest common available meeting slots for all participants in a time window."""
+        request = FindCommonFreeSlotsRequest(
+            participants=participants,
+            time_min=time_min,
+            time_max=time_max,
+            slot_duration_minutes=slot_duration_minutes,
+            granularity_minutes=granularity_minutes,
+            max_results=max_results,
+            time_zone=time_zone,
+            working_hours_start=working_hours_start,
+            working_hours_end=working_hours_end,
+        )
         service = build_calendar_service()
         if not request.participants:
             raise ValueError("participants list cannot be empty.")
@@ -380,7 +442,8 @@ def register_tools(server: FastMCP) -> None:
         if window_end <= window_start:
             raise ValueError("time_max must be greater than time_min.")
 
-        await ctx.info(f"Checking common availability for {len(request.participants)} participant(s).")
+        if ctx is not None:
+            await ctx.info(f"Checking common availability for {len(request.participants)} participant(s).")
         body: dict[str, Any] = {
             "timeMin": fixed_min,
             "timeMax": fixed_max,
@@ -452,16 +515,56 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="create_event")
-    async def create_event(request: CreateEventRequest, ctx: Context) -> dict[str, Any]:
+    async def create_event(
+        summary: str,
+        start_datetime: str,
+        end_datetime: str,
+        calendar_id: str = "primary",
+        timezone: str | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        color_id: str | None = None,
+        visibility: str = "default",
+        transparency: str = "opaque",
+        conference_data: dict[str, Any] | None = None,
+        attendees: list[dict[str, Any]] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+        supports_attachments: bool = True,
+        send_updates: str | None = None,
+        reminders: dict[str, Any] | None = None,
+        recurrence: list[str] | None = None,
+        on_conflict: str = "fail",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Create a calendar event with optional attendees, reminders, and recurrence."""
+        request = CreateEventRequest(
+            calendar_id=calendar_id,
+            summary=summary,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+            timezone=timezone,
+            description=description,
+            location=location,
+            color_id=color_id,
+            visibility=visibility,
+            transparency=transparency,
+            conference_data=conference_data,
+            attendees=attendees,
+            attachments=attachments,
+            supports_attachments=supports_attachments,
+            send_updates=send_updates,
+            reminders=reminders,
+            recurrence=recurrence,
+            on_conflict=on_conflict,
+        )
         service = build_calendar_service()
-        timezone = request.timezone or "UTC"
-        start = _validate_and_fix_datetime(request.start_datetime, timezone)
-        end = _validate_and_fix_datetime(request.end_datetime, timezone)
+        timezone_val = request.timezone or "UTC"
+        start = _validate_and_fix_datetime(request.start_datetime, timezone_val)
+        end = _validate_and_fix_datetime(request.end_datetime, timezone_val)
         body: dict[str, Any] = {
             "summary": request.summary,
-            "start": {"dateTime": start, "timeZone": timezone},
-            "end": {"dateTime": end, "timeZone": timezone},
+            "start": {"dateTime": start, "timeZone": timezone_val},
+            "end": {"dateTime": end, "timeZone": timezone_val},
         }
         if request.description:
             body["description"] = request.description
@@ -504,7 +607,8 @@ def register_tools(server: FastMCP) -> None:
                     requested_end=end,
                 )
             return response
-        await ctx.info(f"Creating event '{request.summary}'.")
+        if ctx is not None:
+            await ctx.info(f"Creating event '{request.summary}'.")
         event = (
             service.events()
             .insert(
@@ -519,10 +623,52 @@ def register_tools(server: FastMCP) -> None:
         return {"success": True, "event": event}
 
     @server.tool(name="update_event")
-    async def update_event(request: UpdateEventRequest, ctx: Context) -> dict[str, Any]:
+    async def update_event(
+        event_id: str,
+        calendar_id: str = "primary",
+        summary: str | None = None,
+        start_datetime: str | None = None,
+        end_datetime: str | None = None,
+        timezone: str | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        color_id: str | None = None,
+        visibility: str | None = None,
+        transparency: str | None = None,
+        conference_data: dict[str, Any] | None = None,
+        attendees: list[dict[str, Any]] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
+        supports_attachments: bool = True,
+        reminders: dict[str, Any] | None = None,
+        recurrence: list[str] | None = None,
+        send_updates: str | None = None,
+        on_conflict: str = "fail",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Patch an existing calendar event with the provided fields."""
+        request = UpdateEventRequest(
+            event_id=event_id,
+            calendar_id=calendar_id,
+            summary=summary,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+            timezone=timezone,
+            description=description,
+            location=location,
+            color_id=color_id,
+            visibility=visibility,
+            transparency=transparency,
+            conference_data=conference_data,
+            attendees=attendees,
+            attachments=attachments,
+            supports_attachments=supports_attachments,
+            reminders=reminders,
+            recurrence=recurrence,
+            send_updates=send_updates,
+            on_conflict=on_conflict,
+        )
         service = build_calendar_service()
-        timezone = request.timezone or "UTC"
+        timezone_val = request.timezone or "UTC"
         patch_data: dict[str, Any] = {}
         for key in (
             "summary",
@@ -545,13 +691,13 @@ def register_tools(server: FastMCP) -> None:
             patch_data["attachments"] = [a.to_api() for a in request.attachments]
         if request.start_datetime:
             patch_data["start"] = {
-                "dateTime": _validate_and_fix_datetime(request.start_datetime, timezone),
-                "timeZone": timezone,
+                "dateTime": _validate_and_fix_datetime(request.start_datetime, timezone_val),
+                "timeZone": timezone_val,
             }
         if request.end_datetime:
             patch_data["end"] = {
-                "dateTime": _validate_and_fix_datetime(request.end_datetime, timezone),
-                "timeZone": timezone,
+                "dateTime": _validate_and_fix_datetime(request.end_datetime, timezone_val),
+                "timeZone": timezone_val,
             }
         if patch_data.get("start") and patch_data.get("end"):
             conflict_check = _check_time_slot_conflicts(
@@ -575,7 +721,8 @@ def register_tools(server: FastMCP) -> None:
                         requested_end=patch_data["end"]["dateTime"],
                     )
                 return response
-        await ctx.info(f"Updating event {request.event_id}.")
+        if ctx is not None:
+            await ctx.info(f"Updating event {request.event_id}.")
         event = (
             service.events()
             .patch(
@@ -591,10 +738,19 @@ def register_tools(server: FastMCP) -> None:
         return {"success": True, "event": event}
 
     @server.tool(name="list_event_attachments")
-    async def list_event_attachments(request: ListEventAttachmentsRequest, ctx: Context) -> dict[str, Any]:
+    async def list_event_attachments(
+        event_id: str,
+        calendar_id: str = "primary",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """List attachment metadata from a specific calendar event."""
+        request = ListEventAttachmentsRequest(
+            calendar_id=calendar_id,
+            event_id=event_id,
+        )
         service = build_calendar_service()
-        await ctx.info(f"Listing attachments for event {request.event_id}.")
+        if ctx is not None:
+            await ctx.info(f"Listing attachments for event {request.event_id}.")
         event = (
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
@@ -604,10 +760,23 @@ def register_tools(server: FastMCP) -> None:
         return {"calendar_id": request.calendar_id, "event_id": request.event_id, "attachments": attachments}
 
     @server.tool(name="add_event_attachment")
-    async def add_event_attachment(request: AddEventAttachmentRequest, ctx: Context) -> dict[str, Any]:
+    async def add_event_attachment(
+        event_id: str,
+        attachment: dict[str, Any],
+        calendar_id: str = "primary",
+        send_updates: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Add a single attachment to an existing event (deduplicates by fileUrl)."""
+        request = AddEventAttachmentRequest(
+            calendar_id=calendar_id,
+            event_id=event_id,
+            attachment=attachment,
+            send_updates=send_updates,
+        )
         service = build_calendar_service()
-        await ctx.info(f"Adding attachment to event {request.event_id}.")
+        if ctx is not None:
+            await ctx.info(f"Adding attachment to event {request.event_id}.")
         event = (
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
@@ -631,12 +800,27 @@ def register_tools(server: FastMCP) -> None:
         return {"event": updated}
 
     @server.tool(name="remove_event_attachment")
-    async def remove_event_attachment(request: RemoveEventAttachmentRequest, ctx: Context) -> dict[str, Any]:
+    async def remove_event_attachment(
+        event_id: str,
+        calendar_id: str = "primary",
+        file_url: str | None = None,
+        file_id: str | None = None,
+        send_updates: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Remove event attachment(s) by fileUrl or fileId."""
+        request = RemoveEventAttachmentRequest(
+            calendar_id=calendar_id,
+            event_id=event_id,
+            file_url=file_url,
+            file_id=file_id,
+            send_updates=send_updates,
+        )
         service = build_calendar_service()
         if not request.file_url and not request.file_id:
             raise ValueError("Provide at least one of file_url or file_id.")
-        await ctx.info(f"Removing attachment from event {request.event_id}.")
+        if ctx is not None:
+            await ctx.info(f"Removing attachment from event {request.event_id}.")
         event = (
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
@@ -667,13 +851,29 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="download_event_attachment")
     async def download_event_attachment(
-        request: DownloadEventAttachmentRequest,
-        ctx: Context,
+        event_id: str,
+        output_path: str,
+        calendar_id: str = "primary",
+        file_url: str | None = None,
+        file_id: str | None = None,
+        export_mime_type: str | None = None,
+        overwrite: bool = False,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Download/export an event attachment to local filesystem using Drive API."""
+        request = DownloadEventAttachmentRequest(
+            calendar_id=calendar_id,
+            event_id=event_id,
+            output_path=output_path,
+            file_url=file_url,
+            file_id=file_id,
+            export_mime_type=export_mime_type,
+            overwrite=overwrite,
+        )
         service = build_calendar_service()
         drive = build_drive_service()
-        await ctx.info(f"Resolving attachment for event {request.event_id}.")
+        if ctx is not None:
+            await ctx.info(f"Resolving attachment for event {request.event_id}.")
         event = (
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
@@ -699,14 +899,14 @@ def register_tools(server: FastMCP) -> None:
                 "or ensure event has exactly one attachment."
             )
 
-        file_url = request.file_url or (selected.get("fileUrl") if selected else None)
-        file_id = request.file_id or (selected.get("fileId") if selected else None) or _extract_drive_file_id(file_url)
-        if not file_id:
+        file_url_resolved = request.file_url or (selected.get("fileUrl") if selected else None)
+        file_id_resolved = request.file_id or (selected.get("fileId") if selected else None) or _extract_drive_file_id(file_url_resolved)
+        if not file_id_resolved:
             raise ValueError("Could not resolve Drive file_id from attachment metadata.")
 
-        meta = drive.files().get(fileId=file_id, fields="id,name,mimeType").execute()
+        meta = drive.files().get(fileId=file_id_resolved, fields="id,name,mimeType").execute()
         mime_type = meta.get("mimeType", "")
-        name = meta.get("name", file_id)
+        name = meta.get("name", file_id_resolved)
         out_path = Path(request.output_path)
         if out_path.exists() and not request.overwrite:
             raise FileExistsError(f"Output path already exists: {out_path}")
@@ -719,10 +919,10 @@ def register_tools(server: FastMCP) -> None:
                     "Google-native file requires export_mime_type for this mimeType: "
                     f"{mime_type}"
                 )
-            req = drive.files().export_media(fileId=file_id, mimeType=export_mime)
+            req = drive.files().export_media(fileId=file_id_resolved, mimeType=export_mime)
             mode = "export"
         else:
-            req = drive.files().get_media(fileId=file_id)
+            req = drive.files().get_media(fileId=file_id_resolved)
             export_mime = None
             mode = "download"
 
@@ -732,20 +932,22 @@ def register_tools(server: FastMCP) -> None:
         while not done:
             status, done = downloader.next_chunk()
             if status is not None:
-                await ctx.report_progress(
-                    int(status.progress() * 100),
-                    100,
-                    "Downloading attachment bytes",
-                )
+                if ctx is not None:
+                    await ctx.report_progress(
+                        int(status.progress() * 100),
+                        100,
+                        "Downloading attachment bytes",
+                    )
 
         data = buffer.getvalue()
         out_path.write_bytes(data)
-        await ctx.report_progress(100, 100, "Attachment saved")
+        if ctx is not None:
+            await ctx.report_progress(100, 100, "Attachment saved")
         return {
             "status": "ok",
             "calendar_id": request.calendar_id,
             "event_id": request.event_id,
-            "file_id": file_id,
+            "file_id": file_id_resolved,
             "file_name": name,
             "file_mime_type": mime_type,
             "mode": mode,
@@ -755,8 +957,20 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="delete_event")
-    async def delete_event(request: DeleteEventRequest, ctx: Context) -> dict[str, Any]:
+    async def delete_event(
+        event_id: str,
+        calendar_id: str = "primary",
+        send_updates: str | None = None,
+        force: bool = False,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Delete a calendar event, with optional interactive confirmation."""
+        request = DeleteEventRequest(
+            calendar_id=calendar_id,
+            event_id=event_id,
+            send_updates=send_updates,
+            force=force,
+        )
         if not request.force:
             response = await ctx.elicit(
                 f"Delete event {request.event_id} from calendar {request.calendar_id}?",

@@ -21,10 +21,15 @@ def register(server: FastMCP) -> None:
         return {"forwarding_addresses": addresses, "count": len(addresses)}
 
     @server.tool(name="get_forwarding_address")
-    async def get_forwarding_address(request: ForwardingAddressRequest, ctx: Context) -> dict[str, Any]:
+    async def get_forwarding_address(
+        forwarding_email: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Get forwarding address status/details for a specific email."""
+        request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         service = gmail_service()
-        await ctx.info(f"Fetching forwarding address {request.forwarding_email}.")
+        if ctx is not None:
+            await ctx.info(f"Fetching forwarding address {request.forwarding_email}.")
         address = (
             service.users()
             .settings()
@@ -35,10 +40,15 @@ def register(server: FastMCP) -> None:
         return {"forwarding_address": address}
 
     @server.tool(name="create_forwarding_address")
-    async def create_forwarding_address(request: ForwardingAddressRequest, ctx: Context) -> dict[str, Any]:
+    async def create_forwarding_address(
+        forwarding_email: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Create a forwarding address entry in Gmail settings."""
+        request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         service = gmail_service()
-        await ctx.info(f"Creating forwarding address {request.forwarding_email}.")
+        if ctx is not None:
+            await ctx.info(f"Creating forwarding address {request.forwarding_email}.")
         created = (
             service.users()
             .settings()
@@ -49,10 +59,15 @@ def register(server: FastMCP) -> None:
         return {"forwarding_address": created}
 
     @server.tool(name="delete_forwarding_address")
-    async def delete_forwarding_address(request: ForwardingAddressRequest, ctx: Context) -> dict[str, Any]:
+    async def delete_forwarding_address(
+        forwarding_email: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Delete a forwarding address from Gmail settings."""
+        request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         service = gmail_service()
-        await ctx.info(f"Deleting forwarding address {request.forwarding_email}.")
+        if ctx is not None:
+            await ctx.info(f"Deleting forwarding address {request.forwarding_email}.")
         service.users().settings().forwardingAddresses().delete(
             userId="me",
             forwardingEmail=str(request.forwarding_email),
@@ -69,12 +84,30 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="update_vacation_settings")
     async def update_vacation_settings(
-        request: UpdateVacationSettingsRequest,
-        ctx: Context,
+        enable_auto_reply: bool = False,
+        response_subject: str | None = None,
+        response_body_plain_text: str | None = None,
+        response_body_html: str | None = None,
+        restrict_to_contacts: bool = False,
+        restrict_to_domain: bool = False,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Update vacation responder settings and scheduling options."""
+        request = UpdateVacationSettingsRequest(
+            enable_auto_reply=enable_auto_reply,
+            response_subject=response_subject,
+            response_body_plain_text=response_body_plain_text,
+            response_body_html=response_body_html,
+            restrict_to_contacts=restrict_to_contacts,
+            restrict_to_domain=restrict_to_domain,
+            start_time=start_time,
+            end_time=end_time,
+        )
         service = gmail_service()
-        await ctx.info("Updating Gmail vacation settings.")
+        if ctx is not None:
+            await ctx.info("Updating Gmail vacation settings.")
         payload: dict[str, Any] = {
             "enableAutoReply": request.enable_auto_reply,
             "restrictToContacts": request.restrict_to_contacts,
