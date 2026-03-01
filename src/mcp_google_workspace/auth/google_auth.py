@@ -76,6 +76,24 @@ def get_google_scopes() -> list[str]:
 
 
 def _credentials_paths() -> tuple[Path, Path]:
+    # 1. Explicit env-var override (set by host processes like Sentinel)
+    env_dir = os.environ.get("MCP_CREDENTIALS_DIR")
+    if env_dir:
+        d = Path(env_dir)
+        creds, tok = d / "credentials.json", d / "token.json"
+        if creds.exists():
+            return creds, tok
+
+    # 2. Relative to package source tree (__file__-based, works regardless of cwd)
+    #    google_auth.py → auth/ → mcp_google_workspace/ → src/ → repo-root/
+    _src_dir = Path(__file__).resolve().parent.parent.parent
+    for rel in ("credentials", ):
+        pkg_creds = _src_dir / rel / "credentials.json"
+        pkg_token = _src_dir / rel / "token.json"
+        if pkg_creds.exists():
+            return pkg_creds, pkg_token
+
+    # 3. Relative to cwd (original behavior, works when cwd is the repo root)
     cwd = Path.cwd()
     credentials = cwd / "credentials.json"
     token = cwd / "token.json"
