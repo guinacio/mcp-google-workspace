@@ -93,7 +93,29 @@ Calendar (namespaced as `calendar_*`):
 
 - `get_events`, `get_event`, `list_calendars`, `get_timezone_info`, `get_current_date`
 - `check_availability`, `create_event`, `update_event`, `delete_event`
+- Smart scheduling: `find_common_free_slots`
 - Event attachments: `list_event_attachments`, `add_event_attachment`, `remove_event_attachment`, `download_event_attachment`
+- Event styling + conferencing fields on create/update: `color_id`, `visibility`, `transparency`, `conference_data`
+- Conflict prevention: create/update run a FreeBusy overlap check and return `status: "CONFLICT"` when slot is not available
+
+### Calendar smart scheduling (`find_common_free_slots`)
+
+`find_common_free_slots` returns candidate meeting slots (not raw FreeBusy output) for all participants in a time window.
+
+Inputs:
+
+- `participants`: list of calendar IDs/emails
+- `time_min`, `time_max`: RFC3339 window
+- `slot_duration_minutes`: desired meeting duration
+- `granularity_minutes`: candidate step size
+- `max_results`: result cap
+- `time_zone`: optional timezone used in FreeBusy query
+- `working_hours_start`, `working_hours_end`: optional daily working-hours filter (`HH:MM`, 24h)
+
+Working-hours defaults:
+
+- `working_hours_start`: `08:00`
+- `working_hours_end`: `17:00`
 
 Drive (namespaced as `drive_*`):
 
