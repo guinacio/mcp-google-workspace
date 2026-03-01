@@ -138,6 +138,37 @@ def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
     return model.model_dump(mode="json")
 
 
+async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Context) -> dict[str, Any]:
+    await ctx.report_progress(5, 100, "Preparing dashboard state")
+    section_errors: dict[str, str] = {}
+    events: list[dict[str, Any]] = []
+    unread_count = 0
+    messages: list[dict[str, Any]] = []
+
+    try:
+        await ctx.report_progress(20, 100, "Loading calendar events")
+        events = _fetch_calendar_events(state)
+    except Exception as exc:  # pragma: no cover - external API
+        section_errors["calendar"] = str(exc)
+
+    try:
+        await ctx.report_progress(55, 100, "Loading inbox summary")
+        unread_count, messages = _fetch_inbox_summary(state)
+    except Exception as exc:  # pragma: no cover - external API
+        section_errors["inbox"] = str(exc)
+
+    await ctx.report_progress(85, 100, "Building dashboard view model")
+    model = build_dashboard_view_model(
+        state=state,
+        calendar_events=events,
+        unread_count=unread_count,
+        inbox_messages=messages,
+        section_errors=section_errors,
+    )
+    await ctx.report_progress(100, 100, "Dashboard ready")
+    return model.model_dump(mode="json")
+
+
 def build_morning_briefing_payload(state: DashboardState, request: MorningBriefingRequest) -> dict[str, Any]:
     briefing_state = state
     if request.date is not None:
@@ -161,6 +192,41 @@ def build_morning_briefing_payload(state: DashboardState, request: MorningBriefi
     return model.model_dump(mode="json")
 
 
+async def build_morning_briefing_payload_with_progress(
+    state: DashboardState,
+    request: MorningBriefingRequest,
+    ctx: Context,
+) -> dict[str, Any]:
+    await ctx.report_progress(5, 100, "Preparing morning briefing")
+    briefing_state = state
+    if request.date is not None:
+        briefing_state = state.model_copy(update={"anchor_date": request.date})
+    if request.timezone:
+        briefing_state = briefing_state.model_copy(update={"timezone": request.timezone})
+
+    await ctx.report_progress(30, 100, "Loading calendar events")
+    events = _fetch_calendar_events(briefing_state)
+
+    unread_count = 0
+    messages: list[dict[str, Any]] = []
+    if request.include_inbox:
+        await ctx.report_progress(60, 100, "Loading inbox summary")
+        unread_count, messages = _fetch_inbox_summary(briefing_state)
+
+    await ctx.report_progress(85, 100, "Building briefing view model")
+    model = build_morning_briefing_view_model(
+        briefing_date=briefing_state.anchor_date,
+        timezone=briefing_state.timezone,
+        events=events,
+        unread_count=unread_count,
+        inbox_messages=messages,
+        max_priorities=request.max_priorities,
+        max_quick_wins=request.max_quick_wins,
+    )
+    await ctx.report_progress(100, 100, "Morning briefing ready")
+    return model.model_dump(mode="json")
+
+
 def build_weekly_calendar_payload(
     state: DashboardState,
     *,
@@ -179,6 +245,34 @@ def build_weekly_calendar_payload(
         events=events,
         include_weekend=weekly_state.include_weekend,
     )
+    return model.model_dump(mode="json")
+
+
+async def build_weekly_calendar_payload_with_progress(
+    state: DashboardState,
+    *,
+    ctx: Context,
+    date_override: date | None = None,
+    include_weekend_override: bool | None = None,
+) -> dict[str, Any]:
+    await ctx.report_progress(5, 100, "Preparing weekly calendar view")
+    weekly_state = state
+    if date_override is not None:
+        weekly_state = weekly_state.model_copy(update={"anchor_date": date_override})
+    if include_weekend_override is not None:
+        weekly_state = weekly_state.model_copy(update={"include_weekend": include_weekend_override})
+
+    await ctx.report_progress(35, 100, "Loading weekly calendar events")
+    events = _fetch_calendar_events(weekly_state.model_copy(update={"view": "week"}))
+
+    await ctx.report_progress(80, 100, "Building weekly view model")
+    model = build_weekly_calendar_view_model(
+        anchor_date=weekly_state.anchor_date,
+        timezone_name=weekly_state.timezone,
+        events=events,
+        include_weekend=weekly_state.include_weekend,
+    )
+    await ctx.report_progress(100, 100, "Weekly calendar ready")
     return model.model_dump(mode="json")
 
 
@@ -230,12 +324,15 @@ def register_tools(server: FastMCP) -> None:
     async def apps_get_dashboard(
         session_id: str | None = None,
         date_override: date | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Build workspace dashboard view model from calendar and inbox data."""
         sid = _resolve_session_id(session_id)
         state = get_state(sid)
         if date_override is not None:
             state = patch_state(sid, DashboardStatePatch(anchor_date=date_override))
+        if ctx is not None:
+            return await build_dashboard_payload_with_progress(state, ctx)
         return build_dashboard_payload(state)
 
     @server.tool(name="get_weekly_calendar_view")
@@ -243,10 +340,18 @@ def register_tools(server: FastMCP) -> None:
         session_id: str | None = None,
         date_override: date | None = None,
         include_weekend: bool | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Return a Google Calendar-like weekly view model (columns per day)."""
         sid = _resolve_session_id(session_id)
         state = get_state(sid)
+        if ctx is not None:
+            return await build_weekly_calendar_payload_with_progress(
+                state,
+                ctx=ctx,
+                date_override=date_override,
+                include_weekend_override=include_weekend,
+            )
         return build_weekly_calendar_payload(
             state,
             date_override=date_override,
@@ -258,7 +363,7 @@ def register_tools(server: FastMCP) -> None:
         """Build deterministic morning briefing with priorities, risks, and actions."""
         sid = _resolve_session_id(request.session_id, ctx)
         state = get_state(sid, timezone=request.timezone)
-        payload = build_morning_briefing_payload(state, request)
+        payload = await build_morning_briefing_payload_with_progress(state, request, ctx)
         await ctx.info(f"Morning briefing generated for {payload.get('date')}.")
         return payload
 
