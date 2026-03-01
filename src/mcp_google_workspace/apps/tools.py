@@ -320,7 +320,17 @@ def register_tools(server: FastMCP) -> None:
         updated = today(sid)
         return updated.model_dump(mode="json")
 
-    @server.tool(name="get_dashboard")
+    @server.tool(
+        name="get_dashboard",
+        annotations={
+            "_meta": {
+                "ui": {
+                    "resourceUri": "ui://apps/dashboard-ui",
+                },
+            },
+        },
+        meta={"ui/resourceUri": "ui://apps/dashboard-ui"},
+    )
     async def apps_get_dashboard(
         session_id: str | None = None,
         date_override: date | None = None,
@@ -335,7 +345,17 @@ def register_tools(server: FastMCP) -> None:
             return await build_dashboard_payload_with_progress(state, ctx)
         return build_dashboard_payload(state)
 
-    @server.tool(name="get_weekly_calendar_view")
+    @server.tool(
+        name="get_weekly_calendar_view",
+        annotations={
+            "_meta": {
+                "ui": {
+                    "resourceUri": "ui://apps/dashboard-ui",
+                },
+            },
+        },
+        meta={"ui/resourceUri": "ui://apps/dashboard-ui"},
+    )
     async def apps_get_weekly_calendar_view(
         session_id: str | None = None,
         date_override: date | None = None,
@@ -358,7 +378,17 @@ def register_tools(server: FastMCP) -> None:
             include_weekend_override=include_weekend,
         )
 
-    @server.tool(name="get_morning_briefing")
+    @server.tool(
+        name="get_morning_briefing",
+        annotations={
+            "_meta": {
+                "ui": {
+                    "resourceUri": "ui://apps/dashboard-ui",
+                },
+            },
+        },
+        meta={"ui/resourceUri": "ui://apps/dashboard-ui"},
+    )
     async def apps_get_morning_briefing(request: MorningBriefingRequest, ctx: Context) -> dict[str, Any]:
         """Build deterministic morning briefing with priorities, risks, and actions."""
         sid = _resolve_session_id(request.session_id, ctx)

@@ -21,10 +21,10 @@ if str(PROJECT_ROOT) not in sys.path:
 # Run from project root so credentials.json / token.json are found
 os.chdir(PROJECT_ROOT)
 
-from fastmcp import Client
+from fastmcp import Client  # noqa: E402
 
 # Import after cwd is set so auth can find credentials
-from mcp_google_workspace.server import workspace_mcp
+from mcp_google_workspace.server import workspace_mcp  # noqa: E402
 
 ENABLE_KEEP = os.getenv("ENABLE_KEEP", "").strip().lower() in {"1", "true", "yes", "on"}
 ENABLE_CHAT = os.getenv("ENABLE_CHAT", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -545,7 +545,7 @@ async def run_resources(client: Client, state: dict, results: list[tuple[str, bo
 
     for uri in uris:
         try:
-            content = await client.read_resource(uri)
+            _ = await client.read_resource(uri)
             results.append((f"resource:{uri}", True, ""))
         except Exception as e:
             results.append((f"resource:{uri}", False, str(e)))
@@ -569,7 +569,7 @@ async def run_prompts(client: Client, results: list[tuple[str, bool, str]]) -> N
         ])
     for name, args in prompts:
         try:
-            out = await client.get_prompt(name, args)
+            _ = await client.get_prompt(name, args)
             results.append((f"prompt:{name}", True, ""))
         except Exception as e:
             results.append((f"prompt:{name}", False, str(e)))

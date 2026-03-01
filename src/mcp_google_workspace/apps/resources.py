@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 
 from fastmcp import FastMCP
 
@@ -14,6 +15,10 @@ from .tools import (
     build_morning_briefing_payload,
     build_weekly_calendar_payload,
 )
+
+_UI_HTML_PATH = Path(__file__).parent / "ui" / "dist" / "index.html"
+_MCP_APP_UI_URI = "ui://dashboard-ui"
+_MCP_APP_UI_MIME = "text/html;profile=mcp-app"
 
 
 def register_resources(server: FastMCP) -> None:
@@ -53,3 +58,20 @@ def register_resources(server: FastMCP) -> None:
             MorningBriefingRequest(date=target, session_id="resource-default"),
         )
         return json.dumps(payload, indent=2)
+
+    @server.resource(
+        _MCP_APP_UI_URI,
+        name="apps_dashboard_ui_mcp",
+        mime_type=_MCP_APP_UI_MIME,
+    )
+    async def apps_dashboard_ui_mcp() -> str:
+        return _UI_HTML_PATH.read_text(encoding="utf-8")
+
+    # Backward-compatible URI for existing local integrations.
+    @server.resource(
+        "apps://dashboard/ui",
+        name="apps_dashboard_ui",
+        mime_type="text/html",
+    )
+    async def apps_dashboard_ui() -> str:
+        return _UI_HTML_PATH.read_text(encoding="utf-8")

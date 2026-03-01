@@ -243,6 +243,16 @@ Reference docs:
 uv run pytest -q
 ```
 
+Apps smoke test:
+
+```powershell
+# in-process mode (auto-enables apps namespace)
+uv run python scripts/qa_apps_smoke.py
+
+# or against a running SSE server
+uv run python scripts/qa_apps_smoke.py --sse-url http://127.0.0.1:8001/sse
+```
+
 ## Existing calendar project reference
 
 - [guinacio/mcp-google-calendar](https://github.com/guinacio/mcp-google-calendar)
