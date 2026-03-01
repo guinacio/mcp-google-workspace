@@ -14,6 +14,7 @@ from .google_auth import (
     get_google_scopes,
     get_credentials,
     is_chat_enabled,
+    is_apps_dashboard_enabled,
     is_keep_enabled,
 )
 
@@ -31,5 +32,6 @@ __all__ = [
     "get_google_scopes",
     "get_credentials",
     "is_chat_enabled",
+    "is_apps_dashboard_enabled",
     "is_keep_enabled",
 ]

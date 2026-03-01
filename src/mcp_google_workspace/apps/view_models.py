@@ -1,0 +1,359 @@
+"""View-model builders for dashboard and morning briefing."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any
+
+import pytz
+
+from .schemas import (
+    BriefingAction,
+    BriefingPriority,
+    BriefingRisk,
+    DashboardCard,
+    DashboardCardAction,
+    DashboardSection,
+    DashboardState,
+    DashboardViewModel,
+    MorningBriefingViewModel,
+    WeeklyCalendarDay,
+    WeeklyCalendarEvent,
+    WeeklyCalendarViewModel,
+)
+
+
+def _event_start(event: dict[str, Any]) -> str:
+    start = event.get("start", {})
+    return start.get("dateTime") or start.get("date") or ""
+
+
+def _event_end(event: dict[str, Any]) -> str:
+    end = event.get("end", {})
+    return end.get("dateTime") or end.get("date") or ""
+
+
+def _event_title(event: dict[str, Any]) -> str:
+    return event.get("summary") or "(No title)"
+
+
+def _normalize_iso(value: str) -> str:
+    return value.replace("Z", "+00:00")
+
+
+def _parse_event_start_local(event: dict[str, Any], tz: pytz.BaseTzInfo) -> datetime:
+    start = event.get("start", {})
+    if "dateTime" in start:
+        parsed = datetime.fromisoformat(_normalize_iso(start["dateTime"]))
+        if parsed.tzinfo is None:
+            parsed = pytz.UTC.localize(parsed)
+        return parsed.astimezone(tz)
+    if "date" in start:
+        return tz.localize(datetime.combine(date.fromisoformat(start["date"]), time.min))
+    return tz.localize(datetime.combine(date.today(), time.min))
+
+
+def _parse_event_end_local(event: dict[str, Any], tz: pytz.BaseTzInfo) -> datetime:
+    end = event.get("end", {})
+    if "dateTime" in end:
+        parsed = datetime.fromisoformat(_normalize_iso(end["dateTime"]))
+        if parsed.tzinfo is None:
+            parsed = pytz.UTC.localize(parsed)
+        return parsed.astimezone(tz)
+    if "date" in end:
+        return tz.localize(datetime.combine(date.fromisoformat(end["date"]), time.min))
+    return tz.localize(datetime.combine(date.today(), time.min))
+
+
+def _is_all_day(event: dict[str, Any]) -> bool:
+    start = event.get("start", {})
+    return "date" in start and "dateTime" not in start
+
+
+def build_weekly_calendar_view_model(
+    *,
+    anchor_date: date,
+    timezone_name: str,
+    events: list[dict[str, Any]],
+    include_weekend: bool,
+) -> WeeklyCalendarViewModel:
+    tz = pytz.timezone(timezone_name)
+    days_since_sunday = (anchor_date.weekday() + 1) % 7
+    week_start = anchor_date - timedelta(days=days_since_sunday)
+    day_count = 7 if include_weekend else 5
+    days: list[WeeklyCalendarDay] = []
+    day_map: dict[date, WeeklyCalendarDay] = {}
+    today_local = datetime.now(tz).date()
+
+    for offset in range(day_count):
+        current = week_start + timedelta(days=offset)
+        day = WeeklyCalendarDay(
+            date=current,
+            day_label=current.strftime("%a"),
+            is_today=current == today_local,
+        )
+        days.append(day)
+        day_map[current] = day
+
+    for event in events:
+        start_local = _parse_event_start_local(event, tz)
+        end_local = _parse_event_end_local(event, tz)
+        day = day_map.get(start_local.date())
+        if day is None:
+            continue
+        normalized = WeeklyCalendarEvent(
+            event_id=event.get("id"),
+            calendar_id=event.get("calendar_id"),
+            title=_event_title(event),
+            start=start_local.isoformat(),
+            end=end_local.isoformat(),
+            all_day=_is_all_day(event),
+            status=event.get("status", "confirmed"),
+        )
+        if normalized.all_day:
+            day.all_day_events.append(normalized)
+        else:
+            day.timed_events.append(normalized)
+
+    for day in days:
+        day.timed_events.sort(key=lambda item: item.start)
+
+    fallback_lines = [
+        f"Weekly calendar view ({timezone_name})",
+        f"Week of {week_start.isoformat()} to {(week_start + timedelta(days=day_count - 1)).isoformat()}",
+    ]
+    for day in days:
+        fallback_lines.append(
+            f"- {day.day_label} {day.date.isoformat()}: "
+            f"{len(day.all_day_events)} all-day, {len(day.timed_events)} timed"
+        )
+
+    return WeeklyCalendarViewModel(
+        week_start=week_start,
+        week_end=week_start + timedelta(days=day_count - 1),
+        timezone=timezone_name,
+        total_events=sum(len(day.all_day_events) + len(day.timed_events) for day in days),
+        days=days,
+        fallback_text="\n".join(fallback_lines),
+    )
+
+
+def _build_calendar_card(events: list[dict[str, Any]]) -> DashboardCard:
+    items = [
+        {
+            "event_id": event.get("id"),
+            "title": _event_title(event),
+            "start": _event_start(event),
+            "end": _event_end(event),
+            "status": event.get("status", "confirmed"),
+        }
+        for event in events[:15]
+    ]
+    summary = f"{len(events)} scheduled event(s)"
+    fallback = "\n".join(
+        f"- {item['title']} ({item['start']} - {item['end']})"
+        for item in items[:5]
+    ) or "No events scheduled."
+    return DashboardCard(
+        id="calendar-agenda",
+        title="Calendar",
+        card_type="calendar",
+        summary=summary,
+        fallback_text=fallback,
+        data={"events": items, "total": len(events)},
+        actions=[
+            DashboardCardAction(
+                id="calendar-refresh",
+                label="Refresh schedule",
+                tool_name="apps_get_dashboard",
+            )
+        ],
+    )
+
+
+def _build_inbox_card(unread_count: int, messages: list[dict[str, Any]]) -> DashboardCard:
+    normalized = [
+        {
+            "id": msg.get("id"),
+            "subject": msg.get("subject") or "(No subject)",
+            "from": msg.get("from") or "(Unknown sender)",
+            "date": msg.get("date"),
+        }
+        for msg in messages[:10]
+    ]
+    fallback = "\n".join(
+        f"- {msg['subject']} — {msg['from']}"
+        for msg in normalized[:5]
+    ) or "No recent inbox messages."
+    return DashboardCard(
+        id="inbox-summary",
+        title="Inbox",
+        card_type="inbox",
+        summary=f"{unread_count} unread message(s)",
+        fallback_text=fallback,
+        data={"unread_count": unread_count, "messages": normalized},
+        actions=[
+            DashboardCardAction(
+                id="inbox-refresh",
+                label="Refresh inbox",
+                tool_name="apps_get_dashboard",
+            )
+        ],
+    )
+
+
+def _build_prep_card(events: list[dict[str, Any]]) -> DashboardCard:
+    prep_items: list[dict[str, Any]] = []
+    for event in events[:8]:
+        attendees = event.get("attendees") or []
+        prep_items.append(
+            {
+                "event_id": event.get("id"),
+                "title": _event_title(event),
+                "start": _event_start(event),
+                "attendee_count": len(attendees),
+                "has_description": bool(event.get("description")),
+            }
+        )
+    fallback = "\n".join(
+        f"- Prep for {item['title']} at {item['start']}"
+        for item in prep_items[:4]
+    ) or "No meetings require preparation."
+    return DashboardCard(
+        id="meeting-prep",
+        title="Meeting Prep",
+        card_type="prep",
+        summary=f"{len(prep_items)} upcoming meeting(s) to prep",
+        fallback_text=fallback,
+        data={"prep_items": prep_items},
+    )
+
+
+def build_dashboard_view_model(
+    state: DashboardState,
+    calendar_events: list[dict[str, Any]],
+    unread_count: int,
+    inbox_messages: list[dict[str, Any]],
+    section_errors: dict[str, str] | None = None,
+) -> DashboardViewModel:
+    sections = [
+        DashboardSection(
+            id="schedule",
+            title="Schedule",
+            cards=[_build_calendar_card(calendar_events), _build_prep_card(calendar_events)],
+            fallback_text="Calendar schedule and prep insights.",
+        ),
+        DashboardSection(
+            id="communications",
+            title="Communications",
+            cards=[_build_inbox_card(unread_count, inbox_messages)],
+            fallback_text="Inbox status and latest communication context.",
+        ),
+    ]
+    return DashboardViewModel(
+        title=f"Workspace Dashboard ({state.view})",
+        generated_at_utc=datetime.now(timezone.utc),
+        state=state,
+        sections=sections,
+        warnings=[] if not section_errors else ["One or more sections failed to load completely."],
+        section_errors=section_errors or {},
+    )
+
+
+def build_morning_briefing_view_model(
+    *,
+    briefing_date: date,
+    timezone: str,
+    events: list[dict[str, Any]],
+    unread_count: int,
+    inbox_messages: list[dict[str, Any]],
+    max_priorities: int,
+    max_quick_wins: int,
+) -> MorningBriefingViewModel:
+    priorities: list[BriefingPriority] = []
+    conflicts: list[BriefingRisk] = []
+    prep_actions: list[BriefingAction] = []
+    quick_wins: list[BriefingAction] = []
+
+    if events:
+        first_event = events[0]
+        priorities.append(
+            BriefingPriority(
+                title=f"Prepare first meeting: {_event_title(first_event)}",
+                reason=f"Starts at {_event_start(first_event)}",
+                priority="high",
+            )
+        )
+
+    if len(events) >= 6:
+        conflicts.append(
+            BriefingRisk(
+                title="Meeting load is heavy",
+                detail=f"{len(events)} events scheduled today may reduce focus time.",
+                severity="medium",
+            )
+        )
+
+    for event in events[:max_priorities]:
+        if not event.get("description"):
+            priorities.append(
+                BriefingPriority(
+                    title=f"Clarify agenda for {_event_title(event)}",
+                    reason="Event has no description/agenda.",
+                    priority="medium",
+                )
+            )
+        prep_actions.append(
+            BriefingAction(
+                title=f"Open {_event_title(event)}",
+                detail="Review attendees, docs, and context before the meeting.",
+                tool_name="apps_get_dashboard",
+                payload={"focus_event_id": event.get("id")},
+            )
+        )
+
+    if unread_count > 0:
+        priorities.append(
+            BriefingPriority(
+                title=f"Review inbox triage ({unread_count} unread)",
+                reason="Important updates may affect today priorities.",
+                priority="medium",
+            )
+        )
+        top_messages = inbox_messages[:max_quick_wins]
+        for message in top_messages:
+            quick_wins.append(
+                BriefingAction(
+                    title=f"Triage: {message.get('subject') or '(No subject)'}",
+                    detail=f"From {message.get('from') or '(Unknown sender)'}",
+                    tool_name="apps_get_dashboard",
+                    payload={"highlight_message_id": message.get("id")},
+                )
+            )
+
+    priorities = priorities[:max_priorities]
+    prep_actions = prep_actions[:max_priorities]
+    quick_wins = quick_wins[:max_quick_wins]
+
+    summary = (
+        f"{len(events)} meetings and {unread_count} unread messages."
+        " Focus first on prep and inbox triage."
+    )
+    fallback_lines = [
+        f"Morning briefing for {briefing_date.isoformat()} ({timezone})",
+        f"- Meetings: {len(events)}",
+        f"- Unread messages: {unread_count}",
+    ]
+    for priority in priorities:
+        fallback_lines.append(f"- Priority: {priority.title} ({priority.priority})")
+
+    return MorningBriefingViewModel(
+        date=briefing_date,
+        timezone=timezone,
+        summary=summary,
+        priorities=priorities,
+        conflicts=conflicts,
+        prep_actions=prep_actions,
+        quick_wins=quick_wins,
+        fallback_text="\n".join(fallback_lines),
+    )

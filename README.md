@@ -5,10 +5,12 @@ Production-ready Google Workspace MCP package with:
 - Gmail MCP: send/read/search emails, attachment handling, label management, batch operations.
 - Google Calendar MCP: events, availability, create/update/delete operations.
 - Google Drive MCP: files/folders CRUD, uploads/downloads/exports, sharing permissions, Shared Drives operations.
+- MCP Apps Dashboard: workspace dashboard + morning briefing app-layer tools/resources.
 - Google Keep MCP: note create/get/list/delete, collaboration permissions, resources, prompts.
 - Google Chat MCP: spaces and messages operations, collaboration messaging workflows.
 - FastMCP advanced features: Context logging, progress updates, user elicitation, sampling, resources, and prompts.
 - Composed server architecture: Gmail + Calendar + Keep + Chat mounted into one namespaced MCP server.
+- Optional app-layer namespace for dashboard workflows mounted as `apps_*`.
 
 ## Requirements
 
@@ -53,6 +55,16 @@ $env:ENABLE_CHAT="true"
 ```
 
 If you change this flag (or after upgrading scopes/features/scopes), delete `token.json` and re-authenticate to refresh granted scopes.
+
+### Apps dashboard rollout flag
+
+The MCP app-layer dashboard/briefing namespace is opt-in for controlled rollout.
+
+Enable apps namespace:
+
+```powershell
+$env:ENABLE_APPS_DASHBOARD="true"
+```
 
 ## Run (STDIO)
 
@@ -126,6 +138,14 @@ Drive (namespaced as `drive_*`):
 - Shared Drives: `list_drives`, `get_drive`, `hide_drive`, `unhide_drive`
 - Progress reporting: `upload_file`, `update_file_content`, `download_file`, and `export_google_file` emit MCP progress updates
 
+Apps (namespaced as `apps_*`, mounted when `ENABLE_APPS_DASHBOARD=true`):
+
+- State/navigation: `get_state`, `set_state`, `patch_state`, `today`, `next_range`, `prev_range`
+- Dashboard: `get_dashboard`
+- Weekly calendar layout: `get_weekly_calendar_view` (Google Calendar-like week columns)
+- Morning briefing: `get_morning_briefing`
+- Scheduling actions: `find_meeting_slots`, `create_meeting_from_slot`, `reschedule_meeting`, `cancel_meeting`
+
 Keep (namespaced as `keep_*`):
 
 - `create_note`, `get_note`, `list_notes`, `delete_note`
@@ -179,6 +199,14 @@ Chat resources:
 - `chat://space/{space_id}/members`
 - `chat://users/{user_ref}`
 - `chat://users/me`
+
+Apps resources (mounted when `ENABLE_APPS_DASHBOARD=true`):
+
+- `apps://dashboard/current`
+- `apps://dashboard/day/{ymd}`
+- `apps://dashboard/week/{ymd}`
+- `apps://calendar/week/{ymd}`
+- `apps://briefing/morning/{ymd}`
 
 Prompts:
 

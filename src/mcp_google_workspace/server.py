@@ -7,7 +7,8 @@ from typing import AsyncIterator
 
 from fastmcp import FastMCP
 
-from .auth import get_credentials, is_chat_enabled, is_keep_enabled
+from .apps import apps_mcp
+from .auth import get_credentials, is_apps_dashboard_enabled, is_chat_enabled, is_keep_enabled
 from .calendar import calendar_mcp
 from .chat import chat_mcp
 from .drive import drive_mcp
@@ -33,6 +34,8 @@ workspace_mcp = FastMCP(
 workspace_mcp.mount(gmail_mcp, namespace="gmail")
 workspace_mcp.mount(calendar_mcp, namespace="calendar")
 workspace_mcp.mount(drive_mcp, namespace="drive")
+if is_apps_dashboard_enabled():
+    workspace_mcp.mount(apps_mcp, namespace="apps")
 if is_chat_enabled():
     workspace_mcp.mount(chat_mcp, namespace="chat")
 if is_keep_enabled():

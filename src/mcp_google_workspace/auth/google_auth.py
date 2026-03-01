@@ -61,6 +61,11 @@ def is_chat_enabled() -> bool:
     return _env_truthy(os.getenv("ENABLE_CHAT"))
 
 
+def is_apps_dashboard_enabled() -> bool:
+    """Feature flag for MCP app-layer dashboard and morning briefing namespace."""
+    return _env_truthy(os.getenv("ENABLE_APPS_DASHBOARD"))
+
+
 def get_google_scopes() -> list[str]:
     scopes = [*GMAIL_SCOPES, *CALENDAR_SCOPES, *DRIVE_SCOPES]
     if is_chat_enabled():
