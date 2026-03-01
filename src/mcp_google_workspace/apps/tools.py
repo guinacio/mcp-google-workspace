@@ -14,6 +14,7 @@ from .actions import (
     cancel_meeting,
     create_meeting_from_slot,
     find_meeting_slots,
+    respond_to_event,
     reschedule_meeting,
 )
 from .schemas import (
@@ -22,12 +23,17 @@ from .schemas import (
     DashboardState,
     DashboardStatePatch,
     FindMeetingSlotsRequest,
+    GetEmailDetailRequest,
+    GetEventDetailRequest,
     MorningBriefingRequest,
+    RespondToEventRequest,
     RescheduleMeetingRequest,
 )
 from .state import get_state, next_range, patch_state, prev_range, set_state, today
 from .view_models import (
     build_dashboard_view_model,
+    build_email_detail_view_model,
+    build_event_detail_view_model,
     build_morning_briefing_view_model,
     build_weekly_calendar_view_model,
 )
@@ -110,9 +116,22 @@ def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any
                 "subject": decode_rfc2047(headers.get("subject")),
                 "from": decode_rfc2047(headers.get("from")),
                 "date": headers.get("date"),
+                "snippet": full.get("snippet"),
             }
         )
     return unread, items
+
+
+def _fetch_event_detail(calendar_id: str, event_id: str) -> dict[str, Any]:
+    service = build_calendar_service()
+    event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+    return build_event_detail_view_model(event, calendar_id).model_dump(mode="json")
+
+
+def _fetch_email_detail(message_id: str) -> dict[str, Any]:
+    service = build_gmail_service()
+    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    return build_email_detail_view_model(message).model_dump(mode="json")
 
 
 def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
@@ -285,16 +304,58 @@ def register_tools(server: FastMCP) -> None:
         return state.model_dump(mode="json")
 
     @server.tool(name="set_state")
-    async def apps_set_state(request: DashboardState, ctx: Context) -> dict[str, Any]:
+    async def apps_set_state(
+        session_id: str | None = None,
+        view: str | None = None,
+        anchor_date: date | None = None,
+        timezone: str | None = None,
+        selected_calendars: list[str] | None = None,
+        inbox_query: str | None = None,
+        include_weekend: bool | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Replace dashboard state for the caller session."""
+        fields: dict[str, Any] = {}
+        if session_id is not None:
+            fields["session_id"] = session_id
+        if view is not None:
+            fields["view"] = view
+        if anchor_date is not None:
+            fields["anchor_date"] = anchor_date
+        if timezone is not None:
+            fields["timezone"] = timezone
+        if selected_calendars is not None:
+            fields["selected_calendars"] = selected_calendars
+        if inbox_query is not None:
+            fields["inbox_query"] = inbox_query
+        if include_weekend is not None:
+            fields["include_weekend"] = include_weekend
+        request = DashboardState(**fields)
         sid = _resolve_session_id(request.session_id, ctx)
         updated = set_state(sid, request)
-        await ctx.info(f"Dashboard state replaced for session {sid}.")
+        if ctx is not None:
+            await ctx.info(f"Dashboard state replaced for session {sid}.")
         return updated.model_dump(mode="json")
 
     @server.tool(name="patch_state")
-    async def apps_patch_state(request: DashboardStatePatch, session_id: str | None = None) -> dict[str, Any]:
+    async def apps_patch_state(
+        session_id: str | None = None,
+        view: str | None = None,
+        anchor_date: date | None = None,
+        timezone: str | None = None,
+        selected_calendars: list[str] | None = None,
+        inbox_query: str | None = None,
+        include_weekend: bool | None = None,
+    ) -> dict[str, Any]:
         """Patch selected dashboard state fields for the caller session."""
+        request = DashboardStatePatch(
+            view=view,
+            anchor_date=anchor_date,
+            timezone=timezone,
+            selected_calendars=selected_calendars,
+            inbox_query=inbox_query,
+            include_weekend=include_weekend,
+        )
         sid = _resolve_session_id(session_id)
         updated = patch_state(sid, request)
         return updated.model_dump(mode="json")
@@ -413,28 +474,159 @@ def register_tools(server: FastMCP) -> None:
         await ctx.info(f"Morning briefing generated for {payload.get('date')}.")
         return payload
 
+    @server.tool(name="get_event_detail")
+    async def apps_get_event_detail(
+        event_id: str,
+        calendar_id: str = "primary",
+        session_id: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Return full event details (attendees, location, description, conference)."""
+        if ctx is not None:
+            await ctx.report_progress(20, 100, "Loading event details")
+        payload = _fetch_event_detail(calendar_id, event_id)
+        if ctx is not None:
+            await ctx.report_progress(100, 100, "Event details ready")
+        return payload
+
+    @server.tool(name="get_email_detail")
+    async def apps_get_email_detail(
+        message_id: str,
+        session_id: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Return full email details (headers + body)."""
+        if ctx is not None:
+            await ctx.report_progress(20, 100, "Loading email details")
+        payload = _fetch_email_detail(message_id)
+        if ctx is not None:
+            await ctx.report_progress(100, 100, "Email details ready")
+        return payload
+
     @server.tool(name="find_meeting_slots")
-    async def apps_find_meeting_slots(request: FindMeetingSlotsRequest) -> dict[str, Any]:
+    async def apps_find_meeting_slots(
+        time_min: str,
+        time_max: str,
+        participants: list[str] | None = None,
+        slot_duration_minutes: int = 30,
+        granularity_minutes: int = 15,
+        max_results: int = 10,
+        time_zone: str = "UTC",
+        working_hours_start: str = "08:00",
+        working_hours_end: str = "17:00",
+    ) -> dict[str, Any]:
         """Find common free slots for participants in a window."""
+        request = FindMeetingSlotsRequest(
+            participants=participants or ["primary"],
+            time_min=time_min,
+            time_max=time_max,
+            slot_duration_minutes=slot_duration_minutes,
+            granularity_minutes=granularity_minutes,
+            max_results=max_results,
+            time_zone=time_zone,
+            working_hours_start=working_hours_start,
+            working_hours_end=working_hours_end,
+        )
         return find_meeting_slots(request)
 
     @server.tool(name="create_meeting_from_slot")
-    async def apps_create_meeting_from_slot(request: CreateMeetingFromSlotRequest, ctx: Context) -> dict[str, Any]:
+    async def apps_create_meeting_from_slot(
+        title: str,
+        start: str,
+        end: str,
+        idempotency_key: str,
+        session_id: str | None = None,
+        calendar_id: str = "primary",
+        timezone: str = "UTC",
+        description: str | None = None,
+        attendees: list[str] | None = None,
+        create_conference: bool = True,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Create a meeting from an explicit slot with idempotency support."""
+        request = CreateMeetingFromSlotRequest(
+            session_id=session_id,
+            calendar_id=calendar_id,
+            title=title,
+            start=start,
+            end=end,
+            timezone=timezone,
+            description=description,
+            attendees=attendees or [],
+            create_conference=create_conference,
+            idempotency_key=idempotency_key,
+        )
         sid = _resolve_session_id(request.session_id, ctx)
         result = create_meeting_from_slot(sid, request)
         return result.model_dump(mode="json")
 
     @server.tool(name="reschedule_meeting")
-    async def apps_reschedule_meeting(request: RescheduleMeetingRequest, ctx: Context) -> dict[str, Any]:
+    async def apps_reschedule_meeting(
+        event_id: str,
+        start: str,
+        end: str,
+        idempotency_key: str,
+        session_id: str | None = None,
+        calendar_id: str = "primary",
+        timezone: str = "UTC",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Reschedule an existing meeting with idempotency support."""
+        request = RescheduleMeetingRequest(
+            session_id=session_id,
+            calendar_id=calendar_id,
+            event_id=event_id,
+            start=start,
+            end=end,
+            timezone=timezone,
+            idempotency_key=idempotency_key,
+        )
         sid = _resolve_session_id(request.session_id, ctx)
         result = reschedule_meeting(sid, request)
         return result.model_dump(mode="json")
 
     @server.tool(name="cancel_meeting")
-    async def apps_cancel_meeting(request: CancelMeetingRequest, ctx: Context) -> dict[str, Any]:
+    async def apps_cancel_meeting(
+        event_id: str,
+        idempotency_key: str,
+        session_id: str | None = None,
+        calendar_id: str = "primary",
+        confirm: bool = False,
+        send_updates: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Cancel an existing meeting with explicit confirmation."""
+        request = CancelMeetingRequest(
+            session_id=session_id,
+            calendar_id=calendar_id,
+            event_id=event_id,
+            confirm=confirm,
+            send_updates=send_updates,
+            idempotency_key=idempotency_key,
+        )
         sid = _resolve_session_id(request.session_id, ctx)
         result = cancel_meeting(sid, request)
+        return result.model_dump(mode="json")
+
+    @server.tool(name="respond_to_event")
+    async def apps_respond_to_event(
+        event_id: str,
+        response_status: str,
+        idempotency_key: str,
+        session_id: str | None = None,
+        calendar_id: str = "primary",
+        send_updates: str | None = "all",
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Set RSVP status for an event attendee and return updated action status."""
+        request = RespondToEventRequest(
+            session_id=session_id,
+            calendar_id=calendar_id,
+            event_id=event_id,
+            response_status=response_status,
+            send_updates=send_updates,
+            idempotency_key=idempotency_key,
+        )
+        sid = _resolve_session_id(request.session_id, ctx)
+        result = respond_to_event(sid, request)
         return result.model_dump(mode="json")
