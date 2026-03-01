@@ -42,6 +42,24 @@ def _build_metadata_body(request: CreateFileMetadataRequest) -> dict[str, Any]:
     return body
 
 
+async def _execute_resumable_upload_with_progress(
+    request: Any,
+    ctx: Context,
+    progress_message: str,
+) -> dict[str, Any]:
+    response: dict[str, Any] | None = None
+    while response is None:
+        status, response = request.next_chunk()
+        if status is not None:
+            await ctx.report_progress(
+                int(status.progress() * 100),
+                100,
+                progress_message,
+            )
+    await ctx.report_progress(100, 100, f"{progress_message} completed")
+    return response
+
+
 def register(server: FastMCP) -> None:
     @server.tool(name="list_files")
     async def list_files(request: ListFilesRequest, ctx: Context) -> dict[str, Any]:
@@ -139,7 +157,7 @@ def register(server: FastMCP) -> None:
             body["parents"] = request.parent_ids
         media = media_file_upload(request.local_path, request.mime_type, request.resumable)
         await ctx.info(f"Uploading local file '{src.name}' to Drive.")
-        created = (
+        create_request = (
             service.files()
             .create(
                 body=body,
@@ -147,8 +165,16 @@ def register(server: FastMCP) -> None:
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
+        if request.resumable:
+            created = await _execute_resumable_upload_with_progress(
+                create_request,
+                ctx,
+                "Uploading Drive file",
+            )
+        else:
+            created = create_request.execute()
+            await ctx.report_progress(100, 100, "Uploading Drive file completed")
         return {"status": "ok", "file": created}
 
     @server.tool(name="update_file_metadata")
@@ -191,7 +217,7 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         media = media_file_upload(request.local_path, request.mime_type, request.resumable)
         await ctx.info(f"Uploading replacement content for file {request.file_id}.")
-        updated = (
+        update_request = (
             service.files()
             .update(
                 fileId=request.file_id,
@@ -200,8 +226,16 @@ def register(server: FastMCP) -> None:
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
+        if request.resumable:
+            updated = await _execute_resumable_upload_with_progress(
+                update_request,
+                ctx,
+                "Uploading replacement Drive content",
+            )
+        else:
+            updated = update_request.execute()
+            await ctx.report_progress(100, 100, "Uploading replacement Drive content completed")
         return {"status": "ok", "file": updated}
 
     @server.tool(name="move_file")

@@ -124,6 +124,7 @@ Drive (namespaced as `drive_*`):
 - Content retrieval: `download_file`, `export_google_file`, `get_file_content_capabilities`
 - Sharing: `list_permissions`, `get_permission`, `create_permission`, `update_permission`, `delete_permission`
 - Shared Drives: `list_drives`, `get_drive`, `hide_drive`, `unhide_drive`
+- Progress reporting: `upload_file`, `update_file_content`, `download_file`, and `export_google_file` emit MCP progress updates
 
 Keep (namespaced as `keep_*`):
 
