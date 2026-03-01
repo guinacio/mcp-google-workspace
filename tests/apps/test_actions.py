@@ -4,12 +4,14 @@ from mcp_google_workspace.apps.actions import (
     cancel_meeting,
     create_meeting_from_slot,
     find_meeting_slots,
+    respond_to_event,
     reschedule_meeting,
 )
 from mcp_google_workspace.apps.schemas import (
     CancelMeetingRequest,
     CreateMeetingFromSlotRequest,
     FindMeetingSlotsRequest,
+    RespondToEventRequest,
     RescheduleMeetingRequest,
 )
 
@@ -35,6 +37,17 @@ class _EventsApi:
     def patch(self, **kwargs):
         self.patch_calls += 1
         return _Exec({"id": kwargs.get("eventId", "evt-updated"), "request": kwargs})
+
+    def get(self, **kwargs):
+        return _Exec(
+            {
+                "id": kwargs.get("eventId"),
+                "attendees": [
+                    {"email": "me@example.com", "self": True, "responseStatus": "needsAction"},
+                    {"email": "teammate@example.com", "responseStatus": "accepted"},
+                ],
+            }
+        )
 
     def delete(self, **kwargs):
         self.delete_calls += 1
@@ -138,3 +151,23 @@ def test_reschedule_and_cancel(monkeypatch):
     )
     assert cancelled.status == "ok"
     assert service.events().delete_calls == 1
+
+
+def test_respond_to_event_updates_self_attendee(monkeypatch):
+    service = _CalendarService()
+    monkeypatch.setattr("mcp_google_workspace.apps.actions.build_calendar_service", lambda: service)
+
+    result = respond_to_event(
+        "session-actions",
+        RespondToEventRequest(
+            session_id="session-actions",
+            calendar_id="primary",
+            event_id="evt-respond",
+            response_status="accepted",
+            idempotency_key="respond-1",
+        ),
+    )
+
+    assert result.status == "ok"
+    assert result.payload["response_status"] == "accepted"
+    assert service.events().patch_calls == 1

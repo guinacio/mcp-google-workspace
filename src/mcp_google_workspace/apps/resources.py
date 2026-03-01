@@ -1,4 +1,4 @@
-"""Read resources for workspace dashboard and morning briefing."""
+"""Read resources for workspace dashboard and calendar views."""
 
 from __future__ import annotations
 
@@ -8,11 +8,10 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
-from .schemas import DashboardStatePatch, MorningBriefingRequest
+from .schemas import DashboardStatePatch
 from .state import get_state, patch_state
 from .tools import (
     build_dashboard_payload,
-    build_morning_briefing_payload,
     build_weekly_calendar_payload,
 )
 
@@ -47,16 +46,6 @@ def register_resources(server: FastMCP) -> None:
         target = date.fromisoformat(ymd)
         state = patch_state("resource-default", DashboardStatePatch(anchor_date=target, view="week"))
         payload = build_weekly_calendar_payload(state, date_override=target)
-        return json.dumps(payload, indent=2)
-
-    @server.resource("apps://briefing/morning/{ymd}", name="apps_morning_briefing")
-    async def apps_morning_briefing(ymd: str) -> str:
-        target = date.fromisoformat(ymd)
-        state = patch_state("resource-default", DashboardStatePatch(anchor_date=target))
-        payload = build_morning_briefing_payload(
-            state,
-            MorningBriefingRequest(date=target, session_id="resource-default"),
-        )
         return json.dumps(payload, indent=2)
 
     @server.resource(

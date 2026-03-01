@@ -10,7 +10,7 @@ from .tools import register_tools
 apps_mcp = FastMCP(
     name="apps-mcp",
     instructions=(
-        "Workspace dashboard and morning briefing MCP app layer that composes "
+        "Workspace dashboard MCP app layer that composes "
         "calendar, inbox, and actionable scheduling workflows."
     ),
 )

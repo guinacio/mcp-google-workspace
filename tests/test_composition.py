@@ -56,8 +56,8 @@ def test_composition_mounts_namespaced_tools():
     if os.getenv("ENABLE_APPS_DASHBOARD", "").strip().lower() in {"1", "true", "yes", "on"}:
         assert "apps_get_dashboard" in tool_names
         assert "apps_get_weekly_calendar_view" in tool_names
-        assert "apps_get_morning_briefing" in tool_names
         assert "apps_find_meeting_slots" in tool_names
+        assert "apps_respond_to_event" in tool_names
     else:
         assert "apps_get_dashboard" not in tool_names
     if os.getenv("ENABLE_CHAT", "").strip().lower() in {"1", "true", "yes", "on"}:

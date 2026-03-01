@@ -5,7 +5,6 @@ from datetime import date
 from mcp_google_workspace.apps.schemas import DashboardState
 from mcp_google_workspace.apps.view_models import (
     build_dashboard_view_model,
-    build_morning_briefing_view_model,
     build_weekly_calendar_view_model,
 )
 
@@ -33,39 +32,6 @@ def test_dashboard_view_model_includes_required_sections():
     assert "schedule" in section_ids
     assert "communications" in section_ids
     assert model.sections[0].cards
-
-
-def test_morning_briefing_has_priorities_and_fallback():
-    events = [
-        {
-            "id": "evt-1",
-            "summary": "Planning",
-            "start": {"dateTime": "2026-03-01T10:00:00+00:00"},
-            "end": {"dateTime": "2026-03-01T10:45:00+00:00"},
-        },
-        {
-            "id": "evt-2",
-            "summary": "Customer Call",
-            "start": {"dateTime": "2026-03-01T11:00:00+00:00"},
-            "end": {"dateTime": "2026-03-01T11:30:00+00:00"},
-            "description": "Review support cases",
-        },
-    ]
-    inbox_messages = [{"id": "msg-1", "subject": "Urgent", "from": "lead@example.com"}]
-
-    briefing = build_morning_briefing_view_model(
-        briefing_date=date(2026, 3, 1),
-        timezone="UTC",
-        events=events,
-        unread_count=4,
-        inbox_messages=inbox_messages,
-        max_priorities=5,
-        max_quick_wins=5,
-    )
-
-    assert briefing.summary
-    assert briefing.priorities
-    assert briefing.fallback_text
 
 
 def test_weekly_calendar_view_groups_events_by_day():

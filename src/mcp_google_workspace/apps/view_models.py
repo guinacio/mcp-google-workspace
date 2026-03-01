@@ -1,4 +1,4 @@
-"""View-model builders for dashboard and morning briefing."""
+"""View-model builders for dashboard, weekly calendar, and detail views."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ from typing import Any
 
 import pytz
 
+from ..gmail.mime_utils import decode_rfc2047, extract_message_bodies
 from .schemas import (
-    BriefingAction,
-    BriefingPriority,
-    BriefingRisk,
     DashboardCard,
     DashboardCardAction,
     DashboardSection,
     DashboardState,
     DashboardViewModel,
-    MorningBriefingViewModel,
+    EmailDetailViewModel,
+    EventDetailAttendee,
+    EventDetailViewModel,
     WeeklyCalendarDay,
     WeeklyCalendarEvent,
     WeeklyCalendarViewModel,
@@ -70,6 +70,23 @@ def _is_all_day(event: dict[str, Any]) -> bool:
     return "date" in start and "dateTime" not in start
 
 
+def _self_response_status(event: dict[str, Any]) -> str | None:
+    attendees = event.get("attendees") or []
+    for attendee in attendees:
+        if isinstance(attendee, dict) and attendee.get("self"):
+            return attendee.get("responseStatus")
+    return None
+
+
+def _description_snippet(description: str | None) -> str | None:
+    if not description:
+        return None
+    clean = " ".join(description.split())
+    if not clean:
+        return None
+    return clean[:140] + "..." if len(clean) > 140 else clean
+
+
 def build_weekly_calendar_view_model(
     *,
     anchor_date: date,
@@ -101,6 +118,8 @@ def build_weekly_calendar_view_model(
         day = day_map.get(start_local.date())
         if day is None:
             continue
+        attendees = event.get("attendees") or []
+        conference_data = event.get("conferenceData") or {}
         normalized = WeeklyCalendarEvent(
             event_id=event.get("id"),
             calendar_id=event.get("calendar_id"),
@@ -109,6 +128,12 @@ def build_weekly_calendar_view_model(
             end=end_local.isoformat(),
             all_day=_is_all_day(event),
             status=event.get("status", "confirmed"),
+            attendee_response_status=_self_response_status(event),
+            location=event.get("location"),
+            description_snippet=_description_snippet(event.get("description")),
+            attendee_count=len(attendees),
+            has_conference=bool(conference_data.get("entryPoints")),
+            color_id=event.get("colorId"),
         )
         if normalized.all_day:
             day.all_day_events.append(normalized)
@@ -178,6 +203,7 @@ def _build_inbox_card(unread_count: int, messages: list[dict[str, Any]]) -> Dash
             "subject": msg.get("subject") or "(No subject)",
             "from": msg.get("from") or "(Unknown sender)",
             "date": msg.get("date"),
+            "snippet": msg.get("snippet"),
         }
         for msg in messages[:10]
     ]
@@ -260,100 +286,84 @@ def build_dashboard_view_model(
     )
 
 
-def build_morning_briefing_view_model(
-    *,
-    briefing_date: date,
-    timezone: str,
-    events: list[dict[str, Any]],
-    unread_count: int,
-    inbox_messages: list[dict[str, Any]],
-    max_priorities: int,
-    max_quick_wins: int,
-) -> MorningBriefingViewModel:
-    priorities: list[BriefingPriority] = []
-    conflicts: list[BriefingRisk] = []
-    prep_actions: list[BriefingAction] = []
-    quick_wins: list[BriefingAction] = []
+def _extract_event_timezone(event: dict[str, Any]) -> str | None:
+    start = event.get("start", {})
+    end = event.get("end", {})
+    return start.get("timeZone") or end.get("timeZone")
 
-    if events:
-        first_event = events[0]
-        priorities.append(
-            BriefingPriority(
-                title=f"Prepare first meeting: {_event_title(first_event)}",
-                reason=f"Starts at {_event_start(first_event)}",
-                priority="high",
+
+def _extract_conference(event: dict[str, Any]) -> tuple[str | None, str | None]:
+    conference = event.get("conferenceData") or {}
+    for entry in conference.get("entryPoints", []):
+        if entry.get("uri"):
+            return entry.get("uri"), entry.get("entryPointType")
+    return None, None
+
+
+def build_event_detail_view_model(event: dict[str, Any], calendar_id: str) -> EventDetailViewModel:
+    attendees: list[EventDetailAttendee] = []
+    for attendee in event.get("attendees") or []:
+        email = attendee.get("email")
+        if not email:
+            continue
+        attendees.append(
+            EventDetailAttendee(
+                email=email,
+                display_name=attendee.get("displayName"),
+                optional=bool(attendee.get("optional")),
+                organizer=bool(attendee.get("organizer")),
+                self=bool(attendee.get("self")),
+                response_status=attendee.get("responseStatus"),
             )
         )
 
-    if len(events) >= 6:
-        conflicts.append(
-            BriefingRisk(
-                title="Meeting load is heavy",
-                detail=f"{len(events)} events scheduled today may reduce focus time.",
-                severity="medium",
-            )
-        )
+    conference_link, conference_provider = _extract_conference(event)
+    organizer = event.get("organizer") or {}
 
-    for event in events[:max_priorities]:
-        if not event.get("description"):
-            priorities.append(
-                BriefingPriority(
-                    title=f"Clarify agenda for {_event_title(event)}",
-                    reason="Event has no description/agenda.",
-                    priority="medium",
-                )
-            )
-        prep_actions.append(
-            BriefingAction(
-                title=f"Open {_event_title(event)}",
-                detail="Review attendees, docs, and context before the meeting.",
-                tool_name="apps_get_dashboard",
-                payload={"focus_event_id": event.get("id")},
-            )
-        )
-
-    if unread_count > 0:
-        priorities.append(
-            BriefingPriority(
-                title=f"Review inbox triage ({unread_count} unread)",
-                reason="Important updates may affect today priorities.",
-                priority="medium",
-            )
-        )
-        top_messages = inbox_messages[:max_quick_wins]
-        for message in top_messages:
-            quick_wins.append(
-                BriefingAction(
-                    title=f"Triage: {message.get('subject') or '(No subject)'}",
-                    detail=f"From {message.get('from') or '(Unknown sender)'}",
-                    tool_name="apps_get_dashboard",
-                    payload={"highlight_message_id": message.get("id")},
-                )
-            )
-
-    priorities = priorities[:max_priorities]
-    prep_actions = prep_actions[:max_priorities]
-    quick_wins = quick_wins[:max_quick_wins]
-
-    summary = (
-        f"{len(events)} meetings and {unread_count} unread messages."
-        " Focus first on prep and inbox triage."
+    return EventDetailViewModel(
+        event_id=event.get("id") or "",
+        calendar_id=calendar_id,
+        title=_event_title(event),
+        start=_event_start(event),
+        end=_event_end(event),
+        timezone=_extract_event_timezone(event),
+        status=event.get("status", "confirmed"),
+        location=event.get("location"),
+        description=event.get("description"),
+        conference_link=conference_link,
+        conference_provider=conference_provider,
+        organizer_email=organizer.get("email"),
+        organizer_name=organizer.get("displayName"),
+        attendees=attendees,
     )
-    fallback_lines = [
-        f"Morning briefing for {briefing_date.isoformat()} ({timezone})",
-        f"- Meetings: {len(events)}",
-        f"- Unread messages: {unread_count}",
-    ]
-    for priority in priorities:
-        fallback_lines.append(f"- Priority: {priority.title} ({priority.priority})")
 
-    return MorningBriefingViewModel(
-        date=briefing_date,
-        timezone=timezone,
-        summary=summary,
-        priorities=priorities,
-        conflicts=conflicts,
-        prep_actions=prep_actions,
-        quick_wins=quick_wins,
-        fallback_text="\n".join(fallback_lines),
+
+def _headers_map(message: dict[str, Any]) -> dict[str, str]:
+    payload = message.get("payload") or {}
+    return {
+        header.get("name", "").lower(): header.get("value", "")
+        for header in payload.get("headers") or []
+    }
+
+
+def build_email_detail_view_model(message: dict[str, Any]) -> EmailDetailViewModel:
+    headers = _headers_map(message)
+    bodies = extract_message_bodies(message.get("payload") or {})
+    labels = message.get("labelIds") or []
+    return EmailDetailViewModel(
+        message_id=message.get("id") or "",
+        thread_id=message.get("threadId"),
+        subject=decode_rfc2047(headers.get("subject")) or "(No subject)",
+        from_value=decode_rfc2047(headers.get("from")) or "(Unknown sender)",
+        to=decode_rfc2047(headers.get("to")),
+        cc=decode_rfc2047(headers.get("cc")),
+        bcc=decode_rfc2047(headers.get("bcc")),
+        date=headers.get("date"),
+        snippet=message.get("snippet"),
+        text_body=bodies.get("text") or None,
+        html_body=bodies.get("html") or None,
+        labels=labels,
+        is_unread="UNREAD" in labels,
     )
+
+

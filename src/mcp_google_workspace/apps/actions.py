@@ -19,6 +19,7 @@ from .schemas import (
     CancelMeetingRequest,
     CreateMeetingFromSlotRequest,
     FindMeetingSlotsRequest,
+    RespondToEventRequest,
     RescheduleMeetingRequest,
 )
 
@@ -225,5 +226,58 @@ def cancel_meeting(session_id: str, request: CancelMeetingRequest) -> AppActionR
             status="ok",
             message="Meeting cancelled.",
             event_id=request.event_id,
+        ),
+    )
+
+
+def respond_to_event(session_id: str, request: RespondToEventRequest) -> AppActionResult:
+    cached = _from_cache(session_id, request.idempotency_key)
+    if cached is not None:
+        return cached
+
+    service = build_calendar_service()
+    event = (
+        service.events()
+        .get(calendarId=request.calendar_id, eventId=request.event_id)
+        .execute()
+    )
+
+    attendees = list(event.get("attendees", []))
+    self_email = None
+    for attendee in attendees:
+        if attendee.get("self"):
+            self_email = attendee.get("email")
+            attendee["responseStatus"] = request.response_status
+            break
+
+    if self_email is None:
+        organizer = event.get("organizer", {})
+        creator = event.get("creator", {})
+        self_email = organizer.get("email") if organizer.get("self") else None
+        if self_email is None:
+            self_email = creator.get("email") if creator.get("self") else None
+
+    if not any(attendee.get("self") for attendee in attendees):
+        attendees.append({"email": self_email or "me", "responseStatus": request.response_status})
+
+    updated = (
+        service.events()
+        .patch(
+            calendarId=request.calendar_id,
+            eventId=request.event_id,
+            body={"attendees": attendees},
+            sendUpdates=request.send_updates,
+        )
+        .execute()
+    )
+
+    return _to_cache(
+        session_id,
+        request.idempotency_key,
+        AppActionResult(
+            status="ok",
+            message=f"RSVP updated to {request.response_status}.",
+            event_id=request.event_id,
+            payload={"event": updated, "response_status": request.response_status},
         ),
     )

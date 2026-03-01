@@ -53,6 +53,7 @@ async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, s
         "apps_get_weekly_calendar_view",
         "apps_get_morning_briefing",
         "apps_find_meeting_slots",
+        "apps_respond_to_event",
     }
     missing = sorted(required_tools - tool_names)
     checks.append(("tools:required_apps_tools_present", not missing, "" if not missing else str(missing)))

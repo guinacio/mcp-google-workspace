@@ -1,4 +1,4 @@
-"""Pydantic schemas for apps dashboard and briefing contracts."""
+"""Pydantic schemas for apps dashboard contracts."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ class DashboardCardAction(BaseModel):
 class DashboardCard(BaseModel):
     id: str
     title: str
-    card_type: Literal["calendar", "inbox", "prep", "briefing", "meta", "error"]
+    card_type: Literal["calendar", "inbox", "prep", "meta", "error"]
     summary: str
     fallback_text: str
     data: dict[str, Any] = Field(default_factory=dict)
@@ -76,45 +76,6 @@ class DashboardViewModel(BaseModel):
     section_errors: dict[str, str] = Field(default_factory=dict)
 
 
-class MorningBriefingRequest(ToolRequestModel):
-    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
-    date: dt.date | None = Field(default=None, description="Briefing date (YYYY-MM-DD), defaults to today.")
-    timezone: str | None = Field(default=None, description="IANA timezone override, defaults to state/user timezone.")
-    max_priorities: int = Field(default=5, ge=1, le=10, description="Maximum priority items to include.")
-    max_quick_wins: int = Field(default=5, ge=1, le=10, description="Maximum quick-win actions to include.")
-    include_inbox: bool = Field(default=True, description="Whether to include inbox-driven briefing items.")
-
-
-class BriefingPriority(BaseModel):
-    title: str
-    reason: str
-    priority: Literal["high", "medium", "low"] = "medium"
-
-
-class BriefingRisk(BaseModel):
-    title: str
-    detail: str
-    severity: Literal["high", "medium", "low"] = "low"
-
-
-class BriefingAction(BaseModel):
-    title: str
-    detail: str
-    tool_name: str
-    payload: dict[str, Any] = Field(default_factory=dict)
-
-
-class MorningBriefingViewModel(BaseModel):
-    date: dt.date
-    timezone: str
-    summary: str
-    priorities: list[BriefingPriority] = Field(default_factory=list)
-    conflicts: list[BriefingRisk] = Field(default_factory=list)
-    prep_actions: list[BriefingAction] = Field(default_factory=list)
-    quick_wins: list[BriefingAction] = Field(default_factory=list)
-    fallback_text: str
-
-
 class WeeklyCalendarEvent(BaseModel):
     event_id: str | None = None
     calendar_id: str | None = None
@@ -123,6 +84,12 @@ class WeeklyCalendarEvent(BaseModel):
     end: str
     all_day: bool = False
     status: str = "confirmed"
+    attendee_response_status: Literal["needsAction", "declined", "tentative", "accepted"] | None = None
+    location: str | None = None
+    description_snippet: str | None = None
+    attendee_count: int | None = None
+    has_conference: bool = False
+    color_id: str | None = None
 
 
 class WeeklyCalendarDay(BaseModel):
@@ -140,6 +107,48 @@ class WeeklyCalendarViewModel(BaseModel):
     total_events: int
     days: list[WeeklyCalendarDay] = Field(default_factory=list)
     fallback_text: str
+
+
+class EventDetailAttendee(BaseModel):
+    email: str
+    display_name: str | None = None
+    optional: bool = False
+    organizer: bool = False
+    self: bool = False
+    response_status: str | None = None
+
+
+class EventDetailViewModel(BaseModel):
+    event_id: str
+    calendar_id: str
+    title: str
+    start: str
+    end: str
+    timezone: str | None = None
+    status: str = "confirmed"
+    location: str | None = None
+    description: str | None = None
+    conference_link: str | None = None
+    conference_provider: str | None = None
+    organizer_email: str | None = None
+    organizer_name: str | None = None
+    attendees: list[EventDetailAttendee] = Field(default_factory=list)
+
+
+class EmailDetailViewModel(BaseModel):
+    message_id: str
+    thread_id: str | None = None
+    subject: str
+    from_value: str
+    to: str | None = None
+    cc: str | None = None
+    bcc: str | None = None
+    date: str | None = None
+    snippet: str | None = None
+    text_body: str | None = None
+    html_body: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    is_unread: bool = False
 
 
 class AppError(BaseModel):
@@ -183,6 +192,17 @@ class FindMeetingSlotsRequest(ToolRequestModel):
         return value
 
 
+class GetEventDetailRequest(ToolRequestModel):
+    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
+    calendar_id: str = Field(default="primary", description="Calendar id containing the event.")
+    event_id: str = Field(description="Event identifier.")
+
+
+class GetEmailDetailRequest(ToolRequestModel):
+    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
+    message_id: str = Field(description="Gmail message id.")
+
+
 class CreateMeetingFromSlotRequest(ToolRequestModel):
     session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
@@ -213,6 +233,17 @@ class CancelMeetingRequest(ToolRequestModel):
     confirm: bool = Field(default=False, description="Interactive confirmation flag for destructive action.")
     send_updates: str | None = Field(default=None, description="Guest update mode (all, externalOnly, none).")
     idempotency_key: str = Field(description="Stable key to prevent duplicate cancels on retry.")
+
+
+class RespondToEventRequest(ToolRequestModel):
+    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
+    calendar_id: str = Field(default="primary", description="Target calendar ID.")
+    event_id: str = Field(description="Existing calendar event ID to update RSVP for.")
+    response_status: Literal["accepted", "tentative", "declined"] = Field(
+        description="Your attendee response to set on the event."
+    )
+    send_updates: str | None = Field(default="all", description="Guest update mode (all, externalOnly, none).")
+    idempotency_key: str = Field(description="Stable key to prevent duplicate RSVP updates on retry.")
 
 
 class AppActionResult(BaseModel):

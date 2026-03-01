@@ -1,4 +1,4 @@
-"""FastMCP tools for workspace dashboard and morning briefing."""
+"""FastMCP tools for workspace dashboard and calendar views."""
 
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ from .schemas import (
     FindMeetingSlotsRequest,
     GetEmailDetailRequest,
     GetEventDetailRequest,
-    MorningBriefingRequest,
     RespondToEventRequest,
     RescheduleMeetingRequest,
 )
@@ -34,7 +33,6 @@ from .view_models import (
     build_dashboard_view_model,
     build_email_detail_view_model,
     build_event_detail_view_model,
-    build_morning_briefing_view_model,
     build_weekly_calendar_view_model,
 )
 
@@ -139,8 +137,9 @@ def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
     events: list[dict[str, Any]] = []
     unread_count = 0
     messages: list[dict[str, Any]] = []
+    week_state = state.model_copy(update={"view": "week"})
     try:
-        events = _fetch_calendar_events(state)
+        events = _fetch_calendar_events(week_state)
     except Exception as exc:  # pragma: no cover - external API
         section_errors["calendar"] = str(exc)
     try:
@@ -154,7 +153,16 @@ def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
         inbox_messages=messages,
         section_errors=section_errors,
     )
-    return model.model_dump(mode="json")
+    # Include weekly calendar view so the UI displays the proper week grid.
+    weekly_model = build_weekly_calendar_view_model(
+        anchor_date=week_state.anchor_date,
+        timezone_name=week_state.timezone,
+        events=events,
+        include_weekend=week_state.include_weekend,
+    )
+    payload = model.model_dump(mode="json")
+    payload["weekly_calendar"] = weekly_model.model_dump(mode="json")
+    return payload
 
 
 async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Context) -> dict[str, Any]:
@@ -163,10 +171,11 @@ async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Cont
     events: list[dict[str, Any]] = []
     unread_count = 0
     messages: list[dict[str, Any]] = []
+    week_state = state.model_copy(update={"view": "week"})
 
     try:
         await ctx.report_progress(20, 100, "Loading calendar events")
-        events = _fetch_calendar_events(state)
+        events = _fetch_calendar_events(week_state)
     except Exception as exc:  # pragma: no cover - external API
         section_errors["calendar"] = str(exc)
 
@@ -184,66 +193,16 @@ async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Cont
         inbox_messages=messages,
         section_errors=section_errors,
     )
+    weekly_model = build_weekly_calendar_view_model(
+        anchor_date=week_state.anchor_date,
+        timezone_name=week_state.timezone,
+        events=events,
+        include_weekend=week_state.include_weekend,
+    )
     await ctx.report_progress(100, 100, "Dashboard ready")
-    return model.model_dump(mode="json")
-
-
-def build_morning_briefing_payload(state: DashboardState, request: MorningBriefingRequest) -> dict[str, Any]:
-    briefing_state = state
-    if request.date is not None:
-        briefing_state = state.model_copy(update={"anchor_date": request.date})
-    if request.timezone:
-        briefing_state = briefing_state.model_copy(update={"timezone": request.timezone})
-    events = _fetch_calendar_events(briefing_state)
-    unread_count = 0
-    messages: list[dict[str, Any]] = []
-    if request.include_inbox:
-        unread_count, messages = _fetch_inbox_summary(briefing_state)
-    model = build_morning_briefing_view_model(
-        briefing_date=briefing_state.anchor_date,
-        timezone=briefing_state.timezone,
-        events=events,
-        unread_count=unread_count,
-        inbox_messages=messages,
-        max_priorities=request.max_priorities,
-        max_quick_wins=request.max_quick_wins,
-    )
-    return model.model_dump(mode="json")
-
-
-async def build_morning_briefing_payload_with_progress(
-    state: DashboardState,
-    request: MorningBriefingRequest,
-    ctx: Context,
-) -> dict[str, Any]:
-    await ctx.report_progress(5, 100, "Preparing morning briefing")
-    briefing_state = state
-    if request.date is not None:
-        briefing_state = state.model_copy(update={"anchor_date": request.date})
-    if request.timezone:
-        briefing_state = briefing_state.model_copy(update={"timezone": request.timezone})
-
-    await ctx.report_progress(30, 100, "Loading calendar events")
-    events = _fetch_calendar_events(briefing_state)
-
-    unread_count = 0
-    messages: list[dict[str, Any]] = []
-    if request.include_inbox:
-        await ctx.report_progress(60, 100, "Loading inbox summary")
-        unread_count, messages = _fetch_inbox_summary(briefing_state)
-
-    await ctx.report_progress(85, 100, "Building briefing view model")
-    model = build_morning_briefing_view_model(
-        briefing_date=briefing_state.anchor_date,
-        timezone=briefing_state.timezone,
-        events=events,
-        unread_count=unread_count,
-        inbox_messages=messages,
-        max_priorities=request.max_priorities,
-        max_quick_wins=request.max_quick_wins,
-    )
-    await ctx.report_progress(100, 100, "Morning briefing ready")
-    return model.model_dump(mode="json")
+    payload = model.model_dump(mode="json")
+    payload["weekly_calendar"] = weekly_model.model_dump(mode="json")
+    return payload
 
 
 def build_weekly_calendar_payload(
@@ -438,41 +397,6 @@ def register_tools(server: FastMCP) -> None:
             date_override=date_override,
             include_weekend_override=include_weekend,
         )
-
-    @server.tool(
-        name="get_morning_briefing",
-        annotations={
-            "_meta": {
-                "ui": {
-                    "resourceUri": "ui://apps/dashboard-ui",
-                },
-            },
-        },
-        meta={"ui/resourceUri": "ui://apps/dashboard-ui"},
-    )
-    async def apps_get_morning_briefing(
-        session_id: str | None = None,
-        date_override: date | None = None,
-        timezone: str | None = None,
-        max_priorities: int = 5,
-        max_quick_wins: int = 5,
-        include_inbox: bool = True,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Build deterministic morning briefing with priorities, risks, and actions."""
-        request = MorningBriefingRequest(
-            session_id=session_id,
-            date=date_override,
-            timezone=timezone,
-            max_priorities=max_priorities,
-            max_quick_wins=max_quick_wins,
-            include_inbox=include_inbox,
-        )
-        sid = _resolve_session_id(request.session_id, ctx)
-        state = get_state(sid, timezone=request.timezone)
-        payload = await build_morning_briefing_payload_with_progress(state, request, ctx)
-        await ctx.info(f"Morning briefing generated for {payload.get('date')}.")
-        return payload
 
     @server.tool(name="get_event_detail")
     async def apps_get_event_detail(

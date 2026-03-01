@@ -1,15 +1,12 @@
 import type {
   DashboardData,
-  MorningBriefing,
   WeeklyCalendar,
   DashboardViewModel,
-  BriefingPriority,
-  BriefingRisk,
-  BriefingAction,
   WeeklyCalendarDay,
+  WeeklyCalendarEvent,
+  EventDetail,
+  EmailDetail,
 } from "./types";
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function esc(text: string): string {
   const div = document.createElement("div");
@@ -19,23 +16,23 @@ function esc(text: string): string {
 
 function fmtTime(iso: string): string {
   try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   } catch {
     return "";
   }
 }
 
-function fmtDate(iso: string): number | string {
+function fmtDayDate(value: string): string {
   try {
-    return new Date(iso + "T00:00:00").getDate();
+    const d = new Date(`${value}T00:00:00`);
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
   } catch {
-    return iso;
+    return value;
   }
 }
 
-function fmtGreetingDate(): string {
-  return new Date().toLocaleDateString("en-US", {
+function fmtTopDate(): string {
+  return new Date().toLocaleDateString([], {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -45,507 +42,893 @@ function fmtGreetingDate(): string {
 function getGreeting(): string {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
+  if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
 
-type ActionHandler = (text: string) => void;
+function relDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return value;
+  const diffMs = Date.now() - dt.getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 60) return `${Math.max(minutes, 1)}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return dt.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function initials(fromValue: string): string {
+  const plain = fromValue.replace(/<.*?>/g, "").trim();
+  const parts = plain.split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function colorVar(event: WeeklyCalendarEvent): string {
+  const palette = [
+    "--event-blueberry",
+    "--event-tomato",
+    "--event-sage",
+    "--event-peacock",
+    "--event-tangerine",
+    "--event-grape",
+    "--event-lavender",
+    "--event-basil",
+    "--event-flamingo",
+    "--event-graphite",
+  ];
+  const raw = event.color_id ?? "0";
+  const idx = Number.parseInt(raw, 10);
+  if (Number.isFinite(idx) && idx >= 1) {
+    return palette[(idx - 1) % palette.length];
+  }
+  return palette[Math.abs(hash(event.title)) % palette.length];
+}
+
+function hash(text: string): number {
+  let h = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    h = (h << 5) - h + text.charCodeAt(i);
+    h |= 0;
+  }
+  return h;
+}
+
+export type UiAction =
+  | { type: "chat"; text: string }
+  | { type: "week_nav"; direction: "prev" | "today" | "next" }
+  | { type: "select_event"; calendarId: string; eventId: string }
+  | { type: "close_event_detail" }
+  | { type: "select_email"; messageId: string }
+  | { type: "close_email_detail" }
+  | {
+      type: "calendar_rsvp";
+      calendarId: string;
+      eventId: string;
+      responseStatus: "accepted" | "tentative" | "declined";
+    }
+  | {
+      type: "calendar_reschedule";
+      calendarId: string;
+      eventId: string;
+      start: string;
+      end: string;
+      timezone: string;
+      shiftMinutes: number;
+    }
+  | {
+      type: "calendar_cancel";
+      calendarId: string;
+      eventId: string;
+    };
+
+type ActionHandler = (action: UiAction) => void;
 let _onAction: ActionHandler = () => {};
 
 export function setActionHandler(handler: ActionHandler) {
   _onAction = handler;
 }
 
-// ── Render CSS ──────────────────────────────────────────────────────────────
-
 export const RENDER_CSS = `
-/* ── Layout ─────────────────────────────────────────────────────────────── */
 .dashboard {
-  max-width: 720px;
+  max-width: 1360px;
   margin: 0 auto;
-  padding: 32px 24px 48px;
+  padding: 24px 20px 40px;
+  display: grid;
+  gap: 18px;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────── */
+.top-bar {
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--radius-md);
+  box-shadow: var(--md-sys-elevation-1);
+  padding: 14px 18px;
   display: flex;
-  flex-direction: column;
-  gap: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-/* ── Fade-in animation ──────────────────────────────────────────────────── */
-.section {
-  opacity: 0;
-  transform: translateY(12px);
-  animation: sectionIn 0.4s ease forwards;
-}
-
-@keyframes sectionIn {
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* ── Hero ────────────────────────────────────────────────────────────────── */
-.hero {
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.hero-greeting {
-  font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: 36px;
-  font-weight: 400;
-  line-height: 1.2;
-  color: var(--fg-primary);
+.top-bar h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 
-.hero-date {
-  font-size: 13px;
-  color: var(--fg-muted);
-  margin-top: 6px;
+.top-sub {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.82rem;
+  margin-top: 2px;
+}
+
+.quick-stats {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-chip {
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 5px 10px;
+  font-size: 0.76rem;
   font-weight: 500;
+}
+
+/* ── Two-column layout ───────────────────────────────────────────────── */
+.main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 65fr) minmax(320px, 35fr);
+  gap: 16px;
+}
+
+.main-grid-full {
+  grid-template-columns: 1fr;
+}
+
+.surface {
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--radius-md);
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.calendar-shell {
+  padding: 14px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 10px;
+}
+
+.section-title {
+  font-size: 0.82rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
-.hero-summary {
-  font-size: 14px;
-  color: var(--fg-secondary);
-  margin-top: 12px;
-  line-height: 1.6;
+.section-subtitle {
+  font-size: 0.78rem;
+  color: var(--md-sys-color-outline);
 }
 
-/* ── Section titles ─────────────────────────────────────────────────────── */
-.section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--fg-muted);
-  margin-bottom: 10px;
+/* ── Navigation / chip buttons ───────────────────────────────────────── */
+.week-nav {
+  display: inline-flex;
+  gap: 6px;
 }
 
-/* ── Priority cards ─────────────────────────────────────────────────────── */
-.priorities { display: flex; flex-direction: column; gap: 6px; }
-
-.priority-card {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-card);
-}
-
-.priority-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 5px;
-}
-
-.priority-dot.high   { background: var(--accent-red); }
-.priority-dot.medium { background: var(--accent-amber); }
-.priority-dot.low    { background: var(--accent-green); }
-
-.priority-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--fg-primary);
-}
-
-.priority-reason {
-  font-size: 11px;
-  color: var(--fg-muted);
-  line-height: 1.4;
-  margin-top: 2px;
-}
-
-/* ── Conflicts ──────────────────────────────────────────────────────────── */
-.conflicts { display: flex; flex-direction: column; gap: 6px; }
-
-.conflict-bar {
-  padding: 10px 14px;
-  border-left: 3px solid var(--accent-amber);
-  background: var(--bg-card);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  box-shadow: var(--shadow-card);
-}
-
-.conflict-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg-primary);
-}
-
-.conflict-detail {
-  font-size: 11px;
-  color: var(--fg-secondary);
-  margin-top: 2px;
-}
-
-/* ── Action pills ───────────────────────────────────────────────────────── */
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.action-pill {
-  padding: 5px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border-medium);
+.nav-btn,
+.chip-btn,
+.action-btn {
+  border: 1px solid var(--md-sys-color-outline-variant);
   background: transparent;
-  color: var(--fg-secondary);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.76rem;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
-  white-space: nowrap;
 }
 
-.action-pill:hover {
-  background: color-mix(in srgb, var(--accent-teal) 12%, transparent);
-  color: var(--accent-teal);
-  border-color: var(--accent-teal);
+.nav-btn:hover,
+.chip-btn:hover,
+.action-btn:hover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-primary);
 }
 
-/* ── Weekly calendar ────────────────────────────────────────────────────── */
+/* ── Weekly calendar grid ────────────────────────────────────────────── */
 .week-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  gap: 8px;
 }
 
-@media (max-width: 600px) {
-  .week-grid {
-    grid-template-columns: repeat(7, min(100%, 120px));
-    overflow-x: auto;
-  }
-}
-
-.week-col {
+.day-col {
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--radius-sm);
   padding: 8px;
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  min-height: 80px;
-  border: 1px solid transparent;
-  transition: border-color 0.15s;
+  min-height: 540px;
+  overflow: visible;
 }
 
-.week-col.today {
-  border-color: var(--accent-teal);
-  background: color-mix(in srgb, var(--accent-teal) 5%, var(--bg-card));
+.day-col.today {
+  border-color: var(--md-sys-color-primary);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 5%, var(--md-sys-color-surface-container-high));
 }
 
-.week-col-header {
+.day-head {
+  font-size: 0.76rem;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-bottom: 8px;
   font-weight: 600;
-  font-size: 11px;
-  color: var(--fg-muted);
-  margin-bottom: 6px;
-}
-
-.week-col.today .week-col-header { color: var(--accent-teal); }
-
-.week-col-date {
-  font-size: 10px;
-  opacity: 0.7;
-}
-
-.week-allday {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin-bottom: 4px;
+  justify-content: space-between;
 }
 
-.week-allday-pill {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-teal) 15%, transparent);
-  color: var(--accent-teal);
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+.day-col.today .day-head {
+  color: var(--md-sys-color-primary);
 }
 
-.week-event {
-  display: block;
-  padding: 2px 4px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--accent-teal) 10%, transparent);
-  color: var(--fg-secondary);
-  margin-bottom: 2px;
-  font-size: 11px;
-  white-space: nowrap;
+.day-all-day {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.all-day-chip {
+  font-size: 0.72rem;
+  border-radius: var(--radius-xs);
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+  color: var(--md-sys-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.day-events {
+  display: grid;
+  gap: 6px;
+  overflow: visible;
+}
+
+/* ── Event card ──────────────────────────────────────────────────────── */
+.calendar-event {
+  border-radius: var(--radius-xs);
+  border-left: 3px solid var(--event-color);
+  background: color-mix(in srgb, var(--event-color) 10%, var(--md-sys-color-surface-container));
+  padding: 7px 8px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  border-left: 2px solid var(--accent-teal);
+  position: relative;
+  transition: background 0.15s;
 }
 
-.week-event:hover {
-  background: color-mix(in srgb, var(--accent-teal) 20%, transparent);
-  color: var(--fg-primary);
+.calendar-event:hover {
+  background: color-mix(in srgb, var(--event-color) 20%, var(--md-sys-color-surface-container));
 }
 
-.week-empty {
-  font-size: 10px;
-  color: var(--fg-muted);
-  opacity: 0.4;
-  font-style: italic;
-  padding-top: 4px;
-}
-
-/* ── Inbox card ─────────────────────────────────────────────────────────── */
-.inbox-card {
-  padding: 14px;
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-card);
-}
-
-.inbox-badge {
-  font-size: 13px;
+.event-time {
+  font-size: 0.7rem;
+  color: var(--md-sys-color-outline);
   font-weight: 600;
-  color: var(--fg-primary);
-  margin-bottom: 10px;
+  letter-spacing: 0.01em;
+}
+
+.event-title {
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin-top: 1px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.event-meta {
+  margin-top: 2px;
+  color: var(--md-sys-color-outline);
+  font-size: 0.7rem;
+}
+
+/* ── Event hover tooltip ─────────────────────────────────────────────── */
+.event-hover {
+  display: none;
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  bottom: calc(100% + 4px);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-2);
+  padding: 8px 10px;
+  z-index: 20;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--md-sys-color-on-surface);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.calendar-event:hover .event-hover {
+  display: block;
+}
+
+/* ── Event inline actions (shown on hover) ───────────────────────────── */
+.event-actions {
+  margin-top: 4px;
+  display: none;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.calendar-event:hover .event-actions {
+  display: flex;
+}
+
+.rsvp-chip {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.68rem;
+  padding: 2px 7px;
+  cursor: pointer;
+  color: var(--md-sys-color-on-surface-variant);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.rsvp-chip:hover {
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-primary);
+}
+
+.rsvp-chip.active {
+  background: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+.sidebar {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.inbox-shell {
+  padding: 12px;
+}
+
+/* ── Inbox ────────────────────────────────────────────────────────────── */
+.inbox-list {
+  display: grid;
+  gap: 1px;
+  max-height: 460px;
+  overflow: auto;
 }
 
 .inbox-row {
-  font-size: 11px;
-  padding: 5px 0;
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
-  align-items: baseline;
+  padding: 7px 6px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background 0.12s;
 }
 
-.inbox-subject {
-  flex: 1;
+.inbox-row:hover {
+  background: var(--md-sys-color-surface-variant);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+  color: var(--md-sys-color-primary);
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.mail-content {
+  min-width: 0;
+}
+
+.mail-subject {
+  font-size: 0.78rem;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-secondary);
+  color: var(--md-sys-color-on-surface);
 }
 
-.inbox-from {
-  color: var(--fg-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
+.mail-subject.unread {
+  font-weight: 700;
 }
 
-/* ── Empty/loading state ────────────────────────────────────────────────── */
-.loading-state {
+.mail-subline {
+  font-size: 0.7rem;
+  color: var(--md-sys-color-outline);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mail-date {
+  font-size: 0.68rem;
+  color: var(--md-sys-color-outline);
+  padding-left: 6px;
+  white-space: nowrap;
+}
+
+/* ── Overlay panels (event detail / email detail) ────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.panel {
+  width: min(780px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container);
+  box-shadow: var(--md-sys-elevation-3);
+  padding: 18px;
+}
+
+.panel-head {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  gap: 16px;
-  color: var(--fg-muted);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.loading-icon {
-  opacity: 0.3;
+.panel-title {
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
-.loading-text {
-  font-size: 13px;
+.panel-sub {
+  font-size: 0.8rem;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-top: 2px;
 }
 
-.loading-hint {
-  font-size: 11px;
-  opacity: 0.6;
+.panel-body {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.detail-block {
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.detail-block a {
+  color: var(--md-sys-color-primary);
+  text-decoration: none;
+}
+
+.detail-block a:hover {
+  text-decoration: underline;
+}
+
+.attendee-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+/* ── Loading state ───────────────────────────────────────────────────── */
+.loading-state {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.85rem;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 1120px) {
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .day-col {
+    min-height: 320px;
+  }
+}
+
+@media (max-width: 760px) {
+  .week-grid {
+    grid-template-columns: repeat(7, minmax(170px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
 }
 `;
 
-// ── Render functions ────────────────────────────────────────────────────────
-
 export function renderLoading(root: HTMLElement) {
-  root.innerHTML = `
-    <div class="loading-state">
-      <svg class="loading-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1"/>
-        <rect x="14" y="3" width="7" height="4" rx="1"/>
-        <rect x="3" y="14" width="7" height="4" rx="1"/>
-        <rect x="14" y="11" width="7" height="7" rx="1"/>
-      </svg>
-      <div class="loading-text">Waiting for dashboard data...</div>
-      <div class="loading-hint">Data arrives from the morning briefing.</div>
-    </div>
-  `;
+  root.innerHTML = `<div class="loading-state">Loading workspace dashboard...</div>`;
+}
+
+type InboxMessage = { id?: string; subject?: string; from?: string; date?: string; snippet?: string };
+
+function getInboxData(dashboard?: DashboardViewModel): { unreadCount: number; messages: InboxMessage[] } {
+  if (!dashboard) return { unreadCount: 0, messages: [] };
+  const section = dashboard.sections.find((item) => item.id === "communications");
+  const inbox = section?.cards.find((card) => card.card_type === "inbox");
+  const data = (inbox?.data ?? {}) as { unread_count?: number; messages?: InboxMessage[] };
+  return {
+    unreadCount: data.unread_count ?? 0,
+    messages: data.messages ?? [],
+  };
+}
+
+function countWeekEvents(weekly?: WeeklyCalendar): number {
+  if (!weekly) return 0;
+  return weekly.days.reduce((acc, day) => acc + day.all_day_events.length + day.timed_events.length, 0);
 }
 
 export function renderDashboard(root: HTMLElement, data: DashboardData) {
-  const sections: string[] = [];
-  let delay = 0;
-  const nextDelay = () => { delay += 50; return delay + 100; };
+  const hasDashboard = !!data.dashboard;
+  const inboxData = getInboxData(data.dashboard);
+  const eventsCount = countWeekEvents(data.weekly_calendar);
 
-  // Hero greeting
-  const summary = data.briefing?.summary || "";
-  sections.push(`
-    <div class="section hero" style="animation-delay: ${nextDelay()}ms">
-      <div class="hero-greeting">${getGreeting()}</div>
-      <div class="hero-date">${fmtGreetingDate()}</div>
-      ${summary ? `<div class="hero-summary">${esc(summary)}</div>` : ""}
+  root.innerHTML = `
+    <div class="dashboard">
+      ${renderTopBar(eventsCount, hasDashboard ? inboxData.unreadCount : undefined)}
+      <div class="main-grid${hasDashboard ? "" : " main-grid-full"}">
+        ${renderCalendarArea(data.weekly_calendar)}
+        ${hasDashboard ? `<div class="sidebar">${renderInboxPanel(inboxData.messages, inboxData.unreadCount)}</div>` : ""}
+      </div>
+      ${renderEventDetailPanel(data.event_detail)}
+      ${renderEmailDetailPanel(data.email_detail)}
     </div>
-  `);
+  `;
 
-  // Priorities
-  if (data.briefing?.priorities?.length) {
-    sections.push(renderPriorities(data.briefing.priorities, nextDelay()));
-  }
+  root.onclick = (event) => {
+    const target = event.target as HTMLElement;
 
-  // Conflicts
-  if (data.briefing?.conflicts?.length) {
-    sections.push(renderConflicts(data.briefing.conflicts, nextDelay()));
-  }
-
-  // Actions
-  const actions = [
-    ...(data.briefing?.prep_actions || []),
-    ...(data.briefing?.quick_wins || []),
-  ];
-  if (actions.length) {
-    sections.push(renderActions(actions, nextDelay()));
-  }
-
-  // Weekly calendar
-  if (data.weekly_calendar?.days?.length) {
-    sections.push(renderCalendar(data.weekly_calendar, nextDelay()));
-  }
-
-  // Inbox
-  if (data.dashboard) {
-    const inbox = renderInbox(data.dashboard, nextDelay());
-    if (inbox) sections.push(inbox);
-  }
-
-  root.innerHTML = `<div class="dashboard">${sections.join("")}</div>`;
-
-  // Bind action clicks via delegation
-  root.addEventListener("click", (e) => {
-    const target = e.target as HTMLElement;
-    const pill = target.closest<HTMLElement>("[data-action-msg]");
-    if (pill) {
-      e.preventDefault();
-      _onAction(pill.dataset.actionMsg!);
+    const chat = target.closest<HTMLElement>("[data-action-msg]");
+    if (chat) {
+      event.preventDefault();
+      _onAction({ type: "chat", text: chat.dataset.actionMsg || "" });
+      return;
     }
-    const event = target.closest<HTMLElement>("[data-event-msg]");
-    if (event) {
-      e.preventDefault();
-      _onAction(event.dataset.eventMsg!);
+
+    const weekNav = target.closest<HTMLElement>("[data-week-nav]");
+    if (weekNav) {
+      event.preventDefault();
+      const direction = weekNav.dataset.weekNav as "prev" | "today" | "next" | undefined;
+      if (direction) _onAction({ type: "week_nav", direction });
+      return;
     }
-  });
+
+    const openEvent = target.closest<HTMLElement>("[data-open-event]");
+    if (openEvent) {
+      const calendarId = openEvent.dataset.calendarId;
+      const eventId = openEvent.dataset.eventId;
+      if (calendarId && eventId) {
+        _onAction({ type: "select_event", calendarId, eventId });
+      }
+      return;
+    }
+
+    const openEmail = target.closest<HTMLElement>("[data-open-email]");
+    if (openEmail) {
+      const messageId = openEmail.dataset.messageId;
+      if (messageId) {
+        _onAction({ type: "select_email", messageId });
+      }
+      return;
+    }
+
+    if (target.closest("[data-close-event]")) {
+      _onAction({ type: "close_event_detail" });
+      return;
+    }
+
+    if (target.closest("[data-close-email]")) {
+      _onAction({ type: "close_email_detail" });
+      return;
+    }
+
+    const rsvp = target.closest<HTMLElement>("[data-rsvp-status]");
+    if (rsvp) {
+      event.preventDefault();
+      event.stopPropagation();
+      const calendarId = rsvp.dataset.calendarId;
+      const eventId = rsvp.dataset.eventId;
+      const responseStatus = rsvp.dataset.rsvpStatus as "accepted" | "tentative" | "declined" | undefined;
+      if (calendarId && eventId && responseStatus) {
+        _onAction({ type: "calendar_rsvp", calendarId, eventId, responseStatus });
+      }
+      return;
+    }
+
+    const reschedule = target.closest<HTMLElement>("[data-reschedule-minutes]");
+    if (reschedule) {
+      event.preventDefault();
+      event.stopPropagation();
+      const calendarId = reschedule.dataset.calendarId;
+      const eventId = reschedule.dataset.eventId;
+      const start = reschedule.dataset.eventStart;
+      const end = reschedule.dataset.eventEnd;
+      const timezone = reschedule.dataset.eventTimezone;
+      const shiftRaw = reschedule.dataset.rescheduleMinutes;
+      const shiftMinutes = shiftRaw ? Number(shiftRaw) : Number.NaN;
+      if (calendarId && eventId && start && end && timezone && Number.isFinite(shiftMinutes)) {
+        _onAction({
+          type: "calendar_reschedule",
+          calendarId,
+          eventId,
+          start,
+          end,
+          timezone,
+          shiftMinutes,
+        });
+      }
+      return;
+    }
+
+    const cancel = target.closest<HTMLElement>("[data-cancel-event]");
+    if (cancel) {
+      event.preventDefault();
+      event.stopPropagation();
+      const calendarId = cancel.dataset.calendarId;
+      const eventId = cancel.dataset.eventId;
+      if (calendarId && eventId) {
+        _onAction({ type: "calendar_cancel", calendarId, eventId });
+      }
+    }
+  };
 }
 
-function renderPriorities(priorities: BriefingPriority[], animDelay: number): string {
-  const cards = priorities.map((p) => `
-    <div class="priority-card">
-      <span class="priority-dot ${p.priority}"></span>
+function renderTopBar(eventsCount: number, unreadCount?: number): string {
+  const unreadChip = unreadCount !== undefined ? `<span class="stat-chip">${unreadCount} unread</span>` : "";
+  return `
+    <div class="top-bar surface">
       <div>
-        <div class="priority-title">${esc(p.title)}</div>
-        <div class="priority-reason">${esc(p.reason)}</div>
+        <h1>${esc(getGreeting())}</h1>
+        <div class="top-sub">${esc(fmtTopDate())}</div>
+      </div>
+      <div class="quick-stats">
+        <span class="stat-chip">${eventsCount} events</span>
+        ${unreadChip}
       </div>
     </div>
-  `).join("");
-
-  return `
-    <div class="section" style="animation-delay: ${animDelay}ms">
-      <div class="section-title">Priorities</div>
-      <div class="priorities">${cards}</div>
-    </div>
   `;
 }
 
-function renderConflicts(conflicts: BriefingRisk[], animDelay: number): string {
-  const bars = conflicts.map((c) => `
-    <div class="conflict-bar">
-      <div class="conflict-title">${esc(c.title)}</div>
-      ${c.detail ? `<div class="conflict-detail">${esc(c.detail)}</div>` : ""}
-    </div>
-  `).join("");
-
+function renderCalendarArea(weekly?: WeeklyCalendar): string {
+  if (!weekly) {
+    return `<section class="calendar-shell surface"><div class="section-subtitle">Calendar data unavailable.</div></section>`;
+  }
+  const weekRange = `${weekly.week_start} - ${weekly.week_end}`;
   return `
-    <div class="section" style="animation-delay: ${animDelay}ms">
-      <div class="section-title">Conflicts</div>
-      <div class="conflicts">${bars}</div>
-    </div>
-  `;
-}
-
-function renderActions(actions: BriefingAction[], animDelay: number): string {
-  const pills = actions.map((a) => {
-    const msg = `Help me with: ${a.title}`;
-    return `<button class="action-pill" data-action-msg="${esc(msg)}">${esc(a.title)}</button>`;
-  }).join("");
-
-  return `
-    <div class="section" style="animation-delay: ${animDelay}ms">
-      <div class="section-title">Actions</div>
-      <div class="actions">${pills}</div>
-    </div>
-  `;
-}
-
-function renderCalendar(wc: WeeklyCalendar, animDelay: number): string {
-  const cols = wc.days.map((day: WeeklyCalendarDay) => {
-    const allDayPills = (day.all_day_events || []).map((ev) =>
-      `<span class="week-allday-pill" title="${esc(ev.title)}">${esc(ev.title)}</span>`
-    ).join("");
-    const allDay = allDayPills ? `<div class="week-allday">${allDayPills}</div>` : "";
-
-    const timed = (day.timed_events || []).map((ev) => {
-      const time = fmtTime(ev.start);
-      const msg = `Tell me about the "${ev.title}" event`;
-      return `<div class="week-event" title="${esc(ev.title)}" data-event-msg="${esc(msg)}">${time} · ${esc(ev.title)}</div>`;
-    }).join("");
-
-    const empty = !allDayPills && !timed ? '<div class="week-empty">&ndash;</div>' : "";
-
-    return `
-      <div class="week-col${day.is_today ? " today" : ""}">
-        <div class="week-col-header">${esc(day.day_label)} <span class="week-col-date">${fmtDate(day.date)}</span></div>
-        ${allDay}${timed}${empty}
+    <section class="calendar-shell surface">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Week View</div>
+          <div class="section-subtitle">${esc(weekRange)} · ${esc(weekly.timezone)}</div>
+        </div>
+        <div class="week-nav">
+          <button type="button" class="nav-btn" data-week-nav="prev">Prev</button>
+          <button type="button" class="nav-btn" data-week-nav="today">Today</button>
+          <button type="button" class="nav-btn" data-week-nav="next">Next</button>
+        </div>
       </div>
-    `;
-  }).join("");
+      <div class="week-grid">${weekly.days.map((day) => renderDay(day, weekly.timezone)).join("")}</div>
+    </section>
+  `;
+}
 
-  const weekRange = `${wc.week_start || ""} \u2013 ${wc.week_end || ""}`;
-
+function renderDay(day: WeeklyCalendarDay, timezone: string): string {
+  const timed = day.timed_events.map((event) => renderEvent(event, timezone)).join("");
+  const allDay = day.all_day_events
+    .map((event) => `<div class="all-day-chip" title="${esc(event.title)}">${esc(event.title)}</div>`)
+    .join("");
+  const empty = !timed && !allDay ? `<div class="section-subtitle">No events</div>` : "";
   return `
-    <div class="section" style="animation-delay: ${animDelay}ms">
-      <div class="section-title">Week \u00b7 ${esc(weekRange)}</div>
-      <div class="week-grid">${cols}</div>
+    <div class="day-col ${day.is_today ? "today" : ""}">
+      <div class="day-head"><span>${esc(day.day_label)}</span><span>${esc(fmtDayDate(day.date))}</span></div>
+      ${allDay ? `<div class="day-all-day">${allDay}</div>` : ""}
+      <div class="day-events">${timed || empty}</div>
     </div>
   `;
 }
 
-function renderInbox(dashboard: DashboardViewModel, animDelay: number): string | null {
-  const sections = dashboard.sections || [];
-  const commSection = sections.find((s) => s.id === "communications");
-  if (!commSection) return null;
-  const inboxCard = (commSection.cards || []).find((c) => c.card_type === "inbox");
-  if (!inboxCard) return null;
-  const data = inboxCard.data as { unread_count?: number; messages?: { subject?: string; from?: string }[] };
-  const { unread_count = 0, messages = [] } = data;
+function renderEvent(event: WeeklyCalendarEvent, timezone: string): string {
+  const eventColor = colorVar(event);
+  const metaParts = [event.location || "", event.attendee_count ? `${event.attendee_count} attendees` : "", event.has_conference ? "Meet" : ""]
+    .filter(Boolean)
+    .join(" \u00b7 ");
 
-  const rows = messages.map((m) => `
-    <div class="inbox-row">
-      <span class="inbox-subject">${esc(m.subject || "(no subject)")}</span>
-      <span class="inbox-from">${esc((m.from || "").replace(/<.*>/, "").trim())}</span>
-    </div>
-  `).join("");
+  const hoverLines: string[] = [];
+  hoverLines.push(`<strong>${esc(event.title)}</strong>`);
+  hoverLines.push(`${esc(fmtTime(event.start))} \u2013 ${esc(fmtTime(event.end))}`);
+  if (event.location) hoverLines.push(`\ud83d\udccd ${esc(event.location)}`);
+  if (event.attendee_count) hoverLines.push(`\ud83d\udc65 ${event.attendee_count} attendee${event.attendee_count > 1 ? "s" : ""}`);
+  if (event.has_conference) hoverLines.push(`\ud83c\udf10 Google Meet`);
+  if (event.description_snippet) {
+    hoverLines.push("");
+    hoverLines.push(esc(event.description_snippet));
+  }
 
   return `
-    <div class="section" style="animation-delay: ${animDelay}ms">
-      <div class="section-title">Inbox</div>
-      <div class="inbox-card">
-        <div class="inbox-badge">${unread_count} unread</div>
-        ${rows}
+    <article class="calendar-event" style="--event-color: var(${eventColor})" data-open-event="1" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}">
+      <div class="event-time">${esc(fmtTime(event.start))} - ${esc(fmtTime(event.end))}</div>
+      <div class="event-title">${esc(event.title)}</div>
+      ${metaParts ? `<div class="event-meta">${esc(metaParts)}</div>` : ""}
+      <div class="event-actions">${renderEventActionChips(event, timezone)}</div>
+      <div class="event-hover">${hoverLines.join("<br>")}</div>
+    </article>
+  `;
+}
+
+function renderEventActionChips(event: WeeklyCalendarEvent, timezone: string): string {
+  if (!event.event_id || !event.calendar_id) return "";
+  const current = event.attendee_response_status || "";
+  const chip = (status: "accepted" | "tentative" | "declined", label: string) => `
+    <button
+      type="button"
+      class="rsvp-chip ${current === status ? "active" : ""}"
+      data-rsvp-status="${status}"
+      data-calendar-id="${esc(event.calendar_id || "")}"
+      data-event-id="${esc(event.event_id || "")}">
+      ${label}
+    </button>
+  `;
+  return `
+    ${chip("accepted", "Yes")}
+    ${chip("tentative", "Maybe")}
+    ${chip("declined", "No")}
+    <button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" data-event-start="${esc(event.start)}" data-event-end="${esc(event.end)}" data-event-timezone="${esc(timezone)}">+15m</button>
+    <button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" data-event-start="${esc(event.start)}" data-event-end="${esc(event.end)}" data-event-timezone="${esc(timezone)}">+30m</button>
+    <button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" data-event-start="${esc(event.start)}" data-event-end="${esc(event.end)}" data-event-timezone="${esc(timezone)}">+1h</button>
+    <button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}">Cancel</button>
+  `;
+}
+
+function renderInboxPanel(messages: InboxMessage[], unreadCount: number): string {
+  const rows = messages
+    .map((msg) => {
+      const unreadClass = unreadCount > 0 ? "unread" : "";
+      return `
+        <div class="inbox-row" data-open-email="1" data-message-id="${esc(msg.id || "")}">
+          <div class="avatar">${esc(initials(msg.from || ""))}</div>
+          <div class="mail-content">
+            <div class="mail-subject ${unreadClass}">${esc(msg.subject || "(No subject)")}</div>
+            <div class="mail-subline">${esc((msg.from || "Unknown sender").replace(/<.*?>/g, "").trim())}${msg.snippet ? ` · ${esc(msg.snippet)}` : ""}</div>
+          </div>
+          <div class="mail-date">${esc(relDate(msg.date))}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <section class="inbox-shell surface">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Inbox</div>
+          <div class="section-subtitle">${unreadCount} unread</div>
+        </div>
       </div>
+      <div class="inbox-list">${rows || `<div class="section-subtitle">No messages</div>`}</div>
+    </section>
+  `;
+}
+
+function renderEventDetailPanel(detail?: EventDetail): string {
+  if (!detail) return "";
+  const attendees = detail.attendees
+    .map(
+      (attendee) =>
+        `<li>${esc(attendee.display_name || attendee.email)}${attendee.response_status ? ` · ${esc(attendee.response_status)}` : ""}</li>`
+    )
+    .join("");
+  const description = detail.description?.trim() || "No description.";
+  return `
+    <div class="overlay" role="dialog" aria-modal="true">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">${esc(detail.title)}</div>
+            <div class="panel-sub">${esc(fmtTime(detail.start))} - ${esc(fmtTime(detail.end))}${detail.timezone ? ` · ${esc(detail.timezone)}` : ""}</div>
+          </div>
+          <button type="button" class="nav-btn" data-close-event="1">Close</button>
+        </div>
+        <div class="panel-body">
+          <div class="detail-block">${detail.location ? `<strong>Location:</strong> ${esc(detail.location)}` : "<strong>Location:</strong> None"}</div>
+          <div class="detail-block">${detail.conference_link ? `<strong>Conference:</strong> <a href="${esc(detail.conference_link)}" target="_blank" rel="noreferrer">${esc(detail.conference_link)}</a>` : "<strong>Conference:</strong> None"}</div>
+          <div class="detail-block"><strong>Description</strong><div style="margin-top:6px; white-space:pre-wrap;">${esc(description)}</div></div>
+          <div class="detail-block"><strong>Attendees</strong><ul class="attendee-list">${attendees || "<li>No attendees.</li>"}</ul></div>
+          <div class="detail-block">
+            <div class="event-actions">
+              <button type="button" class="rsvp-chip" data-rsvp-status="accepted" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Accept</button>
+              <button type="button" class="rsvp-chip" data-rsvp-status="tentative" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Tentative</button>
+              <button type="button" class="rsvp-chip" data-rsvp-status="declined" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Decline</button>
+              <button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+15m</button>
+              <button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+30m</button>
+              <button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+1h</button>
+              <button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Cancel event</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderEmailDetailPanel(detail?: EmailDetail): string {
+  if (!detail) return "";
+  const body = detail.text_body || detail.html_body || detail.snippet || "No body content.";
+  return `
+    <div class="overlay" role="dialog" aria-modal="true">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">${esc(detail.subject || "(No subject)")}</div>
+            <div class="panel-sub">${esc(detail.from_value)}${detail.date ? ` · ${esc(detail.date)}` : ""}</div>
+          </div>
+          <button type="button" class="nav-btn" data-close-email="1">Close</button>
+        </div>
+        <div class="panel-body">
+          <div class="detail-block"><strong>From:</strong> ${esc(detail.from_value)}</div>
+          <div class="detail-block"><strong>To:</strong> ${esc(detail.to || "(not set)")}</div>
+          ${detail.cc ? `<div class="detail-block"><strong>Cc:</strong> ${esc(detail.cc)}</div>` : ""}
+          <div class="detail-block"><strong>Labels:</strong> ${esc(detail.labels.join(", ") || "none")}</div>
+          <div class="detail-block"><strong>Body</strong><div style="margin-top:6px; white-space:pre-wrap;">${esc(body)}</div></div>
+          <div class="detail-block" style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button type="button" class="action-btn" data-action-msg="${esc(`Reply to ${detail.from_value} about: ${detail.subject}`)}">Reply in chat</button>
+            <button type="button" class="action-btn" data-action-msg="${esc(`Archive email ${detail.message_id}`)}">Archive</button>
+            <button type="button" class="action-btn" data-action-msg="${esc(`Mark email ${detail.message_id} as read`)}">Mark as read</button>
+          </div>
+        </div>
+      </section>
     </div>
   `;
 }

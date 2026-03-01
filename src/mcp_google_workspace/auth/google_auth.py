@@ -62,7 +62,7 @@ def is_chat_enabled() -> bool:
 
 
 def is_apps_dashboard_enabled() -> bool:
-    """Feature flag for MCP app-layer dashboard and morning briefing namespace."""
+    """Feature flag for MCP app-layer dashboard namespace."""
     return _env_truthy(os.getenv("ENABLE_APPS_DASHBOARD"))
 
 
