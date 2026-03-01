@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -51,6 +51,19 @@ class CreateEventRequest(BaseModel):
     timezone: str | None = Field(default=None, description="IANA timezone name for start/end datetime.")
     description: str | None = Field(default=None, description="Optional event description.")
     location: str | None = Field(default=None, description="Optional event location.")
+    color_id: str | None = Field(default=None, description="Optional Google Calendar color ID.")
+    visibility: Literal["default", "public", "private", "confidential"] | None = Field(
+        default="default",
+        description="Optional event visibility mode.",
+    )
+    transparency: Literal["opaque", "transparent"] | None = Field(
+        default="opaque",
+        description="Whether the event blocks time on the calendar.",
+    )
+    conference_data: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional Google conference data payload (for Meet links).",
+    )
     attendees: list[dict[str, Any]] | None = Field(default=None, description="Attendee objects (email/displayName/etc).")
     attachments: list[EventAttachmentInput] | None = Field(
         default=None,
@@ -78,6 +91,19 @@ class UpdateEventRequest(BaseModel):
     timezone: str | None = Field(default=None, description="IANA timezone applied to updated start/end.")
     description: str | None = Field(default=None, description="Updated event description.")
     location: str | None = Field(default=None, description="Updated event location.")
+    color_id: str | None = Field(default=None, description="Optional Google Calendar color ID.")
+    visibility: Literal["default", "public", "private", "confidential"] | None = Field(
+        default=None,
+        description="Optional event visibility mode.",
+    )
+    transparency: Literal["opaque", "transparent"] | None = Field(
+        default=None,
+        description="Whether the event blocks time on the calendar.",
+    )
+    conference_data: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional Google conference data payload (for Meet links).",
+    )
     attendees: list[dict[str, Any]] | None = Field(default=None, description="Replacement attendee list.")
     attachments: list[EventAttachmentInput] | None = Field(
         default=None,
@@ -105,6 +131,47 @@ class FreeBusyRequest(BaseModel):
     timeMax: str = Field(description="RFC3339 end of availability window.")
     items: list[dict[str, str]] = Field(description="Calendars to query, each with an id field.")
     timeZone: str | None = Field(default=None, description="Timezone for response rendering.")
+
+
+class FindCommonFreeSlotsRequest(BaseModel):
+    participants: list[str] = Field(
+        min_length=1,
+        description="List of participant calendar IDs/emails to include in availability search.",
+    )
+    time_min: str = Field(description="RFC3339 start time for the scheduling window.")
+    time_max: str = Field(description="RFC3339 end time for the scheduling window.")
+    slot_duration_minutes: int = Field(
+        default=30,
+        ge=5,
+        le=480,
+        description="Desired duration for each suggested meeting slot.",
+    )
+    granularity_minutes: int = Field(
+        default=15,
+        ge=5,
+        le=240,
+        description="Step size used to generate candidate slots inside each free range.",
+    )
+    max_results: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of slot suggestions returned.",
+    )
+    time_zone: str | None = Field(
+        default=None,
+        description="Optional timezone for freebusy query response rendering.",
+    )
+    working_hours_start: str = Field(
+        default="08:00",
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+        description="Daily working-hours start in HH:MM (24h). Default is 08:00.",
+    )
+    working_hours_end: str = Field(
+        default="17:00",
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+        description="Daily working-hours end in HH:MM (24h). Default is 17:00.",
+    )
 
 
 class ListEventAttachmentsRequest(BaseModel):

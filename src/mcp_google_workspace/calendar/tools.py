@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,7 @@ from .schemas import (
     CreateEventRequest,
     DeleteEventRequest,
     DownloadEventAttachmentRequest,
+    FindCommonFreeSlotsRequest,
     FreeBusyRequest,
     GetEventRequest,
     ListEventAttachmentsRequest,
@@ -62,6 +63,126 @@ def _extract_drive_file_id(file_url: str | None) -> str | None:
     if match:
         return match.group(1)
     return None
+
+
+def _check_time_slot_conflicts(
+    service: Any,
+    calendar_id: str,
+    start_time: str,
+    end_time: str,
+) -> dict[str, Any]:
+    try:
+        result = service.freebusy().query(
+            body={
+                "timeMin": start_time,
+                "timeMax": end_time,
+                "items": [{"id": calendar_id}],
+            }
+        ).execute()
+        busy_slots = result.get("calendars", {}).get(calendar_id, {}).get("busy", [])
+        return {"has_conflicts": len(busy_slots) > 0, "conflicts": busy_slots, "error": None}
+    except Exception as exc:  # pragma: no cover - defensive API error handling
+        return {
+            "has_conflicts": False,
+            "conflicts": [],
+            "error": f"Could not check for conflicts: {exc}",
+        }
+
+
+def _parse_rfc3339_datetime(value: str) -> datetime:
+    normalized = value.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        return pytz.UTC.localize(parsed)
+    return parsed
+
+
+def _merge_time_ranges(ranges: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
+    if not ranges:
+        return []
+    ordered = sorted(ranges, key=lambda x: x[0])
+    merged: list[tuple[datetime, datetime]] = [ordered[0]]
+    for start, end in ordered[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _build_slot_candidates(
+    free_ranges: list[tuple[datetime, datetime]],
+    slot_duration_minutes: int,
+    granularity_minutes: int,
+    max_results: int,
+) -> list[dict[str, str]]:
+    slot_delta = timedelta(minutes=slot_duration_minutes)
+    step_delta = timedelta(minutes=granularity_minutes)
+    suggestions: list[dict[str, str]] = []
+    for free_start, free_end in free_ranges:
+        cursor = free_start
+        while cursor + slot_delta <= free_end:
+            suggestions.append(
+                {
+                    "start": cursor.isoformat(),
+                    "end": (cursor + slot_delta).isoformat(),
+                }
+            )
+            if len(suggestions) >= max_results:
+                return suggestions
+            cursor += step_delta
+    return suggestions
+
+
+def _parse_hhmm(value: str) -> tuple[int, int]:
+    hours, minutes = value.split(":", 1)
+    return int(hours), int(minutes)
+
+
+def _apply_working_hours(
+    free_ranges: list[tuple[datetime, datetime]],
+    working_hours_start: str,
+    working_hours_end: str,
+) -> list[tuple[datetime, datetime]]:
+    if not free_ranges:
+        return []
+    start_hour, start_minute = _parse_hhmm(working_hours_start)
+    end_hour, end_minute = _parse_hhmm(working_hours_end)
+    start_total = start_hour * 60 + start_minute
+    end_total = end_hour * 60 + end_minute
+    if end_total <= start_total:
+        raise ValueError("working_hours_end must be later than working_hours_start.")
+
+    clamped: list[tuple[datetime, datetime]] = []
+    for free_start, free_end in free_ranges:
+        current_day = free_start.date()
+        last_day = free_end.date()
+        while current_day <= last_day:
+            day_start = free_start.replace(
+                year=current_day.year,
+                month=current_day.month,
+                day=current_day.day,
+                hour=start_hour,
+                minute=start_minute,
+                second=0,
+                microsecond=0,
+            )
+            day_end = free_start.replace(
+                year=current_day.year,
+                month=current_day.month,
+                day=current_day.day,
+                hour=end_hour,
+                minute=end_minute,
+                second=0,
+                microsecond=0,
+            )
+            interval_start = max(free_start, day_start)
+            interval_end = min(free_end, day_end)
+            if interval_end > interval_start:
+                clamped.append((interval_start, interval_end))
+            current_day = current_day + timedelta(days=1)
+    return clamped
 
 
 def register_tools(server: FastMCP) -> None:
@@ -148,6 +269,98 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         return service.freebusy().query(body=request.model_dump(exclude_none=True)).execute()
 
+    @server.tool(name="find_common_free_slots")
+    async def find_common_free_slots(
+        request: FindCommonFreeSlotsRequest,
+        ctx: Context,
+    ) -> dict[str, Any]:
+        """Suggest common available meeting slots for all participants in a time window."""
+        service = build_calendar_service()
+        if not request.participants:
+            raise ValueError("participants list cannot be empty.")
+
+        query_timezone = request.time_zone or "UTC"
+        fixed_min = _validate_and_fix_datetime(request.time_min, query_timezone)
+        fixed_max = _validate_and_fix_datetime(request.time_max, query_timezone)
+        if not fixed_min or not fixed_max:
+            raise ValueError("time_min and time_max are required.")
+
+        window_start = _parse_rfc3339_datetime(fixed_min)
+        window_end = _parse_rfc3339_datetime(fixed_max)
+        if window_end <= window_start:
+            raise ValueError("time_max must be greater than time_min.")
+
+        await ctx.info(f"Checking common availability for {len(request.participants)} participant(s).")
+        body: dict[str, Any] = {
+            "timeMin": fixed_min,
+            "timeMax": fixed_max,
+            "items": [{"id": participant} for participant in request.participants],
+        }
+        if request.time_zone:
+            body["timeZone"] = request.time_zone
+        freebusy_result = service.freebusy().query(body=body).execute()
+
+        calendars = freebusy_result.get("calendars", {})
+        all_busy_ranges: list[tuple[datetime, datetime]] = []
+        calendar_errors: dict[str, Any] = {}
+
+        for participant in request.participants:
+            details = calendars.get(participant, {})
+            if details.get("errors"):
+                calendar_errors[participant] = details["errors"]
+            for busy in details.get("busy", []):
+                start_raw = busy.get("start")
+                end_raw = busy.get("end")
+                if not start_raw or not end_raw:
+                    continue
+                busy_start = _parse_rfc3339_datetime(start_raw)
+                busy_end = _parse_rfc3339_datetime(end_raw)
+                if busy_end <= busy_start:
+                    continue
+                all_busy_ranges.append(
+                    (max(window_start, busy_start), min(window_end, busy_end))
+                )
+
+        merged_busy = _merge_time_ranges(all_busy_ranges)
+        free_ranges: list[tuple[datetime, datetime]] = []
+        cursor = window_start
+        for busy_start, busy_end in merged_busy:
+            if busy_end <= cursor:
+                continue
+            if busy_start > cursor:
+                free_ranges.append((cursor, busy_start))
+            cursor = max(cursor, busy_end)
+            if cursor >= window_end:
+                break
+        if cursor < window_end:
+            free_ranges.append((cursor, window_end))
+
+        free_ranges_with_working_hours = _apply_working_hours(
+            free_ranges,
+            request.working_hours_start,
+            request.working_hours_end,
+        )
+
+        suggestions = _build_slot_candidates(
+            free_ranges_with_working_hours,
+            request.slot_duration_minutes,
+            request.granularity_minutes,
+            request.max_results,
+        )
+
+        return {
+            "participants": request.participants,
+            "time_min": fixed_min,
+            "time_max": fixed_max,
+            "slot_duration_minutes": request.slot_duration_minutes,
+            "granularity_minutes": request.granularity_minutes,
+            "working_hours_start": request.working_hours_start,
+            "working_hours_end": request.working_hours_end,
+            "total_suggestions": len(suggestions),
+            "suggested_slots": suggestions,
+            "calendar_errors": calendar_errors,
+        }
+
     @server.tool(name="create_event")
     async def create_event(request: CreateEventRequest, ctx: Context) -> dict[str, Any]:
         """Create a calendar event with optional attendees, reminders, and recurrence."""
@@ -164,6 +377,14 @@ def register_tools(server: FastMCP) -> None:
             body["description"] = request.description
         if request.location:
             body["location"] = request.location
+        if request.color_id is not None:
+            body["colorId"] = request.color_id
+        if request.visibility is not None:
+            body["visibility"] = request.visibility
+        if request.transparency is not None:
+            body["transparency"] = request.transparency
+        if request.conference_data is not None:
+            body["conferenceData"] = request.conference_data
         if request.attendees:
             body["attendees"] = request.attendees
         if request.attachments is not None:
@@ -172,6 +393,19 @@ def register_tools(server: FastMCP) -> None:
             body["reminders"] = request.reminders
         if request.recurrence:
             body["recurrence"] = request.recurrence
+        conflict_check = _check_time_slot_conflicts(
+            service,
+            request.calendar_id,
+            start,
+            end,
+        )
+        if conflict_check["has_conflicts"]:
+            return {
+                "error": "Time slot is not available - there are overlapping events",
+                "status": "CONFLICT",
+                "conflicting_events": conflict_check["conflicts"],
+                "conflict_check_error": conflict_check["error"],
+            }
         await ctx.info(f"Creating event '{request.summary}'.")
         event = (
             service.events()
@@ -180,6 +414,7 @@ def register_tools(server: FastMCP) -> None:
                 body=body,
                 sendUpdates=request.send_updates,
                 supportsAttachments=request.supports_attachments,
+                conferenceDataVersion=1 if body.get("conferenceData") else 0,
             )
             .execute()
         )
@@ -191,10 +426,23 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         timezone = request.timezone or "UTC"
         patch_data: dict[str, Any] = {}
-        for key in ("summary", "description", "location", "attendees", "reminders", "recurrence"):
+        for key in (
+            "summary",
+            "description",
+            "location",
+            "attendees",
+            "reminders",
+            "recurrence",
+            "visibility",
+            "transparency",
+        ):
             value = getattr(request, key)
             if value is not None:
                 patch_data[key] = value
+        if request.color_id is not None:
+            patch_data["colorId"] = request.color_id
+        if request.conference_data is not None:
+            patch_data["conferenceData"] = request.conference_data
         if request.attachments is not None:
             patch_data["attachments"] = [a.to_api() for a in request.attachments]
         if request.start_datetime:
@@ -207,6 +455,20 @@ def register_tools(server: FastMCP) -> None:
                 "dateTime": _validate_and_fix_datetime(request.end_datetime, timezone),
                 "timeZone": timezone,
             }
+        if patch_data.get("start") and patch_data.get("end"):
+            conflict_check = _check_time_slot_conflicts(
+                service,
+                request.calendar_id,
+                patch_data["start"]["dateTime"],
+                patch_data["end"]["dateTime"],
+            )
+            if conflict_check["has_conflicts"]:
+                return {
+                    "error": "New time slot is not available - there are overlapping events",
+                    "status": "CONFLICT",
+                    "conflicting_events": conflict_check["conflicts"],
+                    "conflict_check_error": conflict_check["error"],
+                }
         await ctx.info(f"Updating event {request.event_id}.")
         event = (
             service.events()
@@ -216,6 +478,7 @@ def register_tools(server: FastMCP) -> None:
                 body=patch_data,
                 sendUpdates=request.send_updates,
                 supportsAttachments=request.supports_attachments,
+                conferenceDataVersion=1 if patch_data.get("conferenceData") else 0,
             )
             .execute()
         )
