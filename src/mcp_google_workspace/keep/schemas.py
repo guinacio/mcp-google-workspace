@@ -6,45 +6,72 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class ChecklistItem(BaseModel):
-    text: str
-    checked: bool = False
+    text: str = Field(description="Checklist item text.")
+    checked: bool = Field(default=False, description="Whether item is checked.")
 
 
-class CreateNoteRequest(BaseModel):
-    title: str | None = None
-    text_body: str | None = None
-    checklist_items: list[ChecklistItem] = Field(default_factory=list)
-    collaborator_emails: list[EmailStr] = Field(default_factory=list)
-    confirm_create: bool = False
+class ToolRequestModel(BaseModel):
+    """Base input model for MCP tools expecting object payloads."""
+
+    model_config = {
+        "json_schema_extra": {
+            "description": (
+                "Pass this as a JSON object payload to the tool. "
+                "Do not pass a raw string for the full request."
+            )
+        }
+    }
 
 
-class GetNoteRequest(BaseModel):
-    note_name: str
+class CreateNoteRequest(ToolRequestModel):
+    title: str | None = Field(default=None, description="Optional note title.")
+    text_body: str | None = Field(default=None, description="Optional plain text body.")
+    checklist_items: list[ChecklistItem] = Field(default_factory=list, description="Optional checklist items.")
+    collaborator_emails: list[EmailStr] = Field(default_factory=list, description="Optional collaborators to share with.")
+    confirm_create: bool = Field(default=False, description="Ask for confirmation before creating the note.")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "title": "Morning priorities",
+                    "text_body": "Review launch checklist and customer emails.",
+                    "checklist_items": [{"text": "Review calendar", "checked": False}],
+                    "collaborator_emails": [],
+                    "confirm_create": False,
+                }
+            ]
+        }
+    }
 
 
-class ListNotesRequest(BaseModel):
-    filter: str | None = None
-    page_size: int = Field(default=20, ge=1, le=100)
-    page_token: str | None = None
+class GetNoteRequest(ToolRequestModel):
+    note_name: str = Field(description="Google Keep note resource name.")
 
 
-class DeleteNoteRequest(BaseModel):
-    note_name: str
-    confirm_delete: bool = True
+class ListNotesRequest(ToolRequestModel):
+    filter: str | None = Field(default=None, description="Optional filter expression.")
+    page_size: int = Field(default=20, ge=1, le=100, description="Maximum notes to return.")
+    page_token: str | None = Field(default=None, description="Pagination token from previous response.")
 
 
-class UpdateNoteRequest(BaseModel):
-    note_name: str
-    title: str | None = None
-    text_body: str | None = None
-    checklist_items: list[ChecklistItem] = Field(default_factory=list)
+class DeleteNoteRequest(ToolRequestModel):
+    note_name: str = Field(description="Google Keep note resource name.")
+    confirm_delete: bool = Field(default=True, description="Ask for confirmation before deleting.")
 
 
-class ShareNoteRequest(BaseModel):
-    note_name: str
-    collaborator_emails: list[EmailStr]
+class UpdateNoteRequest(ToolRequestModel):
+    note_name: str = Field(description="Google Keep note resource name.")
+    title: str | None = Field(default=None, description="Updated title.")
+    text_body: str | None = Field(default=None, description="Updated plain text body.")
+    checklist_items: list[ChecklistItem] = Field(default_factory=list, description="Updated checklist item set.")
 
 
-class UnshareNoteRequest(BaseModel):
-    note_name: str
-    permission_names: list[str]
+class ShareNoteRequest(ToolRequestModel):
+    note_name: str = Field(description="Google Keep note resource name.")
+    collaborator_emails: list[EmailStr] = Field(description="Collaborator email addresses to grant access.")
+
+
+class UnshareNoteRequest(ToolRequestModel):
+    note_name: str = Field(description="Google Keep note resource name.")
+    permission_names: list[str] = Field(description="Permission resource names to remove from the note.")

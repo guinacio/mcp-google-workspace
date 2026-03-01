@@ -188,7 +188,11 @@ def _apply_working_hours(
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_events")
     async def get_events(request: ListEventsRequest, ctx: Context) -> dict[str, Any]:
-        """List calendar events for a time window and ordering preference."""
+        """List calendar events for a time window.
+
+        Input must be an object shaped like:
+        {"calendar_id":"primary","time_min":"2026-03-01T00:00:00Z","time_max":"2026-03-08T00:00:00Z"}
+        """
         service = build_calendar_service()
         await ctx.info(f"Listing events for calendar {request.calendar_id}.")
         list_kwargs: dict[str, Any] = {

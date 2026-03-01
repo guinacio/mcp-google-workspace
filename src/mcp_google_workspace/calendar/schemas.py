@@ -7,16 +7,59 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-class ListEventsRequest(BaseModel):
-    calendar_id: str = Field(default="primary", description="Calendar ID, usually 'primary'.")
-    time_min: str | None = Field(default=None, description="RFC3339 lower bound for event start time.")
-    time_max: str | None = Field(default=None, description="RFC3339 upper bound for event start time.")
+class ToolRequestModel(BaseModel):
+    """Base input model for MCP tools expecting object payloads."""
+
+    model_config = {
+        "json_schema_extra": {
+            "description": (
+                "Pass this as a JSON object payload to the tool. "
+                "Do not pass a raw string for the full request."
+            )
+        }
+    }
+
+
+class ListEventsRequest(ToolRequestModel):
+    calendar_id: str = Field(
+        default="primary",
+        description="Calendar ID, usually 'primary'.",
+    )
+    time_min: str | None = Field(
+        default=None,
+        description=(
+            "RFC3339 lower bound for event start time. Example: "
+            "'2026-03-01T00:00:00Z'."
+        ),
+    )
+    time_max: str | None = Field(
+        default=None,
+        description=(
+            "RFC3339 upper bound for event start time. Example: "
+            "'2026-03-08T00:00:00Z'."
+        ),
+    )
     max_results: int = Field(default=25, ge=1, le=2500, description="Maximum events to return.")
     single_events: bool = Field(default=True, description="Expand recurring events into single instances.")
     order_by: str = Field(default="startTime", description="Sort order, typically 'startTime'.")
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "calendar_id": "primary",
+                    "time_min": "2026-03-01T00:00:00Z",
+                    "time_max": "2026-03-08T00:00:00Z",
+                    "max_results": 50,
+                    "single_events": True,
+                    "order_by": "startTime",
+                }
+            ]
+        }
+    }
 
-class GetEventRequest(BaseModel):
+
+class GetEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
     event_id: str = Field(description="Calendar event ID to fetch.")
     time_zone: str | None = Field(default=None, description="Optional timezone for response rendering.")
@@ -43,7 +86,7 @@ class EventAttachmentInput(BaseModel):
         return payload
 
 
-class CreateEventRequest(BaseModel):
+class CreateEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
     summary: str = Field(description="Event title/summary.")
     start_datetime: str = Field(description="Event start datetime in RFC3339 or ISO format.")
@@ -82,7 +125,7 @@ class CreateEventRequest(BaseModel):
     recurrence: list[str] | None = Field(default=None, description="Recurrence rules (RRULE strings).")
 
 
-class UpdateEventRequest(BaseModel):
+class UpdateEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
     event_id: str = Field(description="Calendar event ID to update.")
     summary: str | None = Field(default=None, description="Updated title/summary.")
@@ -119,21 +162,21 @@ class UpdateEventRequest(BaseModel):
     send_updates: str | None = Field(default=None, description="Guest notification mode for update.")
 
 
-class DeleteEventRequest(BaseModel):
+class DeleteEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
     event_id: str = Field(description="Calendar event ID to delete.")
     send_updates: str | None = Field(default=None, description="Guest notification mode for deletion.")
     force: bool = Field(default=False, description="Skip interactive confirmation when true.")
 
 
-class FreeBusyRequest(BaseModel):
+class FreeBusyRequest(ToolRequestModel):
     timeMin: str = Field(description="RFC3339 start of availability window.")
     timeMax: str = Field(description="RFC3339 end of availability window.")
     items: list[dict[str, str]] = Field(description="Calendars to query, each with an id field.")
     timeZone: str | None = Field(default=None, description="Timezone for response rendering.")
 
 
-class FindCommonFreeSlotsRequest(BaseModel):
+class FindCommonFreeSlotsRequest(ToolRequestModel):
     participants: list[str] = Field(
         min_length=1,
         description="List of participant calendar IDs/emails to include in availability search.",
@@ -174,19 +217,19 @@ class FindCommonFreeSlotsRequest(BaseModel):
     )
 
 
-class ListEventAttachmentsRequest(BaseModel):
+class ListEventAttachmentsRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
     event_id: str = Field(description="Event ID whose attachments should be listed.")
 
 
-class AddEventAttachmentRequest(BaseModel):
+class AddEventAttachmentRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
     event_id: str = Field(description="Event ID to mutate.")
     attachment: EventAttachmentInput = Field(description="Attachment metadata to add.")
     send_updates: str | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
 
 
-class RemoveEventAttachmentRequest(BaseModel):
+class RemoveEventAttachmentRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
     event_id: str = Field(description="Event ID to mutate.")
     file_url: str | None = Field(default=None, description="Attachment fileUrl to remove.")
@@ -194,7 +237,7 @@ class RemoveEventAttachmentRequest(BaseModel):
     send_updates: str | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
 
 
-class DownloadEventAttachmentRequest(BaseModel):
+class DownloadEventAttachmentRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
     event_id: str = Field(description="Event ID that contains the attachment.")
     file_url: str | None = Field(default=None, description="Attachment fileUrl to download (preferred selector).")

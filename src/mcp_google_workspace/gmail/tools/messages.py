@@ -82,7 +82,11 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="read_email")
     async def read_email(request: ReadEmailRequest, ctx: Context) -> dict[str, Any]:
-        """Fetch a message with decoded headers, bodies, and attachment metadata."""
+        """Fetch one Gmail message by ID.
+
+        Input must be an object shaped like:
+        {"message_id": "<gmail_message_id>"}
+        """
         service = gmail_service()
         await ctx.info(f"Reading message {request.message_id}.")
         message = (

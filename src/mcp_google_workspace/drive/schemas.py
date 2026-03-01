@@ -7,7 +7,20 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class ListFilesRequest(BaseModel):
+class ToolRequestModel(BaseModel):
+    """Base input model for MCP tools expecting object payloads."""
+
+    model_config = {
+        "json_schema_extra": {
+            "description": (
+                "Pass this as a JSON object payload to the tool. "
+                "Do not pass a raw string for the full request."
+            )
+        }
+    }
+
+
+class ListFilesRequest(ToolRequestModel):
     query: str | None = Field(default=None, description="Drive search query (q parameter).")
     page_size: int = Field(default=25, ge=1, le=1000, description="Maximum items to return.")
     page_token: str | None = Field(default=None, description="Token for next result page.")
@@ -32,7 +45,7 @@ class ListFilesRequest(BaseModel):
     )
 
 
-class GetFileRequest(BaseModel):
+class GetFileRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
     fields: str = Field(
@@ -41,14 +54,14 @@ class GetFileRequest(BaseModel):
     )
 
 
-class CreateFolderRequest(BaseModel):
+class CreateFolderRequest(ToolRequestModel):
     name: str = Field(description="Folder name.")
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs (single parent recommended).")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
     fields: str = Field(default="id,name,mimeType,parents,driveId,webViewLink", description="Fields selector.")
 
 
-class CreateFileMetadataRequest(BaseModel):
+class CreateFileMetadataRequest(ToolRequestModel):
     name: str = Field(description="File name.")
     mime_type: str | None = Field(default=None, description="Explicit MIME type for metadata-only file creation.")
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs.")
@@ -59,7 +72,7 @@ class CreateFileMetadataRequest(BaseModel):
     fields: str = Field(default="id,name,mimeType,parents,driveId,webViewLink", description="Fields selector.")
 
 
-class UploadFileRequest(BaseModel):
+class UploadFileRequest(ToolRequestModel):
     local_path: str = Field(description="Path to local file to upload.")
     name: str | None = Field(default=None, description="Name to store in Drive (defaults to local filename).")
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs.")
@@ -69,7 +82,7 @@ class UploadFileRequest(BaseModel):
     fields: str = Field(default="id,name,mimeType,size,parents,driveId,webViewLink", description="Fields selector.")
 
 
-class UpdateFileMetadataRequest(BaseModel):
+class UpdateFileMetadataRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID to patch.")
     name: str | None = Field(default=None, description="Updated filename.")
     description: str | None = Field(default=None, description="Updated description.")
@@ -81,7 +94,7 @@ class UpdateFileMetadataRequest(BaseModel):
     fields: str = Field(default="id,name,mimeType,parents,driveId,modifiedTime,webViewLink", description="Fields selector.")
 
 
-class UpdateFileContentRequest(BaseModel):
+class UpdateFileContentRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID to update.")
     local_path: str = Field(description="Path to local file content.")
     mime_type: str | None = Field(default=None, description="Content MIME type.")
@@ -91,7 +104,7 @@ class UpdateFileContentRequest(BaseModel):
     fields: str = Field(default="id,name,mimeType,size,modifiedTime,driveId,webViewLink", description="Fields selector.")
 
 
-class MoveFileRequest(BaseModel):
+class MoveFileRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID to move.")
     add_parent_ids: list[str] = Field(default_factory=list, description="Parent IDs to add.")
     remove_parent_ids: list[str] = Field(default_factory=list, description="Parent IDs to remove.")
@@ -99,7 +112,7 @@ class MoveFileRequest(BaseModel):
     fields: str = Field(default="id,name,parents,driveId,webViewLink", description="Fields selector.")
 
 
-class CopyFileRequest(BaseModel):
+class CopyFileRequest(ToolRequestModel):
     file_id: str = Field(description="Source Drive file ID.")
     name: str | None = Field(default=None, description="Optional copied file name.")
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs for copied file.")
@@ -108,12 +121,12 @@ class CopyFileRequest(BaseModel):
     fields: str = Field(default="id,name,mimeType,parents,driveId,webViewLink", description="Fields selector.")
 
 
-class DeleteFileRequest(BaseModel):
+class DeleteFileRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID to permanently delete.")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
-class DownloadFileRequest(BaseModel):
+class DownloadFileRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID to download.")
     output_path: str = Field(description="Destination path on local filesystem.")
     overwrite: bool = Field(default=False, description="Overwrite existing local file.")
@@ -121,19 +134,19 @@ class DownloadFileRequest(BaseModel):
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
-class ExportGoogleFileRequest(BaseModel):
+class ExportGoogleFileRequest(ToolRequestModel):
     file_id: str = Field(description="Google-native file ID (Docs/Sheets/Slides/etc).")
     mime_type: str = Field(description="Desired export MIME type.")
     output_path: str = Field(description="Destination path on local filesystem.")
     overwrite: bool = Field(default=False, description="Overwrite existing local file.")
 
 
-class GetFileContentCapabilitiesRequest(BaseModel):
+class GetFileContentCapabilitiesRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
-class ListPermissionsRequest(BaseModel):
+class ListPermissionsRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     page_size: int = Field(default=50, ge=1, le=200, description="Maximum permissions to return.")
     page_token: str | None = Field(default=None, description="Token for next result page.")
@@ -142,7 +155,7 @@ class ListPermissionsRequest(BaseModel):
     fields: str = Field(default="nextPageToken,permissions(id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime)", description="Fields selector.")
 
 
-class GetPermissionRequest(BaseModel):
+class GetPermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     permission_id: str = Field(description="Permission ID.")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
@@ -150,7 +163,7 @@ class GetPermissionRequest(BaseModel):
     fields: str = Field(default="id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime", description="Fields selector.")
 
 
-class CreatePermissionRequest(BaseModel):
+class CreatePermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     type: str = Field(description="Permission grantee type (user, group, domain, anyone).")
     role: str = Field(description="Permission role (reader, commenter, writer, fileOrganizer, organizer, owner).")
@@ -166,7 +179,7 @@ class CreatePermissionRequest(BaseModel):
     fields: str = Field(default="id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime", description="Fields selector.")
 
 
-class UpdatePermissionRequest(BaseModel):
+class UpdatePermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     permission_id: str = Field(description="Permission ID.")
     role: str | None = Field(default=None, description="Updated role.")
@@ -179,14 +192,14 @@ class UpdatePermissionRequest(BaseModel):
     fields: str = Field(default="id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime", description="Fields selector.")
 
 
-class DeletePermissionRequest(BaseModel):
+class DeletePermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     permission_id: str = Field(description="Permission ID to remove.")
     use_domain_admin_access: bool = Field(default=False, description="Use admin access for Shared Drives when available.")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
-class ListDrivesRequest(BaseModel):
+class ListDrivesRequest(ToolRequestModel):
     page_size: int = Field(default=25, ge=1, le=100, description="Maximum Shared Drives to return.")
     page_token: str | None = Field(default=None, description="Token for next result page.")
     query: str | None = Field(default=None, description="Query string for drives.list.")
@@ -194,18 +207,18 @@ class ListDrivesRequest(BaseModel):
     fields: str = Field(default="nextPageToken,drives(id,name,hidden,createdTime,orgUnitId,restrictions,capabilities)", description="Fields selector.")
 
 
-class GetDriveRequest(BaseModel):
+class GetDriveRequest(ToolRequestModel):
     drive_id: str = Field(description="Shared Drive ID.")
     use_domain_admin_access: bool = Field(default=False, description="Use admin access for domain-managed drives.")
     fields: str = Field(default="id,name,hidden,createdTime,orgUnitId,restrictions,capabilities", description="Fields selector.")
 
 
-class HideDriveRequest(BaseModel):
+class HideDriveRequest(ToolRequestModel):
     drive_id: str = Field(description="Shared Drive ID to hide.")
     use_domain_admin_access: bool = Field(default=False, description="Use admin access for domain-managed drives.")
 
 
-class UnhideDriveRequest(BaseModel):
+class UnhideDriveRequest(ToolRequestModel):
     drive_id: str = Field(description="Shared Drive ID to unhide.")
     use_domain_admin_access: bool = Field(default=False, description="Use admin access for domain-managed drives.")
 

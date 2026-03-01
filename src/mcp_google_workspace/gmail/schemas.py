@@ -7,6 +7,19 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 
+class ToolRequestModel(BaseModel):
+    """Base input model for MCP tools expecting object payloads."""
+
+    model_config = {
+        "json_schema_extra": {
+            "description": (
+                "Pass this as a JSON object payload to the tool. "
+                "Do not pass a raw string for the full request."
+            )
+        }
+    }
+
+
 class AttachmentInput(BaseModel):
     file_path: str = Field(description="Local filesystem path to file attachment.")
     mime_type: str | None = Field(default=None, description="Optional MIME type override.")
@@ -19,7 +32,7 @@ class RecipientSet(BaseModel):
     bcc: list[EmailStr] = Field(default_factory=list, description="BCC recipient addresses.")
 
 
-class SendEmailRequest(BaseModel):
+class SendEmailRequest(ToolRequestModel):
     recipients: RecipientSet = Field(description="Recipient lists for TO/CC/BCC.")
     subject: str = Field(description="Email subject line.")
     text_body: str | None = Field(default=None, description="Plain text email body.")
@@ -28,11 +41,25 @@ class SendEmailRequest(BaseModel):
     confirm_send: bool = Field(default=True, description="Prompt user confirmation before sending when true.")
 
 
-class ReadEmailRequest(BaseModel):
-    message_id: str = Field(description="Gmail message ID.")
+class ReadEmailRequest(ToolRequestModel):
+    message_id: str = Field(
+        min_length=1,
+        description=(
+            "Gmail message ID to read. Pass as an object payload, e.g. "
+            '{"message_id":"18c9c7b7e2a1f123"}.'
+        ),
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"message_id": "18c9c7b7e2a1f123"},
+            ]
+        }
+    }
 
 
-class SearchEmailRequest(BaseModel):
+class SearchEmailRequest(ToolRequestModel):
     query: str | None = Field(default=None, description="Gmail search query syntax.")
     label_ids: list[str] = Field(default_factory=list, description="Optional label IDs filter.")
     max_results: int = Field(default=25, ge=1, le=500, description="Maximum messages to return.")
@@ -40,35 +67,35 @@ class SearchEmailRequest(BaseModel):
     include_spam_trash: bool = Field(default=False, description="Include spam and trash in search.")
 
 
-class ListEmailsRequest(BaseModel):
+class ListEmailsRequest(ToolRequestModel):
     label_id: str = Field(default="INBOX", description="Single label ID to list messages from.")
     max_results: int = Field(default=25, ge=1, le=500, description="Maximum messages to return.")
     page_token: str | None = Field(default=None, description="Pagination token from previous call.")
 
 
-class ModifyMessageRequest(BaseModel):
+class ModifyMessageRequest(ToolRequestModel):
     message_id: str = Field(description="Message ID to modify.")
     add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add.")
     remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove.")
 
 
-class BatchModifyRequest(BaseModel):
+class BatchModifyRequest(ToolRequestModel):
     message_ids: list[str] = Field(description="Message IDs to modify.")
     add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add to all messages.")
     remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove from all messages.")
 
 
-class DeleteMessageRequest(BaseModel):
+class DeleteMessageRequest(ToolRequestModel):
     message_id: str = Field(description="Message ID to delete.")
     permanent: bool = Field(default=False, description="Permanently delete instead of moving to trash.")
 
 
-class BatchDeleteRequest(BaseModel):
+class BatchDeleteRequest(ToolRequestModel):
     message_ids: list[str] = Field(description="Message IDs to delete.")
     permanent: bool = Field(default=False, description="Permanently delete instead of moving to trash.")
 
 
-class LabelCreateRequest(BaseModel):
+class LabelCreateRequest(ToolRequestModel):
     name: str = Field(description="New label display name.")
     message_list_visibility: Literal["show", "hide"] | None = Field(default=None, description="Message list visibility setting.")
     label_list_visibility: Literal["labelShow", "labelShowIfUnread", "labelHide"] | None = Field(default=None, description="Label list visibility setting.")
@@ -76,7 +103,7 @@ class LabelCreateRequest(BaseModel):
     text_color: str | None = Field(default=None, description="Hex text color.")
 
 
-class LabelUpdateRequest(BaseModel):
+class LabelUpdateRequest(ToolRequestModel):
     label_id: str = Field(description="Label ID to update.")
     name: str | None = Field(default=None, description="Updated label name.")
     message_list_visibility: Literal["show", "hide"] | None = Field(default=None, description="Updated message list visibility.")
@@ -85,15 +112,15 @@ class LabelUpdateRequest(BaseModel):
     text_color: str | None = Field(default=None, description="Updated hex text color.")
 
 
-class LabelDeleteRequest(BaseModel):
+class LabelDeleteRequest(ToolRequestModel):
     label_id: str = Field(description="Label ID to delete.")
 
 
-class ListAttachmentsRequest(BaseModel):
+class ListAttachmentsRequest(ToolRequestModel):
     message_id: str = Field(description="Message ID to inspect for attachments.")
 
 
-class DownloadAttachmentRequest(BaseModel):
+class DownloadAttachmentRequest(ToolRequestModel):
     message_id: str = Field(description="Message ID that contains the attachment.")
     attachment_id: str = Field(description="Attachment ID returned by list_attachments.")
     output_path: str = Field(description="Local output path where bytes will be saved.")
@@ -153,28 +180,28 @@ class FilterActionInput(BaseModel):
         return payload
 
 
-class CreateFilterRequest(BaseModel):
+class CreateFilterRequest(ToolRequestModel):
     criteria: FilterCriteriaInput = Field(description="Filter matching criteria block.")
     action: FilterActionInput = Field(description="Filter action block.")
 
 
-class DeleteFilterRequest(BaseModel):
+class DeleteFilterRequest(ToolRequestModel):
     filter_id: str = Field(description="Filter ID to delete.")
 
 
-class ListDraftsRequest(BaseModel):
+class ListDraftsRequest(ToolRequestModel):
     max_results: int = Field(default=25, ge=1, le=500, description="Maximum drafts to return.")
     page_token: str | None = Field(default=None, description="Pagination token from previous response.")
     include_spam_trash: bool = Field(default=False, description="Include spam/trash messages in draft listing context.")
 
 
-class GetDraftRequest(BaseModel):
+class GetDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to fetch.")
     format: Literal["full", "metadata", "minimal", "raw"] = Field(default="full", description="Message format in draft payload.")
     metadata_headers: list[str] = Field(default_factory=list, description="Headers to include when format is metadata.")
 
 
-class CreateDraftRequest(BaseModel):
+class CreateDraftRequest(ToolRequestModel):
     recipients: RecipientSet = Field(description="Recipient lists for draft message.")
     subject: str = Field(description="Draft subject.")
     text_body: str | None = Field(default=None, description="Plain text draft body.")
@@ -183,7 +210,7 @@ class CreateDraftRequest(BaseModel):
     thread_id: str | None = Field(default=None, description="Optional thread ID for reply-style drafts.")
 
 
-class UpdateDraftRequest(BaseModel):
+class UpdateDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to replace.")
     recipients: RecipientSet = Field(description="Updated recipient lists.")
     subject: str = Field(description="Updated draft subject.")
@@ -193,15 +220,15 @@ class UpdateDraftRequest(BaseModel):
     thread_id: str | None = Field(default=None, description="Thread ID for updated draft message.")
 
 
-class DeleteDraftRequest(BaseModel):
+class DeleteDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to delete.")
 
 
-class SendDraftRequest(BaseModel):
+class SendDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to send.")
 
 
-class ListThreadsRequest(BaseModel):
+class ListThreadsRequest(ToolRequestModel):
     query: str | None = Field(default=None, description="Optional Gmail query to filter threads.")
     label_ids: list[str] = Field(default_factory=list, description="Optional label IDs filter for thread list.")
     max_results: int = Field(default=25, ge=1, le=500, description="Maximum threads to return.")
@@ -209,23 +236,23 @@ class ListThreadsRequest(BaseModel):
     include_spam_trash: bool = Field(default=False, description="Include spam/trash in thread listing.")
 
 
-class GetThreadRequest(BaseModel):
+class GetThreadRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID to fetch.")
     format: Literal["full", "metadata", "minimal"] = Field(default="full", description="Message format for thread payload.")
     metadata_headers: list[str] = Field(default_factory=list, description="Headers to include when format is metadata.")
 
 
-class ModifyThreadRequest(BaseModel):
+class ModifyThreadRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID to modify.")
     add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add to all thread messages.")
     remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove from all thread messages.")
 
 
-class ThreadIdRequest(BaseModel):
+class ThreadIdRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID.")
 
 
-class ListHistoryRequest(BaseModel):
+class ListHistoryRequest(ToolRequestModel):
     start_history_id: str = Field(description="Start history ID returned by prior Gmail read/list operations.")
     history_types: list[
         Literal[
@@ -240,16 +267,16 @@ class ListHistoryRequest(BaseModel):
     page_token: str | None = Field(default=None, description="Pagination token from previous response.")
 
 
-class ForwardingAddressRequest(BaseModel):
+class ForwardingAddressRequest(ToolRequestModel):
     forwarding_email: EmailStr = Field(description="Forwarding email address.")
 
 
-class GetVacationSettingsRequest(BaseModel):
+class GetVacationSettingsRequest(ToolRequestModel):
     # No args currently needed; request model kept for consistency.
     include_placeholder: bool = Field(default=False, description="Placeholder field; ignored by API call.")
 
 
-class UpdateVacationSettingsRequest(BaseModel):
+class UpdateVacationSettingsRequest(ToolRequestModel):
     enable_auto_reply: bool = Field(default=False, description="Enable/disable vacation auto-reply.")
     response_subject: str | None = Field(default=None, description="Auto-reply subject line.")
     response_body_plain_text: str | None = Field(default=None, description="Plain text auto-reply body.")
@@ -260,10 +287,10 @@ class UpdateVacationSettingsRequest(BaseModel):
     end_time: int | None = Field(default=None, ge=0, description="End time as epoch milliseconds.")
 
 
-class MessageIdRequest(BaseModel):
+class MessageIdRequest(ToolRequestModel):
     message_id: str = Field(description="Gmail message ID.")
 
 
-class MarkNotSpamRequest(BaseModel):
+class MarkNotSpamRequest(ToolRequestModel):
     message_id: str = Field(description="Message ID currently in spam.")
     add_to_inbox: bool = Field(default=True, description="Add INBOX label while removing SPAM.")

@@ -11,6 +11,19 @@ from pydantic import BaseModel, Field, field_validator
 DashboardView = Literal["agenda", "day", "week", "month"]
 
 
+class ToolRequestModel(BaseModel):
+    """Base input model for MCP tools expecting object payloads."""
+
+    model_config = {
+        "json_schema_extra": {
+            "description": (
+                "Pass this as a JSON object payload to the tool. "
+                "Do not pass a raw string for the full request."
+            )
+        }
+    }
+
+
 class DashboardState(BaseModel):
     session_id: str = Field(default_factory=lambda: f"session-{uuid4()}")
     view: DashboardView = Field(default="week")
@@ -21,7 +34,7 @@ class DashboardState(BaseModel):
     include_weekend: bool = Field(default=True)
 
 
-class DashboardStatePatch(BaseModel):
+class DashboardStatePatch(ToolRequestModel):
     view: DashboardView | None = None
     anchor_date: dt.date | None = None
     timezone: str | None = None
@@ -63,13 +76,13 @@ class DashboardViewModel(BaseModel):
     section_errors: dict[str, str] = Field(default_factory=dict)
 
 
-class MorningBriefingRequest(BaseModel):
-    session_id: str | None = None
-    date: dt.date | None = None
-    timezone: str | None = None
-    max_priorities: int = Field(default=5, ge=1, le=10)
-    max_quick_wins: int = Field(default=5, ge=1, le=10)
-    include_inbox: bool = True
+class MorningBriefingRequest(ToolRequestModel):
+    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
+    date: dt.date | None = Field(default=None, description="Briefing date (YYYY-MM-DD), defaults to today.")
+    timezone: str | None = Field(default=None, description="IANA timezone override, defaults to state/user timezone.")
+    max_priorities: int = Field(default=5, ge=1, le=10, description="Maximum priority items to include.")
+    max_quick_wins: int = Field(default=5, ge=1, le=10, description="Maximum quick-win actions to include.")
+    include_inbox: bool = Field(default=True, description="Whether to include inbox-driven briefing items.")
 
 
 class BriefingPriority(BaseModel):
@@ -144,16 +157,16 @@ class AppError(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
-class FindMeetingSlotsRequest(BaseModel):
-    participants: list[str] = Field(default_factory=lambda: ["primary"])
-    time_min: str
-    time_max: str
-    slot_duration_minutes: int = Field(default=30, ge=5, le=480)
-    granularity_minutes: int = Field(default=15, ge=5, le=240)
-    max_results: int = Field(default=10, ge=1, le=100)
-    time_zone: str = Field(default="UTC")
-    working_hours_start: str = Field(default="08:00")
-    working_hours_end: str = Field(default="17:00")
+class FindMeetingSlotsRequest(ToolRequestModel):
+    participants: list[str] = Field(default_factory=lambda: ["primary"], description="Calendar IDs/emails to include in availability intersection.")
+    time_min: str = Field(description="RFC3339 start datetime for search window.")
+    time_max: str = Field(description="RFC3339 end datetime for search window.")
+    slot_duration_minutes: int = Field(default=30, ge=5, le=480, description="Desired meeting slot duration in minutes.")
+    granularity_minutes: int = Field(default=15, ge=5, le=240, description="Step size between candidate slot starts in minutes.")
+    max_results: int = Field(default=10, ge=1, le=100, description="Maximum number of slot suggestions to return.")
+    time_zone: str = Field(default="UTC", description="IANA timezone for rendering/normalizing slots.")
+    working_hours_start: str = Field(default="08:00", description="Daily working-hours start in HH:MM 24h format.")
+    working_hours_end: str = Field(default="17:00", description="Daily working-hours end in HH:MM 24h format.")
 
     @field_validator("working_hours_start", "working_hours_end")
     @classmethod
@@ -170,36 +183,36 @@ class FindMeetingSlotsRequest(BaseModel):
         return value
 
 
-class CreateMeetingFromSlotRequest(BaseModel):
-    session_id: str | None = None
-    calendar_id: str = "primary"
-    title: str
-    start: str
-    end: str
-    timezone: str = "UTC"
-    description: str | None = None
-    attendees: list[str] = Field(default_factory=list)
-    create_conference: bool = True
-    idempotency_key: str
+class CreateMeetingFromSlotRequest(ToolRequestModel):
+    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
+    calendar_id: str = Field(default="primary", description="Target calendar ID.")
+    title: str = Field(description="Meeting title/summary.")
+    start: str = Field(description="RFC3339 start datetime.")
+    end: str = Field(description="RFC3339 end datetime.")
+    timezone: str = Field(default="UTC", description="IANA timezone for start/end rendering.")
+    description: str | None = Field(default=None, description="Optional meeting description.")
+    attendees: list[str] = Field(default_factory=list, description="Attendee email list.")
+    create_conference: bool = Field(default=True, description="Whether to request conference data (e.g., Meet).")
+    idempotency_key: str = Field(description="Stable key to prevent duplicate creates on retry.")
 
 
-class RescheduleMeetingRequest(BaseModel):
-    session_id: str | None = None
-    calendar_id: str = "primary"
-    event_id: str
-    start: str
-    end: str
-    timezone: str = "UTC"
-    idempotency_key: str
+class RescheduleMeetingRequest(ToolRequestModel):
+    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
+    calendar_id: str = Field(default="primary", description="Target calendar ID.")
+    event_id: str = Field(description="Existing calendar event ID to reschedule.")
+    start: str = Field(description="New RFC3339 start datetime.")
+    end: str = Field(description="New RFC3339 end datetime.")
+    timezone: str = Field(default="UTC", description="IANA timezone for start/end rendering.")
+    idempotency_key: str = Field(description="Stable key to prevent duplicate reschedules on retry.")
 
 
-class CancelMeetingRequest(BaseModel):
-    session_id: str | None = None
-    calendar_id: str = "primary"
-    event_id: str
-    confirm: bool = False
-    send_updates: str | None = None
-    idempotency_key: str
+class CancelMeetingRequest(ToolRequestModel):
+    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
+    calendar_id: str = Field(default="primary", description="Target calendar ID.")
+    event_id: str = Field(description="Existing calendar event ID to cancel.")
+    confirm: bool = Field(default=False, description="Interactive confirmation flag for destructive action.")
+    send_updates: str | None = Field(default=None, description="Guest update mode (all, externalOnly, none).")
+    idempotency_key: str = Field(description="Stable key to prevent duplicate cancels on retry.")
 
 
 class AppActionResult(BaseModel):
