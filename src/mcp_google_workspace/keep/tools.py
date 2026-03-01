@@ -8,10 +8,12 @@ from fastmcp import Context, FastMCP
 
 from .client import keep_service, normalize_note_name
 from .schemas import (
+    AppendNoteRequest,
     CreateNoteRequest,
     DeleteNoteRequest,
     GetNoteRequest,
     ListNotesRequest,
+    PatchChecklistItemRequest,
     ShareNoteRequest,
     UnshareNoteRequest,
     UpdateNoteRequest,
@@ -34,6 +36,43 @@ def _build_note_body(request: CreateNoteRequest | UpdateNoteRequest) -> dict[str
         }
     elif request.text_body:
         note["body"] = {"text": {"text": request.text_body}}
+    return note
+
+
+def _extract_note_text(note: dict[str, Any]) -> str:
+    return (
+        note.get("body", {})
+        .get("text", {})
+        .get("text", "")
+    )
+
+
+def _extract_note_checklist(note: dict[str, Any]) -> list[dict[str, Any]]:
+    list_items = note.get("body", {}).get("list", {}).get("listItems", [])
+    extracted: list[dict[str, Any]] = []
+    for item in list_items:
+        if not isinstance(item, dict):
+            continue
+        text_value = item.get("text", {}).get("text", "")
+        extracted.append({"text": text_value, "checked": bool(item.get("checked", False))})
+    return extracted
+
+
+def _build_replacement_note(title: str | None, text_body: str | None, checklist: list[dict[str, Any]]) -> dict[str, Any]:
+    note: dict[str, Any] = {}
+    if title:
+        note["title"] = title
+    if checklist:
+        note["body"] = {
+            "list": {
+                "listItems": [
+                    {"text": {"text": str(item.get("text", ""))}, "checked": bool(item.get("checked", False))}
+                    for item in checklist
+                ]
+            }
+        }
+    elif text_body:
+        note["body"] = {"text": {"text": text_body}}
     return note
 
 
@@ -175,6 +214,7 @@ def register_tools(server: FastMCP) -> None:
         return {
             "status": "unsupported",
             "reason": "Keep API v1 does not support note patch/update.",
+            "suggested_tool": "patch_note_checklist",
         }
 
     @server.tool(name="toggle_checklist_item")
@@ -184,6 +224,7 @@ def register_tools(server: FastMCP) -> None:
         return {
             "status": "unsupported",
             "reason": "Keep API v1 does not support note patch/update.",
+            "suggested_tool": "patch_note_checklist",
         }
 
     @server.tool(name="remove_checklist_item")
@@ -193,7 +234,112 @@ def register_tools(server: FastMCP) -> None:
         return {
             "status": "unsupported",
             "reason": "Keep API v1 does not support note patch/update.",
+            "suggested_tool": "patch_note_checklist",
         }
+
+    @server.tool(name="append_note_content")
+    async def append_note_content(request: AppendNoteRequest, ctx: Context) -> dict[str, Any]:
+        """Append text/checklist content using a replacement-note workflow."""
+        service = keep_service()
+        source_name = normalize_note_name(request.note_name)
+        await ctx.info(f"Preparing append operation for Keep note {source_name}.")
+        original = service.notes().get(name=source_name).execute()
+        existing_text = _extract_note_text(original)
+        existing_checklist = _extract_note_checklist(original)
+        title = original.get("title")
+
+        checklist_mode = bool(existing_checklist or request.checklist_append)
+        replacement_text = existing_text
+        replacement_checklist = list(existing_checklist)
+        if checklist_mode:
+            if request.text_append:
+                replacement_checklist.append({"text": request.text_append, "checked": False})
+            for item in request.checklist_append:
+                replacement_checklist.append({"text": item.text, "checked": item.checked})
+            replacement_text = ""
+        elif request.text_append:
+            replacement_text = f"{existing_text}\n{request.text_append}".strip() if existing_text else request.text_append
+
+        replacement_note = _build_replacement_note(title, replacement_text, replacement_checklist)
+        response: dict[str, Any] = {
+            "status": "preview",
+            "mode": "replacement",
+            "source_note": source_name,
+            "replacement_note_payload": replacement_note,
+            "note": "Keep API has no patch endpoint; this workflow creates a replacement note.",
+        }
+        if not request.apply_via_replacement:
+            return response
+
+        await ctx.warning("Applying replacement-note workflow (create new note).")
+        created = service.notes().create(body=replacement_note).execute()
+        response.update(
+            {
+                "status": "applied",
+                "replacement_note": created,
+            }
+        )
+        if request.delete_original_on_apply:
+            service.notes().delete(name=source_name).execute()
+            response["original_deleted"] = True
+        return response
+
+    @server.tool(name="patch_note_checklist")
+    async def patch_note_checklist(request: PatchChecklistItemRequest, ctx: Context) -> dict[str, Any]:
+        """Patch checklist items using replacement-note workflow with preview/apply modes."""
+        service = keep_service()
+        source_name = normalize_note_name(request.note_name)
+        await ctx.info(f"Preparing checklist patch for Keep note {source_name}.")
+        original = service.notes().get(name=source_name).execute()
+        title = original.get("title")
+        checklist = _extract_note_checklist(original)
+
+        if request.operation == "add":
+            if not request.text:
+                raise ValueError("text is required when operation='add'.")
+            checklist.append({"text": request.text, "checked": bool(request.checked)})
+        elif request.operation == "remove":
+            if request.index is None:
+                raise ValueError("index is required when operation='remove'.")
+            if request.index < 0 or request.index >= len(checklist):
+                raise IndexError("index out of range for checklist.")
+            checklist.pop(request.index)
+        elif request.operation == "set_checked":
+            if request.index is None or request.checked is None:
+                raise ValueError("index and checked are required when operation='set_checked'.")
+            if request.index < 0 or request.index >= len(checklist):
+                raise IndexError("index out of range for checklist.")
+            checklist[request.index]["checked"] = request.checked
+        elif request.operation == "set_text":
+            if request.index is None or not request.text:
+                raise ValueError("index and text are required when operation='set_text'.")
+            if request.index < 0 or request.index >= len(checklist):
+                raise IndexError("index out of range for checklist.")
+            checklist[request.index]["text"] = request.text
+
+        replacement_note = _build_replacement_note(title, None, checklist)
+        response: dict[str, Any] = {
+            "status": "preview",
+            "mode": "replacement",
+            "source_note": source_name,
+            "replacement_note_payload": replacement_note,
+            "note": "Keep API has no patch endpoint; this workflow creates a replacement note.",
+        }
+        if not request.apply_via_replacement:
+            return response
+
+        await ctx.warning("Applying replacement-note checklist patch (create new note).")
+        created = service.notes().create(body=replacement_note).execute()
+        response.update(
+            {
+                "status": "applied",
+                "replacement_note": created,
+            }
+        )
+        if request.delete_original_on_apply:
+            service.notes().delete(name=source_name).execute()
+            response["original_deleted"] = True
+        return response
 
     @server.tool(name="share_note")
     async def share_note(request: ShareNoteRequest, ctx: Context) -> dict[str, Any]:

@@ -53,10 +53,14 @@ class ReadEmailRequest(ToolRequestModel):
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {"message_id": "18c9c7b7e2a1f123"},
+                {"message_id": "18c9c7b7e2a1f123", "summary_mode": True},
             ]
         }
     }
+    summary_mode: bool = Field(
+        default=False,
+        description="When true, return a compact summary without full text/html bodies.",
+    )
 
 
 class SearchEmailRequest(ToolRequestModel):
@@ -65,11 +69,23 @@ class SearchEmailRequest(ToolRequestModel):
     max_results: int = Field(default=25, ge=1, le=500, description="Maximum messages to return.")
     page_token: str | None = Field(default=None, description="Pagination token from previous call.")
     include_spam_trash: bool = Field(default=False, description="Include spam and trash in search.")
+    from_email: str | None = Field(default=None, description="Optional sender email helper filter.")
+    to_email: str | None = Field(default=None, description="Optional recipient email helper filter.")
+    subject_contains: str | None = Field(default=None, description="Optional subject phrase helper filter.")
+    has_attachment: bool = Field(default=False, description="When true, filter for emails with attachments.")
+    is_unread: bool = Field(default=False, description="When true, filter for unread emails.")
+    newer_than_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=3650,
+        description="Optional recency helper in days, translated to newer_than:{N}d.",
+    )
 
 
 class ListEmailsRequest(ToolRequestModel):
-    label_id: str = Field(default="INBOX", description="Single label ID to list messages from.")
-    max_results: int = Field(default=25, ge=1, le=500, description="Maximum messages to return.")
+    label_id: str = Field(default="INBOX", description="Primary label ID to list messages from.")
+    max_results: int = Field(default=5, ge=1, le=500, description="Maximum messages to return (defaults to 5).")
+    unread_only: bool = Field(default=False, description="When true, only unread messages are returned.")
     page_token: str | None = Field(default=None, description="Pagination token from previous call.")
 
 

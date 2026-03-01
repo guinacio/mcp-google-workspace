@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -78,6 +78,10 @@ class UploadFileRequest(ToolRequestModel):
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs.")
     mime_type: str | None = Field(default=None, description="Content MIME type; auto-detected when omitted.")
     resumable: bool = Field(default=True, description="Use resumable upload flow.")
+    if_exists: Literal["rename", "overwrite", "skip"] = Field(
+        default="rename",
+        description="Behavior when a file with same name already exists in target parent scope.",
+    )
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
     fields: str = Field(default="id,name,mimeType,size,parents,driveId,webViewLink", description="Fields selector.")
 
@@ -122,7 +126,15 @@ class CopyFileRequest(ToolRequestModel):
 
 
 class DeleteFileRequest(ToolRequestModel):
-    file_id: str = Field(description="Drive file ID to permanently delete.")
+    file_id: str = Field(description="Drive file ID to delete or trash.")
+    delete_mode: Literal["trash", "permanent"] = Field(
+        default="trash",
+        description="Safer delete mode. 'trash' moves to trash, 'permanent' irreversibly deletes.",
+    )
+    confirm_permanent: bool = Field(
+        default=True,
+        description="Require interactive confirmation before permanent delete when true.",
+    )
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 

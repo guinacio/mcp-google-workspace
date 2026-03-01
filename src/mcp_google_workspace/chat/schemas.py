@@ -61,3 +61,15 @@ class UpdateMessageRequest(ToolRequestModel):
     message_name: str = Field(description="Chat message resource name.")
     text: str = Field(description="Updated message text.")
     update_mask: str = Field(default="text", description="Comma-separated field mask for mutable fields.")
+
+
+class PostSimpleMessageRequest(ToolRequestModel):
+    space_name: str = Field(description="Chat space resource name.")
+    text: str = Field(description="Message text content.")
+    notify: bool = Field(default=False, description="Whether to ask interactive confirmation before posting.")
+
+
+class ReplyToMessageRequest(ToolRequestModel):
+    message_name: str = Field(description="Existing Chat message resource name to reply to.")
+    text: str = Field(description="Reply text content.")
+    notify: bool = Field(default=False, description="Whether to ask interactive confirmation before posting.")

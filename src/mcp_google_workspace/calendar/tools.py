@@ -89,6 +89,84 @@ def _check_time_slot_conflicts(
         }
 
 
+def _resolve_relative_range(
+    range_preset: str | None,
+    timezone_name: str,
+) -> tuple[str | None, str | None]:
+    if not range_preset:
+        return None, None
+    tz = pytz.timezone(timezone_name)
+    now = datetime.now(tz)
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if range_preset == "today":
+        start, end = start_of_day, start_of_day + timedelta(days=1)
+    elif range_preset == "tomorrow":
+        start = start_of_day + timedelta(days=1)
+        end = start + timedelta(days=1)
+    elif range_preset == "this_week":
+        week_start = start_of_day - timedelta(days=start_of_day.weekday())
+        start, end = week_start, week_start + timedelta(days=7)
+    elif range_preset == "next_7_days":
+        start, end = now, now + timedelta(days=7)
+    else:  # pragma: no cover - schema restricts this value
+        raise ValueError(f"Unsupported range_preset: {range_preset}")
+    return start.isoformat(), end.isoformat()
+
+
+def _suggest_next_available_slots(
+    service: Any,
+    calendar_id: str,
+    requested_start: str,
+    requested_end: str,
+    *,
+    max_results: int = 5,
+    granularity_minutes: int = 15,
+    horizon_hours: int = 72,
+) -> list[dict[str, str]]:
+    desired_start = _parse_rfc3339_datetime(requested_start)
+    desired_end = _parse_rfc3339_datetime(requested_end)
+    if desired_end <= desired_start:
+        return []
+    duration = desired_end - desired_start
+    search_end = desired_start + timedelta(hours=horizon_hours)
+    freebusy = service.freebusy().query(
+        body={
+            "timeMin": desired_start.isoformat(),
+            "timeMax": search_end.isoformat(),
+            "items": [{"id": calendar_id}],
+        }
+    ).execute()
+    busy_ranges: list[tuple[datetime, datetime]] = []
+    for busy in freebusy.get("calendars", {}).get(calendar_id, {}).get("busy", []):
+        start_raw = busy.get("start")
+        end_raw = busy.get("end")
+        if not start_raw or not end_raw:
+            continue
+        busy_start = _parse_rfc3339_datetime(start_raw)
+        busy_end = _parse_rfc3339_datetime(end_raw)
+        if busy_end <= busy_start:
+            continue
+        busy_ranges.append((busy_start, busy_end))
+    merged_busy = _merge_time_ranges(busy_ranges)
+    free_ranges: list[tuple[datetime, datetime]] = []
+    cursor = desired_start
+    for busy_start, busy_end in merged_busy:
+        if busy_end <= cursor:
+            continue
+        if busy_start > cursor:
+            free_ranges.append((cursor, busy_start))
+        cursor = max(cursor, busy_end)
+    if cursor < search_end:
+        free_ranges.append((cursor, search_end))
+    slot_minutes = max(int(duration.total_seconds() // 60), 1)
+    return _build_slot_candidates(
+        free_ranges=free_ranges,
+        slot_duration_minutes=slot_minutes,
+        granularity_minutes=granularity_minutes,
+        max_results=max_results,
+    )
+
+
 def _parse_rfc3339_datetime(value: str) -> datetime:
     normalized = value.replace("Z", "+00:00")
     parsed = datetime.fromisoformat(normalized)
@@ -195,10 +273,14 @@ def register_tools(server: FastMCP) -> None:
         """
         service = build_calendar_service()
         await ctx.info(f"Listing events for calendar {request.calendar_id}.")
+        user_timezone = service.settings().get(setting="timezone").execute().get("value", "UTC")
+        preset_min, preset_max = _resolve_relative_range(request.range_preset, user_timezone)
+        effective_time_min = request.time_min or preset_min
+        effective_time_max = request.time_max or preset_max
         list_kwargs: dict[str, Any] = {
             "calendarId": request.calendar_id,
-            "timeMin": request.time_min,
-            "timeMax": request.time_max,
+            "timeMin": effective_time_min,
+            "timeMax": effective_time_max,
             "maxResults": request.max_results,
             "singleEvents": request.single_events,
         }
@@ -210,6 +292,10 @@ def register_tools(server: FastMCP) -> None:
             .list(**list_kwargs)
             .execute()
         )
+        if request.range_preset:
+            result["range_preset"] = request.range_preset
+            result["effective_time_min"] = effective_time_min
+            result["effective_time_max"] = effective_time_max
         return result
 
     @server.tool(name="get_event")
@@ -404,12 +490,20 @@ def register_tools(server: FastMCP) -> None:
             end,
         )
         if conflict_check["has_conflicts"]:
-            return {
+            response: dict[str, Any] = {
                 "error": "Time slot is not available - there are overlapping events",
                 "status": "CONFLICT",
                 "conflicting_events": conflict_check["conflicts"],
                 "conflict_check_error": conflict_check["error"],
             }
+            if request.on_conflict == "suggest_next_slot":
+                response["suggested_slots"] = _suggest_next_available_slots(
+                    service=service,
+                    calendar_id=request.calendar_id,
+                    requested_start=start,
+                    requested_end=end,
+                )
+            return response
         await ctx.info(f"Creating event '{request.summary}'.")
         event = (
             service.events()
@@ -467,12 +561,20 @@ def register_tools(server: FastMCP) -> None:
                 patch_data["end"]["dateTime"],
             )
             if conflict_check["has_conflicts"]:
-                return {
+                response: dict[str, Any] = {
                     "error": "New time slot is not available - there are overlapping events",
                     "status": "CONFLICT",
                     "conflicting_events": conflict_check["conflicts"],
                     "conflict_check_error": conflict_check["error"],
                 }
+                if request.on_conflict == "suggest_next_slot":
+                    response["suggested_slots"] = _suggest_next_available_slots(
+                        service=service,
+                        calendar_id=request.calendar_id,
+                        requested_start=patch_data["start"]["dateTime"],
+                        requested_end=patch_data["end"]["dateTime"],
+                    )
+                return response
         await ctx.info(f"Updating event {request.event_id}.")
         event = (
             service.events()

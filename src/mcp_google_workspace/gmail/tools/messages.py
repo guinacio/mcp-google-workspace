@@ -98,7 +98,7 @@ def register(server: FastMCP) -> None:
         payload = message.get("payload", {})
         headers = payload.get("headers", [])
         header_map = {h.get("name", "").lower(): h.get("value", "") for h in headers}
-        bodies = extract_message_bodies(payload)
+        bodies = extract_message_bodies(payload) if not request.summary_mode else {"text": None, "html": None}
         attachments: list[dict[str, Any]] = []
         for part in flatten_parts(payload):
             filename = part.get("filename")
@@ -129,6 +129,8 @@ def register(server: FastMCP) -> None:
             "label_ids": message.get("labelIds", []),
             "history_id": message.get("historyId"),
             "internal_date": message.get("internalDate"),
+            "summary_mode": request.summary_mode,
+            "bodies_omitted": request.summary_mode,
         }
 
     @server.tool(name="mark_as_read")

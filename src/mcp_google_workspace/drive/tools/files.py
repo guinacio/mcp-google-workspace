@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,39 @@ def _build_metadata_body(request: CreateFileMetadataRequest) -> dict[str, Any]:
     if request.properties is not None:
         body["properties"] = request.properties
     return body
+
+
+def _escape_drive_query_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _find_existing_file_by_name(
+    service: Any,
+    *,
+    name: str,
+    parent_ids: list[str],
+    supports_all_drives: bool,
+) -> dict[str, Any] | None:
+    safe_name = _escape_drive_query_string(name)
+    query_parts = [f"name = '{safe_name}'", "trashed = false"]
+    if parent_ids:
+        query_parts.append(f"'{parent_ids[0]}' in parents")
+    result = service.files().list(
+        q=" and ".join(query_parts),
+        pageSize=1,
+        supportsAllDrives=supports_all_drives,
+        includeItemsFromAllDrives=True,
+        fields="files(id,name,parents,mimeType,driveId,webViewLink)",
+    ).execute()
+    files = result.get("files", [])
+    return files[0] if files else None
+
+
+def _renamed_filename(original_name: str) -> str:
+    stem = Path(original_name).stem
+    suffix = Path(original_name).suffix
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"{stem} (upload {ts}){suffix}"
 
 
 async def _execute_resumable_upload_with_progress(
@@ -152,10 +186,51 @@ def register(server: FastMCP) -> None:
         src = Path(request.local_path)
         if not src.exists():
             raise FileNotFoundError(f"Local file not found: {src}")
-        body: dict[str, Any] = {"name": request.name or src.name}
+        requested_name = request.name or src.name
+        existing_file = _find_existing_file_by_name(
+            service,
+            name=requested_name,
+            parent_ids=request.parent_ids,
+            supports_all_drives=request.supports_all_drives,
+        )
+        if existing_file and request.if_exists == "skip":
+            await ctx.info(
+                f"Skipping upload: file '{requested_name}' already exists as {existing_file.get('id')}."
+            )
+            return {
+                "status": "skipped",
+                "reason": "file_exists",
+                "existing_file": existing_file,
+            }
+        target_name = requested_name
+        if existing_file and request.if_exists == "rename":
+            target_name = _renamed_filename(requested_name)
+            await ctx.info(f"File exists; renaming upload target to '{target_name}'.")
+        body: dict[str, Any] = {"name": target_name}
         if request.parent_ids:
             body["parents"] = request.parent_ids
         media = media_file_upload(request.local_path, request.mime_type, request.resumable)
+        if existing_file and request.if_exists == "overwrite":
+            await ctx.info(f"Overwriting existing Drive file {existing_file.get('id')}.")
+            update_request = (
+                service.files().update(
+                    fileId=existing_file["id"],
+                    body={"name": target_name},
+                    media_body=media,
+                    supportsAllDrives=request.supports_all_drives,
+                    fields=request.fields,
+                )
+            )
+            if request.resumable:
+                updated = await _execute_resumable_upload_with_progress(
+                    update_request,
+                    ctx,
+                    "Overwriting Drive file",
+                )
+            else:
+                updated = update_request.execute()
+                await ctx.report_progress(100, 100, "Overwriting Drive file completed")
+            return {"status": "ok", "mode": "overwrite", "file": updated}
         await ctx.info(f"Uploading local file '{src.name}' to Drive.")
         create_request = (
             service.files()
@@ -175,7 +250,7 @@ def register(server: FastMCP) -> None:
         else:
             created = create_request.execute()
             await ctx.report_progress(100, 100, "Uploading Drive file completed")
-        return {"status": "ok", "file": created}
+        return {"status": "ok", "mode": "create", "file": created}
 
     @server.tool(name="update_file_metadata")
     async def update_file_metadata(request: UpdateFileMetadataRequest, ctx: Context) -> dict[str, Any]:
@@ -282,14 +357,30 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="delete_file")
     async def delete_file(request: DeleteFileRequest, ctx: Context) -> dict[str, Any]:
-        """Permanently delete a Drive file."""
+        """Delete a Drive file safely (trash by default, permanent optional)."""
         service = drive_service()
-        await ctx.warning(f"Deleting Drive file {request.file_id}.")
+        if request.delete_mode == "trash":
+            await ctx.info(f"Moving Drive file {request.file_id} to trash.")
+            updated = service.files().update(
+                fileId=request.file_id,
+                body={"trashed": True},
+                supportsAllDrives=request.supports_all_drives,
+                fields="id,name,trashed,driveId,webViewLink",
+            ).execute()
+            return {"status": "ok", "mode": "trash", "file": updated}
+        if request.confirm_permanent:
+            response = await ctx.elicit(
+                f"Permanently delete Drive file {request.file_id}? This cannot be undone.",
+                response_type=bool,  # type: ignore[arg-type]
+            )
+            if response.action != "accept" or not bool(response.data):
+                return {"status": "cancelled", "mode": "permanent"}
+        await ctx.warning(f"Permanently deleting Drive file {request.file_id}.")
         service.files().delete(
             fileId=request.file_id,
             supportsAllDrives=request.supports_all_drives,
         ).execute()
-        return {"status": "ok", "file_id": request.file_id}
+        return {"status": "ok", "mode": "permanent", "file_id": request.file_id}
 
     @server.tool(name="download_file")
     async def download_file(request: DownloadFileRequest, ctx: Context) -> dict[str, Any]:

@@ -10,18 +10,41 @@ from ..client import gmail_service
 from ..schemas import ListEmailsRequest, SearchEmailRequest
 
 
+def _build_search_query(request: SearchEmailRequest) -> str | None:
+    terms: list[str] = []
+    if request.query:
+        terms.append(f"({request.query})")
+    if request.from_email:
+        terms.append(f"from:{request.from_email}")
+    if request.to_email:
+        terms.append(f"to:{request.to_email}")
+    if request.subject_contains:
+        escaped = request.subject_contains.replace('"', '\\"')
+        terms.append(f'subject:"{escaped}"')
+    if request.has_attachment:
+        terms.append("has:attachment")
+    if request.is_unread:
+        terms.append("is:unread")
+    if request.newer_than_days is not None:
+        terms.append(f"newer_than:{request.newer_than_days}d")
+    if not terms:
+        return None
+    return " ".join(terms)
+
+
 def register(server: FastMCP) -> None:
     @server.tool(name="search_emails")
     async def search_emails(request: SearchEmailRequest, ctx: Context) -> dict[str, Any]:
         """Search Gmail messages using Gmail query syntax and optional label filters."""
         service = gmail_service()
+        query = _build_search_query(request)
         await ctx.info("Running Gmail search query.")
         result = (
             service.users()
             .messages()
             .list(
                 userId="me",
-                q=request.query,
+                q=query,
                 labelIds=request.label_ids or None,
                 maxResults=request.max_results,
                 pageToken=request.page_token,
@@ -35,19 +58,25 @@ def register(server: FastMCP) -> None:
             "messages": messages,
             "result_size_estimate": result.get("resultSizeEstimate", 0),
             "next_page_token": result.get("nextPageToken"),
+            "effective_query": query,
         }
 
     @server.tool(name="list_emails")
     async def list_emails(request: ListEmailsRequest, ctx: Context) -> dict[str, Any]:
-        """List messages from a specific label (defaults to INBOX)."""
+        """List messages from a label with optional unread-only filtering."""
         service = gmail_service()
-        await ctx.info(f"Listing emails from label {request.label_id}.")
+        label_ids = [request.label_id] if request.label_id else []
+        if request.unread_only and "UNREAD" not in label_ids:
+            label_ids.append("UNREAD")
+        await ctx.info(
+            f"Listing emails from labels {label_ids or ['INBOX']} (max_results={request.max_results})."
+        )
         result = (
             service.users()
             .messages()
             .list(
                 userId="me",
-                labelIds=[request.label_id],
+                labelIds=label_ids or ["INBOX"],
                 maxResults=request.max_results,
                 pageToken=request.page_token,
             )

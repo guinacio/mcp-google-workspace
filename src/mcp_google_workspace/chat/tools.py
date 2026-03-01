@@ -14,6 +14,8 @@ from .schemas import (
     GetSpaceRequest,
     ListMessagesRequest,
     ListSpacesRequest,
+    PostSimpleMessageRequest,
+    ReplyToMessageRequest,
     UpdateMessageRequest,
 )
 
@@ -128,3 +130,45 @@ def register_tools(server: FastMCP) -> None:
             body={"name": name, "text": request.text},
         ).execute()
         return {"status": "ok", "message": updated}
+
+    @server.tool(name="post_message_simple")
+    async def post_message_simple(request: PostSimpleMessageRequest, ctx: Context) -> dict[str, Any]:
+        """Post a simple text message to a Chat space."""
+        service = chat_service()
+        parent = normalize_space_name(request.space_name)
+        if request.notify:
+            response = await ctx.elicit(
+                f"Send Chat message to {parent}?",
+                response_type=bool,  # type: ignore[arg-type]
+            )
+            if response.action != "accept" or not bool(response.data):
+                return {"status": "cancelled"}
+        created = service.spaces().messages().create(
+            parent=parent,
+            body={"text": request.text},
+        ).execute()
+        return {"status": "ok", "message": created}
+
+    @server.tool(name="reply_to_message")
+    async def reply_to_message(request: ReplyToMessageRequest, ctx: Context) -> dict[str, Any]:
+        """Reply to an existing message, preserving its thread context."""
+        service = chat_service()
+        message_name = normalize_message_name(request.message_name)
+        if request.notify:
+            response = await ctx.elicit(
+                f"Reply to Chat message {message_name}?",
+                response_type=bool,  # type: ignore[arg-type]
+            )
+            if response.action != "accept" or not bool(response.data):
+                return {"status": "cancelled"}
+        source = service.spaces().messages().get(name=message_name).execute()
+        parent = message_name.split("/messages/", 1)[0]
+        body: dict[str, Any] = {"text": request.text}
+        thread_name = source.get("thread", {}).get("name")
+        if thread_name:
+            body["thread"] = {"name": thread_name}
+        created = service.spaces().messages().create(
+            parent=parent,
+            body=body,
+        ).execute()
+        return {"status": "ok", "message": created, "replied_to": message_name, "thread_name": thread_name}

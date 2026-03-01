@@ -42,6 +42,13 @@ class ListEventsRequest(ToolRequestModel):
     max_results: int = Field(default=25, ge=1, le=2500, description="Maximum events to return.")
     single_events: bool = Field(default=True, description="Expand recurring events into single instances.")
     order_by: str = Field(default="startTime", description="Sort order, typically 'startTime'.")
+    range_preset: Literal["today", "tomorrow", "this_week", "next_7_days"] | None = Field(
+        default=None,
+        description=(
+            "Optional relative window preset. If provided, fills missing time_min/time_max "
+            "using the selected preset."
+        ),
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -123,6 +130,10 @@ class CreateEventRequest(ToolRequestModel):
     )
     reminders: dict[str, Any] | None = Field(default=None, description="Reminder override configuration.")
     recurrence: list[str] | None = Field(default=None, description="Recurrence rules (RRULE strings).")
+    on_conflict: Literal["fail", "suggest_next_slot"] = Field(
+        default="fail",
+        description="Conflict strategy when requested time overlaps existing events.",
+    )
 
 
 class UpdateEventRequest(ToolRequestModel):
@@ -160,6 +171,10 @@ class UpdateEventRequest(ToolRequestModel):
     reminders: dict[str, Any] | None = Field(default=None, description="Updated reminder configuration.")
     recurrence: list[str] | None = Field(default=None, description="Updated recurrence rules.")
     send_updates: str | None = Field(default=None, description="Guest notification mode for update.")
+    on_conflict: Literal["fail", "suggest_next_slot"] = Field(
+        default="fail",
+        description="Conflict strategy when updated time overlaps existing events.",
+    )
 
 
 class DeleteEventRequest(ToolRequestModel):

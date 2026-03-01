@@ -1,8 +1,8 @@
 {
   "html": "src/mcp_google_workspace/apps/ui/dist/index.html",
   "tools": {
-    "get_dashboard": { "data_key": "dashboard" },
-    "get_weekly_calendar_view": { "data_key": "weekly_calendar" },
-    "get_morning_briefing": { "data_key": "briefing" }
+    "apps_get_dashboard": { "data_key": "dashboard" },
+    "apps_get_weekly_calendar_view": { "data_key": "weekly_calendar" },
+    "apps_get_morning_briefing": { "data_key": "briefing" }
   }
 }

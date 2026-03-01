@@ -75,3 +75,42 @@ class ShareNoteRequest(ToolRequestModel):
 class UnshareNoteRequest(ToolRequestModel):
     note_name: str = Field(description="Google Keep note resource name.")
     permission_names: list[str] = Field(description="Permission resource names to remove from the note.")
+
+
+class AppendNoteRequest(ToolRequestModel):
+    note_name: str = Field(description="Source note resource name.")
+    text_append: str | None = Field(default=None, description="Text appended to note body (with newline separator).")
+    checklist_append: list[ChecklistItem] = Field(default_factory=list, description="Checklist items appended to existing checklist.")
+    apply_via_replacement: bool = Field(
+        default=False,
+        description=(
+            "When true, creates a replacement note with requested changes "
+            "(Keep API has no patch endpoint)."
+        ),
+    )
+    delete_original_on_apply: bool = Field(
+        default=False,
+        description="When applying replacement, delete the original note after successful create.",
+    )
+
+
+class PatchChecklistItemRequest(ToolRequestModel):
+    note_name: str = Field(description="Source note resource name.")
+    operation: str = Field(
+        description="Checklist operation: add, remove, set_checked, or set_text.",
+        pattern=r"^(add|remove|set_checked|set_text)$",
+    )
+    index: int | None = Field(default=None, ge=0, description="Checklist item index for remove/set_checked/set_text operations.")
+    text: str | None = Field(default=None, description="Text value for add or set_text operations.")
+    checked: bool | None = Field(default=None, description="Checked state for set_checked operation.")
+    apply_via_replacement: bool = Field(
+        default=False,
+        description=(
+            "When true, creates a replacement note with requested checklist changes "
+            "(Keep API has no patch endpoint)."
+        ),
+    )
+    delete_original_on_apply: bool = Field(
+        default=False,
+        description="When applying replacement, delete the original note after successful create.",
+    )
