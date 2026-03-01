@@ -24,7 +24,14 @@ type ToolOperation =
   | "listCalendars"
   | "createEvent"
   | "updateEvent"
-  | "deleteEvent";
+  | "deleteEvent"
+  | "markEmailRead"
+  | "markEmailUnread"
+  | "moveEmail"
+  | "deleteEmail"
+  | "untrashEmail"
+  | "markEmailSpam"
+  | "markEmailNotSpam";
 
 type ToolRegistry = Partial<Record<ToolOperation, string>>;
 
@@ -40,7 +47,7 @@ const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
   getDashboard: ["apps_get_dashboard", "get_dashboard"],
   getWeeklyCalendar: ["apps_get_weekly_calendar_view", "get_weekly_calendar_view"],
   getEventDetail: ["apps_get_event_detail", "get_event_detail"],
-  getEmailDetail: ["apps_get_email_detail", "get_email_detail"],
+  getEmailDetail: ["apps_get_email_detail", "get_email_detail", "gmail_read_email", "read_email"],
   respondToEvent: ["apps_respond_to_event", "respond_to_event"],
   rescheduleMeeting: ["apps_reschedule_meeting", "reschedule_meeting"],
   cancelMeeting: ["apps_cancel_meeting", "cancel_meeting"],
@@ -57,6 +64,13 @@ const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
   ],
   updateEvent: ["calendar_update_event", "update_event", "apps_reschedule_meeting", "reschedule_meeting"],
   deleteEvent: ["calendar_delete_event", "delete_event"],
+  markEmailRead: ["gmail_mark_as_read", "mark_as_read"],
+  markEmailUnread: ["gmail_mark_as_unread", "mark_as_unread"],
+  moveEmail: ["gmail_move_email", "move_email"],
+  deleteEmail: ["gmail_delete_email", "delete_email"],
+  untrashEmail: ["gmail_untrash_email", "untrash_email"],
+  markEmailSpam: ["gmail_mark_as_spam", "mark_as_spam"],
+  markEmailNotSpam: ["gmail_mark_as_not_spam", "mark_as_not_spam"],
 };
 
 const style = document.createElement("style");
@@ -114,6 +128,20 @@ function initStandaloneMode() {
       text = `Open attachment: ${action.url}`;
     } else if (action.type === "download_attachment") {
       text = `Download attachment: ${action.name}`;
+    } else if (action.type === "email_mark_read") {
+      text = `Mark email ${action.messageId} as read.`;
+    } else if (action.type === "email_mark_unread") {
+      text = `Mark email ${action.messageId} as unread.`;
+    } else if (action.type === "email_archive") {
+      text = `Archive email ${action.messageId}.`;
+    } else if (action.type === "email_trash") {
+      text = `Move email ${action.messageId} to trash.`;
+    } else if (action.type === "email_untrash") {
+      text = `Restore email ${action.messageId} from trash.`;
+    } else if (action.type === "email_mark_spam") {
+      text = `Mark email ${action.messageId} as spam.`;
+    } else if (action.type === "email_mark_not_spam") {
+      text = `Mark email ${action.messageId} as not spam.`;
     }
 
     window.parent.postMessage({ type: "inject_chat_message", text }, "*");
@@ -221,6 +249,40 @@ async function initMcpMode() {
       } else {
         currentData = { ...currentData, ui_error: message, ui_notice: undefined };
       }
+    };
+
+    const isToolNotFoundError = (err: unknown): boolean => {
+      const message = String(err || "");
+      return (
+        message.includes("-32601") ||
+        message.toLowerCase().includes("method not found") ||
+        message.toLowerCase().includes("tool not found") ||
+        message.toLowerCase().includes("unknown tool")
+      );
+    };
+
+    const callToolForOperation = async (
+      operation: ToolOperation,
+      args: Record<string, unknown>
+    ): Promise<unknown> => {
+      const preferred = toolRegistry[operation];
+      const candidates = preferred
+        ? [preferred, ...TOOL_CANDIDATES[operation].filter((name) => name !== preferred)]
+        : [...TOOL_CANDIDATES[operation]];
+      let lastError: unknown;
+      for (const toolName of candidates) {
+        try {
+          const result = await app.callServerTool({ name: toolName, arguments: args });
+          toolRegistry[operation] = toolName;
+          return result;
+        } catch (err) {
+          lastError = err;
+          if (!isToolNotFoundError(err)) {
+            throw err;
+          }
+        }
+      }
+      throw lastError || new Error(`No valid tool found for operation ${operation}.`);
     };
 
     const renderCurrent = () => {
@@ -415,6 +477,42 @@ async function initMcpMode() {
       await refreshWeekly();
     };
 
+    const refreshEmailDetailIfOpen = async (messageId: string) => {
+      if (currentData.email_detail?.message_id !== messageId) {
+        return;
+      }
+      const result = await callToolForOperation("getEmailDetail", {
+        session_id: uiSessionId,
+        message_id: messageId,
+      });
+      const parsed = extractDashboardData(result);
+      if (parsed?.email_detail) {
+        currentData = { ...currentData, email_detail: parsed.email_detail };
+      }
+    };
+
+    const runEmailMutation = async (params: {
+      toolOperation: ToolOperation;
+      messageId: string;
+      argumentsBuilder: () => Record<string, unknown>;
+      successNotice: string;
+      patch?: {
+        addLabels?: string[];
+        removeLabels?: string[];
+        isUnread?: boolean;
+      };
+    }) => {
+      const patch = params.patch || {};
+      currentData = optimisticPatchEmail(currentData, params.messageId, patch);
+      renderCurrent();
+
+      await callToolForOperation(params.toolOperation, params.argumentsBuilder());
+      await refreshFull();
+      await refreshEmailDetailIfOpen(params.messageId);
+      setUiMessage(params.successNotice, "notice");
+      renderCurrent();
+    };
+
     setActionHandler((action: UiAction) => {
       if (action.type === "close_event_detail") {
         currentData = { ...currentData, event_detail: undefined };
@@ -553,19 +651,10 @@ async function initMcpMode() {
       }
 
       if (action.type === "select_email") {
-        const toolName = resolveTool(toolRegistry, "getEmailDetail");
-        if (!toolName) {
-          setUiMessage("Email detail tool is unavailable.", "error");
-          renderCurrent();
-          return;
-        }
         void withUiPending(async () => {
-          const result = await app.callServerTool({
-            name: toolName,
-            arguments: {
-              session_id: uiSessionId,
-              message_id: action.messageId,
-            },
+          const result = await callToolForOperation("getEmailDetail", {
+            session_id: uiSessionId,
+            message_id: action.messageId,
           });
           const parsed = extractDashboardData(result);
           if (parsed?.email_detail) {
@@ -578,6 +667,127 @@ async function initMcpMode() {
           }
         }).catch((err) => {
           setUiMessage(`Failed to load email details: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_mark_read") {
+        void withUiPending(async () => {
+          await runEmailMutation({
+            toolOperation: "markEmailRead",
+            messageId: action.messageId,
+            argumentsBuilder: () => ({ message_id: action.messageId }),
+            successNotice: "Email marked as read.",
+            patch: { removeLabels: ["UNREAD"], isUnread: false },
+          });
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to mark as read: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_mark_unread") {
+        void withUiPending(async () => {
+          await runEmailMutation({
+            toolOperation: "markEmailUnread",
+            messageId: action.messageId,
+            argumentsBuilder: () => ({ message_id: action.messageId }),
+            successNotice: "Email marked as unread.",
+            patch: { addLabels: ["UNREAD"], isUnread: true },
+          });
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to mark as unread: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_archive") {
+        void withUiPending(async () => {
+          await runEmailMutation({
+            toolOperation: "moveEmail",
+            messageId: action.messageId,
+            argumentsBuilder: () => ({
+              message_id: action.messageId,
+              remove_label_ids: ["INBOX"],
+            }),
+            successNotice: "Email archived.",
+            patch: { removeLabels: ["INBOX"] },
+          });
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to archive email: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_trash") {
+        void withUiPending(async () => {
+          await runEmailMutation({
+            toolOperation: "deleteEmail",
+            messageId: action.messageId,
+            argumentsBuilder: () => ({
+              message_id: action.messageId,
+              permanent: false,
+            }),
+            successNotice: "Email moved to trash.",
+            patch: { addLabels: ["TRASH"], removeLabels: ["INBOX"] },
+          });
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to move email to trash: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_untrash") {
+        void withUiPending(async () => {
+          await runEmailMutation({
+            toolOperation: "untrashEmail",
+            messageId: action.messageId,
+            argumentsBuilder: () => ({ message_id: action.messageId }),
+            successNotice: "Email restored from trash.",
+            patch: { removeLabels: ["TRASH"], addLabels: ["INBOX"] },
+          });
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to restore email: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_mark_spam") {
+        void withUiPending(async () => {
+          await runEmailMutation({
+            toolOperation: "markEmailSpam",
+            messageId: action.messageId,
+            argumentsBuilder: () => ({ message_id: action.messageId }),
+            successNotice: "Email marked as spam.",
+            patch: { addLabels: ["SPAM"], removeLabels: ["INBOX"] },
+          });
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to mark email as spam: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_mark_not_spam") {
+        void withUiPending(async () => {
+          await runEmailMutation({
+            toolOperation: "markEmailNotSpam",
+            messageId: action.messageId,
+            argumentsBuilder: () => ({
+              message_id: action.messageId,
+              add_to_inbox: true,
+            }),
+            successNotice: "Email marked as not spam.",
+            patch: { removeLabels: ["SPAM"], addLabels: ["INBOX"] },
+          });
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to mark email as not spam: ${String(err)}`, "error");
           renderCurrent();
         });
         return;
@@ -934,6 +1144,92 @@ function optimisticCancelEvent(data: DashboardData, calendarId: string, eventId:
   };
 }
 
+function optimisticPatchEmail(
+  data: DashboardData,
+  messageId: string,
+  patch: {
+    addLabels?: string[];
+    removeLabels?: string[];
+    isUnread?: boolean;
+  }
+): DashboardData {
+  const add = new Set((patch.addLabels || []).filter(Boolean));
+  const remove = new Set((patch.removeLabels || []).filter(Boolean));
+  const applyLabels = (labels: string[]): string[] => {
+    const merged = new Set(labels || []);
+    for (const label of add) merged.add(label);
+    for (const label of remove) merged.delete(label);
+    return Array.from(merged);
+  };
+
+  let nextEmailDetail = data.email_detail;
+  if (nextEmailDetail?.message_id === messageId) {
+    const updatedLabels = applyLabels(nextEmailDetail.labels || []);
+    const isUnread =
+      patch.isUnread !== undefined ? patch.isUnread : updatedLabels.includes("UNREAD");
+    nextEmailDetail = {
+      ...nextEmailDetail,
+      labels: updatedLabels,
+      is_unread: isUnread,
+    };
+  }
+
+  let nextDashboard = data.dashboard;
+  if (nextDashboard) {
+    nextDashboard = {
+      ...nextDashboard,
+      sections: nextDashboard.sections.map((section) => {
+        if (section.id !== "communications") {
+          return section;
+        }
+        return {
+          ...section,
+          cards: section.cards.map((card) => {
+            if (card.card_type !== "inbox") {
+              return card;
+            }
+            const dataObj = (card.data || {}) as Record<string, unknown>;
+            const messages = Array.isArray(dataObj.messages)
+              ? (dataObj.messages as Array<Record<string, unknown>>)
+              : [];
+            const updatedMessages = messages.map((message) => {
+              if (message.id !== messageId) {
+                return message;
+              }
+              const labels = Array.isArray(message.label_ids)
+                ? (message.label_ids as string[])
+                : [];
+              const updatedLabels = applyLabels(labels);
+              const isUnread =
+                patch.isUnread !== undefined ? patch.isUnread : updatedLabels.includes("UNREAD");
+              return {
+                ...message,
+                label_ids: updatedLabels,
+                is_unread: isUnread,
+              };
+            });
+            const unreadCount = updatedMessages.filter((message) => !!message.is_unread).length;
+            return {
+              ...card,
+              data: {
+                ...dataObj,
+                messages: updatedMessages,
+                unread_count: unreadCount,
+              },
+            };
+          }),
+        };
+      }),
+    };
+  }
+
+  return {
+    ...data,
+    dashboard: nextDashboard,
+    email_detail: nextEmailDetail,
+  };
+}
+
 function getOrCreateSessionId(): string {
   try {
     const existing = window.localStorage.getItem(UI_SESSION_STORAGE_KEY);
@@ -990,6 +1286,27 @@ function normalizeDashboardData(raw: unknown): DashboardData | null {
 
   if ("message_id" in obj && "from_value" in obj && "subject" in obj) {
     return { email_detail: obj as unknown as DashboardData["email_detail"] };
+  }
+
+  if ("id" in obj && "from" in obj && "subject" in obj) {
+    const labelIds = Array.isArray(obj.label_ids) ? (obj.label_ids as string[]) : [];
+    return {
+      email_detail: {
+        message_id: String(obj.id || ""),
+        thread_id: typeof obj.thread_id === "string" ? obj.thread_id : null,
+        subject: String(obj.subject || "(No subject)"),
+        from_value: String(obj.from || "(Unknown sender)"),
+        to: typeof obj.to === "string" ? obj.to : null,
+        cc: null,
+        bcc: null,
+        date: typeof obj.date === "string" ? obj.date : null,
+        snippet: typeof obj.snippet === "string" ? obj.snippet : null,
+        text_body: typeof obj.text_body === "string" ? obj.text_body : null,
+        html_body: typeof obj.html_body === "string" ? obj.html_body : null,
+        labels: labelIds,
+        is_unread: labelIds.includes("UNREAD"),
+      },
+    };
   }
 
   return null;
@@ -1050,6 +1367,13 @@ function computeToolCapabilities(registry: ToolRegistry): UiToolCapabilities {
     can_reschedule_event: has("rescheduleMeeting") || has("updateEvent"),
     can_toggle_weekend: has("patchState"),
     can_select_calendars: has("patchState") && has("listCalendars"),
+    can_mark_email_read: has("markEmailRead"),
+    can_mark_email_unread: has("markEmailUnread"),
+    can_archive_email: has("moveEmail"),
+    can_trash_email: has("deleteEmail"),
+    can_untrash_email: has("untrashEmail"),
+    can_mark_email_spam: has("markEmailSpam"),
+    can_mark_email_not_spam: has("markEmailNotSpam"),
   };
 }
 

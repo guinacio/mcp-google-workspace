@@ -120,6 +120,13 @@ export interface UiToolCapabilities {
   can_reschedule_event: boolean;
   can_toggle_weekend: boolean;
   can_select_calendars: boolean;
+  can_mark_email_read: boolean;
+  can_mark_email_unread: boolean;
+  can_archive_email: boolean;
+  can_trash_email: boolean;
+  can_untrash_email: boolean;
+  can_mark_email_spam: boolean;
+  can_mark_email_not_spam: boolean;
 }
 
 /** Matches DashboardViewModel from Python schemas */

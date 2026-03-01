@@ -205,6 +205,8 @@ def _build_inbox_card(unread_count: int, messages: list[dict[str, Any]]) -> Dash
             "from": msg.get("from") or "(Unknown sender)",
             "date": msg.get("date"),
             "snippet": msg.get("snippet"),
+            "label_ids": msg.get("label_ids") or [],
+            "is_unread": bool(msg.get("is_unread")),
         }
         for msg in messages[:10]
     ]

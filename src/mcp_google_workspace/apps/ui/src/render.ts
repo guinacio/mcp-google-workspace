@@ -114,6 +114,34 @@ export type UiAction =
   | { type: "select_email"; messageId: string }
   | { type: "close_email_detail" }
   | {
+      type: "email_mark_read";
+      messageId: string;
+    }
+  | {
+      type: "email_mark_unread";
+      messageId: string;
+    }
+  | {
+      type: "email_archive";
+      messageId: string;
+    }
+  | {
+      type: "email_trash";
+      messageId: string;
+    }
+  | {
+      type: "email_untrash";
+      messageId: string;
+    }
+  | {
+      type: "email_mark_spam";
+      messageId: string;
+    }
+  | {
+      type: "email_mark_not_spam";
+      messageId: string;
+    }
+  | {
       type: "open_attachment";
       url: string;
     }
@@ -750,7 +778,15 @@ export function renderLoading(root: HTMLElement) {
   root.innerHTML = `<div class="loading-state">Loading workspace dashboard...</div>`;
 }
 
-type InboxMessage = { id?: string; subject?: string; from?: string; date?: string; snippet?: string };
+type InboxMessage = {
+  id?: string;
+  subject?: string;
+  from?: string;
+  date?: string;
+  snippet?: string;
+  label_ids?: string[];
+  is_unread?: boolean;
+};
 
 function getInboxData(dashboard?: DashboardViewModel): { unreadCount: number; messages: InboxMessage[] } {
   if (!dashboard) return { unreadCount: 0, messages: [] };
@@ -798,7 +834,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
         options.calendar_catalog ?? [],
         data.weekly_calendar?.timezone ?? "UTC"
       )}
-      ${renderEmailDetailPanel(data.email_detail)}
+      ${renderEmailDetailPanel(data.email_detail, options.tool_capabilities)}
     </div>
   `;
 
@@ -885,6 +921,24 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
 
     if (target.closest("[data-close-email]")) {
       _onAction({ type: "close_email_detail" });
+      return;
+    }
+
+    const emailAction = target.closest<HTMLElement>("[data-email-action]");
+    if (emailAction) {
+      event.preventDefault();
+      const messageId = emailAction.dataset.messageId;
+      const action = emailAction.dataset.emailAction;
+      if (!messageId || !action) {
+        return;
+      }
+      if (action === "mark_read") _onAction({ type: "email_mark_read", messageId });
+      if (action === "mark_unread") _onAction({ type: "email_mark_unread", messageId });
+      if (action === "archive") _onAction({ type: "email_archive", messageId });
+      if (action === "trash") _onAction({ type: "email_trash", messageId });
+      if (action === "untrash") _onAction({ type: "email_untrash", messageId });
+      if (action === "spam") _onAction({ type: "email_mark_spam", messageId });
+      if (action === "not_spam") _onAction({ type: "email_mark_not_spam", messageId });
       return;
     }
 
@@ -1159,7 +1213,7 @@ function renderEventActionChips(
 function renderInboxPanel(messages: InboxMessage[], unreadCount: number): string {
   const rows = messages
     .map((msg) => {
-      const unreadClass = unreadCount > 0 ? "unread" : "";
+      const unreadClass = msg.is_unread ? "unread" : "";
       return `
         <div class="inbox-row" data-open-email="1" data-message-id="${esc(msg.id || "")}">
           <div class="avatar">${esc(initials(msg.from || ""))}</div>
@@ -1345,9 +1399,21 @@ function renderEventEditorPanel(
   `;
 }
 
-function renderEmailDetailPanel(detail?: EmailDetail): string {
+function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: UiToolCapabilities): string {
   if (!detail) return "";
   const body = detail.text_body || detail.html_body || detail.snippet || "No body content.";
+  const labels = new Set(detail.labels || []);
+  const isUnread = detail.is_unread || labels.has("UNREAD");
+  const inInbox = labels.has("INBOX");
+  const inSpam = labels.has("SPAM");
+  const inTrash = labels.has("TRASH");
+  const canRead = capabilities?.can_mark_email_read ?? false;
+  const canUnread = capabilities?.can_mark_email_unread ?? false;
+  const canArchive = capabilities?.can_archive_email ?? false;
+  const canTrash = capabilities?.can_trash_email ?? false;
+  const canUntrash = capabilities?.can_untrash_email ?? false;
+  const canSpam = capabilities?.can_mark_email_spam ?? false;
+  const canNotSpam = capabilities?.can_mark_email_not_spam ?? false;
   return `
     <div class="overlay" role="dialog" aria-modal="true">
       <section class="panel">
@@ -1365,9 +1431,14 @@ function renderEmailDetailPanel(detail?: EmailDetail): string {
           <div class="detail-block"><strong>Labels:</strong> ${esc(detail.labels.join(", ") || "none")}</div>
           <div class="detail-block"><strong>Body</strong><div style="margin-top:6px; white-space:pre-wrap;">${esc(body)}</div></div>
           <div class="detail-block" style="display:flex; gap:8px; flex-wrap:wrap;">
+            ${canRead && isUnread ? `<button type="button" class="action-btn" data-email-action="mark_read" data-message-id="${esc(detail.message_id)}">Mark as read</button>` : ""}
+            ${canUnread && !isUnread ? `<button type="button" class="action-btn" data-email-action="mark_unread" data-message-id="${esc(detail.message_id)}">Mark as unread</button>` : ""}
+            ${canArchive && inInbox ? `<button type="button" class="action-btn" data-email-action="archive" data-message-id="${esc(detail.message_id)}">Archive</button>` : ""}
+            ${canTrash ? `<button type="button" class="action-btn" data-email-action="trash" data-message-id="${esc(detail.message_id)}">Move to trash</button>` : ""}
+            ${canUntrash && inTrash ? `<button type="button" class="action-btn" data-email-action="untrash" data-message-id="${esc(detail.message_id)}">Restore from trash</button>` : ""}
+            ${canSpam && !inSpam ? `<button type="button" class="action-btn" data-email-action="spam" data-message-id="${esc(detail.message_id)}">Report spam</button>` : ""}
+            ${canNotSpam && inSpam ? `<button type="button" class="action-btn" data-email-action="not_spam" data-message-id="${esc(detail.message_id)}">Not spam</button>` : ""}
             <button type="button" class="action-btn" data-action-msg="${esc(`Reply to ${detail.from_value} about: ${detail.subject}`)}">Reply in chat</button>
-            <button type="button" class="action-btn" data-action-msg="${esc(`Archive email ${detail.message_id}`)}">Archive</button>
-            <button type="button" class="action-btn" data-action-msg="${esc(`Mark email ${detail.message_id} as read`)}">Mark as read</button>
           </div>
         </div>
       </section>

@@ -115,6 +115,8 @@ def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any
                 "from": decode_rfc2047(headers.get("from")),
                 "date": headers.get("date"),
                 "snippet": full.get("snippet"),
+                "label_ids": full.get("labelIds", []),
+                "is_unread": "UNREAD" in (full.get("labelIds", []) or []),
             }
         )
     return unread, items
