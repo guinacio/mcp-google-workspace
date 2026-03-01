@@ -41,6 +41,14 @@ export interface EventDetailAttendee {
   response_status?: string | null;
 }
 
+export interface EventDetailAttachment {
+  title: string;
+  file_url?: string | null;
+  file_id?: string | null;
+  mime_type?: string | null;
+  icon_link?: string | null;
+}
+
 export interface EventDetail {
   event_id: string;
   calendar_id: string;
@@ -55,7 +63,9 @@ export interface EventDetail {
   conference_provider?: string | null;
   organizer_email?: string | null;
   organizer_name?: string | null;
+  self_response_status?: "needsAction" | "declined" | "tentative" | "accepted" | null;
   attendees: EventDetailAttendee[];
+  attachments: EventDetailAttachment[];
 }
 
 export interface EmailDetail {
@@ -72,6 +82,44 @@ export interface EmailDetail {
   html_body?: string | null;
   labels: string[];
   is_unread: boolean;
+}
+
+export interface CalendarCatalogItem {
+  id: string;
+  summary: string;
+  primary?: boolean;
+  access_role?: string;
+  background_color?: string;
+  foreground_color?: string;
+}
+
+export interface CalendarCatalog {
+  items: CalendarCatalogItem[];
+  fetched_at_utc: string;
+}
+
+export interface EventEditorDraft {
+  mode: "create" | "edit";
+  calendar_id: string;
+  event_id?: string;
+  summary: string;
+  start_local: string;
+  end_local: string;
+  timezone: string;
+  location?: string;
+  description?: string;
+  attendees_csv?: string;
+  create_conference: boolean;
+}
+
+export interface UiToolCapabilities {
+  can_create_event: boolean;
+  can_edit_event: boolean;
+  can_delete_event: boolean;
+  can_rsvp: boolean;
+  can_reschedule_event: boolean;
+  can_toggle_weekend: boolean;
+  can_select_calendars: boolean;
 }
 
 /** Matches DashboardViewModel from Python schemas */
@@ -107,6 +155,11 @@ export interface DashboardData {
   dashboard?: DashboardViewModel;
   event_detail?: EventDetail;
   email_detail?: EmailDetail;
+  calendar_catalog?: CalendarCatalog;
+  event_editor?: EventEditorDraft;
+  ui_error?: string;
+  ui_notice?: string;
+  tool_capabilities?: UiToolCapabilities;
   generated_at?: string;
 }
 

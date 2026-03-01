@@ -15,6 +15,7 @@ from .schemas import (
     DashboardState,
     DashboardViewModel,
     EmailDetailViewModel,
+    EventDetailAttachment,
     EventDetailAttendee,
     EventDetailViewModel,
     WeeklyCalendarDay,
@@ -317,6 +318,21 @@ def build_event_detail_view_model(event: dict[str, Any], calendar_id: str) -> Ev
             )
         )
 
+    attachments: list[EventDetailAttachment] = []
+    for attachment in event.get("attachments") or []:
+        if not isinstance(attachment, dict):
+            continue
+        title = attachment.get("title") or "Attachment"
+        attachments.append(
+            EventDetailAttachment(
+                title=title,
+                file_url=attachment.get("fileUrl"),
+                file_id=attachment.get("fileId"),
+                mime_type=attachment.get("mimeType"),
+                icon_link=attachment.get("iconLink"),
+            )
+        )
+
     conference_link, conference_provider = _extract_conference(event)
     organizer = event.get("organizer") or {}
 
@@ -334,7 +350,9 @@ def build_event_detail_view_model(event: dict[str, Any], calendar_id: str) -> Ev
         conference_provider=conference_provider,
         organizer_email=organizer.get("email"),
         organizer_name=organizer.get("displayName"),
+        self_response_status=_self_response_status(event),
         attendees=attendees,
+        attachments=attachments,
     )
 
 
@@ -365,5 +383,3 @@ def build_email_detail_view_model(message: dict[str, Any]) -> EmailDetailViewMod
         labels=labels,
         is_unread="UNREAD" in labels,
     )
-
-

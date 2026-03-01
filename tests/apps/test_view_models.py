@@ -5,6 +5,7 @@ from datetime import date
 from mcp_google_workspace.apps.schemas import DashboardState
 from mcp_google_workspace.apps.view_models import (
     build_dashboard_view_model,
+    build_event_detail_view_model,
     build_weekly_calendar_view_model,
 )
 
@@ -63,3 +64,18 @@ def test_weekly_calendar_view_groups_events_by_day():
     monday = next(day for day in weekly.days if day.date == date(2026, 3, 2))
     assert len(monday.all_day_events) == 1
     assert len(tuesday.timed_events) == 1
+
+
+def test_event_detail_includes_self_rsvp_status():
+    event = {
+        "id": "evt-42",
+        "summary": "Planning",
+        "start": {"dateTime": "2026-03-03T14:00:00+00:00"},
+        "end": {"dateTime": "2026-03-03T15:00:00+00:00"},
+        "attendees": [
+            {"email": "me@example.com", "self": True, "responseStatus": "tentative"},
+            {"email": "peer@example.com", "responseStatus": "accepted"},
+        ],
+    }
+    detail = build_event_detail_view_model(event, "primary")
+    assert detail.self_response_status == "tentative"

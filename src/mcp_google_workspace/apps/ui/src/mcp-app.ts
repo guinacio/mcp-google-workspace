@@ -1,7 +1,63 @@
 import { THEME_CSS, applyTheme } from "./theme";
 import { RENDER_CSS, renderLoading, renderDashboard, setActionHandler } from "./render";
-import type { UiAction } from "./render";
-import type { DashboardData, ParentMessage } from "./types";
+import type { UiAction, RenderOptions } from "./render";
+import type {
+  CalendarCatalogItem,
+  DashboardData,
+  EventEditorDraft,
+  ParentMessage,
+  UiToolCapabilities,
+} from "./types";
+
+type ToolOperation =
+  | "getDashboard"
+  | "getWeeklyCalendar"
+  | "getEventDetail"
+  | "getEmailDetail"
+  | "respondToEvent"
+  | "rescheduleMeeting"
+  | "cancelMeeting"
+  | "patchState"
+  | "nextRange"
+  | "prevRange"
+  | "today"
+  | "listCalendars"
+  | "createEvent"
+  | "updateEvent"
+  | "deleteEvent";
+
+type ToolRegistry = Partial<Record<ToolOperation, string>>;
+
+type RequestCapable = {
+  request: (request: { method: string; params?: Record<string, unknown> }) => Promise<unknown>;
+};
+
+type ServerToolCapable = {
+  callServerTool: (args: { name: string; arguments?: Record<string, unknown> }) => Promise<unknown>;
+};
+
+const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
+  getDashboard: ["apps_get_dashboard", "get_dashboard"],
+  getWeeklyCalendar: ["apps_get_weekly_calendar_view", "get_weekly_calendar_view"],
+  getEventDetail: ["apps_get_event_detail", "get_event_detail"],
+  getEmailDetail: ["apps_get_email_detail", "get_email_detail"],
+  respondToEvent: ["apps_respond_to_event", "respond_to_event"],
+  rescheduleMeeting: ["apps_reschedule_meeting", "reschedule_meeting"],
+  cancelMeeting: ["apps_cancel_meeting", "cancel_meeting"],
+  patchState: ["apps_patch_state", "patch_state"],
+  nextRange: ["apps_next_range", "next_range"],
+  prevRange: ["apps_prev_range", "prev_range"],
+  today: ["apps_today", "today"],
+  listCalendars: ["calendar_list_calendars", "list_calendars"],
+  createEvent: [
+    "calendar_create_event",
+    "create_event",
+    "apps_create_meeting_from_slot",
+    "create_meeting_from_slot",
+  ],
+  updateEvent: ["calendar_update_event", "update_event", "apps_reschedule_meeting", "reschedule_meeting"],
+  deleteEvent: ["calendar_delete_event", "delete_event"],
+};
 
 const style = document.createElement("style");
 style.textContent = THEME_CSS + RENDER_CSS;
@@ -44,6 +100,20 @@ function initStandaloneMode() {
       text = `Open details for event ${action.eventId}.`;
     } else if (action.type === "select_email") {
       text = `Open details for email ${action.messageId}.`;
+    } else if (action.type === "open_event_editor") {
+      text = `Open ${action.mode} event editor.`;
+    } else if (action.type === "close_event_editor") {
+      text = "Close event editor.";
+    } else if (action.type === "save_event_editor") {
+      text = `${action.draft.mode === "create" ? "Create" : "Update"} event ${action.draft.summary}.`;
+    } else if (action.type === "toggle_weekend") {
+      text = `Set include weekend to ${action.include_weekend}.`;
+    } else if (action.type === "set_selected_calendars") {
+      text = `Set selected calendars: ${action.selected_calendar_ids.join(", ")}`;
+    } else if (action.type === "open_attachment") {
+      text = `Open attachment: ${action.url}`;
+    } else if (action.type === "download_attachment") {
+      text = `Download attachment: ${action.name}`;
     }
 
     window.parent.postMessage({ type: "inject_chat_message", text }, "*");
@@ -56,7 +126,13 @@ function initStandaloneMode() {
       case "dashboard_data": {
         const data = e.data.data as DashboardData;
         if (data && (data.weekly_calendar || data.dashboard)) {
-          renderDashboard(root, data);
+          const state = readDashboardState(data);
+          renderDashboard(root, data, {
+            include_weekend: state.include_weekend,
+            selected_calendar_ids: state.selected_calendar_ids,
+            calendar_catalog: data.calendar_catalog?.items ?? [],
+            tool_capabilities: data.tool_capabilities,
+          });
         } else {
           renderLoading(root);
         }
@@ -77,6 +153,12 @@ async function initMcpMode() {
   renderLoading(root);
   let hasRenderedFromToolResult = false;
   let currentData: DashboardData = {};
+  let toolRegistry: ToolRegistry = {};
+  const renderOptions: RenderOptions = {
+    include_weekend: true,
+    selected_calendar_ids: [],
+    calendar_catalog: [],
+  };
 
   try {
     const {
@@ -89,16 +171,30 @@ async function initMcpMode() {
     const app = new App(
       { name: "Workspace Dashboard", version: "1.0.0" },
       {}
-    );
+    ) as unknown as RequestCapable &
+      ServerToolCapable & {
+        connect: () => Promise<void>;
+        openLink: (params: { url: string }) => Promise<{ isError?: boolean; content?: unknown[] }>;
+        downloadFile: (params: {
+          contents: Array<{
+            type: "resource_link";
+            name: string;
+            uri: string;
+            mimeType?: string;
+          }>;
+        }) => Promise<{ isError?: boolean; content?: unknown[] }>;
+        ontoolresult: ((result: unknown) => void) | null;
+        onhostcontextchanged:
+          | ((ctx: {
+              theme?: "dark" | "light";
+              styles?: { variables?: Record<string, string>; css?: { fonts?: string } };
+              safeAreaInsets?: { top: number; right: number; bottom: number; left: number };
+            }) => void)
+          | null;
+        onteardown: (() => Promise<Record<string, unknown>>) | null;
+      };
 
     const uiSessionId = getOrCreateSessionId();
-    const refreshFull = async () => {
-      currentData = await fetchAndRenderDashboardData(app, uiSessionId, currentData, "full");
-    };
-    const refreshWeekly = async () => {
-      currentData = await fetchAndRenderDashboardData(app, uiSessionId, currentData, "weekly");
-    };
-
     const makeIdempotencyKey = (prefix: string) =>
       `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -119,29 +215,325 @@ async function initMcpMode() {
       }
     };
 
+    const setUiMessage = (message: string | undefined, kind: "notice" | "error") => {
+      if (kind === "notice") {
+        currentData = { ...currentData, ui_notice: message, ui_error: undefined };
+      } else {
+        currentData = { ...currentData, ui_error: message, ui_notice: undefined };
+      }
+    };
+
+    const renderCurrent = () => {
+      const state = readDashboardState(currentData);
+      renderOptions.include_weekend = state.include_weekend;
+      renderOptions.selected_calendar_ids = state.selected_calendar_ids;
+      currentData.tool_capabilities = computeToolCapabilities(toolRegistry);
+      renderOptions.tool_capabilities = currentData.tool_capabilities;
+      renderDashboard(root, currentData, renderOptions);
+    };
+
+    const refreshFull = async () => {
+      currentData = await fetchAndRenderDashboardData(app, uiSessionId, currentData, "full", toolRegistry);
+      renderCurrent();
+    };
+    const refreshWeekly = async () => {
+      currentData = await fetchAndRenderDashboardData(app, uiSessionId, currentData, "weekly", toolRegistry);
+      renderCurrent();
+    };
+
+    const loadCalendars = async () => {
+      const listTool = toolRegistry.listCalendars;
+      if (!listTool) {
+        return;
+      }
+      const result = await app.callServerTool({ name: listTool, arguments: {} });
+      const calendars = extractCalendarCatalog(result);
+      if (calendars.length) {
+        renderOptions.calendar_catalog = calendars;
+        currentData = {
+          ...currentData,
+          calendar_catalog: {
+            items: calendars,
+            fetched_at_utc: new Date().toISOString(),
+          },
+        };
+      }
+    };
+
+    const updateStatePatch = async (patch: Record<string, unknown>) => {
+      const toolName = resolveTool(toolRegistry, "patchState");
+      if (!toolName) {
+        throw new Error("State patch tool is unavailable.");
+      }
+      await app.callServerTool({
+        name: toolName,
+        arguments: {
+          session_id: uiSessionId,
+          ...patch,
+        },
+      });
+    };
+
+    const startEditor = (mode: "create" | "edit", seedDate?: string) => {
+      const state = readDashboardState(currentData);
+      if (mode === "edit") {
+        const detail = currentData.event_detail;
+        if (!detail) {
+          setUiMessage("Open an event first to edit it.", "error");
+          renderCurrent();
+          return;
+        }
+        currentData = {
+          ...currentData,
+          event_editor: {
+            mode: "edit",
+            event_id: detail.event_id,
+            calendar_id: detail.calendar_id,
+            summary: detail.title,
+            start_local: toLocalInputValue(detail.start),
+            end_local: toLocalInputValue(detail.end),
+            timezone: detail.timezone || state.timezone,
+            location: detail.location || "",
+            description: detail.description || "",
+            attendees_csv: detail.attendees.map((item) => item.email).join(", "),
+            create_conference: !!detail.conference_link,
+          },
+          ui_notice: undefined,
+          ui_error: undefined,
+        };
+        renderCurrent();
+        return;
+      }
+
+      const start = defaultStartLocal(seedDate);
+      const end = new Date(start.getTime() + 60 * 60_000);
+      const selectedCalendar = state.selected_calendar_ids[0] || "primary";
+      currentData = {
+        ...currentData,
+        event_editor: {
+          mode: "create",
+          calendar_id: selectedCalendar,
+          summary: "",
+          start_local: toInputLocalString(start),
+          end_local: toInputLocalString(end),
+          timezone: state.timezone,
+          location: "",
+          description: "",
+          attendees_csv: "",
+          create_conference: true,
+        },
+        ui_notice: undefined,
+        ui_error: undefined,
+      };
+      renderCurrent();
+    };
+
+    const saveEventEditor = async (draft: EventEditorDraft) => {
+      const startIso = localInputToIso(draft.start_local);
+      const endIso = localInputToIso(draft.end_local);
+      const attendees = parseAttendeesCsv(draft.attendees_csv || "");
+
+      if (draft.mode === "create") {
+        const createTool = resolveTool(toolRegistry, "createEvent");
+        if (!createTool) {
+          throw new Error("Create event tool is unavailable.");
+        }
+        const idempotencyKey = makeIdempotencyKey("create");
+        if (createTool.includes("apps_create_meeting_from_slot")) {
+          await app.callServerTool({
+            name: createTool,
+            arguments: {
+              session_id: uiSessionId,
+              calendar_id: draft.calendar_id,
+              title: draft.summary,
+              start: startIso,
+              end: endIso,
+              timezone: draft.timezone,
+              description: draft.description || undefined,
+              attendees,
+              create_conference: draft.create_conference,
+              idempotency_key: idempotencyKey,
+            },
+          });
+        } else {
+          await app.callServerTool({
+            name: createTool,
+            arguments: {
+              calendar_id: draft.calendar_id,
+              summary: draft.summary,
+              start_datetime: startIso,
+              end_datetime: endIso,
+              timezone: draft.timezone,
+              description: draft.description || undefined,
+              location: draft.location || undefined,
+              attendees: attendees.map((email) => ({ email })),
+              conference_data: draft.create_conference
+                ? {
+                    createRequest: {
+                      requestId: idempotencyKey,
+                      conferenceSolutionKey: { type: "hangoutsMeet" },
+                    },
+                  }
+                : undefined,
+              send_updates: "all",
+              on_conflict: "suggest_next_slot",
+            },
+          });
+        }
+        currentData = { ...currentData, event_editor: undefined };
+        setUiMessage("Event created.", "notice");
+        await refreshWeekly();
+        return;
+      }
+
+      const eventId = draft.event_id;
+      if (!eventId) {
+        throw new Error("Missing event id for edit.");
+      }
+      const updateTool = resolveTool(toolRegistry, "updateEvent");
+      if (!updateTool) {
+        throw new Error("Update event tool is unavailable.");
+      }
+      await app.callServerTool({
+        name: updateTool,
+        arguments: {
+          event_id: eventId,
+          calendar_id: draft.calendar_id,
+          summary: draft.summary,
+          start_datetime: startIso,
+          end_datetime: endIso,
+          timezone: draft.timezone,
+          description: draft.description || undefined,
+          location: draft.location || undefined,
+          attendees: attendees.map((email) => ({ email })),
+          send_updates: "all",
+          on_conflict: "suggest_next_slot",
+        },
+      });
+      currentData = { ...currentData, event_editor: undefined };
+      setUiMessage("Event updated.", "notice");
+      await refreshWeekly();
+    };
+
     setActionHandler((action: UiAction) => {
       if (action.type === "close_event_detail") {
         currentData = { ...currentData, event_detail: undefined };
-        renderDashboard(root, currentData);
+        renderCurrent();
         return;
       }
 
       if (action.type === "close_email_detail") {
         currentData = { ...currentData, email_detail: undefined };
-        renderDashboard(root, currentData);
+        renderCurrent();
+        return;
+      }
+
+      if (action.type === "open_attachment") {
+        void withUiPending(async () => {
+          const result = await app.openLink({ url: action.url });
+          if (result?.isError) {
+            throw new Error("Host could not open attachment link.");
+          }
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to open attachment: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "download_attachment") {
+        void withUiPending(async () => {
+          const resourceLink: {
+            type: "resource_link";
+            name: string;
+            uri: string;
+            mimeType?: string;
+          } = {
+            type: "resource_link",
+            name: action.name || "attachment",
+            uri: action.url,
+          };
+          if (action.mimeType) {
+            resourceLink.mimeType = action.mimeType;
+          }
+          const result = await app.downloadFile({
+            contents: [resourceLink],
+          });
+          if (result?.isError) {
+            const openResult = await app.openLink({ url: action.url });
+            if (openResult?.isError) {
+              throw new Error("Host could not download or open attachment.");
+            }
+            setUiMessage(`Host denied direct download. Opened link for ${action.name}.`, "notice");
+            renderCurrent();
+            return;
+          }
+          setUiMessage(`Download started: ${action.name}`, "notice");
+          renderCurrent();
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to download attachment: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "open_event_editor") {
+        startEditor(action.mode, action.seed_date);
+        return;
+      }
+
+      if (action.type === "close_event_editor") {
+        currentData = { ...currentData, event_editor: undefined };
+        renderCurrent();
+        return;
+      }
+
+      if (action.type === "save_event_editor") {
+        void withUiPending(async () => {
+          await saveEventEditor(action.draft);
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to save event: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "toggle_weekend") {
+        void withUiPending(async () => {
+          await updateStatePatch({ include_weekend: action.include_weekend });
+          await refreshWeekly();
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to update weekend preference: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "set_selected_calendars") {
+        void withUiPending(async () => {
+          await updateStatePatch({ selected_calendars: action.selected_calendar_ids });
+          await refreshFull();
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to update selected calendars: ${String(err)}`, "error");
+          renderCurrent();
+        });
         return;
       }
 
       if (action.type === "select_event") {
+        const toolName = resolveTool(toolRegistry, "getEventDetail");
+        if (!toolName) {
+          setUiMessage("Event detail tool is unavailable.", "error");
+          renderCurrent();
+          return;
+        }
         void withUiPending(async () => {
           const result = await app.callServerTool({
-            name: "apps_get_event_detail",
+            name: toolName,
             arguments: {
-              request: {
-                session_id: uiSessionId,
-                calendar_id: action.calendarId,
-                event_id: action.eventId,
-              },
+              session_id: uiSessionId,
+              calendar_id: action.calendarId,
+              event_id: action.eventId,
             },
           });
           const parsed = extractDashboardData(result);
@@ -151,23 +543,28 @@ async function initMcpMode() {
               event_detail: parsed.event_detail,
               email_detail: undefined,
             };
-            renderDashboard(root, currentData);
+            renderCurrent();
           }
         }).catch((err) => {
-          console.warn("Failed to load event details:", err);
+          setUiMessage(`Failed to load event details: ${String(err)}`, "error");
+          renderCurrent();
         });
         return;
       }
 
       if (action.type === "select_email") {
+        const toolName = resolveTool(toolRegistry, "getEmailDetail");
+        if (!toolName) {
+          setUiMessage("Email detail tool is unavailable.", "error");
+          renderCurrent();
+          return;
+        }
         void withUiPending(async () => {
           const result = await app.callServerTool({
-            name: "apps_get_email_detail",
+            name: toolName,
             arguments: {
-              request: {
-                session_id: uiSessionId,
-                message_id: action.messageId,
-              },
+              session_id: uiSessionId,
+              message_id: action.messageId,
             },
           });
           const parsed = extractDashboardData(result);
@@ -177,15 +574,22 @@ async function initMcpMode() {
               email_detail: parsed.email_detail,
               event_detail: undefined,
             };
-            renderDashboard(root, currentData);
+            renderCurrent();
           }
         }).catch((err) => {
-          console.warn("Failed to load email details:", err);
+          setUiMessage(`Failed to load email details: ${String(err)}`, "error");
+          renderCurrent();
         });
         return;
       }
 
       if (action.type === "calendar_rsvp") {
+        const toolName = resolveTool(toolRegistry, "respondToEvent");
+        if (!toolName) {
+          setUiMessage("RSVP tool is unavailable.", "error");
+          renderCurrent();
+          return;
+        }
         const idempotencyKey = makeIdempotencyKey(`rsvp-${action.eventId}-${action.responseStatus}`);
         currentData = optimisticSetRsvp(
           currentData,
@@ -193,28 +597,34 @@ async function initMcpMode() {
           action.eventId,
           action.responseStatus
         );
-        renderDashboard(root, currentData);
+        renderCurrent();
         void withUiPending(async () => {
           await app.callServerTool({
-            name: "apps_respond_to_event",
+            name: toolName,
             arguments: {
-              request: {
-                session_id: uiSessionId,
-                calendar_id: action.calendarId,
-                event_id: action.eventId,
-                response_status: action.responseStatus,
-                idempotency_key: idempotencyKey,
-              },
+              session_id: uiSessionId,
+              calendar_id: action.calendarId,
+              event_id: action.eventId,
+              response_status: action.responseStatus,
+              idempotency_key: idempotencyKey,
             },
           });
           await refreshWeekly();
         }).catch((err) => {
-          console.warn("Failed to update event RSVP:", err);
+          setUiMessage(`Failed to update RSVP: ${String(err)}`, "error");
+          renderCurrent();
         });
         return;
       }
 
       if (action.type === "calendar_reschedule") {
+        const rescheduleTool = resolveTool(toolRegistry, "rescheduleMeeting");
+        const updateTool = resolveTool(toolRegistry, "updateEvent");
+        if (!rescheduleTool && !updateTool) {
+          setUiMessage("Reschedule tool is unavailable.", "error");
+          renderCurrent();
+          return;
+        }
         const nextStart = shiftIsoMinutes(action.start, action.shiftMinutes);
         const nextEnd = shiftIsoMinutes(action.end, action.shiftMinutes);
         const idempotencyKey = makeIdempotencyKey(`reschedule-${action.eventId}`);
@@ -225,12 +635,12 @@ async function initMcpMode() {
           nextStart,
           nextEnd
         );
-        renderDashboard(root, currentData);
+        renderCurrent();
         void withUiPending(async () => {
-          await app.callServerTool({
-            name: "apps_reschedule_meeting",
-            arguments: {
-              request: {
+          if (rescheduleTool) {
+            await app.callServerTool({
+              name: rescheduleTool,
+              arguments: {
                 session_id: uiSessionId,
                 calendar_id: action.calendarId,
                 event_id: action.eventId,
@@ -239,35 +649,67 @@ async function initMcpMode() {
                 timezone: action.timezone,
                 idempotency_key: idempotencyKey,
               },
-            },
-          });
+            });
+          } else if (updateTool) {
+            await app.callServerTool({
+              name: updateTool,
+              arguments: {
+                event_id: action.eventId,
+                calendar_id: action.calendarId,
+                start_datetime: nextStart,
+                end_datetime: nextEnd,
+                timezone: action.timezone,
+                send_updates: "all",
+                on_conflict: "suggest_next_slot",
+              },
+            });
+          }
           await refreshWeekly();
         }).catch((err) => {
-          console.warn("Failed to reschedule event:", err);
+          setUiMessage(`Failed to reschedule event: ${String(err)}`, "error");
+          renderCurrent();
         });
         return;
       }
 
       if (action.type === "calendar_cancel") {
+        const cancelTool = resolveTool(toolRegistry, "cancelMeeting");
+        const deleteTool = resolveTool(toolRegistry, "deleteEvent");
+        if (!cancelTool && !deleteTool) {
+          setUiMessage("Cancel/delete tool is unavailable.", "error");
+          renderCurrent();
+          return;
+        }
         const idempotencyKey = makeIdempotencyKey(`cancel-${action.eventId}`);
         currentData = optimisticCancelEvent(currentData, action.calendarId, action.eventId);
-        renderDashboard(root, currentData);
+        renderCurrent();
         void withUiPending(async () => {
-          await app.callServerTool({
-            name: "apps_cancel_meeting",
-            arguments: {
-              request: {
+          if (cancelTool) {
+            await app.callServerTool({
+              name: cancelTool,
+              arguments: {
                 session_id: uiSessionId,
                 calendar_id: action.calendarId,
                 event_id: action.eventId,
                 confirm: true,
                 idempotency_key: idempotencyKey,
               },
-            },
-          });
+            });
+          } else if (deleteTool) {
+            await app.callServerTool({
+              name: deleteTool,
+              arguments: {
+                calendar_id: action.calendarId,
+                event_id: action.eventId,
+                force: true,
+                send_updates: "all",
+              },
+            });
+          }
           await refreshWeekly();
         }).catch((err) => {
-          console.warn("Failed to cancel event:", err);
+          setUiMessage(`Failed to cancel event: ${String(err)}`, "error");
+          renderCurrent();
         });
         return;
       }
@@ -275,21 +717,28 @@ async function initMcpMode() {
       if (action.type === "week_nav") {
         const toolName =
           action.direction === "prev"
-            ? "apps_prev_range"
+            ? resolveTool(toolRegistry, "prevRange")
             : action.direction === "next"
-              ? "apps_next_range"
-              : "apps_today";
+              ? resolveTool(toolRegistry, "nextRange")
+              : resolveTool(toolRegistry, "today");
+        if (!toolName) {
+          setUiMessage("Navigation tool is unavailable.", "error");
+          renderCurrent();
+          return;
+        }
         void withUiPending(async () => {
           await app.callServerTool({ name: toolName, arguments: { session_id: uiSessionId } });
           await refreshWeekly();
         }).catch((err) => {
-          console.warn(`Failed to navigate week via ${toolName}:`, err);
+          setUiMessage(`Failed to navigate week: ${String(err)}`, "error");
+          renderCurrent();
         });
         return;
       }
 
       void refreshFull().catch((err) => {
-        console.warn("Failed to refresh dashboard via apps_get_dashboard:", err);
+        setUiMessage(`Failed to refresh dashboard: ${String(err)}`, "error");
+        renderCurrent();
       });
     });
 
@@ -298,13 +747,13 @@ async function initMcpMode() {
       if (data && (data.weekly_calendar || data.dashboard || data.event_detail || data.email_detail)) {
         hasRenderedFromToolResult = true;
         currentData = mergeDashboardData(currentData, data);
-        renderDashboard(root, currentData);
+        renderCurrent();
       }
     };
 
     app.onhostcontextchanged = (ctx) => {
       if (ctx.theme) applyDocumentTheme(ctx.theme);
-      if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+      if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables as any);
       if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
       if (ctx.safeAreaInsets) {
         const { top, right, bottom, left } = ctx.safeAreaInsets;
@@ -315,17 +764,22 @@ async function initMcpMode() {
     app.onteardown = async () => ({});
 
     await app.connect();
+    toolRegistry = await discoverToolRegistry(app);
+    currentData.tool_capabilities = computeToolCapabilities(toolRegistry);
+    renderOptions.tool_capabilities = currentData.tool_capabilities;
 
     window.setTimeout(async () => {
       if (hasRenderedFromToolResult) {
         return;
       }
       try {
-        await refreshFull();
+        await Promise.all([refreshFull(), loadCalendars()]);
+        renderCurrent();
       } catch (err) {
-        console.warn("Fallback apps_get_dashboard call failed:", err);
+        setUiMessage(`Initial load failed: ${String(err)}`, "error");
+        renderCurrent();
       }
-    }, 800);
+    }, 300);
   } catch (err) {
     console.warn("MCP ext-apps not available:", err);
     root.innerHTML = `
@@ -337,40 +791,48 @@ async function initMcpMode() {
 }
 
 async function fetchAndRenderDashboardData(
-  app: {
-    callServerTool: (args: { name: string; arguments: Record<string, unknown> }) => Promise<unknown>;
-  },
+  app: ServerToolCapable,
   sessionId: string,
   current: DashboardData,
-  mode: "full" | "weekly"
+  mode: "full" | "weekly",
+  registry: ToolRegistry
 ): Promise<DashboardData> {
-  const merged: DashboardData = { ...current, event_detail: undefined, email_detail: undefined };
+  const merged: DashboardData = {
+    ...current,
+    ui_error: undefined,
+    ui_notice: undefined,
+  };
+  const weeklyTool = resolveTool(registry, "getWeeklyCalendar");
+  const dashboardTool = resolveTool(registry, "getDashboard");
   if (mode === "weekly") {
-    const weeklyResult = await app.callServerTool({
-      name: "apps_get_weekly_calendar_view",
-      arguments: { session_id: sessionId },
-    });
-    const parsed = extractDashboardData(weeklyResult);
-    if (parsed?.weekly_calendar) {
-      merged.weekly_calendar = parsed.weekly_calendar;
-      renderDashboard(root, merged);
+    if (weeklyTool) {
+      const weeklyResult = await app.callServerTool({
+        name: weeklyTool,
+        arguments: { session_id: sessionId },
+      });
+      const parsed = extractDashboardData(weeklyResult);
+      if (parsed?.weekly_calendar) {
+        merged.weekly_calendar = parsed.weekly_calendar;
+      }
+      return merged;
     }
-    return merged;
+    if (!dashboardTool) {
+      throw new Error("No weekly/full dashboard tool available.");
+    }
   }
 
-  // get_dashboard now includes weekly_calendar, so one call provides both.
+  if (!dashboardTool) {
+    throw new Error("Dashboard tool is unavailable.");
+  }
+
   const dashboardResult = await app.callServerTool({
-    name: "apps_get_dashboard",
+    name: dashboardTool,
     arguments: { session_id: sessionId },
   });
   const parsed = extractDashboardData(dashboardResult);
   if (parsed) {
     if (parsed.dashboard) merged.dashboard = parsed.dashboard;
     if (parsed.weekly_calendar) merged.weekly_calendar = parsed.weekly_calendar;
-  }
-
-  if (merged.dashboard || merged.weekly_calendar) {
-    renderDashboard(root, merged);
   }
   return merged;
 }
@@ -381,6 +843,11 @@ function mergeDashboardData(base: DashboardData, incoming: DashboardData): Dashb
     dashboard: incoming.dashboard ?? base.dashboard,
     event_detail: incoming.event_detail ?? base.event_detail,
     email_detail: incoming.email_detail ?? base.email_detail,
+    calendar_catalog: incoming.calendar_catalog ?? base.calendar_catalog,
+    event_editor: incoming.event_editor ?? base.event_editor,
+    ui_notice: incoming.ui_notice ?? base.ui_notice,
+    ui_error: incoming.ui_error ?? base.ui_error,
+    tool_capabilities: incoming.tool_capabilities ?? base.tool_capabilities,
     generated_at: incoming.generated_at ?? base.generated_at,
   };
 }
@@ -392,9 +859,23 @@ function optimisticSetRsvp(
   responseStatus: "accepted" | "tentative" | "declined"
 ): DashboardData {
   const weekly = data.weekly_calendar;
-  if (!weekly) return data;
+  const detail = data.event_detail;
+  const nextDetail =
+    detail && detail.calendar_id === calendarId && detail.event_id === eventId
+      ? {
+          ...detail,
+          self_response_status: responseStatus,
+          attendees: detail.attendees.map((attendee) =>
+            attendee.self ? { ...attendee, response_status: responseStatus } : attendee
+          ),
+        }
+      : detail;
+  if (!weekly) {
+    return { ...data, event_detail: nextDetail };
+  }
   return {
     ...data,
+    event_detail: nextDetail,
     weekly_calendar: {
       ...weekly,
       days: weekly.days.map((day) => ({
@@ -470,35 +951,11 @@ function getOrCreateSessionId(): string {
 }
 
 function extractDashboardData(result: unknown): DashboardData | null {
-  if (!result || typeof result !== "object") {
+  const payload = extractObjectPayload(result);
+  if (!payload) {
     return null;
   }
-
-  const candidate = result as {
-    structuredContent?: unknown;
-    data?: unknown;
-    content?: Array<{ type?: string; text?: string }>;
-  };
-
-  if (candidate.structuredContent && typeof candidate.structuredContent === "object") {
-    return normalizeDashboardData(candidate.structuredContent);
-  }
-
-  if (candidate.data && typeof candidate.data === "object") {
-    return normalizeDashboardData(candidate.data);
-  }
-
-  const textContent = (candidate.content || []).find(
-    (c) => c.type === "text" && typeof c.text === "string"
-  );
-  if (!textContent?.text) {
-    return null;
-  }
-  try {
-    return normalizeDashboardData(JSON.parse(textContent.text));
-  } catch {
-    return null;
-  }
+  return normalizeDashboardData(payload);
 }
 
 function normalizeDashboardData(raw: unknown): DashboardData | null {
@@ -536,4 +993,193 @@ function normalizeDashboardData(raw: unknown): DashboardData | null {
   }
 
   return null;
+}
+
+async function discoverToolRegistry(app: RequestCapable): Promise<ToolRegistry> {
+  const names = new Set<string>();
+  let cursor: string | undefined;
+
+  for (let page = 0; page < 5; page += 1) {
+    const params: Record<string, unknown> = {};
+    if (cursor) {
+      params.cursor = cursor;
+    }
+    const result = await app.request({
+      method: "tools/list",
+      params,
+    });
+    const payload = extractObjectPayload(result);
+    const tools = Array.isArray(payload?.tools) ? payload.tools : [];
+    for (const tool of tools) {
+      if (tool && typeof tool === "object" && typeof (tool as { name?: unknown }).name === "string") {
+        names.add((tool as { name: string }).name);
+      }
+    }
+    const nextCursor =
+      typeof payload?.nextCursor === "string"
+        ? payload.nextCursor
+        : typeof payload?.next_cursor === "string"
+          ? payload.next_cursor
+          : undefined;
+    if (!nextCursor) {
+      break;
+    }
+    cursor = nextCursor;
+  }
+
+  const registry: ToolRegistry = {};
+  for (const [operation, candidates] of Object.entries(TOOL_CANDIDATES) as Array<
+    [ToolOperation, string[]]
+  >) {
+    registry[operation] = candidates.find((candidate) => names.has(candidate));
+  }
+  return registry;
+}
+
+function resolveTool(registry: ToolRegistry, operation: ToolOperation): string | undefined {
+  return registry[operation] ?? TOOL_CANDIDATES[operation]?.[0];
+}
+
+function computeToolCapabilities(registry: ToolRegistry): UiToolCapabilities {
+  const has = (operation: ToolOperation) => !!resolveTool(registry, operation);
+  return {
+    can_create_event: has("createEvent"),
+    can_edit_event: has("updateEvent"),
+    can_delete_event: has("cancelMeeting") || has("deleteEvent"),
+    can_rsvp: has("respondToEvent"),
+    can_reschedule_event: has("rescheduleMeeting") || has("updateEvent"),
+    can_toggle_weekend: has("patchState"),
+    can_select_calendars: has("patchState") && has("listCalendars"),
+  };
+}
+
+function extractObjectPayload(result: unknown): Record<string, unknown> | null {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+
+  const candidate = result as {
+    structuredContent?: unknown;
+    data?: unknown;
+    content?: Array<{ type?: string; text?: string }>;
+  };
+
+  if (candidate.structuredContent && typeof candidate.structuredContent === "object") {
+    return candidate.structuredContent as Record<string, unknown>;
+  }
+
+  if (candidate.data && typeof candidate.data === "object") {
+    return candidate.data as Record<string, unknown>;
+  }
+
+  const textContent = (candidate.content || []).find(
+    (item) => item.type === "text" && typeof item.text === "string"
+  );
+  if (!textContent?.text) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(textContent.text) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractCalendarCatalog(result: unknown): CalendarCatalogItem[] {
+  const payload = extractObjectPayload(result);
+  if (!payload) {
+    return [];
+  }
+  const itemsRaw = payload.items;
+  if (!Array.isArray(itemsRaw)) {
+    return [];
+  }
+  const normalized: CalendarCatalogItem[] = [];
+  for (const entry of itemsRaw) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const item = entry as Record<string, unknown>;
+    if (typeof item.id !== "string" || typeof item.summary !== "string") {
+      continue;
+    }
+    normalized.push({
+      id: item.id,
+      summary: item.summary,
+      primary: item.primary === true,
+      access_role: typeof item.accessRole === "string" ? item.accessRole : undefined,
+      background_color: typeof item.backgroundColor === "string" ? item.backgroundColor : undefined,
+      foreground_color: typeof item.foregroundColor === "string" ? item.foregroundColor : undefined,
+    });
+  }
+  return normalized;
+}
+
+function readDashboardState(data: DashboardData): {
+  selected_calendar_ids: string[];
+  include_weekend: boolean;
+  timezone: string;
+} {
+  const state = (data.dashboard?.state || {}) as Record<string, unknown>;
+  const selectedRaw = state.selected_calendars;
+  const includeWeekendRaw = state.include_weekend;
+  const timezoneRaw = state.timezone;
+  return {
+    selected_calendar_ids: Array.isArray(selectedRaw)
+      ? selectedRaw.filter((item): item is string => typeof item === "string")
+      : ["primary"],
+    include_weekend: typeof includeWeekendRaw === "boolean" ? includeWeekendRaw : true,
+    timezone: typeof timezoneRaw === "string" ? timezoneRaw : "UTC",
+  };
+}
+
+function toLocalInputValue(iso: string): string {
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) {
+    return "";
+  }
+  return toInputLocalString(dt);
+}
+
+function toInputLocalString(date: Date): string {
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function localInputToIso(value: string): string {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) {
+    return value;
+  }
+  return dt.toISOString();
+}
+
+function defaultStartLocal(seedDate?: string): Date {
+  if (!seedDate) {
+    return roundUpToNextHalfHour(new Date());
+  }
+  const parsed = new Date(`${seedDate}T09:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return roundUpToNextHalfHour(new Date());
+  }
+  return parsed;
+}
+
+function roundUpToNextHalfHour(value: Date): Date {
+  const result = new Date(value.getTime());
+  result.setSeconds(0, 0);
+  const minutes = result.getMinutes();
+  if (minutes === 0 || minutes === 30) {
+    return result;
+  }
+  result.setMinutes(minutes < 30 ? 30 : 60, 0, 0);
+  return result;
+}
+
+function parseAttendeesCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

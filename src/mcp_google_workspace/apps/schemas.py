@@ -118,6 +118,14 @@ class EventDetailAttendee(BaseModel):
     response_status: str | None = None
 
 
+class EventDetailAttachment(BaseModel):
+    title: str
+    file_url: str | None = None
+    file_id: str | None = None
+    mime_type: str | None = None
+    icon_link: str | None = None
+
+
 class EventDetailViewModel(BaseModel):
     event_id: str
     calendar_id: str
@@ -132,7 +140,9 @@ class EventDetailViewModel(BaseModel):
     conference_provider: str | None = None
     organizer_email: str | None = None
     organizer_name: str | None = None
+    self_response_status: Literal["needsAction", "declined", "tentative", "accepted"] | None = None
     attendees: list[EventDetailAttendee] = Field(default_factory=list)
+    attachments: list[EventDetailAttachment] = Field(default_factory=list)
 
 
 class EmailDetailViewModel(BaseModel):
