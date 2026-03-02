@@ -404,10 +404,11 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="find_common_free_slots")
     async def find_common_free_slots(
-        participants: list[str],
+        participants: list[str] | str,
         time_min: str,
         time_max: str,
         slot_duration_minutes: int = 30,
+        meeting_duration: int | None = None,
         granularity_minutes: int = 15,
         max_results: int = 10,
         time_zone: str | None = None,
@@ -415,12 +416,19 @@ def register_tools(server: FastMCP) -> None:
         working_hours_end: str = "17:00",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Suggest common available meeting slots for all participants in a time window."""
+        """Suggest common available meeting slots for all participants in a time window.
+
+        Notes:
+        - `participants` should be a JSON array of strings. A JSON-stringified array
+          or comma-separated string is accepted for compatibility.
+        - `meeting_duration` is accepted as a legacy alias for `slot_duration_minutes`.
+        """
+        effective_duration = meeting_duration if meeting_duration is not None else slot_duration_minutes
         request = FindCommonFreeSlotsRequest(
             participants=participants,
             time_min=time_min,
             time_max=time_max,
-            slot_duration_minutes=slot_duration_minutes,
+            slot_duration_minutes=effective_duration,
             granularity_minutes=granularity_minutes,
             max_results=max_results,
             time_zone=time_zone,

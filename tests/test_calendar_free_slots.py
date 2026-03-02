@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pytz
 
+from mcp_google_workspace.calendar.schemas import FindCommonFreeSlotsRequest
 from mcp_google_workspace.calendar.tools import (
     _apply_working_hours,
     _build_slot_candidates,
@@ -80,3 +81,42 @@ def test_apply_working_hours_allows_custom_window() -> None:
     assert len(clamped) == 1
     assert clamped[0][0].isoformat() == "2026-03-01T09:30:00+00:00"
     assert clamped[0][1].isoformat() == "2026-03-01T18:30:00+00:00"
+
+
+def test_find_common_free_slots_request_accepts_json_string_participants() -> None:
+    request = FindCommonFreeSlotsRequest(
+        participants='["rodrigo@example.com", "bruno@example.com", "primary"]',
+        time_min="2026-03-02T00:00:00Z",
+        time_max="2026-03-03T00:00:00Z",
+    )
+
+    assert request.participants == [
+        "rodrigo@example.com",
+        "bruno@example.com",
+        "primary",
+    ]
+
+
+def test_find_common_free_slots_request_accepts_comma_separated_participants() -> None:
+    request = FindCommonFreeSlotsRequest(
+        participants="rodrigo@example.com, bruno@example.com, primary",
+        time_min="2026-03-02T00:00:00Z",
+        time_max="2026-03-03T00:00:00Z",
+    )
+
+    assert request.participants == [
+        "rodrigo@example.com",
+        "bruno@example.com",
+        "primary",
+    ]
+
+
+def test_find_common_free_slots_request_accepts_meeting_duration_alias() -> None:
+    request = FindCommonFreeSlotsRequest(
+        participants=["primary"],
+        time_min="2026-03-02T00:00:00Z",
+        time_max="2026-03-03T00:00:00Z",
+        meeting_duration=45,
+    )
+
+    assert request.slot_duration_minutes == 45

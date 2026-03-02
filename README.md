@@ -133,6 +133,11 @@ Inputs:
 - `time_zone`: optional timezone used in FreeBusy query
 - `working_hours_start`, `working_hours_end`: optional daily working-hours filter (`HH:MM`, 24h)
 
+Compatibility notes:
+
+- `participants` should be sent as a JSON array (for example `["primary", "rodrigo@example.com"]`).
+- Legacy callers can still use `meeting_duration` as an alias for `slot_duration_minutes`.
+
 Working-hours defaults:
 
 - `working_hours_start`: `08:00`
@@ -269,6 +274,17 @@ Sampling-powered tools:
 - `chat_summarize_space_messages` — summarizes recent messages in a Chat space
 
 **Requires:** MCP client with `sampling/createMessage` support (e.g. Claude Desktop). Without sampling support these tools will fail or return an empty summary.
+
+## Tool Input Compatibility
+
+All request-schema-based tools now apply the same input normalization layer:
+
+- Accepts `camelCase` and `snake_case` parameter keys for object payloads.
+- Accepts full request payload as JSON string (must decode to an object).
+- For list/dict fields, accepts JSON-string values; list fields also accept comma-separated strings.
+- `find_common_free_slots` and `apps_find_meeting_slots` accept `meeting_duration` as alias for `slot_duration_minutes`.
+
+Recommendation: send a normal JSON object with native arrays/objects whenever possible.
 
 ## Google Keep API limitations
 

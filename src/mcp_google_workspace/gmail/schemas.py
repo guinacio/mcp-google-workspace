@@ -4,29 +4,18 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import EmailStr, Field
+
+from ..common.request_model import ToolRequestModel
 
 
-class ToolRequestModel(BaseModel):
-    """Base input model for MCP tools expecting object payloads."""
-
-    model_config = {
-        "json_schema_extra": {
-            "description": (
-                "Pass this as a JSON object payload to the tool. "
-                "Do not pass a raw string for the full request."
-            )
-        }
-    }
-
-
-class AttachmentInput(BaseModel):
+class AttachmentInput(ToolRequestModel):
     file_path: str = Field(description="Local filesystem path to file attachment.")
     mime_type: str | None = Field(default=None, description="Optional MIME type override.")
     filename: str | None = Field(default=None, description="Optional filename override in email.")
 
 
-class RecipientSet(BaseModel):
+class RecipientSet(ToolRequestModel):
     to: list[EmailStr] = Field(default_factory=list, description="Primary recipient addresses.")
     cc: list[EmailStr] = Field(default_factory=list, description="CC recipient addresses.")
     bcc: list[EmailStr] = Field(default_factory=list, description="BCC recipient addresses.")
@@ -142,7 +131,7 @@ class DownloadAttachmentRequest(ToolRequestModel):
     output_path: str = Field(description="Local output path where bytes will be saved.")
 
 
-class FilterCriteriaInput(BaseModel):
+class FilterCriteriaInput(ToolRequestModel):
     from_: str | None = Field(default=None, alias="from", description="Match sender address/name.")
     to: str | None = Field(default=None, description="Match recipient address/name.")
     subject: str | None = Field(default=None, description="Match phrase in subject.")
@@ -180,7 +169,7 @@ class FilterCriteriaInput(BaseModel):
         return payload
 
 
-class FilterActionInput(BaseModel):
+class FilterActionInput(ToolRequestModel):
     add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add when criteria match.")
     remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove when criteria match.")
     forward: str | None = Field(default=None, description="Forwarding email destination.")

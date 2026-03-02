@@ -4,18 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-
-class ToolRequestModel(BaseModel):
-    """Base input model for MCP tools expecting object payloads."""
-
-    model_config = {
-        "json_schema_extra": {
-            "description": (
-                "Pass this as a JSON object payload to the tool. "
-                "Do not pass a raw string for the full request."
-            )
-        }
-    }
+from ..common.request_model import ToolRequestModel
 
 
 class ListSpacesRequest(ToolRequestModel):

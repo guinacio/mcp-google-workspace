@@ -6,22 +6,11 @@ import datetime as dt
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
+
+from ..common.request_model import ToolRequestModel
 
 DashboardView = Literal["agenda", "day", "week", "month"]
-
-
-class ToolRequestModel(BaseModel):
-    """Base input model for MCP tools expecting object payloads."""
-
-    model_config = {
-        "json_schema_extra": {
-            "description": (
-                "Pass this as a JSON object payload to the tool. "
-                "Do not pass a raw string for the full request."
-            )
-        }
-    }
 
 
 class DashboardState(BaseModel):
@@ -181,7 +170,13 @@ class FindMeetingSlotsRequest(ToolRequestModel):
     participants: list[str] = Field(default_factory=lambda: ["primary"], description="Calendar IDs/emails to include in availability intersection.")
     time_min: str = Field(description="RFC3339 start datetime for search window.")
     time_max: str = Field(description="RFC3339 end datetime for search window.")
-    slot_duration_minutes: int = Field(default=30, ge=5, le=480, description="Desired meeting slot duration in minutes.")
+    slot_duration_minutes: int = Field(
+        default=30,
+        ge=5,
+        le=480,
+        validation_alias=AliasChoices("slot_duration_minutes", "meeting_duration"),
+        description="Desired meeting slot duration in minutes.",
+    )
     granularity_minutes: int = Field(default=15, ge=5, le=240, description="Step size between candidate slot starts in minutes.")
     max_results: int = Field(default=10, ge=1, le=100, description="Maximum number of slot suggestions to return.")
     time_zone: str = Field(default="UTC", description="IANA timezone for rendering/normalizing slots.")

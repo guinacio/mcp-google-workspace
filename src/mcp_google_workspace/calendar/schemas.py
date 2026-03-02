@@ -2,22 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
-
-class ToolRequestModel(BaseModel):
-    """Base input model for MCP tools expecting object payloads."""
-
-    model_config = {
-        "json_schema_extra": {
-            "description": (
-                "Pass this as a JSON object payload to the tool. "
-                "Do not pass a raw string for the full request."
-            )
-        }
-    }
+from ..common.request_model import ToolRequestModel
 
 
 class ListEventsRequest(ToolRequestModel):
@@ -194,7 +184,10 @@ class FreeBusyRequest(ToolRequestModel):
 class FindCommonFreeSlotsRequest(ToolRequestModel):
     participants: list[str] = Field(
         min_length=1,
-        description="List of participant calendar IDs/emails to include in availability search.",
+        description=(
+            "List of participant calendar IDs/emails to include in availability search. "
+            "Prefer a JSON array of strings."
+        ),
     )
     time_min: str = Field(description="RFC3339 start time for the scheduling window.")
     time_max: str = Field(description="RFC3339 end time for the scheduling window.")
@@ -202,7 +195,11 @@ class FindCommonFreeSlotsRequest(ToolRequestModel):
         default=30,
         ge=5,
         le=480,
-        description="Desired duration for each suggested meeting slot.",
+        validation_alias=AliasChoices("slot_duration_minutes", "meeting_duration"),
+        description=(
+            "Desired duration for each suggested meeting slot in minutes. "
+            "Legacy alias `meeting_duration` is also accepted."
+        ),
     )
     granularity_minutes: int = Field(
         default=15,
@@ -230,6 +227,45 @@ class FindCommonFreeSlotsRequest(ToolRequestModel):
         pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
         description="Daily working-hours end in HH:MM (24h). Default is 17:00.",
     )
+
+    @field_validator("participants", mode="before")
+    @classmethod
+    def _normalize_participants(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                raise ValueError("participants cannot be empty.")
+            if raw.startswith("["):
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "participants string must be valid JSON array text, "
+                        "for example: [\"alice@example.com\", \"bob@example.com\"]."
+                    ) from exc
+                value = parsed
+            else:
+                value = [item.strip() for item in raw.split(",") if item.strip()]
+
+        if isinstance(value, tuple):
+            value = list(value)
+
+        if not isinstance(value, list):
+            raise ValueError("participants must be an array of calendar IDs/emails.")
+
+        normalized: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                raise ValueError("each participant must be a string calendar ID/email.")
+            trimmed = item.strip()
+            if not trimmed:
+                continue
+            normalized.append(trimmed)
+
+        if not normalized:
+            raise ValueError("participants list cannot be empty.")
+
+        return normalized
 
 
 class ListEventAttachmentsRequest(ToolRequestModel):

@@ -505,20 +505,27 @@ def register_tools(server: FastMCP) -> None:
     async def apps_find_meeting_slots(
         time_min: str,
         time_max: str,
-        participants: list[str] | None = None,
+        participants: list[str] | str | None = None,
         slot_duration_minutes: int = 30,
+        meeting_duration: int | None = None,
         granularity_minutes: int = 15,
         max_results: int = 10,
         time_zone: str = "UTC",
         working_hours_start: str = "08:00",
         working_hours_end: str = "17:00",
     ) -> dict[str, Any]:
-        """Find common free slots for participants in a window."""
+        """Find common free slots for participants in a window.
+
+        Notes:
+        - `participants` may be sent as an array, JSON-stringified array, or comma-separated string.
+        - `meeting_duration` is accepted as a legacy alias for `slot_duration_minutes`.
+        """
+        effective_duration = meeting_duration if meeting_duration is not None else slot_duration_minutes
         request = FindMeetingSlotsRequest(
             participants=participants or ["primary"],
             time_min=time_min,
             time_max=time_max,
-            slot_duration_minutes=slot_duration_minutes,
+            slot_duration_minutes=effective_duration,
             granularity_minutes=granularity_minutes,
             max_results=max_results,
             time_zone=time_zone,

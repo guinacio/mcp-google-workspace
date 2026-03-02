@@ -4,23 +4,12 @@ from __future__ import annotations
 
 from pydantic import BaseModel, EmailStr, Field
 
+from ..common.request_model import ToolRequestModel
+
 
 class ChecklistItem(BaseModel):
     text: str = Field(description="Checklist item text.")
     checked: bool = Field(default=False, description="Whether item is checked.")
-
-
-class ToolRequestModel(BaseModel):
-    """Base input model for MCP tools expecting object payloads."""
-
-    model_config = {
-        "json_schema_extra": {
-            "description": (
-                "Pass this as a JSON object payload to the tool. "
-                "Do not pass a raw string for the full request."
-            )
-        }
-    }
 
 
 class CreateNoteRequest(ToolRequestModel):
