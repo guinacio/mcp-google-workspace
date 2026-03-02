@@ -14,6 +14,7 @@ type ToolOperation =
   | "getWeeklyCalendar"
   | "getEventDetail"
   | "getEmailDetail"
+  | "getEmailAttachment"
   | "respondToEvent"
   | "rescheduleMeeting"
   | "cancelMeeting"
@@ -48,6 +49,7 @@ const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
   getWeeklyCalendar: ["apps_get_weekly_calendar_view", "get_weekly_calendar_view"],
   getEventDetail: ["apps_get_event_detail", "get_event_detail"],
   getEmailDetail: ["apps_get_email_detail", "get_email_detail", "gmail_read_email", "read_email"],
+  getEmailAttachment: ["apps_get_email_attachment", "get_email_attachment"],
   respondToEvent: ["apps_respond_to_event", "respond_to_event"],
   rescheduleMeeting: ["apps_reschedule_meeting", "reschedule_meeting"],
   cancelMeeting: ["apps_cancel_meeting", "cancel_meeting"],
@@ -142,6 +144,8 @@ function initStandaloneMode() {
       text = `Mark email ${action.messageId} as spam.`;
     } else if (action.type === "email_mark_not_spam") {
       text = `Mark email ${action.messageId} as not spam.`;
+    } else if (action.type === "email_download_attachment") {
+      text = `Download attachment ${action.filename} from email ${action.messageId}.`;
     }
 
     window.parent.postMessage({ type: "inject_chat_message", text }, "*");
@@ -204,12 +208,23 @@ async function initMcpMode() {
         connect: () => Promise<void>;
         openLink: (params: { url: string }) => Promise<{ isError?: boolean; content?: unknown[] }>;
         downloadFile: (params: {
-          contents: Array<{
-            type: "resource_link";
-            name: string;
-            uri: string;
-            mimeType?: string;
-          }>;
+          contents: Array<
+            | {
+                type: "resource_link";
+                name: string;
+                uri: string;
+                mimeType?: string;
+              }
+            | {
+                type: "resource";
+                resource: {
+                  uri: string;
+                  mimeType?: string;
+                  text?: string;
+                  blob?: string;
+                };
+              }
+          >;
         }) => Promise<{ isError?: boolean; content?: unknown[] }>;
         ontoolresult: ((result: unknown) => void) | null;
         onhostcontextchanged:
@@ -487,7 +502,10 @@ async function initMcpMode() {
       });
       const parsed = extractDashboardData(result);
       if (parsed?.email_detail) {
-        currentData = { ...currentData, email_detail: parsed.email_detail };
+        currentData = syncInboxMessageFromEmailDetail({
+          ...currentData,
+          email_detail: parsed.email_detail,
+        }, parsed.email_detail);
       }
     };
 
@@ -508,7 +526,12 @@ async function initMcpMode() {
 
       await callToolForOperation(params.toolOperation, params.argumentsBuilder());
       await refreshFull();
-      await refreshEmailDetailIfOpen(params.messageId);
+      try {
+        await refreshEmailDetailIfOpen(params.messageId);
+      } catch {
+        // Keep optimistic state when immediate post-mutation detail fetch is stale/unavailable.
+      }
+      currentData = optimisticPatchEmailDetail(currentData, params.messageId, patch);
       setUiMessage(params.successNotice, "notice");
       renderCurrent();
     };
@@ -570,6 +593,45 @@ async function initMcpMode() {
           renderCurrent();
         }).catch((err: unknown) => {
           setUiMessage(`Failed to download attachment: ${String(err)}`, "error");
+          renderCurrent();
+        });
+        return;
+      }
+
+      if (action.type === "email_download_attachment") {
+        void withUiPending(async () => {
+          const payload = await callToolForOperation("getEmailAttachment", {
+            message_id: action.messageId,
+            attachment_id: action.attachmentId,
+          });
+          const data = extractObjectPayload(payload);
+          if (!data || typeof data.blob_base64 !== "string") {
+            throw new Error("Attachment content is unavailable.");
+          }
+          const fileName =
+            (typeof data.filename === "string" && data.filename) || action.filename || "attachment";
+          const mimeType =
+            (typeof data.mime_type === "string" && data.mime_type) || action.mimeType || "application/octet-stream";
+          const safeName = fileName.replace(/[\\/:*?\"<>|]/g, "_");
+          const result = await app.downloadFile({
+            contents: [
+              {
+                type: "resource",
+                resource: {
+                  uri: `file:///${safeName}`,
+                  mimeType,
+                  blob: data.blob_base64,
+                },
+              },
+            ],
+          });
+          if (result?.isError) {
+            throw new Error("Host could not download email attachment.");
+          }
+          setUiMessage(`Download started: ${fileName}`, "notice");
+          renderCurrent();
+        }).catch((err: unknown) => {
+          setUiMessage(`Failed to download email attachment: ${String(err)}`, "error");
           renderCurrent();
         });
         return;
@@ -658,11 +720,11 @@ async function initMcpMode() {
           });
           const parsed = extractDashboardData(result);
           if (parsed?.email_detail) {
-            currentData = {
+            currentData = syncInboxMessageFromEmailDetail({
               ...currentData,
               email_detail: parsed.email_detail,
               event_detail: undefined,
-            };
+            }, parsed.email_detail);
             renderCurrent();
           }
         }).catch((err) => {
@@ -1208,6 +1270,20 @@ function optimisticPatchEmail(
                 is_unread: isUnread,
               };
             });
+            const unreadIdsRaw = Array.isArray(dataObj.unread_message_ids)
+              ? (dataObj.unread_message_ids as unknown[])
+              : Array.isArray(dataObj.unreadMessageIds)
+                ? (dataObj.unreadMessageIds as unknown[])
+                : [];
+            const unreadIdSet = new Set(
+              unreadIdsRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
+            );
+            const targetMessage = updatedMessages.find((message) => message.id === messageId);
+            if (targetMessage?.is_unread) {
+              unreadIdSet.add(messageId);
+            } else {
+              unreadIdSet.delete(messageId);
+            }
             const unreadCount = updatedMessages.filter((message) => !!message.is_unread).length;
             return {
               ...card,
@@ -1215,6 +1291,7 @@ function optimisticPatchEmail(
                 ...dataObj,
                 messages: updatedMessages,
                 unread_count: unreadCount,
+                unread_message_ids: Array.from(unreadIdSet),
               },
             };
           }),
@@ -1227,6 +1304,113 @@ function optimisticPatchEmail(
     ...data,
     dashboard: nextDashboard,
     email_detail: nextEmailDetail,
+  };
+}
+
+function optimisticPatchEmailDetail(
+  data: DashboardData,
+  messageId: string,
+  patch: {
+    addLabels?: string[];
+    removeLabels?: string[];
+    isUnread?: boolean;
+  }
+): DashboardData {
+  const current = data.email_detail;
+  if (!current || current.message_id !== messageId) {
+    return data;
+  }
+  const add = new Set((patch.addLabels || []).filter(Boolean));
+  const remove = new Set((patch.removeLabels || []).filter(Boolean));
+  const merged = new Set(current.labels || []);
+  for (const label of add) merged.add(label);
+  for (const label of remove) merged.delete(label);
+  const labels = Array.from(merged);
+  const isUnread = patch.isUnread !== undefined ? patch.isUnread : labels.includes("UNREAD");
+  return {
+    ...data,
+    email_detail: {
+      ...current,
+      labels,
+      is_unread: isUnread,
+    },
+  };
+}
+
+function syncInboxMessageFromEmailDetail(
+  data: DashboardData,
+  detail: NonNullable<DashboardData["email_detail"]>
+): DashboardData {
+  const dashboard = data.dashboard;
+  if (!dashboard) {
+    return data;
+  }
+
+  let updated = false;
+  const nextDashboard = {
+    ...dashboard,
+    sections: dashboard.sections.map((section) => {
+      if (section.id !== "communications") {
+        return section;
+      }
+      return {
+        ...section,
+        cards: section.cards.map((card) => {
+          if (card.card_type !== "inbox") {
+            return card;
+          }
+          const dataObj = (card.data || {}) as Record<string, unknown>;
+          const messages = Array.isArray(dataObj.messages)
+            ? (dataObj.messages as Array<Record<string, unknown>>)
+            : [];
+          const nextMessages = messages.map((message) => {
+            if (message.id !== detail.message_id) {
+              return message;
+            }
+            updated = true;
+            return {
+              ...message,
+              label_ids: detail.labels || [],
+              is_unread: !!detail.is_unread,
+            };
+          });
+          if (!updated) {
+            return card;
+          }
+          const unreadIdsRaw = Array.isArray(dataObj.unread_message_ids)
+            ? (dataObj.unread_message_ids as unknown[])
+            : Array.isArray(dataObj.unreadMessageIds)
+              ? (dataObj.unreadMessageIds as unknown[])
+              : [];
+          const unreadIdSet = new Set(
+            unreadIdsRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
+          );
+          if (detail.is_unread) {
+            unreadIdSet.add(detail.message_id);
+          } else {
+            unreadIdSet.delete(detail.message_id);
+          }
+          const unreadCount = nextMessages.filter((message) => !!message.is_unread).length;
+          return {
+            ...card,
+            data: {
+              ...dataObj,
+              messages: nextMessages,
+              unread_count: unreadCount,
+              unread_message_ids: Array.from(unreadIdSet),
+            },
+          };
+        }),
+      };
+    }),
+  };
+
+  if (!updated) {
+    return data;
+  }
+  return {
+    ...data,
+    dashboard: nextDashboard,
   };
 }
 
@@ -1290,6 +1474,7 @@ function normalizeDashboardData(raw: unknown): DashboardData | null {
 
   if ("id" in obj && "from" in obj && "subject" in obj) {
     const labelIds = Array.isArray(obj.label_ids) ? (obj.label_ids as string[]) : [];
+    const attachments = Array.isArray(obj.attachments) ? obj.attachments : [];
     return {
       email_detail: {
         message_id: String(obj.id || ""),
@@ -1303,6 +1488,33 @@ function normalizeDashboardData(raw: unknown): DashboardData | null {
         snippet: typeof obj.snippet === "string" ? obj.snippet : null,
         text_body: typeof obj.text_body === "string" ? obj.text_body : null,
         html_body: typeof obj.html_body === "string" ? obj.html_body : null,
+        attachments: attachments
+          .map((attachment) => {
+            if (!attachment || typeof attachment !== "object") {
+              return null;
+            }
+            const item = attachment as Record<string, unknown>;
+            const attachmentId =
+              (typeof item.attachment_id === "string" && item.attachment_id) ||
+              (typeof item.download_id === "string" && item.download_id) ||
+              "";
+            if (!attachmentId) {
+              return null;
+            }
+            return {
+              filename:
+                (typeof item.filename === "string" && item.filename) || "attachment",
+              mime_type: typeof item.mime_type === "string" ? item.mime_type : null,
+              size: typeof item.size === "number" ? item.size : null,
+              attachment_id: attachmentId,
+            };
+          })
+          .filter((item): item is {
+            filename: string;
+            mime_type: string | null;
+            size: number | null;
+            attachment_id: string;
+          } => item !== null),
         labels: labelIds,
         is_unread: labelIds.includes("UNREAD"),
       },

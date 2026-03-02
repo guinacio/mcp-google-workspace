@@ -80,6 +80,12 @@ export interface EmailDetail {
   snippet?: string | null;
   text_body?: string | null;
   html_body?: string | null;
+  attachments: Array<{
+    filename: string;
+    mime_type?: string | null;
+    size?: number | null;
+    attachment_id: string;
+  }>;
   labels: string[];
   is_unread: boolean;
 }

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytz
 
-from ..gmail.mime_utils import decode_rfc2047, extract_message_bodies
+from ..gmail.mime_utils import decode_rfc2047, extract_message_bodies, flatten_parts
 from .schemas import (
     DashboardCard,
     DashboardCardAction,
@@ -197,19 +197,32 @@ def _build_calendar_card(events: list[dict[str, Any]]) -> DashboardCard:
     )
 
 
-def _build_inbox_card(unread_count: int, messages: list[dict[str, Any]]) -> DashboardCard:
-    normalized = [
-        {
-            "id": msg.get("id"),
-            "subject": msg.get("subject") or "(No subject)",
-            "from": msg.get("from") or "(Unknown sender)",
-            "date": msg.get("date"),
-            "snippet": msg.get("snippet"),
-            "label_ids": msg.get("label_ids") or [],
-            "is_unread": bool(msg.get("is_unread")),
-        }
-        for msg in messages[:10]
-    ]
+def _build_inbox_card(
+    unread_count: int,
+    messages: list[dict[str, Any]],
+    unread_message_ids: list[str] | None = None,
+) -> DashboardCard:
+    unread_set = set(unread_message_ids or [])
+    normalized = []
+    for msg in messages[:10]:
+        label_ids = msg.get("label_ids") or []
+        message_id = msg.get("id")
+        is_unread = (
+            bool(msg.get("is_unread"))
+            or "UNREAD" in label_ids
+            or (isinstance(message_id, str) and message_id in unread_set)
+        )
+        normalized.append(
+            {
+                "id": message_id,
+                "subject": msg.get("subject") or "(No subject)",
+                "from": msg.get("from") or "(Unknown sender)",
+                "date": msg.get("date"),
+                "snippet": msg.get("snippet"),
+                "label_ids": label_ids,
+                "is_unread": is_unread,
+            }
+        )
     fallback = "\n".join(
         f"- {msg['subject']} — {msg['from']}"
         for msg in normalized[:5]
@@ -220,7 +233,11 @@ def _build_inbox_card(unread_count: int, messages: list[dict[str, Any]]) -> Dash
         card_type="inbox",
         summary=f"{unread_count} unread message(s)",
         fallback_text=fallback,
-        data={"unread_count": unread_count, "messages": normalized},
+        data={
+            "unread_count": unread_count,
+            "unread_message_ids": list(unread_set),
+            "messages": normalized,
+        },
         actions=[
             DashboardCardAction(
                 id="inbox-refresh",
@@ -263,6 +280,7 @@ def build_dashboard_view_model(
     calendar_events: list[dict[str, Any]],
     unread_count: int,
     inbox_messages: list[dict[str, Any]],
+    unread_message_ids: list[str] | None = None,
     section_errors: dict[str, str] | None = None,
 ) -> DashboardViewModel:
     sections = [
@@ -275,7 +293,7 @@ def build_dashboard_view_model(
         DashboardSection(
             id="communications",
             title="Communications",
-            cards=[_build_inbox_card(unread_count, inbox_messages)],
+            cards=[_build_inbox_card(unread_count, inbox_messages, unread_message_ids=unread_message_ids)],
             fallback_text="Inbox status and latest communication context.",
         ),
     ]
@@ -370,6 +388,21 @@ def build_email_detail_view_model(message: dict[str, Any]) -> EmailDetailViewMod
     headers = _headers_map(message)
     bodies = extract_message_bodies(message.get("payload") or {})
     labels = message.get("labelIds") or []
+    attachments: list[dict[str, Any]] = []
+    payload = message.get("payload") or {}
+    for part in flatten_parts(payload):
+        filename = part.get("filename")
+        body = part.get("body", {})
+        attachment_id = body.get("attachmentId")
+        if filename and attachment_id:
+            attachments.append(
+                {
+                    "filename": filename,
+                    "mime_type": part.get("mimeType"),
+                    "size": body.get("size", 0),
+                    "attachment_id": attachment_id,
+                }
+            )
     return EmailDetailViewModel(
         message_id=message.get("id") or "",
         thread_id=message.get("threadId"),
@@ -382,6 +415,7 @@ def build_email_detail_view_model(message: dict[str, Any]) -> EmailDetailViewMod
         snippet=message.get("snippet"),
         text_body=bodies.get("text") or None,
         html_body=bodies.get("html") or None,
+        attachments=attachments,
         labels=labels,
         is_unread="UNREAD" in labels,
     )

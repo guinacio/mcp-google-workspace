@@ -5,6 +5,7 @@ from datetime import date
 from mcp_google_workspace.apps.schemas import DashboardState
 from mcp_google_workspace.apps.view_models import (
     build_dashboard_view_model,
+    build_email_detail_view_model,
     build_event_detail_view_model,
     build_weekly_calendar_view_model,
 )
@@ -79,3 +80,76 @@ def test_event_detail_includes_self_rsvp_status():
     }
     detail = build_event_detail_view_model(event, "primary")
     assert detail.self_response_status == "tentative"
+
+
+def test_email_detail_includes_attachment_metadata():
+    message = {
+        "id": "msg-1",
+        "threadId": "thr-1",
+        "snippet": "Attachment inside",
+        "labelIds": ["INBOX", "UNREAD"],
+        "payload": {
+            "headers": [
+                {"name": "Subject", "value": "Report"},
+                {"name": "From", "value": "team@example.com"},
+            ],
+            "parts": [
+                {
+                    "mimeType": "application/pdf",
+                    "filename": "report.pdf",
+                    "body": {"attachmentId": "att-123", "size": 1024},
+                }
+            ],
+        },
+    }
+    detail = build_email_detail_view_model(message)
+    assert detail.is_unread is True
+    assert len(detail.attachments) == 1
+    assert detail.attachments[0]["attachment_id"] == "att-123"
+
+
+def test_dashboard_inbox_unread_infers_from_labels():
+    state = DashboardState(session_id="vm-test", anchor_date=date(2026, 3, 1), view="week")
+    model = build_dashboard_view_model(
+        state=state,
+        calendar_events=[],
+        unread_count=1,
+        inbox_messages=[
+            {
+                "id": "msg-2",
+                "subject": "Unread by label",
+                "from": "noreply@example.com",
+                "label_ids": ["INBOX", "UNREAD"],
+                "is_unread": False,
+            }
+        ],
+    )
+    communications = next(section for section in model.sections if section.id == "communications")
+    inbox = next(card for card in communications.cards if card.card_type == "inbox")
+    messages = inbox.data["messages"]
+    assert isinstance(messages, list)
+    assert messages[0]["is_unread"] is True
+
+
+def test_dashboard_inbox_unread_infers_from_unread_ids():
+    state = DashboardState(session_id="vm-test", anchor_date=date(2026, 3, 1), view="week")
+    model = build_dashboard_view_model(
+        state=state,
+        calendar_events=[],
+        unread_count=1,
+        inbox_messages=[
+            {
+                "id": "msg-3",
+                "subject": "Unread by id list",
+                "from": "noreply@example.com",
+                "label_ids": ["INBOX"],
+                "is_unread": False,
+            }
+        ],
+        unread_message_ids=["msg-3"],
+    )
+    communications = next(section for section in model.sections if section.id == "communications")
+    inbox = next(card for card in communications.cards if card.card_type == "inbox")
+    messages = inbox.data["messages"]
+    assert isinstance(messages, list)
+    assert messages[0]["is_unread"] is True

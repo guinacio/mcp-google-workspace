@@ -142,6 +142,13 @@ export type UiAction =
       messageId: string;
     }
   | {
+      type: "email_download_attachment";
+      messageId: string;
+      attachmentId: string;
+      filename: string;
+      mimeType?: string;
+    }
+  | {
       type: "open_attachment";
       url: string;
     }
@@ -174,6 +181,7 @@ export type UiAction =
 
 type ActionHandler = (action: UiAction) => void;
 let _onAction: ActionHandler = () => {};
+const EVENT_TOOLTIP_ID = "calendar-event-hover-portal";
 
 export interface RenderOptions {
   include_weekend?: boolean;
@@ -184,6 +192,51 @@ export interface RenderOptions {
 
 export function setActionHandler(handler: ActionHandler) {
   _onAction = handler;
+}
+
+function ensureEventTooltipLayer(): HTMLDivElement {
+  let layer = document.getElementById(EVENT_TOOLTIP_ID) as HTMLDivElement | null;
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = EVENT_TOOLTIP_ID;
+    layer.className = "event-tooltip-layer";
+    layer.setAttribute("aria-hidden", "true");
+    document.body.appendChild(layer);
+  }
+  return layer;
+}
+
+function hideEventTooltipLayer() {
+  const layer = document.getElementById(EVENT_TOOLTIP_ID) as HTMLDivElement | null;
+  if (layer) {
+    layer.style.display = "none";
+  }
+}
+
+function showEventTooltipLayer(anchor: HTMLElement, html: string) {
+  if (!html.trim()) {
+    hideEventTooltipLayer();
+    return;
+  }
+  const layer = ensureEventTooltipLayer();
+  layer.innerHTML = html;
+  layer.style.display = "block";
+  layer.style.visibility = "hidden";
+  layer.style.left = "0px";
+  layer.style.top = "0px";
+
+  const margin = 8;
+  const anchorRect = anchor.getBoundingClientRect();
+  const tooltipRect = layer.getBoundingClientRect();
+  let left = anchorRect.left + (anchorRect.width - tooltipRect.width) / 2;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+  let top = anchorRect.top - tooltipRect.height - margin;
+  if (top < margin) {
+    top = Math.min(window.innerHeight - tooltipRect.height - margin, anchorRect.bottom + margin);
+  }
+  layer.style.left = `${left}px`;
+  layer.style.top = `${top}px`;
+  layer.style.visibility = "visible";
 }
 
 export const RENDER_CSS = `
@@ -362,6 +415,8 @@ export const RENDER_CSS = `
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
+  position: relative;
+  isolation: isolate;
 }
 
 .day-col {
@@ -371,6 +426,12 @@ export const RENDER_CSS = `
   padding: 8px;
   min-height: 540px;
   overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+
+.day-col:hover {
+  z-index: 15;
 }
 
 .day-col.today {
@@ -423,11 +484,13 @@ export const RENDER_CSS = `
   padding: 7px 8px;
   cursor: pointer;
   position: relative;
+  z-index: 1;
   transition: background 0.15s;
 }
 
 .calendar-event:hover {
   background: color-mix(in srgb, var(--event-color) 20%, var(--md-sys-color-surface-container));
+  z-index: 120;
 }
 
 .event-time {
@@ -455,29 +518,26 @@ export const RENDER_CSS = `
 
 /* ── Event hover tooltip ─────────────────────────────────────────────── */
 .event-hover {
-  display: none;
-  position: absolute;
-  left: -4px;
-  right: -4px;
-  bottom: calc(100% + 4px);
+  display: none !important;
+}
+
+.event-tooltip-layer {
+  position: fixed;
+  z-index: 2147483000;
   border-radius: var(--radius-sm);
   border: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface-container-high);
   box-shadow: var(--md-sys-elevation-2);
   padding: 8px 10px;
-  z-index: 20;
   font-size: 0.74rem;
   line-height: 1.45;
   color: var(--md-sys-color-on-surface);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
+  max-height: 220px;
+  max-width: 320px;
   overflow-y: auto;
   pointer-events: none;
-}
-
-.calendar-event:hover .event-hover {
-  display: block;
 }
 
 /* ── Event inline actions (shown on hover) ───────────────────────────── */
@@ -548,6 +608,10 @@ export const RENDER_CSS = `
   background: var(--md-sys-color-surface-variant);
 }
 
+.inbox-row.unread {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+}
+
 .avatar {
   width: 30px;
   height: 30px;
@@ -574,6 +638,7 @@ export const RENDER_CSS = `
 
 .mail-subject.unread {
   font-weight: 700;
+  color: var(--md-sys-color-primary);
 }
 
 .mail-subline {
@@ -741,6 +806,49 @@ export const RENDER_CSS = `
   text-decoration: underline;
 }
 
+.email-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.email-chip {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.72rem;
+  padding: 5px 10px;
+  cursor: pointer;
+  color: var(--md-sys-color-on-surface-variant);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.email-chip:hover {
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-primary);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+}
+
+.email-chip.active {
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  background: var(--md-sys-color-primary);
+}
+
+.email-statuses {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.status-chip {
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
 /* ── Loading state ───────────────────────────────────────────────────── */
 .loading-state {
   min-height: 280px;
@@ -775,6 +883,7 @@ export const RENDER_CSS = `
 `;
 
 export function renderLoading(root: HTMLElement) {
+  hideEventTooltipLayer();
   root.innerHTML = `<div class="loading-state">Loading workspace dashboard...</div>`;
 }
 
@@ -792,10 +901,60 @@ function getInboxData(dashboard?: DashboardViewModel): { unreadCount: number; me
   if (!dashboard) return { unreadCount: 0, messages: [] };
   const section = dashboard.sections.find((item) => item.id === "communications");
   const inbox = section?.cards.find((card) => card.card_type === "inbox");
-  const data = (inbox?.data ?? {}) as { unread_count?: number; messages?: InboxMessage[] };
+  const data = (inbox?.data ?? {}) as {
+    unread_count?: number;
+    unreadCount?: number;
+    unread_message_ids?: unknown[];
+    unreadMessageIds?: unknown[];
+    messages?: Array<Record<string, unknown>>;
+  };
+  const unreadIdsRaw = Array.isArray(data.unread_message_ids)
+    ? data.unread_message_ids
+    : Array.isArray(data.unreadMessageIds)
+      ? data.unreadMessageIds
+      : [];
+  const unreadIdSet = new Set(
+    unreadIdsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
+  );
+  const normalizedMessages: InboxMessage[] = Array.isArray(data.messages)
+    ? data.messages.map((msg) => {
+        const labelIdsRaw = Array.isArray(msg.label_ids)
+          ? msg.label_ids
+          : Array.isArray(msg.labelIds)
+            ? msg.labelIds
+            : [];
+        const labelIds = labelIdsRaw.filter((item): item is string => typeof item === "string");
+        const isUnreadRaw =
+          typeof msg.is_unread === "boolean"
+            ? msg.is_unread
+            : typeof msg.isUnread === "boolean"
+              ? msg.isUnread
+              : undefined;
+        const messageId = typeof msg.id === "string" ? msg.id : undefined;
+        const isUnread =
+          (isUnreadRaw ?? false) ||
+          labelIds.includes("UNREAD") ||
+          (!!messageId && unreadIdSet.has(messageId));
+        return {
+          id: messageId,
+          subject: typeof msg.subject === "string" ? msg.subject : undefined,
+          from: typeof msg.from === "string" ? msg.from : undefined,
+          date: typeof msg.date === "string" ? msg.date : undefined,
+          snippet: typeof msg.snippet === "string" ? msg.snippet : undefined,
+          label_ids: labelIds,
+          is_unread: isUnread,
+        };
+      })
+    : [];
+  const unreadCount =
+    typeof data.unread_count === "number"
+      ? data.unread_count
+      : typeof data.unreadCount === "number"
+        ? data.unreadCount
+        : normalizedMessages.filter((msg) => !!msg.is_unread).length;
   return {
-    unreadCount: data.unread_count ?? 0,
-    messages: data.messages ?? [],
+    unreadCount,
+    messages: normalizedMessages,
   };
 }
 
@@ -810,6 +969,8 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
   const eventsCount = countWeekEvents(data.weekly_calendar);
   const selectedCalendarIds = options.selected_calendar_ids ?? [];
   const includeWeekend = options.include_weekend ?? true;
+
+  hideEventTooltipLayer();
 
   root.innerHTML = `
     <div class="dashboard">
@@ -838,7 +999,40 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     </div>
   `;
 
+  root.onmouseover = (event) => {
+    const target = event.target as HTMLElement;
+    const eventCard = target.closest<HTMLElement>("[data-open-event]");
+    if (!eventCard) return;
+    const source = eventCard.querySelector<HTMLElement>(".event-hover");
+    if (!source) return;
+    showEventTooltipLayer(eventCard, source.innerHTML);
+  };
+
+  root.onmousemove = (event) => {
+    const target = event.target as HTMLElement;
+    const eventCard = target.closest<HTMLElement>("[data-open-event]");
+    if (!eventCard) return;
+    const source = eventCard.querySelector<HTMLElement>(".event-hover");
+    if (!source) return;
+    showEventTooltipLayer(eventCard, source.innerHTML);
+  };
+
+  root.onmouseout = (event) => {
+    const target = event.target as HTMLElement;
+    const eventCard = target.closest<HTMLElement>("[data-open-event]");
+    if (!eventCard) return;
+    const related = event.relatedTarget as HTMLElement | null;
+    if (!related || !eventCard.contains(related)) {
+      hideEventTooltipLayer();
+    }
+  };
+
+  root.onmouseleave = () => {
+    hideEventTooltipLayer();
+  };
+
   root.onclick = (event) => {
+    hideEventTooltipLayer();
     const target = event.target as HTMLElement;
 
     const chat = target.closest<HTMLElement>("[data-action-msg]");
@@ -910,6 +1104,25 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       const mimeType = downloadAttachment.dataset.downloadAttachmentMime || undefined;
       if (url) {
         _onAction({ type: "download_attachment", url, name, mimeType });
+      }
+      return;
+    }
+
+    const downloadEmailAttachment = target.closest<HTMLElement>("[data-email-attachment-download]");
+    if (downloadEmailAttachment) {
+      event.preventDefault();
+      const messageId = downloadEmailAttachment.dataset.messageId;
+      const attachmentId = downloadEmailAttachment.dataset.attachmentId;
+      const filename = downloadEmailAttachment.dataset.filename || "attachment";
+      const mimeType = downloadEmailAttachment.dataset.mimeType || undefined;
+      if (messageId && attachmentId) {
+        _onAction({
+          type: "email_download_attachment",
+          messageId,
+          attachmentId,
+          filename,
+          mimeType,
+        });
       }
       return;
     }
@@ -1213,9 +1426,11 @@ function renderEventActionChips(
 function renderInboxPanel(messages: InboxMessage[], unreadCount: number): string {
   const rows = messages
     .map((msg) => {
-      const unreadClass = msg.is_unread ? "unread" : "";
+      const labels = Array.isArray(msg.label_ids) ? msg.label_ids : [];
+      const isUnread = !!msg.is_unread || labels.includes("UNREAD");
+      const unreadClass = isUnread ? "unread" : "";
       return `
-        <div class="inbox-row" data-open-email="1" data-message-id="${esc(msg.id || "")}">
+        <div class="inbox-row ${unreadClass}" data-open-email="1" data-message-id="${esc(msg.id || "")}">
           <div class="avatar">${esc(initials(msg.from || ""))}</div>
           <div class="mail-content">
             <div class="mail-subject ${unreadClass}">${esc(msg.subject || "(No subject)")}</div>
@@ -1252,7 +1467,7 @@ function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: 
         `<li>${esc(attendee.display_name || attendee.email)}${attendee.response_status ? ` · ${esc(attendee.response_status)}` : ""}</li>`
     )
     .join("");
-  const attachments = detail.attachments
+  const attachments = (detail.attachments || [])
     .map((attachment) => {
       const label = attachment.mime_type ? `${attachment.title} (${attachment.mime_type})` : attachment.title;
       if (attachment.file_url) {
@@ -1414,6 +1629,34 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
   const canUntrash = capabilities?.can_untrash_email ?? false;
   const canSpam = capabilities?.can_mark_email_spam ?? false;
   const canNotSpam = capabilities?.can_mark_email_not_spam ?? false;
+  const statusChips = [
+    isUnread ? `<span class="status-chip">Unread</span>` : `<span class="status-chip">Read</span>`,
+    inInbox ? `<span class="status-chip">Inbox</span>` : "",
+    inTrash ? `<span class="status-chip">Trash</span>` : "",
+    inSpam ? `<span class="status-chip">Spam</span>` : "",
+  ].filter(Boolean).join("");
+  const attachments = detail.attachments
+    .map((attachment) => {
+      const label = attachment.mime_type ? `${attachment.filename} (${attachment.mime_type})` : attachment.filename;
+      return `
+        <li>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <span>${esc(label)}</span>
+            <button
+              type="button"
+              class="email-chip"
+              data-email-attachment-download="1"
+              data-message-id="${esc(detail.message_id)}"
+              data-attachment-id="${esc(attachment.attachment_id)}"
+              data-filename="${esc(attachment.filename)}"
+              data-mime-type="${esc(attachment.mime_type || "")}">
+              Download
+            </button>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
   return `
     <div class="overlay" role="dialog" aria-modal="true">
       <section class="panel">
@@ -1429,16 +1672,20 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
           <div class="detail-block"><strong>To:</strong> ${esc(detail.to || "(not set)")}</div>
           ${detail.cc ? `<div class="detail-block"><strong>Cc:</strong> ${esc(detail.cc)}</div>` : ""}
           <div class="detail-block"><strong>Labels:</strong> ${esc(detail.labels.join(", ") || "none")}</div>
+          <div class="detail-block"><strong>Status:</strong> <div class="email-statuses" style="margin-top:6px;">${statusChips}</div></div>
+          <div class="detail-block"><strong>Attachments</strong><ul class="attachment-list">${attachments || "<li>No attachments.</li>"}</ul></div>
           <div class="detail-block"><strong>Body</strong><div style="margin-top:6px; white-space:pre-wrap;">${esc(body)}</div></div>
-          <div class="detail-block" style="display:flex; gap:8px; flex-wrap:wrap;">
-            ${canRead && isUnread ? `<button type="button" class="action-btn" data-email-action="mark_read" data-message-id="${esc(detail.message_id)}">Mark as read</button>` : ""}
-            ${canUnread && !isUnread ? `<button type="button" class="action-btn" data-email-action="mark_unread" data-message-id="${esc(detail.message_id)}">Mark as unread</button>` : ""}
-            ${canArchive && inInbox ? `<button type="button" class="action-btn" data-email-action="archive" data-message-id="${esc(detail.message_id)}">Archive</button>` : ""}
-            ${canTrash ? `<button type="button" class="action-btn" data-email-action="trash" data-message-id="${esc(detail.message_id)}">Move to trash</button>` : ""}
-            ${canUntrash && inTrash ? `<button type="button" class="action-btn" data-email-action="untrash" data-message-id="${esc(detail.message_id)}">Restore from trash</button>` : ""}
-            ${canSpam && !inSpam ? `<button type="button" class="action-btn" data-email-action="spam" data-message-id="${esc(detail.message_id)}">Report spam</button>` : ""}
-            ${canNotSpam && inSpam ? `<button type="button" class="action-btn" data-email-action="not_spam" data-message-id="${esc(detail.message_id)}">Not spam</button>` : ""}
-            <button type="button" class="action-btn" data-action-msg="${esc(`Reply to ${detail.from_value} about: ${detail.subject}`)}">Reply in chat</button>
+          <div class="detail-block">
+            <div class="email-actions">
+              ${canRead ? `<button type="button" class="email-chip ${!isUnread ? "active" : ""}" data-email-action="mark_read" data-message-id="${esc(detail.message_id)}">Mark read</button>` : ""}
+              ${canUnread ? `<button type="button" class="email-chip ${isUnread ? "active" : ""}" data-email-action="mark_unread" data-message-id="${esc(detail.message_id)}">Mark unread</button>` : ""}
+              ${canArchive ? `<button type="button" class="email-chip ${!inInbox ? "active" : ""}" data-email-action="archive" data-message-id="${esc(detail.message_id)}">Archive</button>` : ""}
+              ${canTrash ? `<button type="button" class="email-chip ${inTrash ? "active" : ""}" data-email-action="trash" data-message-id="${esc(detail.message_id)}">Trash</button>` : ""}
+              ${canUntrash && inTrash ? `<button type="button" class="email-chip" data-email-action="untrash" data-message-id="${esc(detail.message_id)}">Restore</button>` : ""}
+              ${canSpam ? `<button type="button" class="email-chip ${inSpam ? "active" : ""}" data-email-action="spam" data-message-id="${esc(detail.message_id)}">Spam</button>` : ""}
+              ${canNotSpam && inSpam ? `<button type="button" class="email-chip" data-email-action="not_spam" data-message-id="${esc(detail.message_id)}">Not spam</button>` : ""}
+              <button type="button" class="email-chip" data-action-msg="${esc(`Reply to ${detail.from_value} about: ${detail.subject}`)}">Reply in chat</button>
+            </div>
           </div>
         </div>
       </section>

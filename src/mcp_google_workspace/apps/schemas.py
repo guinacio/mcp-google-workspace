@@ -157,6 +157,7 @@ class EmailDetailViewModel(BaseModel):
     snippet: str | None = None
     text_body: str | None = None
     html_body: str | None = None
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
     labels: list[str] = Field(default_factory=list)
     is_unread: bool = False
 

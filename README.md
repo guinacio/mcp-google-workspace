@@ -5,7 +5,7 @@ Production-ready Google Workspace MCP package with:
 - Gmail MCP: send/read/search emails, attachment handling, label management, batch operations.
 - Google Calendar MCP: events, availability, create/update/delete operations.
 - Google Drive MCP: files/folders CRUD, uploads/downloads/exports, sharing permissions, Shared Drives operations.
-- MCP Apps Dashboard: workspace dashboard + morning briefing app-layer tools/resources.
+- MCP Apps Dashboard: workspace dashboard app-layer tools/resources with interactive UI.
 - Google Keep MCP: note create/get/list/delete, collaboration permissions, resources, prompts.
 - Google Chat MCP: spaces and messages operations, collaboration messaging workflows.
 - FastMCP advanced features: Context logging, progress updates, user elicitation, sampling, resources, and prompts.
@@ -58,7 +58,7 @@ If you change this flag (or after upgrading scopes/features/scopes), delete `tok
 
 ### Apps dashboard rollout flag
 
-The MCP app-layer dashboard/briefing namespace is opt-in for controlled rollout.
+The MCP app-layer dashboard namespace is opt-in for controlled rollout.
 
 Enable apps namespace:
 
@@ -143,8 +143,8 @@ Apps (namespaced as `apps_*`, mounted when `ENABLE_APPS_DASHBOARD=true`):
 - State/navigation: `get_state`, `set_state`, `patch_state`, `today`, `next_range`, `prev_range`
 - Dashboard: `get_dashboard`
 - Weekly calendar layout: `get_weekly_calendar_view` (Google Calendar-like week columns)
-- Morning briefing: `get_morning_briefing`
-- Scheduling actions: `find_meeting_slots`, `create_meeting_from_slot`, `reschedule_meeting`, `cancel_meeting`
+- Detail views: `get_event_detail`, `get_email_detail`, `get_email_attachment`
+- Scheduling actions: `find_meeting_slots`, `create_meeting_from_slot`, `reschedule_meeting`, `cancel_meeting`, `respond_to_event`
 
 Keep (namespaced as `keep_*`):
 
@@ -206,7 +206,6 @@ Apps resources (mounted when `ENABLE_APPS_DASHBOARD=true`):
 - `apps://dashboard/day/{ymd}`
 - `apps://dashboard/week/{ymd}`
 - `apps://calendar/week/{ymd}`
-- `apps://briefing/morning/{ymd}`
 
 Prompts:
 
@@ -217,6 +216,50 @@ Prompts:
 - `extract_actions_from_keep_notes_prompt`
 - `draft_chat_announcement_prompt`
 - `summarize_chat_thread_prompt`
+
+## MCP Client-Dependent Features
+
+These features depend on active MCP client support and may be silently unavailable in clients that do not implement the corresponding MCP capabilities.
+
+### MCP Apps (UI Dashboard)
+
+When `ENABLE_APPS_DASHBOARD=true`, the `apps_get_dashboard` and `apps_get_weekly_calendar_view` tools carry an `_meta.ui.resourceUri` annotation pointing to `ui://apps/dashboard-ui`. MCP clients that support the Apps rendering protocol (e.g. Claude Desktop) will embed an interactive workspace dashboard UI alongside the tool response.
+
+The UI is a TypeScript web component that communicates with the server via PostMessage. It renders:
+
+- A weekly calendar view (all-day events + timed event columns)
+- An inbox summary with email detail drill-down
+- Scheduling action buttons (RSVP, reschedule, cancel)
+
+Session-scoped state (current view, anchor date, selected calendars, inbox query) is stored server-side per session and managed through `apps_get_state` / `apps_set_state` / `apps_patch_state`.
+
+**Requires:** MCP client with App/iframe rendering support.
+
+### Progress Notifications
+
+Long-running tools emit incremental `notifications/progress` messages via `ctx.report_progress(current, total, description)`. Clients that handle progress notifications can display progress bars or status messages during API-heavy operations.
+
+Tools that emit progress:
+
+| Namespace | Tools |
+|-----------|-------|
+| Drive | `upload_file`, `update_file_content`, `download_file`, `export_google_file` |
+| Apps | `get_dashboard`, `get_weekly_calendar_view`, `get_event_detail`, `get_email_detail`, `get_email_attachment` |
+| Chat | `list_spaces`, `list_messages` |
+
+**Requires:** MCP client that handles `notifications/progress`.
+
+### Sampling
+
+Several tools use MCP sampling (`ctx.sample()`) to generate LLM-powered summaries within the tool response, using the host client's configured model for inference.
+
+Sampling-powered tools:
+
+- `gmail_summarize_email` — summarizes an email body in up to 5 bullets
+- `keep_summarize_note` — summarizes a Keep note
+- `chat_summarize_space_messages` — summarizes recent messages in a Chat space
+
+**Requires:** MCP client with `sampling/createMessage` support (e.g. Claude Desktop). Without sampling support these tools will fail or return an empty summary.
 
 ## Google Keep API limitations
 

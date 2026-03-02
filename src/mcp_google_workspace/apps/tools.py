@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -9,7 +10,7 @@ import pytz
 from fastmcp import Context, FastMCP
 
 from ..auth import build_calendar_service, build_gmail_service
-from ..gmail.mime_utils import decode_rfc2047
+from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from .actions import (
     cancel_meeting,
     create_meeting_from_slot,
@@ -85,25 +86,37 @@ def _fetch_calendar_events(state: DashboardState) -> list[dict[str, Any]]:
     return events
 
 
-def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any]]]:
+def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any]], list[str]]:
     service = build_gmail_service()
+    list_limit = 10
     unread_query = "is:unread in:inbox"
     if state.inbox_query:
         unread_query = f"{unread_query} {state.inbox_query}"
-    unread = (
+    unread_response = (
         service.users()
         .messages()
-        .list(userId="me", q=unread_query, maxResults=25)
+        .list(userId="me", q=unread_query, maxResults=list_limit)
         .execute()
-        .get("resultSizeEstimate", 0)
     )
+    unread = unread_response.get("resultSizeEstimate", 0)
+    unread_ids = [
+        msg.get("id")
+        for msg in unread_response.get("messages", [])
+        if isinstance(msg.get("id"), str) and msg.get("id")
+    ]
     list_query = "in:inbox"
     if state.inbox_query:
         list_query = f"{list_query} {state.inbox_query}"
-    latest = service.users().messages().list(userId="me", q=list_query, maxResults=10).execute()
+    latest = service.users().messages().list(userId="me", q=list_query, maxResults=list_limit).execute()
+    latest_ids = [
+        msg.get("id")
+        for msg in latest.get("messages", [])
+        if isinstance(msg.get("id"), str) and msg.get("id")
+    ]
+
     items: list[dict[str, Any]] = []
-    for msg in latest.get("messages", []):
-        full = service.users().messages().get(userId="me", id=msg["id"], format="metadata").execute()
+    for message_id in latest_ids:
+        full = service.users().messages().get(userId="me", id=message_id, format="metadata").execute()
         headers = {
             h.get("name", "").lower(): h.get("value", "")
             for h in full.get("payload", {}).get("headers", [])
@@ -119,7 +132,7 @@ def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any
                 "is_unread": "UNREAD" in (full.get("labelIds", []) or []),
             }
         )
-    return unread, items
+    return unread, items, unread_ids
 
 
 def _fetch_event_detail(calendar_id: str, event_id: str) -> dict[str, Any]:
@@ -134,18 +147,59 @@ def _fetch_email_detail(message_id: str) -> dict[str, Any]:
     return build_email_detail_view_model(message).model_dump(mode="json")
 
 
+def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, Any]:
+    service = build_gmail_service()
+    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    payload = message.get("payload") or {}
+
+    filename = attachment_id
+    mime_type = "application/octet-stream"
+    size = 0
+    for part in flatten_parts(payload):
+        body = part.get("body", {})
+        if body.get("attachmentId") != attachment_id:
+            continue
+        filename = part.get("filename") or filename
+        mime_type = part.get("mimeType") or mime_type
+        size = body.get("size", 0) or 0
+        break
+
+    attachment = (
+        service.users()
+        .messages()
+        .attachments()
+        .get(userId="me", messageId=message_id, id=attachment_id)
+        .execute()
+    )
+    raw = attachment.get("data")
+    if not raw:
+        raise ValueError("Attachment content is empty.")
+    # Normalize Gmail URL-safe base64 into standard base64 for host download APIs.
+    decoded = base64.urlsafe_b64decode(raw.encode("utf-8"))
+    blob_base64 = base64.b64encode(decoded).decode("ascii")
+    return {
+        "message_id": message_id,
+        "attachment_id": attachment_id,
+        "filename": filename,
+        "mime_type": mime_type,
+        "size": size,
+        "blob_base64": blob_base64,
+    }
+
+
 def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
     section_errors: dict[str, str] = {}
     events: list[dict[str, Any]] = []
     unread_count = 0
     messages: list[dict[str, Any]] = []
+    unread_message_ids: list[str] = []
     week_state = state.model_copy(update={"view": "week"})
     try:
         events = _fetch_calendar_events(week_state)
     except Exception as exc:  # pragma: no cover - external API
         section_errors["calendar"] = str(exc)
     try:
-        unread_count, messages = _fetch_inbox_summary(state)
+        unread_count, messages, unread_message_ids = _fetch_inbox_summary(state)
     except Exception as exc:  # pragma: no cover - external API
         section_errors["inbox"] = str(exc)
     model = build_dashboard_view_model(
@@ -153,6 +207,7 @@ def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
         calendar_events=events,
         unread_count=unread_count,
         inbox_messages=messages,
+        unread_message_ids=unread_message_ids,
         section_errors=section_errors,
     )
     # Include weekly calendar view so the UI displays the proper week grid.
@@ -173,6 +228,7 @@ async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Cont
     events: list[dict[str, Any]] = []
     unread_count = 0
     messages: list[dict[str, Any]] = []
+    unread_message_ids: list[str] = []
     week_state = state.model_copy(update={"view": "week"})
 
     try:
@@ -183,7 +239,7 @@ async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Cont
 
     try:
         await ctx.report_progress(55, 100, "Loading inbox summary")
-        unread_count, messages = _fetch_inbox_summary(state)
+        unread_count, messages, unread_message_ids = _fetch_inbox_summary(state)
     except Exception as exc:  # pragma: no cover - external API
         section_errors["inbox"] = str(exc)
 
@@ -193,6 +249,7 @@ async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Cont
         calendar_events=events,
         unread_count=unread_count,
         inbox_messages=messages,
+        unread_message_ids=unread_message_ids,
         section_errors=section_errors,
     )
     weekly_model = build_weekly_calendar_view_model(
@@ -427,6 +484,21 @@ def register_tools(server: FastMCP) -> None:
         payload = _fetch_email_detail(message_id)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Email details ready")
+        return payload
+
+    @server.tool(name="get_email_attachment")
+    async def apps_get_email_attachment(
+        message_id: str,
+        attachment_id: str,
+        session_id: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Return attachment content (base64) for one Gmail message attachment."""
+        if ctx is not None:
+            await ctx.report_progress(20, 100, "Loading attachment data")
+        payload = _fetch_email_attachment(message_id, attachment_id)
+        if ctx is not None:
+            await ctx.report_progress(100, 100, "Attachment ready")
         return payload
 
     @server.tool(name="find_meeting_slots")
