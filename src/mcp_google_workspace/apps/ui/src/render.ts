@@ -241,11 +241,11 @@ function showEventTooltipLayer(anchor: HTMLElement, html: string) {
 
 export const RENDER_CSS = `
 .dashboard {
-  max-width: 1360px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 24px 20px 40px;
+  padding: 14px 12px 24px;
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 /* ── Top bar ─────────────────────────────────────────────────────────── */
@@ -310,6 +310,7 @@ export const RENDER_CSS = `
 
 .calendar-shell {
   padding: 14px;
+  overflow-x: auto;
 }
 
 .section-head {
@@ -413,10 +414,13 @@ export const RENDER_CSS = `
 /* ── Weekly calendar grid ────────────────────────────────────────────── */
 .week-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
   gap: 8px;
   position: relative;
   isolation: isolate;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-gutter: stable both-edges;
 }
 
 .day-col {
@@ -424,7 +428,7 @@ export const RENDER_CSS = `
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--radius-sm);
   padding: 8px;
-  min-height: 540px;
+  min-height: 420px;
   overflow: visible;
   position: relative;
   z-index: 1;
@@ -864,16 +868,22 @@ export const RENDER_CSS = `
     grid-template-columns: 1fr;
   }
 
+  .week-grid {
+    grid-template-columns: repeat(7, minmax(140px, 1fr));
+  }
+
   .day-col {
     min-height: 320px;
   }
 }
 
 @media (max-width: 760px) {
+  .dashboard {
+    padding: 10px 8px 16px;
+  }
+
   .week-grid {
-    grid-template-columns: repeat(7, minmax(170px, 1fr));
-    overflow-x: auto;
-    padding-bottom: 6px;
+    grid-template-columns: repeat(7, minmax(130px, 1fr));
   }
 
   .editor-row {
@@ -1067,6 +1077,56 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       return;
     }
 
+    const rsvp = target.closest<HTMLElement>("[data-rsvp-status]");
+    if (rsvp) {
+      event.preventDefault();
+      event.stopPropagation();
+      const calendarId = rsvp.dataset.calendarId;
+      const eventId = rsvp.dataset.eventId;
+      const responseStatus = rsvp.dataset.rsvpStatus as "accepted" | "tentative" | "declined" | undefined;
+      if (calendarId && eventId && responseStatus) {
+        _onAction({ type: "calendar_rsvp", calendarId, eventId, responseStatus });
+      }
+      return;
+    }
+
+    const reschedule = target.closest<HTMLElement>("[data-reschedule-minutes]");
+    if (reschedule) {
+      event.preventDefault();
+      event.stopPropagation();
+      const calendarId = reschedule.dataset.calendarId;
+      const eventId = reschedule.dataset.eventId;
+      const start = reschedule.dataset.eventStart;
+      const end = reschedule.dataset.eventEnd;
+      const timezone = reschedule.dataset.eventTimezone;
+      const shiftRaw = reschedule.dataset.rescheduleMinutes;
+      const shiftMinutes = shiftRaw ? Number(shiftRaw) : Number.NaN;
+      if (calendarId && eventId && start && end && timezone && Number.isFinite(shiftMinutes)) {
+        _onAction({
+          type: "calendar_reschedule",
+          calendarId,
+          eventId,
+          start,
+          end,
+          timezone,
+          shiftMinutes,
+        });
+      }
+      return;
+    }
+
+    const cancel = target.closest<HTMLElement>("[data-cancel-event]");
+    if (cancel) {
+      event.preventDefault();
+      event.stopPropagation();
+      const calendarId = cancel.dataset.calendarId;
+      const eventId = cancel.dataset.eventId;
+      if (calendarId && eventId) {
+        _onAction({ type: "calendar_cancel", calendarId, eventId });
+      }
+      return;
+    }
+
     const openEvent = target.closest<HTMLElement>("[data-open-event]");
     if (openEvent) {
       const calendarId = openEvent.dataset.calendarId;
@@ -1155,54 +1215,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       return;
     }
 
-    const rsvp = target.closest<HTMLElement>("[data-rsvp-status]");
-    if (rsvp) {
-      event.preventDefault();
-      event.stopPropagation();
-      const calendarId = rsvp.dataset.calendarId;
-      const eventId = rsvp.dataset.eventId;
-      const responseStatus = rsvp.dataset.rsvpStatus as "accepted" | "tentative" | "declined" | undefined;
-      if (calendarId && eventId && responseStatus) {
-        _onAction({ type: "calendar_rsvp", calendarId, eventId, responseStatus });
-      }
-      return;
-    }
-
-    const reschedule = target.closest<HTMLElement>("[data-reschedule-minutes]");
-    if (reschedule) {
-      event.preventDefault();
-      event.stopPropagation();
-      const calendarId = reschedule.dataset.calendarId;
-      const eventId = reschedule.dataset.eventId;
-      const start = reschedule.dataset.eventStart;
-      const end = reschedule.dataset.eventEnd;
-      const timezone = reschedule.dataset.eventTimezone;
-      const shiftRaw = reschedule.dataset.rescheduleMinutes;
-      const shiftMinutes = shiftRaw ? Number(shiftRaw) : Number.NaN;
-      if (calendarId && eventId && start && end && timezone && Number.isFinite(shiftMinutes)) {
-        _onAction({
-          type: "calendar_reschedule",
-          calendarId,
-          eventId,
-          start,
-          end,
-          timezone,
-          shiftMinutes,
-        });
-      }
-      return;
-    }
-
-    const cancel = target.closest<HTMLElement>("[data-cancel-event]");
-    if (cancel) {
-      event.preventDefault();
-      event.stopPropagation();
-      const calendarId = cancel.dataset.calendarId;
-      const eventId = cancel.dataset.eventId;
-      if (calendarId && eventId) {
-        _onAction({ type: "calendar_cancel", calendarId, eventId });
-      }
-    }
+    
   };
 
   root.onchange = (event) => {

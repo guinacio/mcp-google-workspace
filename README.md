@@ -16,6 +16,7 @@ Production-ready Google Workspace MCP package with:
 
 - Python 3.12+
 - UV package manager
+- Node.js 18+ and npm (required for MCP Apps UI in `src/mcp_google_workspace/apps/ui`)
 - Google Cloud OAuth desktop credentials (`credentials.json`)
 - Gmail API + Google Calendar API + Google Drive API + Google Keep API + Google Chat API enabled in your Google Cloud project
 
@@ -23,6 +24,14 @@ Production-ready Google Workspace MCP package with:
 
 ```powershell
 uv sync --all-extras --dev
+```
+
+If you are working on MCP Apps UI, install frontend dependencies and build the bundle:
+
+```powershell
+cd src/mcp_google_workspace/apps/ui
+npm ci
+npm run build
 ```
 
 ## OAuth setup
@@ -279,6 +288,70 @@ and a compatibility manifest at:
 Reference docs:
 
 - [Create and distribute a plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces.md)
+- [Discover and install prebuilt plugins](https://code.claude.com/docs/en/discover-plugins.md)
+
+### Install with Claude Code marketplace
+
+From within Claude Code:
+
+```bash
+/plugin marketplace add guinacio/mcp-google-workspace
+/plugin install google-workspace@google-workspace-mcp
+```
+
+Local checkout flow (from this repository root):
+
+```bash
+/plugin marketplace add .
+/plugin install google-workspace@google-workspace-mcp
+```
+
+Optional refresh after updates:
+
+```bash
+/plugin marketplace update google-workspace-mcp
+```
+
+### Claude Desktop JSON (`mcpServers`)
+
+If you want to run it directly in Claude Desktop without marketplace install, add this to your Claude Desktop config JSON under `mcpServers`.
+
+Windows config file:
+
+- `%APPDATA%\Claude\claude_desktop_config.json`
+
+macOS config file:
+
+- `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+Linux config file:
+
+- `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "google-workspace": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "c:/path/to/mcp-google-workspace",
+        "python",
+        "-m",
+        "mcp_google_workspace"
+      ],
+      "env": {
+        "ENABLE_APPS_DASHBOARD": "true",
+        "ENABLE_KEEP": "false",
+        "ENABLE_CHAT": "false"
+      }
+    }
+  }
+}
+```
+
+Replace `c:/path/to/mcp-google-workspace` with your local repo path.
 
 ## Tests
 
