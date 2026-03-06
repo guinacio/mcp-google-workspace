@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import Context, FastMCP
 
+from ..common.component_annotations import apply_default_tool_annotations
 from .client import gmail_service
 from .mime_utils import extract_message_bodies
 from .prompts import register_prompts
@@ -31,3 +32,6 @@ async def summarize_email(message_id: str, ctx: Context) -> dict[str, str]:
         max_tokens=240,
     )
     return {"message_id": message_id, "summary": summary.text or ""}
+
+
+apply_default_tool_annotations(gmail_mcp)

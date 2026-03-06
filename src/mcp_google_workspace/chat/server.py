@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import Context, FastMCP
 
+from ..common.component_annotations import apply_default_tool_annotations
 from .client import chat_service, normalize_space_name
 from .prompts import register_prompts
 from .resources import register_resources
@@ -30,3 +31,6 @@ async def summarize_space_messages(space_name: str, ctx: Context, limit: int = 2
         max_tokens=220,
     )
     return {"space": parent, "summary": summary.text or ""}
+
+
+apply_default_tool_annotations(chat_mcp)

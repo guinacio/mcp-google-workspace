@@ -42,10 +42,9 @@ def _resolve_session_id(candidate: str | None, ctx: Context | None = None) -> st
     if candidate:
         return candidate
     if ctx is not None:
-        for attr_name in ("session_id", "conversation_id", "request_id"):
-            attr_value = getattr(ctx, attr_name, None)
-            if isinstance(attr_value, str) and attr_value:
-                return attr_value
+        session_id = getattr(ctx, "session_id", None)
+        if isinstance(session_id, str) and session_id:
+            return session_id
     return "default"
 
 
@@ -315,9 +314,13 @@ async def build_weekly_calendar_payload_with_progress(
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_state")
-    async def apps_get_state(session_id: str | None = None, timezone: str | None = None) -> dict[str, Any]:
+    async def apps_get_state(
+        session_id: str | None = None,
+        timezone: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Get current dashboard state for the caller session."""
-        sid = _resolve_session_id(session_id)
+        sid = _resolve_session_id(session_id, ctx)
         state = get_state(sid, timezone=timezone)
         return state.model_dump(mode="json")
 
@@ -333,9 +336,8 @@ def register_tools(server: FastMCP) -> None:
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Replace dashboard state for the caller session."""
-        fields: dict[str, Any] = {}
-        if session_id is not None:
-            fields["session_id"] = session_id
+        sid = _resolve_session_id(session_id, ctx)
+        fields: dict[str, Any] = {"session_id": sid}
         if view is not None:
             fields["view"] = view
         if anchor_date is not None:
@@ -349,7 +351,6 @@ def register_tools(server: FastMCP) -> None:
         if include_weekend is not None:
             fields["include_weekend"] = include_weekend
         request = DashboardState(**fields)
-        sid = _resolve_session_id(request.session_id, ctx)
         updated = set_state(sid, request)
         if ctx is not None:
             await ctx.info(f"Dashboard state replaced for session {sid}.")
@@ -364,6 +365,7 @@ def register_tools(server: FastMCP) -> None:
         selected_calendars: list[str] | None = None,
         inbox_query: str | None = None,
         include_weekend: bool | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Patch selected dashboard state fields for the caller session."""
         request = DashboardStatePatch(
@@ -374,28 +376,37 @@ def register_tools(server: FastMCP) -> None:
             inbox_query=inbox_query,
             include_weekend=include_weekend,
         )
-        sid = _resolve_session_id(session_id)
+        sid = _resolve_session_id(session_id, ctx)
         updated = patch_state(sid, request)
         return updated.model_dump(mode="json")
 
     @server.tool(name="next_range")
-    async def apps_next_range(session_id: str | None = None) -> dict[str, Any]:
+    async def apps_next_range(
+        session_id: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Move dashboard anchor date to the next range based on current view."""
-        sid = _resolve_session_id(session_id)
+        sid = _resolve_session_id(session_id, ctx)
         updated = next_range(sid)
         return updated.model_dump(mode="json")
 
     @server.tool(name="prev_range")
-    async def apps_prev_range(session_id: str | None = None) -> dict[str, Any]:
+    async def apps_prev_range(
+        session_id: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Move dashboard anchor date to the previous range based on current view."""
-        sid = _resolve_session_id(session_id)
+        sid = _resolve_session_id(session_id, ctx)
         updated = prev_range(sid)
         return updated.model_dump(mode="json")
 
     @server.tool(name="today")
-    async def apps_today(session_id: str | None = None) -> dict[str, Any]:
+    async def apps_today(
+        session_id: str | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
         """Reset dashboard anchor date to today for this session."""
-        sid = _resolve_session_id(session_id)
+        sid = _resolve_session_id(session_id, ctx)
         updated = today(sid)
         return updated.model_dump(mode="json")
 
@@ -416,10 +427,10 @@ def register_tools(server: FastMCP) -> None:
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Build workspace dashboard view model from calendar and inbox data."""
-        sid = _resolve_session_id(session_id)
+        sid = _resolve_session_id(session_id, ctx)
         state = get_state(sid)
         if date_override is not None:
-            state = patch_state(sid, DashboardStatePatch(anchor_date=date_override))
+            state = state.model_copy(update={"anchor_date": date_override})
         if ctx is not None:
             return await build_dashboard_payload_with_progress(state, ctx)
         return build_dashboard_payload(state)
@@ -442,7 +453,7 @@ def register_tools(server: FastMCP) -> None:
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Return a Google Calendar-like weekly view model (columns per day)."""
-        sid = _resolve_session_id(session_id)
+        sid = _resolve_session_id(session_id, ctx)
         state = get_state(sid)
         if ctx is not None:
             return await build_weekly_calendar_payload_with_progress(
@@ -635,3 +646,4 @@ def register_tools(server: FastMCP) -> None:
         sid = _resolve_session_id(request.session_id, ctx)
         result = respond_to_event(sid, request)
         return result.model_dump(mode="json")
+
