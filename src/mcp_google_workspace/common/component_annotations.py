@@ -8,7 +8,21 @@ from typing import Any
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-_NAMESPACES = {"apps", "calendar", "chat", "drive", "gmail", "keep"}
+_NAMESPACES = {
+    "apps",
+    "calendar",
+    "chat",
+    "docs",
+    "drive",
+    "forms",
+    "gmail",
+    "keep",
+    "meet",
+    "people",
+    "sheets",
+    "slides",
+    "tasks",
+}
 
 _LOCAL_ONLY_TOOLS = {
     "get_current_date",
@@ -33,25 +47,17 @@ _READ_ONLY_PREFIXES = (
     "summarize_",
 )
 
-_MUTATING_TOOLS = {
-    "next_range",
-    "patch_state",
-    "post_message_simple",
-    "prev_range",
-    "reply_to_message",
-    "set_state",
-    "today",
-}
-
 _MUTATING_PREFIXES = (
     "add_",
     "append_",
     "apply_",
     "archive_",
-    "cancel_",
+    "batch_update_",
+    "complete_",
     "copy_",
     "create_",
     "delete_",
+    "end_",
     "hide_",
     "mark_",
     "modify_",
@@ -59,6 +65,7 @@ _MUTATING_PREFIXES = (
     "patch_",
     "post_",
     "remove_",
+    "replace_",
     "reply_",
     "reschedule_",
     "respond_",
@@ -74,10 +81,10 @@ _MUTATING_PREFIXES = (
     "upload_",
 )
 
-_DESTRUCTIVE_TOOLS = {
-    "archive_note",
-    "batch_delete",
-    "cancel_meeting",
+_MUTATING_TOOLS = {
+    "next_range",
+    "prev_range",
+    "today",
 }
 
 _DESTRUCTIVE_PREFIXES = (
@@ -86,10 +93,18 @@ _DESTRUCTIVE_PREFIXES = (
     "trash_",
 )
 
+_DESTRUCTIVE_TOOLS = {
+    "archive_note",
+    "batch_delete",
+    "cancel_meeting",
+    "end_active_conference",
+}
+
 _IDEMPOTENT_TOOLS = {
     "apply_labels",
     "archive_note",
     "cancel_meeting",
+    "complete_task",
     "create_meeting_from_slot",
     "hide_drive",
     "mark_as_not_spam",
@@ -98,14 +113,18 @@ _IDEMPOTENT_TOOLS = {
     "mark_as_unread",
     "patch_note_checklist",
     "patch_state",
+    "replace_document_text",
+    "replace_text_in_presentation",
     "reschedule_meeting",
     "respond_to_event",
+    "set_form_publish_settings",
     "set_state",
     "today",
     "unarchive_note",
     "unhide_drive",
     "untrash_email",
     "untrash_thread",
+    "update_contact",
     "update_draft",
     "update_event",
     "update_file_content",
@@ -114,6 +133,9 @@ _IDEMPOTENT_TOOLS = {
     "update_message",
     "update_note",
     "update_permission",
+    "update_sheet_values",
+    "update_space",
+    "update_task",
     "update_vacation_settings",
 }
 

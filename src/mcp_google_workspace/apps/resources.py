@@ -57,7 +57,6 @@ def register_resources(server: FastMCP) -> None:
     async def apps_dashboard_ui_mcp() -> str:
         return _UI_HTML_PATH.read_text(encoding="utf-8")
 
-    # Legacy URI retained for hosts still pointing to the older value.
     @server.resource(
         _MCP_APP_UI_URI_LEGACY,
         name="apps_dashboard_ui_mcp_legacy",
@@ -66,7 +65,6 @@ def register_resources(server: FastMCP) -> None:
     async def apps_dashboard_ui_mcp_legacy() -> str:
         return _UI_HTML_PATH.read_text(encoding="utf-8")
 
-    # Backward-compatible URI for existing local integrations.
     @server.resource(
         "apps://dashboard/ui",
         name="apps_dashboard_ui",

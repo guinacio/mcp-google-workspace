@@ -35,6 +35,8 @@ def test_workspace_startup_does_not_fetch_google_credentials(monkeypatch) -> Non
     assert "gmail_send_email" in tools
     assert "calendar_get_events" in tools
     assert "drive_list_files" in tools
+    assert "sheets_get_spreadsheet" in tools
+    assert "docs_get_document" in tools
 
 
 def test_workspace_tools_include_safety_annotations() -> None:
@@ -47,6 +49,8 @@ def test_workspace_tools_include_safety_annotations() -> None:
     assert tools["gmail_send_email"].annotations.idempotentHint is False
     assert tools["drive_delete_file"].annotations.destructiveHint is True
     assert tools["calendar_get_current_date"].annotations.openWorldHint is False
+    assert tools["sheets_get_spreadsheet"].annotations.readOnlyHint is True
+    assert tools["tasks_delete_task"].annotations.destructiveHint is True
 
 
 def test_apps_tools_preserve_ui_metadata_and_local_hints() -> None:
