@@ -9,6 +9,7 @@ import pytz
 from fastmcp import FastMCP
 
 from ..auth import build_calendar_service
+from ..common.component_annotations import apply_default_tool_annotations
 from .tools import register_tools
 
 calendar_mcp = FastMCP(name="calendar-mcp", instructions="Google Calendar MCP subserver.")
@@ -48,3 +49,6 @@ async def calendar_week() -> str:
         .execute()
     )
     return json.dumps(events, indent=2)
+
+
+apply_default_tool_annotations(calendar_mcp)

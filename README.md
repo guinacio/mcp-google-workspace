@@ -5,12 +5,16 @@ Production-ready Google Workspace MCP package with:
 - Gmail MCP: send/read/search emails, attachment handling, label management, batch operations.
 - Google Calendar MCP: events, availability, create/update/delete operations.
 - Google Drive MCP: files/folders CRUD, uploads/downloads/exports, sharing permissions, Shared Drives operations.
+- Google Sheets MCP: spreadsheet metadata, values reads/writes, and raw batch updates.
+- Google Docs MCP: document fetch/create flows plus convenience text mutations and raw batch updates.
+- Google Tasks MCP: task lists, tasks, completion, movement, and deletion.
+- Google People MCP: personal contacts and contact groups.
+- Google Forms MCP: forms CRUD, publish settings, and response reads.
+- Google Slides MCP: presentations, slide pages, thumbnails, text replacement, and raw batch updates.
 - MCP Apps Dashboard: workspace dashboard app-layer tools/resources with interactive UI.
-- Google Keep MCP: note create/get/list/delete, collaboration permissions, resources, prompts.
-- Google Chat MCP: spaces and messages operations, collaboration messaging workflows.
+- Optional Google Keep MCP, Google Chat MCP, and Google Meet MCP integrations behind feature flags.
 - FastMCP advanced features: Context logging, progress updates, user elicitation, sampling, resources, and prompts.
-- Composed server architecture: Gmail + Calendar + Keep + Chat mounted into one namespaced MCP server.
-- Optional app-layer namespace for dashboard workflows mounted as `apps_*`.
+- Composed server architecture: Gmail + Calendar + Drive + Sheets + Docs + Tasks + People + Forms + Slides mounted by default, with optional Apps/Keep/Chat/Meet namespaces.
 
 ## Requirements
 
@@ -18,7 +22,8 @@ Production-ready Google Workspace MCP package with:
 - UV package manager
 - Node.js 18+ and npm (required for MCP Apps UI in `src/mcp_google_workspace/apps/ui`)
 - Google Cloud OAuth desktop credentials (`credentials.json`)
-- Gmail API + Google Calendar API + Google Drive API + Google Keep API + Google Chat API enabled in your Google Cloud project
+- Google APIs enabled in your Google Cloud project: Gmail, Calendar, Drive, Sheets, Docs, Tasks, People, Forms, and Slides
+- Optional APIs when enabling feature-flagged integrations: Google Keep, Google Chat, and Google Meet
 
 ## Installation
 
@@ -43,7 +48,10 @@ Place `credentials.json` in one of:
 
 On first run, the server launches a browser for OAuth consent and writes `token.json`.
 
-### Keep and Chat scope feature flags
+### Optional service feature flags
+
+Sheets, Docs, Tasks, People, Forms, and Slides are mounted by default and their scopes are always requested.
+If you are upgrading from an older checkout, delete `token.json` once so OAuth can re-consent the expanded scope set.
 
 Google Keep OAuth scope can return `invalid_scope` in standard user OAuth flows.
 Keep integration is therefore disabled by default.
@@ -63,7 +71,14 @@ Enable Chat when your Google Workspace setup supports it:
 $env:ENABLE_CHAT="true"
 ```
 
-If you change this flag (or after upgrading scopes/features/scopes), delete `token.json` and re-authenticate to refresh granted scopes.
+Google Meet integration is also disabled by default.
+Enable it only after enabling the Meet API for the same OAuth client:
+
+```powershell
+$env:ENABLE_MEET="true"
+```
+
+Whenever you enable one of these optional integrations or otherwise change the scope set, delete `token.json` and re-authenticate to refresh granted scopes.
 
 ### Apps dashboard rollout flag
 
@@ -151,6 +166,42 @@ Drive (namespaced as `drive_*`):
 - Sharing: `list_permissions`, `get_permission`, `create_permission`, `update_permission`, `delete_permission`
 - Shared Drives: `list_drives`, `get_drive`, `hide_drive`, `unhide_drive`
 - Progress reporting: `upload_file`, `update_file_content`, `download_file`, and `export_google_file` emit MCP progress updates
+- Use Drive for file discovery when you need Docs, Sheets, Slides, or Forms file IDs by MIME type or name
+
+Sheets (namespaced as `sheets_*`):
+
+- `get_spreadsheet`, `create_spreadsheet`
+- Values: `get_sheet_values`, `batch_get_sheet_values`, `append_sheet_values`, `update_sheet_values`
+- Raw request escape hatch: `batch_update_spreadsheet`
+
+Docs (namespaced as `docs_*`):
+
+- `get_document`, `create_document`
+- Convenience text mutations: `append_document_text`, `replace_document_text`
+- Raw request escape hatch: `batch_update_document`
+
+Tasks (namespaced as `tasks_*`):
+
+- Task lists: `list_tasklists`, `get_tasklist`, `create_tasklist`
+- Tasks: `list_tasks`, `get_task`, `create_task`, `update_task`, `complete_task`, `move_task`, `delete_task`
+
+People (namespaced as `people_*`):
+
+- Contacts: `list_contacts`, `search_contacts`, `get_contact`, `create_contact`, `update_contact`, `delete_contact`
+- Contact groups: `list_contact_groups`, `create_contact_group`, `modify_contact_group_members`
+- Scope note: v1 is personal contacts only; Workspace directory lookup is intentionally excluded
+
+Forms (namespaced as `forms_*`):
+
+- `get_form`, `create_form`, `batch_update_form`
+- Publishing: `set_form_publish_settings`
+- Responses: `list_form_responses`, `get_form_response`
+
+Slides (namespaced as `slides_*`):
+
+- `get_presentation`, `create_presentation`
+- Slide reads: `get_slide_page`, `get_slide_thumbnail`
+- Text mutation and raw request escape hatch: `replace_text_in_presentation`, `batch_update_presentation`
 
 Apps (namespaced as `apps_*`, mounted when `ENABLE_APPS_DASHBOARD=true`):
 
@@ -181,6 +232,13 @@ Chat (namespaced as `chat_*`):
 - `summarize_space_messages` (sampling-powered)
 
 Note: Chat tools/resources are mounted only when `ENABLE_CHAT=true`.
+
+Meet (namespaced as `meet_*`, mounted when `ENABLE_MEET=true`):
+
+- Spaces: `create_space`, `get_space`, `update_space`, `end_active_conference`
+- Conference records: `list_conference_records`, `get_conference_record`
+- Artifacts and attendance metadata: `list_conference_participants`, `list_conference_recordings`, `list_conference_transcripts`
+- v1 scope boundary: metadata only; transcript or recording file downloads still belong in Drive if added later
 
 ## MCP Resources and Prompts
 
@@ -360,7 +418,8 @@ Linux config file:
       "env": {
         "ENABLE_APPS_DASHBOARD": "true",
         "ENABLE_KEEP": "false",
-        "ENABLE_CHAT": "false"
+        "ENABLE_CHAT": "false",
+        "ENABLE_MEET": "false"
       }
     }
   }
