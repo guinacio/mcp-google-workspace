@@ -24,6 +24,37 @@ def _meta(tool) -> dict | None:
     assert annotations is not None
     return annotations._meta
 
+def test_workspace_tool_catalog_has_strong_metadata() -> None:
+    tools = anyio.run(_list_server_tools, workspace_mcp)
+
+    missing_descriptions: list[str] = []
+    weak_titles: list[str] = []
+    weak_tags: list[str] = []
+    missing_param_descriptions: list[str] = []
+    missing_required_arrays: list[str] = []
+
+    for tool in tools.values():
+        namespace = tool.name.split("_", 1)[0] if "_" in tool.name else ""
+        if not (tool.description or "").strip():
+            missing_descriptions.append(tool.name)
+        if namespace and not (tool.title or "").lower().startswith(namespace.lower()):
+            weak_titles.append(tool.name)
+        if namespace and namespace not in set(tool.tags or []):
+            weak_tags.append(tool.name)
+        params = tool.parameters or {}
+        properties = params.get("properties", {}) if isinstance(params, dict) else {}
+        if properties and "required" not in params:
+            missing_required_arrays.append(tool.name)
+        for param_name, schema in properties.items():
+            if not isinstance(schema, dict) or not (schema.get("description") or "").strip():
+                missing_param_descriptions.append(f"{tool.name}:{param_name}")
+
+    assert missing_descriptions == []
+    assert weak_titles == []
+    assert weak_tags == []
+    assert missing_param_descriptions == []
+    assert missing_required_arrays == []
+
 
 def test_workspace_startup_does_not_fetch_google_credentials(monkeypatch) -> None:
     def fail_get_credentials():
@@ -51,6 +82,9 @@ def test_workspace_tools_include_safety_annotations() -> None:
     assert tools["calendar_get_current_date"].annotations.openWorldHint is False
     assert tools["sheets_get_spreadsheet"].annotations.readOnlyHint is True
     assert tools["tasks_delete_task"].annotations.destructiveHint is True
+    assert tools["drive_list_files"].title == "Drive List Files"
+    assert "drive" in tools["drive_list_files"].tags
+    assert "browse" in tools["drive_list_files"].tags
 
 
 def test_apps_tools_preserve_ui_metadata_and_local_hints() -> None:

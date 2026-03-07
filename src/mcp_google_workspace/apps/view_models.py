@@ -50,7 +50,9 @@ def _parse_event_start_local(event: dict[str, Any], tz: pytz.BaseTzInfo) -> date
             parsed = pytz.UTC.localize(parsed)
         return parsed.astimezone(tz)
     if "date" in start:
-        return tz.localize(datetime.combine(date.fromisoformat(start["date"]), time.min))
+        return tz.localize(
+            datetime.combine(date.fromisoformat(start["date"]), time.min)
+        )
     return tz.localize(datetime.combine(date.today(), time.min))
 
 
@@ -88,6 +90,13 @@ def _description_snippet(description: str | None) -> str | None:
     return clean[:140] + "..." if len(clean) > 140 else clean
 
 
+def _resolve_week_start(anchor_date: date, include_weekend: bool) -> date:
+    if include_weekend:
+        days_since_sunday = (anchor_date.weekday() + 1) % 7
+        return anchor_date - timedelta(days=days_since_sunday)
+    return anchor_date - timedelta(days=anchor_date.weekday())
+
+
 def build_weekly_calendar_view_model(
     *,
     anchor_date: date,
@@ -96,8 +105,7 @@ def build_weekly_calendar_view_model(
     include_weekend: bool,
 ) -> WeeklyCalendarViewModel:
     tz = pytz.timezone(timezone_name)
-    days_since_sunday = (anchor_date.weekday() + 1) % 7
-    week_start = anchor_date - timedelta(days=days_since_sunday)
+    week_start = _resolve_week_start(anchor_date, include_weekend)
     day_count = 7 if include_weekend else 5
     days: list[WeeklyCalendarDay] = []
     day_map: dict[date, WeeklyCalendarDay] = {}
@@ -158,7 +166,9 @@ def build_weekly_calendar_view_model(
         week_start=week_start,
         week_end=week_start + timedelta(days=day_count - 1),
         timezone=timezone_name,
-        total_events=sum(len(day.all_day_events) + len(day.timed_events) for day in days),
+        total_events=sum(
+            len(day.all_day_events) + len(day.timed_events) for day in days
+        ),
         days=days,
         fallback_text="\n".join(fallback_lines),
     )
@@ -176,10 +186,12 @@ def _build_calendar_card(events: list[dict[str, Any]]) -> DashboardCard:
         for event in events[:15]
     ]
     summary = f"{len(events)} scheduled event(s)"
-    fallback = "\n".join(
-        f"- {item['title']} ({item['start']} - {item['end']})"
-        for item in items[:5]
-    ) or "No events scheduled."
+    fallback = (
+        "\n".join(
+            f"- {item['title']} ({item['start']} - {item['end']})" for item in items[:5]
+        )
+        or "No events scheduled."
+    )
     return DashboardCard(
         id="calendar-agenda",
         title="Calendar",
@@ -223,10 +235,10 @@ def _build_inbox_card(
                 "is_unread": is_unread,
             }
         )
-    fallback = "\n".join(
-        f"- {msg['subject']} — {msg['from']}"
-        for msg in normalized[:5]
-    ) or "No recent inbox messages."
+    fallback = (
+        "\n".join(f"- {msg['subject']} — {msg['from']}" for msg in normalized[:5])
+        or "No recent inbox messages."
+    )
     return DashboardCard(
         id="inbox-summary",
         title="Inbox",
@@ -261,10 +273,12 @@ def _build_prep_card(events: list[dict[str, Any]]) -> DashboardCard:
                 "has_description": bool(event.get("description")),
             }
         )
-    fallback = "\n".join(
-        f"- Prep for {item['title']} at {item['start']}"
-        for item in prep_items[:4]
-    ) or "No meetings require preparation."
+    fallback = (
+        "\n".join(
+            f"- Prep for {item['title']} at {item['start']}" for item in prep_items[:4]
+        )
+        or "No meetings require preparation."
+    )
     return DashboardCard(
         id="meeting-prep",
         title="Meeting Prep",
@@ -287,13 +301,20 @@ def build_dashboard_view_model(
         DashboardSection(
             id="schedule",
             title="Schedule",
-            cards=[_build_calendar_card(calendar_events), _build_prep_card(calendar_events)],
+            cards=[
+                _build_calendar_card(calendar_events),
+                _build_prep_card(calendar_events),
+            ],
             fallback_text="Calendar schedule and prep insights.",
         ),
         DashboardSection(
             id="communications",
             title="Communications",
-            cards=[_build_inbox_card(unread_count, inbox_messages, unread_message_ids=unread_message_ids)],
+            cards=[
+                _build_inbox_card(
+                    unread_count, inbox_messages, unread_message_ids=unread_message_ids
+                )
+            ],
             fallback_text="Inbox status and latest communication context.",
         ),
     ]
@@ -302,7 +323,9 @@ def build_dashboard_view_model(
         generated_at_utc=datetime.now(timezone.utc),
         state=state,
         sections=sections,
-        warnings=[] if not section_errors else ["One or more sections failed to load completely."],
+        warnings=[]
+        if not section_errors
+        else ["One or more sections failed to load completely."],
         section_errors=section_errors or {},
     )
 
@@ -321,7 +344,9 @@ def _extract_conference(event: dict[str, Any]) -> tuple[str | None, str | None]:
     return None, None
 
 
-def build_event_detail_view_model(event: dict[str, Any], calendar_id: str) -> EventDetailViewModel:
+def build_event_detail_view_model(
+    event: dict[str, Any], calendar_id: str
+) -> EventDetailViewModel:
     attendees: list[EventDetailAttendee] = []
     for attendee in event.get("attendees") or []:
         email = attendee.get("email")

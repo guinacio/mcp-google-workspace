@@ -96,6 +96,29 @@ $env:ENABLE_APPS_DASHBOARD="true"
 uv run python -m mcp_google_workspace
 ```
 
+## MCP Bundle (MCPB)
+
+This repository now includes a native `uv`-based MCP Bundle manifest and packaging assets.
+
+Build a local `.mcpb` archive:
+
+```powershell
+uv run python scripts/build_mcpb.py
+```
+
+Install on Claude Desktop:
+
+1. Build the bundle with `uv run python scripts/build_mcpb.py`.
+2. In Claude Desktop, open the MCP bundle install flow.
+3. Select `dist/mcp-google-workspace-0.1.1.mcpb`.
+4. Choose the credentials directory that contains `credentials.json`, or leave it empty to use the repo defaults.
+5. Enable optional integrations only if your Google Workspace account and OAuth client support their scopes.
+6. Finish the install and authenticate in the browser on first launch.
+
+Note: Claude Desktop currently rejects extra `server` metadata keys such as `package_manager`, `python_version`, and `working_dir`, so this bundle keeps the `uv` server block to the manifest fields Claude accepts.
+
+Bundle-specific documentation, runtime settings, and validation steps live in `docs/MCPB.md`.
+
 ## Run (SSE)
 
 ```powershell
@@ -447,3 +470,9 @@ uv run python scripts/qa_apps_smoke.py --sse-url http://127.0.0.1:8001/sse
 ## Existing calendar project reference
 
 - [guinacio/mcp-google-calendar](https://github.com/guinacio/mcp-google-calendar)
+
+
+
+
+
+

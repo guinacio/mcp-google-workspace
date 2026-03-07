@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from .apps import apps_mcp
+from .common.component_annotations import apply_default_tool_annotations
 from .auth import is_apps_dashboard_enabled, is_chat_enabled, is_keep_enabled, is_meet_enabled
 from .calendar import calendar_mcp
 from .chat import chat_mcp
@@ -44,3 +45,5 @@ if is_keep_enabled():
     workspace_mcp.mount(keep_mcp, namespace="keep")
 if is_meet_enabled():
     workspace_mcp.mount(meet_mcp, namespace="meet")
+
+apply_default_tool_annotations(workspace_mcp)

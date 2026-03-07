@@ -1,6 +1,6 @@
 [project]
 name = "mcp-google-workspace"
-version = "0.1.0"
+version = "0.1.1"
 description = "Production MCP server for Gmail, Google Calendar, Keep, Drive and Chat"
 readme = "README.md"
 authors = [
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-google-workspace = "mcp_google_workspace.__main__:main"
+mcp-google-workspace = "mcp_google_workspace.bundle_entry:main"
 mcp-google-workspace-sse = "mcp_google_workspace.server_sse:main"
 
 [build-system]
@@ -36,3 +36,5 @@ dev = [
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
+
+

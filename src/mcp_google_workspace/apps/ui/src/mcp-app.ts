@@ -659,10 +659,16 @@ async function initMcpMode() {
       }
 
       if (action.type === "toggle_weekend") {
+        const previousData = currentData;
+        currentData = patchDashboardState(currentData, {
+          include_weekend: action.include_weekend,
+        });
+        renderCurrent();
         void withUiPending(async () => {
           await updateStatePatch({ include_weekend: action.include_weekend });
           await refreshWeekly();
         }).catch((err: unknown) => {
+          currentData = previousData;
           setUiMessage(`Failed to update weekend preference: ${String(err)}`, "error");
           renderCurrent();
         });
@@ -670,10 +676,16 @@ async function initMcpMode() {
       }
 
       if (action.type === "set_selected_calendars") {
+        const previousData = currentData;
+        currentData = patchDashboardState(currentData, {
+          selected_calendars: action.selected_calendar_ids,
+        });
+        renderCurrent();
         void withUiPending(async () => {
           await updateStatePatch({ selected_calendars: action.selected_calendar_ids });
           await refreshFull();
         }).catch((err: unknown) => {
+          currentData = previousData;
           setUiMessage(`Failed to update selected calendars: ${String(err)}`, "error");
           renderCurrent();
         });
@@ -998,10 +1010,23 @@ async function initMcpMode() {
           renderCurrent();
           return;
         }
+        const previousData = currentData;
         void withUiPending(async () => {
-          await app.callServerTool({ name: toolName, arguments: { session_id: uiSessionId } });
+          const result = await app.callServerTool({
+            name: toolName,
+            arguments: { session_id: uiSessionId },
+          });
+          const nextState = extractObjectPayload(result);
+          if (nextState) {
+            currentData = replaceDashboardState(currentData, {
+              ...(currentData.dashboard?.state || {}),
+              ...nextState,
+            });
+            renderCurrent();
+          }
           await refreshWeekly();
         }).catch((err) => {
+          currentData = previousData;
           setUiMessage(`Failed to navigate week: ${String(err)}`, "error");
           renderCurrent();
         });
@@ -1121,6 +1146,41 @@ function mergeDashboardData(base: DashboardData, incoming: DashboardData): Dashb
     ui_error: incoming.ui_error ?? base.ui_error,
     tool_capabilities: incoming.tool_capabilities ?? base.tool_capabilities,
     generated_at: incoming.generated_at ?? base.generated_at,
+  };
+}
+
+function patchDashboardState(
+  data: DashboardData,
+  patch: Record<string, unknown>
+): DashboardData {
+  if (!data.dashboard) {
+    return data;
+  }
+  return {
+    ...data,
+    dashboard: {
+      ...data.dashboard,
+      state: {
+        ...(data.dashboard.state || {}),
+        ...patch,
+      },
+    },
+  };
+}
+
+function replaceDashboardState(
+  data: DashboardData,
+  nextState: Record<string, unknown>
+): DashboardData {
+  if (!data.dashboard) {
+    return data;
+  }
+  return {
+    ...data,
+    dashboard: {
+      ...data.dashboard,
+      state: nextState,
+    },
   };
 }
 

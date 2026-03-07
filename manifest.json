@@ -1,0 +1,143 @@
+{
+  "manifest_version": "0.4",
+  "name": "mcp-google-workspace",
+  "display_name": "Google Workspace MCP",
+  "version": "0.1.1",
+  "description": "Production Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, Slides, and optional Apps, Chat, Keep, and Meet integrations.",
+  "long_description": "Local Google Workspace MCP bundle for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, and Slides, with optional Apps dashboard, Google Chat, Google Keep, and Google Meet integrations. The bundle runs over stdio, uses desktop OAuth credentials stored on the local machine, and exposes the same FastMCP tool surface already implemented by this repository.",
+  "author": {
+    "name": "Guilherme Inácio",
+    "email": "gsilvainacio@gmail.com",
+    "url": "https://github.com/guinacio"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guinacio/mcp-google-workspace.git"
+  },
+  "homepage": "https://github.com/guinacio/mcp-google-workspace",
+  "documentation": "https://github.com/guinacio/mcp-google-workspace/blob/main/docs/MCPB.md",
+  "support": "https://github.com/guinacio/mcp-google-workspace/issues",
+  "keywords": [
+    "google",
+    "workspace",
+    "gmail",
+    "calendar",
+    "drive",
+    "docs",
+    "sheets",
+    "tasks",
+    "slides",
+    "forms",
+    "mcp"
+  ],
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.12,<4.0"
+    }
+  },
+  "server": {
+    "type": "uv",
+    "entry_point": "src/mcp_google_workspace/bundle_entry.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "src/mcp_google_workspace/bundle_entry.py"
+      ],
+      "env": {
+        "MCP_CREDENTIALS_DIR": "${user_config.credentials_dir}",
+        "ENABLE_APPS_DASHBOARD": "${user_config.enable_apps_dashboard}",
+        "ENABLE_CHAT": "${user_config.enable_chat}",
+        "ENABLE_KEEP": "${user_config.enable_keep}",
+        "ENABLE_MEET": "${user_config.enable_meet}",
+        "MCP_GOOGLE_HTTP_TIMEOUT_SECONDS": "${user_config.http_timeout_seconds}",
+        "MCP_GOOGLE_HTTP_RETRIES": "${user_config.http_retries}",
+        "MCP_GOOGLE_LOG_LEVEL": "${user_config.log_level}",
+        "MCP_GOOGLE_OAUTH_PORT": "${user_config.oauth_port}",
+        "MCP_GOOGLE_OAUTH_OPEN_BROWSER": "${user_config.oauth_open_browser}"
+      }
+    }
+  },
+  "user_config": {
+    "credentials_dir": {
+      "type": "directory",
+      "title": "Credentials Directory",
+      "description": "Directory containing credentials.json and where token.json should be stored. Leave empty to use the bundle defaults.",
+      "required": false
+    },
+    "enable_apps_dashboard": {
+      "type": "boolean",
+      "title": "Enable Apps Dashboard",
+      "description": "Mount the local Apps dashboard namespace and UI resources.",
+      "default": false
+    },
+    "enable_chat": {
+      "type": "boolean",
+      "title": "Enable Google Chat",
+      "description": "Mount Chat tools and request Chat OAuth scopes.",
+      "default": false
+    },
+    "enable_keep": {
+      "type": "boolean",
+      "title": "Enable Google Keep",
+      "description": "Mount Keep tools and request the Keep OAuth scope.",
+      "default": false
+    },
+    "enable_meet": {
+      "type": "boolean",
+      "title": "Enable Google Meet",
+      "description": "Mount Meet tools and request Meet OAuth scopes.",
+      "default": false
+    },
+    "http_timeout_seconds": {
+      "type": "number",
+      "title": "HTTP Timeout (Seconds)",
+      "description": "Maximum time allowed for a single Google API request.",
+      "default": 120,
+      "min": 5,
+      "max": 600
+    },
+    "http_retries": {
+      "type": "number",
+      "title": "HTTP Retries",
+      "description": "Retry count used when Google API requests fail transiently.",
+      "default": 2,
+      "min": 0,
+      "max": 10
+    },
+    "log_level": {
+      "type": "string",
+      "title": "Log Level",
+      "description": "Python log level for stderr logs. Use DEBUG, INFO, WARNING, ERROR, or CRITICAL.",
+      "default": "INFO",
+      "required": false
+    },
+    "oauth_port": {
+      "type": "number",
+      "title": "OAuth Callback Port",
+      "description": "Port for the local OAuth callback server. Use 0 to pick a free port automatically.",
+      "default": 0,
+      "min": 0,
+      "max": 65535
+    },
+    "oauth_open_browser": {
+      "type": "boolean",
+      "title": "Open Browser For OAuth",
+      "description": "Open the system browser automatically during the OAuth consent flow.",
+      "default": true
+    }
+  },
+  "icon": "icon.png",
+  "privacy_policies": [
+    "https://policies.google.com/privacy",
+    "https://developers.google.com/terms/api-services-user-data-policy"
+  ]
+}
+
+

@@ -50,14 +50,24 @@ def _resolve_session_id(candidate: str | None, ctx: Context | None = None) -> st
 
 def _compute_window(state: DashboardState) -> tuple[str, str]:
     tz = pytz.timezone(state.timezone)
-    start_local = tz.localize(datetime.combine(state.anchor_date, datetime.min.time()))
-    if state.view in {"agenda", "day"}:
-        end_local = start_local + timedelta(days=1)
-    elif state.view == "week":
-        end_local = start_local + timedelta(days=7)
+    anchor_date = state.anchor_date
+    if state.view == "week":
+        if state.include_weekend:
+            days_since_week_start = (anchor_date.weekday() + 1) % 7
+            anchor_date = anchor_date - timedelta(days=days_since_week_start)
+            duration_days = 7
+        else:
+            anchor_date = anchor_date - timedelta(days=anchor_date.weekday())
+            duration_days = 5
+    elif state.view in {"agenda", "day"}:
+        duration_days = 1
     else:
-        end_local = start_local + timedelta(days=30)
-    return start_local.astimezone(pytz.UTC).isoformat(), end_local.astimezone(pytz.UTC).isoformat()
+        duration_days = 30
+    start_local = tz.localize(datetime.combine(anchor_date, datetime.min.time()))
+    end_local = start_local + timedelta(days=duration_days)
+    return start_local.astimezone(pytz.UTC).isoformat(), end_local.astimezone(
+        pytz.UTC
+    ).isoformat()
 
 
 def _fetch_calendar_events(state: DashboardState) -> list[dict[str, Any]]:
@@ -81,11 +91,19 @@ def _fetch_calendar_events(state: DashboardState) -> list[dict[str, Any]]:
             enriched = dict(item)
             enriched["calendar_id"] = calendar_id
             events.append(enriched)
-    events.sort(key=lambda event: (event.get("start", {}).get("dateTime") or event.get("start", {}).get("date") or ""))
+    events.sort(
+        key=lambda event: (
+            event.get("start", {}).get("dateTime")
+            or event.get("start", {}).get("date")
+            or ""
+        )
+    )
     return events
 
 
-def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any]], list[str]]:
+def _fetch_inbox_summary(
+    state: DashboardState,
+) -> tuple[int, list[dict[str, Any]], list[str]]:
     service = build_gmail_service()
     list_limit = 10
     unread_query = "is:unread in:inbox"
@@ -106,7 +124,12 @@ def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any
     list_query = "in:inbox"
     if state.inbox_query:
         list_query = f"{list_query} {state.inbox_query}"
-    latest = service.users().messages().list(userId="me", q=list_query, maxResults=list_limit).execute()
+    latest = (
+        service.users()
+        .messages()
+        .list(userId="me", q=list_query, maxResults=list_limit)
+        .execute()
+    )
     latest_ids = [
         msg.get("id")
         for msg in latest.get("messages", [])
@@ -115,7 +138,12 @@ def _fetch_inbox_summary(state: DashboardState) -> tuple[int, list[dict[str, Any
 
     items: list[dict[str, Any]] = []
     for message_id in latest_ids:
-        full = service.users().messages().get(userId="me", id=message_id, format="metadata").execute()
+        full = (
+            service.users()
+            .messages()
+            .get(userId="me", id=message_id, format="metadata")
+            .execute()
+        )
         headers = {
             h.get("name", "").lower(): h.get("value", "")
             for h in full.get("payload", {}).get("headers", [])
@@ -142,13 +170,23 @@ def _fetch_event_detail(calendar_id: str, event_id: str) -> dict[str, Any]:
 
 def _fetch_email_detail(message_id: str) -> dict[str, Any]:
     service = build_gmail_service()
-    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    message = (
+        service.users()
+        .messages()
+        .get(userId="me", id=message_id, format="full")
+        .execute()
+    )
     return build_email_detail_view_model(message).model_dump(mode="json")
 
 
 def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, Any]:
     service = build_gmail_service()
-    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    message = (
+        service.users()
+        .messages()
+        .get(userId="me", id=message_id, format="full")
+        .execute()
+    )
     payload = message.get("payload") or {}
 
     filename = attachment_id
@@ -221,7 +259,9 @@ def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
     return payload
 
 
-async def build_dashboard_payload_with_progress(state: DashboardState, ctx: Context) -> dict[str, Any]:
+async def build_dashboard_payload_with_progress(
+    state: DashboardState, ctx: Context
+) -> dict[str, Any]:
     await ctx.report_progress(5, 100, "Preparing dashboard state")
     section_errors: dict[str, str] = {}
     events: list[dict[str, Any]] = []
@@ -273,7 +313,9 @@ def build_weekly_calendar_payload(
     if date_override is not None:
         weekly_state = weekly_state.model_copy(update={"anchor_date": date_override})
     if include_weekend_override is not None:
-        weekly_state = weekly_state.model_copy(update={"include_weekend": include_weekend_override})
+        weekly_state = weekly_state.model_copy(
+            update={"include_weekend": include_weekend_override}
+        )
     events = _fetch_calendar_events(weekly_state.model_copy(update={"view": "week"}))
     model = build_weekly_calendar_view_model(
         anchor_date=weekly_state.anchor_date,
@@ -296,7 +338,9 @@ async def build_weekly_calendar_payload_with_progress(
     if date_override is not None:
         weekly_state = weekly_state.model_copy(update={"anchor_date": date_override})
     if include_weekend_override is not None:
-        weekly_state = weekly_state.model_copy(update={"include_weekend": include_weekend_override})
+        weekly_state = weekly_state.model_copy(
+            update={"include_weekend": include_weekend_override}
+        )
 
     await ctx.report_progress(35, 100, "Loading weekly calendar events")
     events = _fetch_calendar_events(weekly_state.model_copy(update={"view": "week"}))
@@ -531,7 +575,9 @@ def register_tools(server: FastMCP) -> None:
         - `participants` may be sent as an array, JSON-stringified array, or comma-separated string.
         - `meeting_duration` is accepted as a legacy alias for `slot_duration_minutes`.
         """
-        effective_duration = meeting_duration if meeting_duration is not None else slot_duration_minutes
+        effective_duration = (
+            meeting_duration if meeting_duration is not None else slot_duration_minutes
+        )
         request = FindMeetingSlotsRequest(
             participants=participants or ["primary"],
             time_min=time_min,
@@ -646,4 +692,3 @@ def register_tools(server: FastMCP) -> None:
         sid = _resolve_session_id(request.session_id, ctx)
         result = respond_to_event(sid, request)
         return result.model_dump(mode="json")
-

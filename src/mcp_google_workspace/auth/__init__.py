@@ -25,12 +25,13 @@ from .google_auth import (
     build_sheets_service,
     build_slides_service,
     build_tasks_service,
-    get_google_scopes,
     get_credentials,
+    get_google_scopes,
     is_apps_dashboard_enabled,
     is_chat_enabled,
     is_keep_enabled,
     is_meet_enabled,
+    resolve_credentials_paths,
 )
 
 __all__ = [
@@ -58,10 +59,11 @@ __all__ = [
     "build_sheets_service",
     "build_slides_service",
     "build_tasks_service",
-    "get_google_scopes",
     "get_credentials",
+    "get_google_scopes",
     "is_apps_dashboard_enabled",
     "is_chat_enabled",
     "is_keep_enabled",
     "is_meet_enabled",
+    "resolve_credentials_paths",
 ]

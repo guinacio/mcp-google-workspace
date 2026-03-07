@@ -12,7 +12,9 @@ from mcp_google_workspace.apps.view_models import (
 
 
 def test_dashboard_view_model_includes_required_sections():
-    state = DashboardState(session_id="vm-test", anchor_date=date(2026, 3, 1), view="week")
+    state = DashboardState(
+        session_id="vm-test", anchor_date=date(2026, 3, 1), view="week"
+    )
     events = [
         {
             "id": "evt-1",
@@ -109,7 +111,9 @@ def test_email_detail_includes_attachment_metadata():
 
 
 def test_dashboard_inbox_unread_infers_from_labels():
-    state = DashboardState(session_id="vm-test", anchor_date=date(2026, 3, 1), view="week")
+    state = DashboardState(
+        session_id="vm-test", anchor_date=date(2026, 3, 1), view="week"
+    )
     model = build_dashboard_view_model(
         state=state,
         calendar_events=[],
@@ -124,7 +128,9 @@ def test_dashboard_inbox_unread_infers_from_labels():
             }
         ],
     )
-    communications = next(section for section in model.sections if section.id == "communications")
+    communications = next(
+        section for section in model.sections if section.id == "communications"
+    )
     inbox = next(card for card in communications.cards if card.card_type == "inbox")
     messages = inbox.data["messages"]
     assert isinstance(messages, list)
@@ -132,7 +138,9 @@ def test_dashboard_inbox_unread_infers_from_labels():
 
 
 def test_dashboard_inbox_unread_infers_from_unread_ids():
-    state = DashboardState(session_id="vm-test", anchor_date=date(2026, 3, 1), view="week")
+    state = DashboardState(
+        session_id="vm-test", anchor_date=date(2026, 3, 1), view="week"
+    )
     model = build_dashboard_view_model(
         state=state,
         calendar_events=[],
@@ -148,8 +156,29 @@ def test_dashboard_inbox_unread_infers_from_unread_ids():
         ],
         unread_message_ids=["msg-3"],
     )
-    communications = next(section for section in model.sections if section.id == "communications")
+    communications = next(
+        section for section in model.sections if section.id == "communications"
+    )
     inbox = next(card for card in communications.cards if card.card_type == "inbox")
     messages = inbox.data["messages"]
     assert isinstance(messages, list)
     assert messages[0]["is_unread"] is True
+
+
+def test_weekly_calendar_hides_weekend_as_monday_through_friday():
+    weekly = build_weekly_calendar_view_model(
+        anchor_date=date(2026, 3, 4),
+        timezone_name="UTC",
+        events=[],
+        include_weekend=False,
+    )
+
+    assert weekly.week_start == date(2026, 3, 2)
+    assert weekly.week_end == date(2026, 3, 6)
+    assert [day.date for day in weekly.days] == [
+        date(2026, 3, 2),
+        date(2026, 3, 3),
+        date(2026, 3, 4),
+        date(2026, 3, 5),
+        date(2026, 3, 6),
+    ]

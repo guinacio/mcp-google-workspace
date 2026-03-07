@@ -71,6 +71,250 @@ function initials(fromValue: string): string {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
+function sanitizeUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("#")) return trimmed;
+  if (trimmed.startsWith("mailto:") || trimmed.startsWith("tel:")) {
+    return trimmed;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+  return null;
+}
+
+function sanitizeCssValue(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const lowered = normalized.toLowerCase();
+  if (
+    lowered.includes("url(") ||
+    lowered.includes("expression(") ||
+    lowered.includes("@import") ||
+    lowered.includes("javascript:")
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function sanitizeInlineStyle(styleText: string | null | undefined): string {
+  if (!styleText) return "";
+  const probe = document.createElement("div");
+  probe.setAttribute("style", styleText);
+  const allowed = [
+    "backgroundColor",
+    "borderBottomColor",
+    "borderBottomStyle",
+    "borderBottomWidth",
+    "borderCollapse",
+    "borderColor",
+    "borderLeftColor",
+    "borderLeftStyle",
+    "borderLeftWidth",
+    "borderRadius",
+    "borderRightColor",
+    "borderRightStyle",
+    "borderRightWidth",
+    "borderSpacing",
+    "borderTopColor",
+    "borderTopStyle",
+    "borderTopWidth",
+    "borderWidth",
+    "color",
+    "fontFamily",
+    "fontSize",
+    "fontStyle",
+    "fontWeight",
+    "height",
+    "lineHeight",
+    "margin",
+    "marginBottom",
+    "marginLeft",
+    "marginRight",
+    "marginTop",
+    "maxWidth",
+    "minWidth",
+    "padding",
+    "paddingBottom",
+    "paddingLeft",
+    "paddingRight",
+    "paddingTop",
+    "textAlign",
+    "textDecoration",
+    "verticalAlign",
+    "whiteSpace",
+    "width",
+  ] as const;
+  const declarations: string[] = [];
+  for (const property of allowed) {
+    const value = probe.style[property];
+    const safeValue = sanitizeCssValue(value);
+    if (!safeValue) continue;
+    const cssProperty = property.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+    declarations.push(`${cssProperty}:${safeValue}`);
+  }
+  return declarations.join("; ");
+}
+
+function renderPlainTextEmailBody(text: string): string {
+  const normalized = text.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) {
+    return `<p class="email-body-empty">No body content.</p>`;
+  }
+  const paragraphs = normalized.split(/\n{2,}/).filter(Boolean);
+  return paragraphs
+    .map((paragraph) => {
+      const lines = paragraph.split("\n");
+      if (lines.every((line) => line.trim().startsWith(">"))) {
+        const quoted = lines.map((line) => line.replace(/^\s*> ?/, "")).join("\n");
+        return `<blockquote>${esc(quoted).replace(/\n/g, "<br />")}</blockquote>`;
+      }
+      return `<p>${esc(lines.join("\n")).replace(/\n/g, "<br />")}</p>`;
+    })
+    .join("");
+}
+
+function sanitizeEmailHtml(html: string): string {
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(html, "text/html");
+  const blockedTags = new Set([
+    "script",
+    "style",
+    "iframe",
+    "object",
+    "embed",
+    "form",
+    "input",
+    "button",
+    "select",
+    "textarea",
+    "canvas",
+    "svg",
+    "math",
+    "meta",
+    "link",
+    "base",
+  ]);
+  const allowedTags = new Set([
+    "a",
+    "abbr",
+    "b",
+    "blockquote",
+    "br",
+    "code",
+    "del",
+    "div",
+    "em",
+    "figcaption",
+    "figure",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "img",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "table",
+    "tbody",
+    "td",
+    "th",
+    "thead",
+    "tr",
+    "u",
+    "ul",
+  ]);
+
+  const renderNode = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return esc(node.textContent || "");
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return "";
+    }
+
+    const element = node as HTMLElement;
+    const tag = element.tagName.toLowerCase();
+    if (blockedTags.has(tag)) {
+      return "";
+    }
+    if (!allowedTags.has(tag)) {
+      return Array.from(element.childNodes).map(renderNode).join("");
+    }
+
+    if (tag === "img") {
+      const src = element.getAttribute("src")?.trim() || "";
+      if (src.toLowerCase().startsWith("data:image/")) {
+        const alt = esc(element.getAttribute("alt") || "");
+        const title = esc(element.getAttribute("title") || "");
+        return `<img class="email-html-image" src="${esc(src)}" alt="${alt}"${title ? ` title="${title}"` : ""} />`;
+      }
+      const altText = esc(element.getAttribute("alt") || element.getAttribute("title") || "Remote image blocked");
+      return `<div class="email-image-blocked">${altText}</div>`;
+    }
+
+    const attrs: string[] = [];
+    const safeStyle = sanitizeInlineStyle(element.getAttribute("style"));
+    if (safeStyle) {
+      attrs.push(`style="${esc(safeStyle)}"`);
+    }
+
+    if (tag === "a") {
+      const href = sanitizeUrl(element.getAttribute("href"));
+      if (href) {
+        attrs.push(`href="${esc(href)}"`);
+        attrs.push(`data-open-link="1"`);
+        attrs.push(`data-link-url="${esc(href)}"`);
+        attrs.push(`rel="noopener noreferrer nofollow"`);
+        attrs.push(`target="_blank"`);
+      }
+    }
+
+    if (["td", "th"].includes(tag)) {
+      const colspan = element.getAttribute("colspan");
+      const rowspan = element.getAttribute("rowspan");
+      if (colspan && /^\d+$/.test(colspan)) attrs.push(`colspan="${colspan}"`);
+      if (rowspan && /^\d+$/.test(rowspan)) attrs.push(`rowspan="${rowspan}"`);
+    }
+
+    const content = Array.from(element.childNodes).map(renderNode).join("");
+    if (tag === "br" || tag === "hr") {
+      return `<${tag}${attrs.length ? ` ${attrs.join(" ")}` : ""} />`;
+    }
+    return `<${tag}${attrs.length ? ` ${attrs.join(" ")}` : ""}>${content}</${tag}>`;
+  };
+
+  const htmlContent = Array.from(parsed.body.childNodes).map(renderNode).join("").trim();
+  return htmlContent || `<p class="email-body-empty">No body content.</p>`;
+}
+
+function renderEmailBody(detail: EmailDetail): string {
+  if (detail.html_body?.trim()) {
+    return `<div class="email-html">${sanitizeEmailHtml(detail.html_body)}</div>`;
+  }
+  if (detail.text_body?.trim()) {
+    return `<div class="email-plain">${renderPlainTextEmailBody(detail.text_body)}</div>`;
+  }
+  if (detail.snippet?.trim()) {
+    return `<div class="email-plain">${renderPlainTextEmailBody(detail.snippet)}</div>`;
+  }
+  return `<div class="email-plain"><p class="email-body-empty">No body content.</p></div>`;
+}
 function colorVar(event: WeeklyCalendarEvent): string {
   const palette = [
     "--event-blueberry",
@@ -845,6 +1089,168 @@ export const RENDER_CSS = `
   flex-wrap: wrap;
 }
 
+.email-meta-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.email-body-block {
+  padding: 0;
+  overflow: hidden;
+}
+
+.email-body-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background: color-mix(in srgb, var(--md-sys-color-surface-container) 82%, transparent);
+}
+
+.email-body-mode {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.email-body-content {
+  padding: 16px 18px;
+  max-height: min(58vh, 760px);
+  overflow: auto;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-surface) 88%, transparent), transparent 90px),
+    var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+}
+
+.email-body-content p,
+.email-body-content ul,
+.email-body-content ol,
+.email-body-content pre,
+.email-body-content blockquote,
+.email-body-content table,
+.email-body-content h1,
+.email-body-content h2,
+.email-body-content h3,
+.email-body-content h4,
+.email-body-content h5,
+.email-body-content h6 {
+  margin: 0 0 0.9rem;
+}
+
+.email-body-content p:last-child,
+.email-body-content ul:last-child,
+.email-body-content ol:last-child,
+.email-body-content pre:last-child,
+.email-body-content blockquote:last-child,
+.email-body-content table:last-child {
+  margin-bottom: 0;
+}
+
+.email-body-content h1,
+.email-body-content h2,
+.email-body-content h3,
+.email-body-content h4,
+.email-body-content h5,
+.email-body-content h6 {
+  line-height: 1.25;
+  color: var(--md-sys-color-on-surface);
+}
+
+.email-body-content h1 { font-size: 1.35rem; }
+.email-body-content h2 { font-size: 1.2rem; }
+.email-body-content h3 { font-size: 1.06rem; }
+.email-body-content h4,
+.email-body-content h5,
+.email-body-content h6 { font-size: 0.95rem; }
+
+.email-body-content ul,
+.email-body-content ol {
+  padding-left: 1.25rem;
+}
+
+.email-body-content li + li {
+  margin-top: 0.35rem;
+}
+
+.email-body-content blockquote {
+  padding: 0.85rem 1rem;
+  border-left: 3px solid color-mix(in srgb, var(--md-sys-color-primary) 70%, transparent);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.email-body-content pre,
+.email-body-content code {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.email-body-content pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 84%, transparent);
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.email-body-content table {
+  width: 100%;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.email-body-content th,
+.email-body-content td {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  padding: 0.5rem 0.65rem;
+  vertical-align: top;
+}
+
+.email-body-content th {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 80%, transparent);
+  font-weight: 700;
+}
+
+.email-body-content img.email-html-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5rem 0;
+  border-radius: var(--radius-sm);
+}
+
+.email-image-blocked {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 68%, transparent);
+  font-size: 0.72rem;
+}
+
+.email-body-content a {
+  color: var(--md-sys-color-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+.email-body-content a:hover {
+  color: color-mix(in srgb, var(--md-sys-color-primary) 78%, white);
+}
+
+.email-body-empty {
+  color: var(--md-sys-color-on-surface-variant);
+}
 .status-chip {
   border-radius: 999px;
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -1187,6 +1593,15 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       return;
     }
 
+    const openBodyLink = target.closest<HTMLAnchorElement>("[data-open-link]");
+    if (openBodyLink) {
+      event.preventDefault();
+      const url = openBodyLink.dataset.linkUrl || openBodyLink.getAttribute("href");
+      if (url) {
+        _onAction({ type: "open_attachment", url });
+      }
+      return;
+    }
     if (target.closest("[data-close-event]")) {
       _onAction({ type: "close_event_detail" });
       return;
@@ -1629,7 +2044,12 @@ function renderEventEditorPanel(
 
 function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: UiToolCapabilities): string {
   if (!detail) return "";
-  const body = detail.text_body || detail.html_body || detail.snippet || "No body content.";
+  const bodyHtml = renderEmailBody(detail);
+  const bodyMode = detail.html_body?.trim()
+    ? "HTML"
+    : detail.text_body?.trim()
+      ? "Plain text"
+      : "Snippet";
   const labels = new Set(detail.labels || []);
   const isUnread = detail.is_unread || labels.has("UNREAD");
   const inInbox = labels.has("INBOX");
@@ -1681,13 +2101,21 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
           <button type="button" class="nav-btn" data-close-email="1">Close</button>
         </div>
         <div class="panel-body">
-          <div class="detail-block"><strong>From:</strong> ${esc(detail.from_value)}</div>
-          <div class="detail-block"><strong>To:</strong> ${esc(detail.to || "(not set)")}</div>
-          ${detail.cc ? `<div class="detail-block"><strong>Cc:</strong> ${esc(detail.cc)}</div>` : ""}
-          <div class="detail-block"><strong>Labels:</strong> ${esc(detail.labels.join(", ") || "none")}</div>
-          <div class="detail-block"><strong>Status:</strong> <div class="email-statuses" style="margin-top:6px;">${statusChips}</div></div>
+          <div class="email-meta-grid">
+            <div class="detail-block"><strong>From:</strong> ${esc(detail.from_value)}</div>
+            <div class="detail-block"><strong>To:</strong> ${esc(detail.to || "(not set)")}</div>
+            ${detail.cc ? `<div class="detail-block"><strong>Cc:</strong> ${esc(detail.cc)}</div>` : ""}
+            <div class="detail-block"><strong>Labels:</strong> ${esc(detail.labels.join(", ") || "none")}</div>
+            <div class="detail-block"><strong>Status:</strong> <div class="email-statuses" style="margin-top:6px;">${statusChips}</div></div>
+          </div>
           <div class="detail-block"><strong>Attachments</strong><ul class="attachment-list">${attachments || "<li>No attachments.</li>"}</ul></div>
-          <div class="detail-block"><strong>Body</strong><div style="margin-top:6px; white-space:pre-wrap;">${esc(body)}</div></div>
+          <div class="detail-block email-body-block">
+            <div class="email-body-header">
+              <strong>Body</strong>
+              <span class="email-body-mode">${bodyMode}</span>
+            </div>
+            <div class="email-body-content">${bodyHtml}</div>
+          </div>
           <div class="detail-block">
             <div class="email-actions">
               ${canRead ? `<button type="button" class="email-chip ${!isUnread ? "active" : ""}" data-email-action="mark_read" data-message-id="${esc(detail.message_id)}">Mark read</button>` : ""}
@@ -1705,3 +2133,5 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
     </div>
   `;
 }
+
+
