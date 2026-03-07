@@ -37,6 +37,29 @@ from .view_models import (
     build_weekly_calendar_view_model,
 )
 
+_ATTACHMENT_EXTENSION_BY_MIME: dict[str, str] = {
+    "application/json": ".json",
+    "application/msword": ".doc",
+    "application/octet-stream": ".bin",
+    "application/pdf": ".pdf",
+    "application/rtf": ".rtf",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/zip": ".zip",
+    "audio/mpeg": ".mp3",
+    "image/gif": ".gif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/svg+xml": ".svg",
+    "text/calendar": ".ics",
+    "text/csv": ".csv",
+    "text/html": ".html",
+    "text/plain": ".txt",
+}
+
 
 def _resolve_session_id(candidate: str | None, ctx: Context | None = None) -> str:
     if candidate:
@@ -179,6 +202,12 @@ def _fetch_email_detail(message_id: str) -> dict[str, Any]:
     return build_email_detail_view_model(message).model_dump(mode="json")
 
 
+def _fallback_attachment_filename(mime_type: str | None) -> str:
+    normalized_mime_type = str(mime_type or "").split(";", 1)[0].strip().lower()
+    extension = _ATTACHMENT_EXTENSION_BY_MIME.get(normalized_mime_type, "")
+    return f"attachment{extension}"
+
+
 def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, Any]:
     service = build_gmail_service()
     message = (
@@ -189,14 +218,16 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
     )
     payload = message.get("payload") or {}
 
-    filename = attachment_id
     mime_type = "application/octet-stream"
+    filename: str | None = None
     size = 0
     for part in flatten_parts(payload):
         body = part.get("body", {})
         if body.get("attachmentId") != attachment_id:
             continue
-        filename = part.get("filename") or filename
+        part_filename = part.get("filename")
+        if isinstance(part_filename, str) and part_filename.strip():
+            filename = part_filename.strip()
         mime_type = part.get("mimeType") or mime_type
         size = body.get("size", 0) or 0
         break
@@ -214,10 +245,11 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
     # Normalize Gmail URL-safe base64 into standard base64 for host download APIs.
     decoded = base64.urlsafe_b64decode(raw.encode("utf-8"))
     blob_base64 = base64.b64encode(decoded).decode("ascii")
+    resolved_filename = filename or _fallback_attachment_filename(mime_type)
     return {
         "message_id": message_id,
         "attachment_id": attachment_id,
-        "filename": filename,
+        "filename": resolved_filename,
         "mime_type": mime_type,
         "size": size,
         "blob_base64": blob_base64,

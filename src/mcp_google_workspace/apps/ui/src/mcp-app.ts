@@ -81,6 +81,28 @@ document.head.appendChild(style);
 
 const root = document.getElementById("app")!;
 const UI_SESSION_STORAGE_KEY = "mcp-dashboard-ui-session-id";
+const MIME_EXTENSION_MAP: Record<string, string> = {
+  "application/json": ".json",
+  "application/msword": ".doc",
+  "application/octet-stream": ".bin",
+  "application/pdf": ".pdf",
+  "application/rtf": ".rtf",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/zip": ".zip",
+  "audio/mpeg": ".mp3",
+  "image/gif": ".gif",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/svg+xml": ".svg",
+  "text/calendar": ".ics",
+  "text/csv": ".csv",
+  "text/html": ".html",
+  "text/plain": ".txt",
+};
 
 const params = new URLSearchParams(window.location.search);
 const isStandalone =
@@ -214,6 +236,8 @@ async function initMcpMode() {
                 name: string;
                 uri: string;
                 mimeType?: string;
+                title?: string;
+                _meta?: Record<string, unknown>;
               }
             | {
                 type: "resource";
@@ -222,7 +246,9 @@ async function initMcpMode() {
                   mimeType?: string;
                   text?: string;
                   blob?: string;
+                  _meta?: Record<string, unknown>;
                 };
+                _meta?: Record<string, unknown>;
               }
           >;
         }) => Promise<{ isError?: boolean; content?: unknown[] }>;
@@ -609,18 +635,31 @@ async function initMcpMode() {
             throw new Error("Attachment content is unavailable.");
           }
           const fileName =
-            (typeof data.filename === "string" && data.filename) || action.filename || "attachment";
+            action.filename ||
+            (typeof data.filename === "string" && data.filename) ||
+            "attachment";
           const mimeType =
             (typeof data.mime_type === "string" && data.mime_type) || action.mimeType || "application/octet-stream";
-          const safeName = fileName.replace(/[\\/:*?"<>|]/g, "_");
-          const dataUri = `data:${mimeType};base64,${data.blob_base64}`;
+          const safeName = ensureDownloadFilename(fileName, mimeType);
+          const fileMetadata = {
+            name: safeName,
+            title: safeName,
+            filename: safeName,
+            fileName: safeName,
+            suggestedFilename: safeName,
+            suggestedName: safeName,
+          };
           let result = await app.downloadFile({
             contents: [
               {
-                type: "resource_link",
-                name: safeName,
-                uri: dataUri,
-                mimeType,
+                type: "resource",
+                resource: {
+                  uri: `attachment://${safeName}`,
+                  mimeType,
+                  blob: data.blob_base64,
+                  _meta: fileMetadata,
+                },
+                _meta: fileMetadata,
               },
             ],
           });
@@ -628,12 +667,12 @@ async function initMcpMode() {
             result = await app.downloadFile({
               contents: [
                 {
-                  type: "resource",
-                  resource: {
-                    uri: `attachment://${encodeURIComponent(safeName)}`,
-                    mimeType,
-                    blob: data.blob_base64,
-                  },
+                  type: "resource_link",
+                  name: safeName,
+                  title: safeName,
+                  uri: `data:${mimeType};base64,${data.blob_base64}`,
+                  mimeType,
+                  _meta: fileMetadata,
                 },
               ],
             });
@@ -1723,6 +1762,23 @@ function extractCalendarCatalog(result: unknown): CalendarCatalogItem[] {
     });
   }
   return normalized;
+}
+
+function ensureDownloadFilename(fileName: string, mimeType?: string): string {
+  const trimmedName = (fileName || "").trim();
+  const sanitizedName = (trimmedName || "attachment").replace(/[\\/:*?"<>|]/g, "_");
+
+  if (/\.[A-Za-z0-9]{1,12}$/.test(sanitizedName)) {
+    return sanitizedName;
+  }
+
+  const normalizedMimeType = String(mimeType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  const inferredExtension = MIME_EXTENSION_MAP[normalizedMimeType];
+
+  return inferredExtension ? `${sanitizedName}${inferredExtension}` : sanitizedName;
 }
 
 function readDashboardState(data: DashboardData): {
