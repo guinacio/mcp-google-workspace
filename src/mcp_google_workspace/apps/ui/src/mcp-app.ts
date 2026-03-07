@@ -612,19 +612,32 @@ async function initMcpMode() {
             (typeof data.filename === "string" && data.filename) || action.filename || "attachment";
           const mimeType =
             (typeof data.mime_type === "string" && data.mime_type) || action.mimeType || "application/octet-stream";
-          const safeName = fileName.replace(/[\\/:*?\"<>|]/g, "_");
-          const result = await app.downloadFile({
+          const safeName = fileName.replace(/[\\/:*?"<>|]/g, "_");
+          const dataUri = `data:${mimeType};base64,${data.blob_base64}`;
+          let result = await app.downloadFile({
             contents: [
               {
-                type: "resource",
-                resource: {
-                  uri: `file:///${safeName}`,
-                  mimeType,
-                  blob: data.blob_base64,
-                },
+                type: "resource_link",
+                name: safeName,
+                uri: dataUri,
+                mimeType,
               },
             ],
           });
+          if (result?.isError) {
+            result = await app.downloadFile({
+              contents: [
+                {
+                  type: "resource",
+                  resource: {
+                    uri: `attachment://${encodeURIComponent(safeName)}`,
+                    mimeType,
+                    blob: data.blob_base64,
+                  },
+                },
+              ],
+            });
+          }
           if (result?.isError) {
             throw new Error("Host could not download email attachment.");
           }
@@ -1779,3 +1792,6 @@ function parseAttendeesCsv(value: string): string[] {
     .map((item) => item.trim())
     .filter(Boolean);
 }
+
+
+
