@@ -11,8 +11,9 @@ async def _list_tool_names(server):
 
 
 def _reload_workspace(monkeypatch, **flags):
-    for name in ["ENABLE_APPS_DASHBOARD", "ENABLE_CHAT", "ENABLE_KEEP", "ENABLE_MEET"]:
+    for name in ["ENABLE_APPS_DASHBOARD", "ENABLE_CHAT", "ENABLE_GEMINI", "ENABLE_KEEP", "ENABLE_MEET"]:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     for name, value in flags.items():
         monkeypatch.setenv(name, value)
     return importlib.reload(server_module).workspace_mcp
@@ -33,6 +34,7 @@ def test_composition_mounts_default_namespaces(monkeypatch):
     assert "slides_get_presentation" in tool_names
     assert "apps_get_dashboard" not in tool_names
     assert "chat_create_message" not in tool_names
+    assert "gemini_generate_image" not in tool_names
     assert "keep_create_note" not in tool_names
     assert "meet_get_space" not in tool_names
 
@@ -42,6 +44,8 @@ def test_composition_mounts_optional_namespaces_when_enabled(monkeypatch):
         monkeypatch,
         ENABLE_APPS_DASHBOARD="true",
         ENABLE_CHAT="true",
+        ENABLE_GEMINI="true",
+        GEMINI_API_KEY="test-key",
         ENABLE_KEEP="true",
         ENABLE_MEET="true",
     )
@@ -50,5 +54,7 @@ def test_composition_mounts_optional_namespaces_when_enabled(monkeypatch):
     assert "apps_get_dashboard" in tool_names
     assert "apps_get_weekly_calendar_view" in tool_names
     assert "chat_create_message" in tool_names
+    assert "gemini_generate_image" in tool_names
+    assert "gemini_describe_video" in tool_names
     assert "keep_create_note" in tool_names
     assert "meet_get_space" in tool_names

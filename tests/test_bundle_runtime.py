@@ -21,6 +21,10 @@ def test_runtime_settings_read_timeout_retry_and_logging(monkeypatch) -> None:
     monkeypatch.setenv("MCP_GOOGLE_LOG_LEVEL", "debug")
     monkeypatch.setenv("MCP_GOOGLE_OAUTH_PORT", "8123")
     monkeypatch.setenv("MCP_GOOGLE_OAUTH_OPEN_BROWSER", "false")
+    monkeypatch.setenv("ENABLE_GEMINI", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_OUTPUT_DIR", "tmp/custom-gemini")
+    monkeypatch.setenv("GEMINI_TIMEOUT_SECONDS", "222")
 
     settings = runtime_module.get_runtime_settings()
 
@@ -29,6 +33,10 @@ def test_runtime_settings_read_timeout_retry_and_logging(monkeypatch) -> None:
     assert settings.log_level == "DEBUG"
     assert settings.oauth_port == 8123
     assert settings.oauth_open_browser is False
+    assert settings.gemini_enabled is True
+    assert settings.gemini_api_key == "test-key"
+    assert settings.gemini_output_dir == "tmp/custom-gemini"
+    assert settings.gemini_timeout_seconds == 222.0
 
 
 def test_runtime_settings_reject_invalid_log_level(monkeypatch) -> None:
@@ -38,13 +46,36 @@ def test_runtime_settings_reject_invalid_log_level(monkeypatch) -> None:
         runtime_module.get_runtime_settings()
 
 
+def test_runtime_settings_require_gemini_api_key_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_GEMINI", "true")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+        runtime_module.get_runtime_settings()
+
+
 def test_bundle_entry_runs_workspace_over_stdio(monkeypatch) -> None:
     calls: list[str] = []
 
     monkeypatch.setattr(
         bundle_entry,
         "configure_logging",
-        lambda: runtime_module.RuntimeSettings(2, 30.0, "INFO", 0, True),
+        lambda: runtime_module.RuntimeSettings(
+            None,
+            "gemini-3-flash-preview",
+            False,
+            "gemini-3.1-flash-image-preview",
+            "gemini-3.1-flash-image-preview",
+            "tmp/gemini",
+            "gemini-3.1-pro-preview",
+            180.0,
+            "gemini-3-flash-preview",
+            2,
+            30.0,
+            "INFO",
+            0,
+            True,
+        ),
     )
     monkeypatch.setattr(
         bundle_entry.workspace_mcp, "run", lambda transport: calls.append(transport)
@@ -82,7 +113,22 @@ def test_google_service_builder_uses_runtime_timeout_and_retry(monkeypatch) -> N
     monkeypatch.setattr(
         google_auth,
         "get_runtime_settings",
-        lambda: runtime_module.RuntimeSettings(3, 33.0, "INFO", 0, True),
+        lambda: runtime_module.RuntimeSettings(
+            None,
+            "gemini-3-flash-preview",
+            False,
+            "gemini-3.1-flash-image-preview",
+            "gemini-3.1-flash-image-preview",
+            "tmp/gemini",
+            "gemini-3.1-pro-preview",
+            180.0,
+            "gemini-3-flash-preview",
+            3,
+            33.0,
+            "INFO",
+            0,
+            True,
+        ),
     )
     monkeypatch.setattr(google_auth, "get_credentials", lambda: object())
     monkeypatch.setattr(

@@ -33,10 +33,26 @@ def test_manifest_maps_bundle_user_config_to_runtime_env() -> None:
 
     assert env["MCP_CREDENTIALS_DIR"] == "${user_config.credentials_dir}"
     assert env["ENABLE_CHAT"] == "${user_config.enable_chat}"
+    assert env["ENABLE_GEMINI"] == "${user_config.enable_gemini}"
+    assert env["GEMINI_API_KEY"] == "${user_config.gemini_api_key}"
+    assert (
+        env["GEMINI_IMAGE_GENERATE_MODEL"]
+        == "${user_config.gemini_image_generate_model}"
+    )
     assert (
         env["MCP_GOOGLE_HTTP_TIMEOUT_SECONDS"] == "${user_config.http_timeout_seconds}"
     )
     assert env["MCP_GOOGLE_LOG_LEVEL"] == "${user_config.log_level}"
+
+
+def test_manifest_declares_gemini_bundle_config() -> None:
+    manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+    user_config = manifest["user_config"]
+
+    assert user_config["enable_gemini"]["default"] is False
+    assert user_config["gemini_image_generate_model"]["default"] == "gemini-3.1-flash-image-preview"
+    assert user_config["gemini_video_understanding_model"]["default"] == "gemini-3-flash-preview"
+    assert user_config["gemini_reasoning_model"]["default"] == "gemini-3.1-pro-preview"
 
 
 def test_mcpbignore_excludes_secrets_and_build_noise() -> None:

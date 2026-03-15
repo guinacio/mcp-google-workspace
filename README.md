@@ -12,9 +12,9 @@ Production-ready Google Workspace MCP package with:
 - Google Forms MCP: forms CRUD, publish settings, and response reads.
 - Google Slides MCP: presentations, slide pages, thumbnails, text replacement, and raw batch updates.
 - MCP Apps Dashboard: workspace dashboard app-layer tools/resources with interactive UI.
-- Optional Google Keep MCP, Google Chat MCP, and Google Meet MCP integrations behind feature flags.
+- Optional Google Keep MCP, Google Chat MCP, Google Meet MCP, and Gemini media integrations behind feature flags.
 - FastMCP advanced features: Context logging, progress updates, user elicitation, sampling, resources, and prompts.
-- Composed server architecture: Gmail + Calendar + Drive + Sheets + Docs + Tasks + People + Forms + Slides mounted by default, with optional Apps/Keep/Chat/Meet namespaces.
+- Composed server architecture: Gmail + Calendar + Drive + Sheets + Docs + Tasks + People + Forms + Slides mounted by default, with optional Apps/Keep/Chat/Meet/Gemini namespaces.
 
 ## Requirements
 
@@ -24,6 +24,7 @@ Production-ready Google Workspace MCP package with:
 - Google Cloud OAuth desktop credentials (`credentials.json`)
 - Google APIs enabled in your Google Cloud project: Gmail, Calendar, Drive, Sheets, Docs, Tasks, People, Forms, and Slides
 - Optional APIs when enabling feature-flagged integrations: Google Keep, Google Chat, and Google Meet
+- Gemini Developer API key when enabling Gemini media tools
 
 ## Installation
 
@@ -78,6 +79,24 @@ Enable it only after enabling the Meet API for the same OAuth client:
 $env:ENABLE_MEET="true"
 ```
 
+Gemini media integration is also disabled by default.
+Enable it with a Gemini Developer API key:
+
+```powershell
+$env:ENABLE_GEMINI="true"
+$env:GEMINI_API_KEY="your-api-key"
+```
+
+Capability-specific Gemini model defaults:
+
+```powershell
+$env:GEMINI_IMAGE_GENERATE_MODEL="gemini-3.1-flash-image-preview"
+$env:GEMINI_IMAGE_EDIT_MODEL="gemini-3.1-flash-image-preview"
+$env:GEMINI_VIDEO_UNDERSTANDING_MODEL="gemini-3-flash-preview"
+$env:GEMINI_AUDIO_UNDERSTANDING_MODEL="gemini-3-flash-preview"
+$env:GEMINI_REASONING_MODEL="gemini-3.1-pro-preview"
+```
+
 Whenever you enable one of these optional integrations or otherwise change the scope set, delete `token.json` and re-authenticate to refresh granted scopes.
 
 ### Apps dashboard rollout flag
@@ -108,6 +127,8 @@ Install on Claude Desktop:
 4. Choose the credentials directory that contains `credentials.json`, or leave it empty to use the repo defaults.
 5. Enable optional integrations only if your Google Workspace account and OAuth client support their scopes.
 6. Finish the install and authenticate in the browser on first launch.
+
+Gemini media tools are API-key-based rather than OAuth-based. If you enable Gemini in the bundle UI, also set the Gemini API key and optional model defaults there.
 
 Build a local `.mcpb` archive only if you are developing or testing bundle changes:
 
@@ -260,6 +281,13 @@ Meet (namespaced as `meet_*`, mounted when `ENABLE_MEET=true`):
 
 - Spaces: `create_space`, `get_space`, `update_space`, `end_active_conference`
 - Conference records: `list_conference_records`, `get_conference_record`
+
+Gemini (namespaced as `gemini_*`, mounted when `ENABLE_GEMINI=true`):
+
+- `generate_image`, `edit_image`
+- `describe_video`, `analyze_audio`
+- local filesystem or Drive file ID inputs for media tools
+- generated images are written locally under `GEMINI_OUTPUT_DIR`
 - Artifacts and attendance metadata: `list_conference_participants`, `list_conference_recordings`, `list_conference_transcripts`
 - v1 scope boundary: metadata only; transcript or recording file downloads still belong in Drive if added later
 

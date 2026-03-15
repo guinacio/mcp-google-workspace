@@ -6,12 +6,19 @@ from fastmcp import FastMCP
 
 from .apps import apps_mcp
 from .common.component_annotations import apply_default_tool_annotations
-from .auth import is_apps_dashboard_enabled, is_chat_enabled, is_keep_enabled, is_meet_enabled
+from .auth import (
+    is_apps_dashboard_enabled,
+    is_chat_enabled,
+    is_gemini_enabled,
+    is_keep_enabled,
+    is_meet_enabled,
+)
 from .calendar import calendar_mcp
 from .chat import chat_mcp
 from .docs import docs_mcp
 from .drive import drive_mcp
 from .forms import forms_mcp
+from .gemini import gemini_mcp
 from .gmail import gmail_mcp
 from .keep import keep_mcp
 from .meet import meet_mcp
@@ -24,7 +31,7 @@ workspace_mcp = FastMCP(
     name="google-workspace-mcp",
     instructions=(
         "Unified Google Workspace MCP server with Gmail, Calendar, Drive, Docs, Sheets, "
-        "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat integrations."
+        "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations."
     ),
 )
 
@@ -41,6 +48,8 @@ if is_apps_dashboard_enabled():
     workspace_mcp.mount(apps_mcp, namespace="apps")
 if is_chat_enabled():
     workspace_mcp.mount(chat_mcp, namespace="chat")
+if is_gemini_enabled():
+    workspace_mcp.mount(gemini_mcp, namespace="gemini")
 if is_keep_enabled():
     workspace_mcp.mount(keep_mcp, namespace="keep")
 if is_meet_enabled():

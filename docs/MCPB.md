@@ -32,8 +32,17 @@ The MCPB manifest exposes these settings through the host UI and passes them int
 - `credentials_dir` -> `MCP_CREDENTIALS_DIR`
 - `enable_apps_dashboard` -> `ENABLE_APPS_DASHBOARD`
 - `enable_chat` -> `ENABLE_CHAT`
+- `enable_gemini` -> `ENABLE_GEMINI`
 - `enable_keep` -> `ENABLE_KEEP`
 - `enable_meet` -> `ENABLE_MEET`
+- `gemini_api_key` -> `GEMINI_API_KEY`
+- `gemini_image_generate_model` -> `GEMINI_IMAGE_GENERATE_MODEL`
+- `gemini_image_edit_model` -> `GEMINI_IMAGE_EDIT_MODEL`
+- `gemini_video_understanding_model` -> `GEMINI_VIDEO_UNDERSTANDING_MODEL`
+- `gemini_audio_understanding_model` -> `GEMINI_AUDIO_UNDERSTANDING_MODEL`
+- `gemini_reasoning_model` -> `GEMINI_REASONING_MODEL`
+- `gemini_output_dir` -> `GEMINI_OUTPUT_DIR`
+- `gemini_timeout_seconds` -> `GEMINI_TIMEOUT_SECONDS`
 - `http_timeout_seconds` -> `MCP_GOOGLE_HTTP_TIMEOUT_SECONDS`
 - `http_retries` -> `MCP_GOOGLE_HTTP_RETRIES`
 - `log_level` -> `MCP_GOOGLE_LOG_LEVEL`
@@ -62,5 +71,6 @@ The command writes `dist/mcp-google-workspace-<version>.mcpb`.
 
 - The current upstream MCPB docs are internally inconsistent: `MANIFEST.md` still declares manifest spec `0.3`, while the same document marks `uv` support as experimental for `v0.4+` and shows a `manifest_version: "0.4"` example for `uv`. This bundle uses `0.4` so the manifest matches the documented `uv` runtime examples.
 - Keep/Chat/Meet remain opt-in because their OAuth scopes are more deployment-sensitive than the core Workspace APIs.
+- Gemini remains opt-in because it uses a separate Gemini Developer API key and capability-specific model defaults.
 - Claude Desktop rejects extra `server` metadata keys beyond the current MCPB schema, so this manifest intentionally omits fields like `package_manager`, `python_version`, and `working_dir` even though some earlier MCPB materials referenced them.
 
