@@ -1,2 +1,3 @@
-# Mark the frontend UI as vendored so GitHub linguist detects Python as the primary language
+# Mark vendored/generated files so GitHub linguist detects Python as the primary language
 src/mcp_google_workspace/apps/ui/ linguist-vendored
+tmp/ linguist-vendored
