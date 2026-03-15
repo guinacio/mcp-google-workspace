@@ -100,6 +100,11 @@ def is_meet_enabled() -> bool:
     return _env_truthy(os.getenv("ENABLE_MEET"))
 
 
+def is_gemini_enabled() -> bool:
+    """Feature flag for Gemini media integration."""
+    return _env_truthy(os.getenv("ENABLE_GEMINI"))
+
+
 def get_google_scopes() -> list[str]:
     scopes = [
         *GMAIL_SCOPES,

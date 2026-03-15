@@ -2,9 +2,9 @@
   "manifest_version": "0.4",
   "name": "mcp-google-workspace",
   "display_name": "Google Workspace MCP",
-  "version": "0.1.1",
-  "description": "Production Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, Slides, and optional Apps, Chat, Keep, and Meet integrations.",
-  "long_description": "Local Google Workspace MCP bundle for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, and Slides, with optional Apps dashboard, Google Chat, Google Keep, and Google Meet integrations. The bundle runs over stdio, uses desktop OAuth credentials stored on the local machine, and exposes the same FastMCP tool surface already implemented by this repository.",
+  "version": "0.2.0",
+  "description": "Production Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, Slides, and optional Apps, Chat, Keep, Meet, and Gemini integrations.",
+  "long_description": "Local Google Workspace MCP bundle for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, and Slides, with optional Apps dashboard, Google Chat, Google Keep, Google Meet, and Gemini media integrations. The bundle runs over stdio, uses desktop OAuth credentials stored on the local machine, and exposes the same FastMCP tool surface already implemented by this repository.",
   "author": {
     "name": "Guilherme Inácio",
     "email": "gsilvainacio@gmail.com",
@@ -28,6 +28,10 @@
     "tasks",
     "slides",
     "forms",
+    "gemini",
+    "image-generation",
+    "audio",
+    "video",
     "mcp"
   ],
   "tools_generated": true,
@@ -54,8 +58,17 @@
         "MCP_CREDENTIALS_DIR": "${user_config.credentials_dir}",
         "ENABLE_APPS_DASHBOARD": "${user_config.enable_apps_dashboard}",
         "ENABLE_CHAT": "${user_config.enable_chat}",
+        "ENABLE_GEMINI": "${user_config.enable_gemini}",
         "ENABLE_KEEP": "${user_config.enable_keep}",
         "ENABLE_MEET": "${user_config.enable_meet}",
+        "GEMINI_API_KEY": "${user_config.gemini_api_key}",
+        "GEMINI_IMAGE_GENERATE_MODEL": "${user_config.gemini_image_generate_model}",
+        "GEMINI_IMAGE_EDIT_MODEL": "${user_config.gemini_image_edit_model}",
+        "GEMINI_VIDEO_UNDERSTANDING_MODEL": "${user_config.gemini_video_understanding_model}",
+        "GEMINI_AUDIO_UNDERSTANDING_MODEL": "${user_config.gemini_audio_understanding_model}",
+        "GEMINI_REASONING_MODEL": "${user_config.gemini_reasoning_model}",
+        "GEMINI_OUTPUT_DIR": "${user_config.gemini_output_dir}",
+        "GEMINI_TIMEOUT_SECONDS": "${user_config.gemini_timeout_seconds}",
         "MCP_GOOGLE_HTTP_TIMEOUT_SECONDS": "${user_config.http_timeout_seconds}",
         "MCP_GOOGLE_HTTP_RETRIES": "${user_config.http_retries}",
         "MCP_GOOGLE_LOG_LEVEL": "${user_config.log_level}",
@@ -82,6 +95,62 @@
       "title": "Enable Google Chat",
       "description": "Mount Chat tools and request Chat OAuth scopes.",
       "default": false
+    },
+    "enable_gemini": {
+      "type": "boolean",
+      "title": "Enable Gemini Media",
+      "description": "Mount Gemini image, audio, and video tools powered by the Gemini Developer API.",
+      "default": false
+    },
+    "gemini_api_key": {
+      "type": "string",
+      "title": "Gemini API Key",
+      "description": "Gemini Developer API key used for Gemini media tools. Required only when Gemini Media is enabled.",
+      "required": false
+    },
+    "gemini_image_generate_model": {
+      "type": "string",
+      "title": "Gemini Image Generate Model",
+      "description": "Default Gemini model for image generation tools.",
+      "default": "gemini-3.1-flash-image-preview"
+    },
+    "gemini_image_edit_model": {
+      "type": "string",
+      "title": "Gemini Image Edit Model",
+      "description": "Default Gemini model for image editing tools.",
+      "default": "gemini-3.1-flash-image-preview"
+    },
+    "gemini_video_understanding_model": {
+      "type": "string",
+      "title": "Gemini Video Understanding Model",
+      "description": "Default Gemini model for video understanding tools.",
+      "default": "gemini-3-flash-preview"
+    },
+    "gemini_audio_understanding_model": {
+      "type": "string",
+      "title": "Gemini Audio Understanding Model",
+      "description": "Default Gemini model for audio understanding tools.",
+      "default": "gemini-3-flash-preview"
+    },
+    "gemini_reasoning_model": {
+      "type": "string",
+      "title": "Gemini Reasoning Model",
+      "description": "Higher-reasoning Gemini model allowed for advanced audio or video analysis overrides.",
+      "default": "gemini-3.1-pro-preview"
+    },
+    "gemini_output_dir": {
+      "type": "string",
+      "title": "Gemini Output Directory",
+      "description": "Directory where Gemini-generated image files are written locally.",
+      "default": "tmp/gemini"
+    },
+    "gemini_timeout_seconds": {
+      "type": "number",
+      "title": "Gemini Timeout (Seconds)",
+      "description": "Maximum time allowed for a single Gemini API request.",
+      "default": 180,
+      "min": 5,
+      "max": 600
     },
     "enable_keep": {
       "type": "boolean",
