@@ -27,7 +27,7 @@ class SendEmailRequest(ToolRequestModel):
     text_body: str | None = Field(default=None, description="Plain text email body.")
     html_body: str | None = Field(default=None, description="HTML email body.")
     attachments: list[AttachmentInput] = Field(default_factory=list, description="Optional file attachments.")
-    confirm_send: bool = Field(default=True, description="Prompt user confirmation before sending when true.")
+    confirm_send: bool = Field(default=False, description="Prompt user confirmation before sending when true.")
 
 
 class ReadEmailRequest(ToolRequestModel):

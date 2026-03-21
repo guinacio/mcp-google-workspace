@@ -33,7 +33,7 @@ def register(server: FastMCP) -> None:
         text_body: str | None = None,
         html_body: str | None = None,
         attachments: list[dict[str, Any]] = [],
-        confirm_send: bool = True,
+        confirm_send: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Send an email with TO/CC/BCC, text/HTML body, and optional attachments."""

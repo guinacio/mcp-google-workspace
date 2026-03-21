@@ -1,4 +1,5 @@
 from mcp_google_workspace.gmail.mime_utils import build_email_message, encode_subject, extract_message_bodies
+from mcp_google_workspace.gmail.schemas import SendEmailRequest
 
 
 def test_subject_supports_international_chars():
@@ -33,3 +34,12 @@ def test_extract_message_bodies():
     bodies = extract_message_bodies(payload)
     assert "plain text" in bodies["text"]
     assert "<p>html</p>" in bodies["html"]
+
+
+def test_send_email_defaults_to_no_confirmation():
+    request = SendEmailRequest(
+        recipients={"to": ["a@example.com"]},
+        subject="Test",
+    )
+
+    assert request.confirm_send is False
