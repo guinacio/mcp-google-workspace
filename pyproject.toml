@@ -1,6 +1,6 @@
 [project]
 name = "mcp-google-workspace"
-version = "0.2.2"
+version = "0.3.0"
 description = "Production MCP server for Gmail, Google Calendar, Keep, Drive and Chat"
 readme = "README.md"
 authors = [
