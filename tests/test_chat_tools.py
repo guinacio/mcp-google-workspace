@@ -1,6 +1,10 @@
+from types import SimpleNamespace
+
 import pytest
+from googleapiclient.errors import HttpError
 
 from mcp_google_workspace.chat.client import (
+    _describe_http_error,
     normalize_message_name,
     normalize_space_name,
     normalize_user_name,
@@ -24,3 +28,14 @@ def test_normalize_message_name_invalid():
 def test_normalize_user_name():
     assert normalize_user_name("users/123") == "users/123"
     assert normalize_user_name("123") == "users/123"
+
+
+def test_describe_http_error():
+    exc = HttpError(
+        SimpleNamespace(status=403, reason="Forbidden"),
+        b'{"error":{"status":"PERMISSION_DENIED","message":"nope"}}',
+    )
+    details = _describe_http_error(exc)
+    assert "status=403" in details
+    assert "reason=Forbidden" in details
+    assert "PERMISSION_DENIED" in details

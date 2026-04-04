@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastmcp import Context, FastMCP
+from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
-from .client import chat_service, normalize_message_name, normalize_space_name
+
+LOGGER = logging.getLogger(__name__)
+from .client import chat_service, normalize_message_name, normalize_space_name, normalize_user_name, resolve_space_members
 from .schemas import (
     CreateMessageRequest,
     DeleteMessageRequest,
+    FindDirectMessageRequest,
     GetMessageRequest,
     GetSpaceRequest,
     ListMessagesRequest,
@@ -24,6 +29,7 @@ from .schemas import (
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_spaces")
     async def list_spaces(request: ListSpacesRequest, ctx: Context) -> dict[str, Any]:
+        """List Chat spaces, optionally enriching DMs with peer user details."""
         service = chat_service()
         await ctx.info("Listing Google Chat spaces.")
         result = await execute_google_request(
@@ -36,6 +42,25 @@ def register_tools(server: FastMCP) -> None:
         )
         spaces = result.get("spaces", [])
         await ctx.report_progress(len(spaces), request.page_size, "Chat spaces page loaded")
+
+        if request.enrich_dms:
+            dm_spaces = [s for s in spaces if s.get("spaceType") == "DIRECT_MESSAGE"]
+            total = len(dm_spaces)
+            for idx, space in enumerate(dm_spaces, 1):
+                space_name = space.get("name", "")
+                try:
+                    peers = await resolve_space_members(space_name)
+                    if peers:
+                        peer = peers[0]
+                        space["peer_display_name"] = peer.get("displayName")
+                        space["peer_email"] = peer.get("email")
+                        space["peer_user"] = peer.get("name")
+                except Exception:
+                    LOGGER.debug("DM enrichment failed for %s", space_name, exc_info=True)
+                await ctx.report_progress(
+                    len(spaces) + idx, len(spaces) + total, "Enriching DM spaces"
+                )
+
         return {
             "spaces": spaces,
             "next_page_token": result.get("nextPageToken"),
@@ -48,6 +73,32 @@ def register_tools(server: FastMCP) -> None:
         name = normalize_space_name(request.space_name)
         await ctx.info(f"Getting Chat space {name}.")
         return await execute_google_request(service.spaces().get(name=name))
+
+    @server.tool(name="find_direct_message")
+    async def find_direct_message(
+        request: FindDirectMessageRequest, ctx: Context
+    ) -> dict[str, Any]:
+        """Find the direct-message space between you and another user."""
+        service = chat_service()
+        user_name = normalize_user_name(request.user)
+        await ctx.info(f"Finding DM space with {user_name}.")
+        try:
+            space = await execute_google_request(
+                service.spaces().findDirectMessage(name=user_name)
+            )
+        except HttpError as exc:
+            if exc.resp.status == 404:
+                return {
+                    "found": False,
+                    "user": user_name,
+                    "reason": "No direct message space exists with this user.",
+                }
+            raise
+        return {
+            "found": True,
+            "user": user_name,
+            "space": space,
+        }
 
     @server.tool(name="list_messages")
     async def list_messages(request: ListMessagesRequest, ctx: Context) -> dict[str, Any]:

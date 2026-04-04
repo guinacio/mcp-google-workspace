@@ -4,7 +4,7 @@
   "display_name": "Google Workspace MCP",
   "version": "0.2.2",
   "description": "Production Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, Slides, and optional Apps, Chat, Keep, Meet, and Gemini integrations.",
-  "long_description": "Local Google Workspace MCP bundle for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, and Slides, with optional Apps dashboard, Google Chat, Google Keep, Google Meet, and Gemini media integrations. The bundle runs over stdio, uses desktop OAuth credentials stored on the local machine, and exposes the same FastMCP tool surface already implemented by this repository.",
+  "long_description": "Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, and Slides, with optional Google Chat, Google Keep, Google Meet, and Gemini media integrations. Authenticates via OAuth with your Google account and gives Claude Desktop full read/write access to your Workspace data through natural language.",
   "author": {
     "name": "Guilherme Inácio",
     "email": "gsilvainacio@gmail.com",

@@ -11,6 +11,13 @@ class ListSpacesRequest(ToolRequestModel):
     page_size: int = Field(default=50, ge=1, le=1000, description="Maximum spaces to return.")
     page_token: str | None = Field(default=None, description="Pagination token from previous response.")
     filter: str | None = Field(default=None, description="Optional Chat API filter expression.")
+    enrich_dms: bool = Field(
+        default=False,
+        description=(
+            "When true, resolve member details for DIRECT_MESSAGE spaces "
+            "so each DM includes the peer's display name and email."
+        ),
+    )
 
 
 class GetSpaceRequest(ToolRequestModel):
@@ -62,3 +69,13 @@ class ReplyToMessageRequest(ToolRequestModel):
     message_name: str = Field(description="Existing Chat message resource name to reply to.")
     text: str = Field(description="Reply text content.")
     notify: bool = Field(default=False, description="Whether to ask interactive confirmation before posting.")
+
+
+class FindDirectMessageRequest(ToolRequestModel):
+    user: str = Field(
+        description=(
+            "User identifier for the DM target. "
+            "Accepts an email address (e.g. user@example.com) "
+            "or a user resource name (e.g. users/123456789)."
+        )
+    )

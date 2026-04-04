@@ -63,6 +63,7 @@ KEEP_SCOPES = [
 CHAT_SCOPES = [
     "https://www.googleapis.com/auth/chat.messages",
     "https://www.googleapis.com/auth/chat.messages.readonly",
+    "https://www.googleapis.com/auth/chat.memberships.readonly",
     "https://www.googleapis.com/auth/chat.spaces.readonly",
 ]
 
