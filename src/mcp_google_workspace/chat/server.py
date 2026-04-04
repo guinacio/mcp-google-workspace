@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import Context, FastMCP
 
+from ..common.async_ops import execute_google_request
 from ..common.component_annotations import apply_default_tool_annotations
 from .client import chat_service, normalize_space_name
 from .prompts import register_prompts
@@ -21,7 +22,9 @@ register_prompts(chat_mcp)
 async def summarize_space_messages(space_name: str, ctx: Context, limit: int = 20) -> dict[str, str]:
     service = chat_service()
     parent = normalize_space_name(space_name)
-    result = service.spaces().messages().list(parent=parent, pageSize=limit).execute()
+    result = await execute_google_request(
+        service.spaces().messages().list(parent=parent, pageSize=limit)
+    )
     messages = result.get("messages", [])
     text_blob = "\n".join((m.get("text") or "").strip() for m in messages if m.get("text"))
     if not text_blob:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import Context, FastMCP
 
+from ..common.async_ops import execute_google_request
 from ..common.component_annotations import apply_default_tool_annotations
 from .client import keep_service, normalize_note_name
 from .prompts import register_prompts
@@ -21,7 +22,7 @@ register_prompts(keep_mcp)
 async def summarize_note(note_name: str, ctx: Context) -> dict[str, str]:
     service = keep_service()
     name = normalize_note_name(note_name)
-    note = service.notes().get(name=name).execute()
+    note = await execute_google_request(service.notes().get(name=name))
     body = note.get("body", {})
     text = body.get("text", {}).get("text", "")
     if not text:

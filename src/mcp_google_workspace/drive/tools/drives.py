@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import drive_service
 from ..schemas import GetDriveRequest, HideDriveRequest, ListDrivesRequest, UnhideDriveRequest
 
@@ -31,7 +32,7 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.info("Listing Shared Drives.")
-        result = (
+        result = await execute_google_request(
             service.drives()
             .list(
                 pageSize=request.page_size,
@@ -40,7 +41,6 @@ def register(server: FastMCP) -> None:
                 useDomainAdminAccess=request.use_domain_admin_access,
                 fields=request.fields,
             )
-            .execute()
         )
         items = result.get("drives", [])
         if ctx is not None:
@@ -67,14 +67,13 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.info(f"Fetching Shared Drive {request.drive_id}.")
-        drive = (
+        drive = await execute_google_request(
             service.drives()
             .get(
                 driveId=request.drive_id,
                 useDomainAdminAccess=request.use_domain_admin_access,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"drive": drive}
 
@@ -92,13 +91,12 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.warning(f"Hiding Shared Drive {request.drive_id}.")
-        drive = (
+        drive = await execute_google_request(
             service.drives()
             .hide(
                 driveId=request.drive_id,
                 useDomainAdminAccess=request.use_domain_admin_access,
             )
-            .execute()
         )
         return {"status": "ok", "drive": drive}
 
@@ -116,12 +114,11 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.warning(f"Unhiding Shared Drive {request.drive_id}.")
-        drive = (
+        drive = await execute_google_request(
             service.drives()
             .unhide(
                 driveId=request.drive_id,
                 useDomainAdminAccess=request.use_domain_admin_access,
             )
-            .execute()
         )
         return {"status": "ok", "drive": drive}

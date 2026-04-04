@@ -9,6 +9,7 @@ import pytz
 from fastmcp import FastMCP
 
 from ..auth import build_calendar_service
+from ..common.async_ops import execute_google_request
 from ..common.component_annotations import apply_default_tool_annotations
 from .tools import register_tools
 
@@ -26,8 +27,8 @@ async def calendar_today() -> str:
     events = (
         service.events()
         .list(calendarId="primary", timeMin=start, timeMax=end, singleEvents=True, orderBy="startTime")
-        .execute()
     )
+    events = await execute_google_request(events)
     return json.dumps(events, indent=2)
 
 
@@ -46,8 +47,8 @@ async def calendar_week() -> str:
             orderBy="startTime",
             maxResults=250,
         )
-        .execute()
     )
+    events = await execute_google_request(events)
     return json.dumps(events, indent=2)
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 
@@ -115,8 +115,8 @@ def register_tools(server: FastMCP) -> None:
     async def get_slide_thumbnail(
         presentation_id: str,
         page_object_id: str,
-        mime_type: str = "PNG",
-        thumbnail_size: str = "LARGE",
+        mime_type: Literal["PNG", "JPEG"] = "PNG",
+        thumbnail_size: Literal["THUMBNAIL_SIZE_UNSPECIFIED", "LARGE", "MEDIUM", "SMALL"] = "LARGE",
     ) -> dict[str, Any]:
         return get_slide_thumbnail_payload(
             GetSlideThumbnailRequest(

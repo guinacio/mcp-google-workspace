@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 
@@ -116,7 +116,7 @@ def register_tools(server: FastMCP) -> None:
     async def get_sheet_values(
         spreadsheet_id: str,
         range_a1: str,
-        major_dimension: str = "ROWS",
+        major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS",
         value_render_option: str | None = None,
         date_time_render_option: str | None = None,
     ) -> dict[str, Any]:
@@ -134,7 +134,7 @@ def register_tools(server: FastMCP) -> None:
     async def batch_get_sheet_values(
         spreadsheet_id: str,
         ranges: list[str],
-        major_dimension: str = "ROWS",
+        major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS",
         value_render_option: str | None = None,
         date_time_render_option: str | None = None,
     ) -> dict[str, Any]:
@@ -153,8 +153,8 @@ def register_tools(server: FastMCP) -> None:
         spreadsheet_id: str,
         range_a1: str,
         values: list[list[Any]],
-        value_input_option: str = "RAW",
-        insert_data_option: str = "INSERT_ROWS",
+        value_input_option: Literal["RAW", "USER_ENTERED"] = "RAW",
+        insert_data_option: Literal["OVERWRITE", "INSERT_ROWS"] = "INSERT_ROWS",
         include_values_in_response: bool = False,
     ) -> dict[str, Any]:
         return append_sheet_values_payload(
@@ -173,7 +173,7 @@ def register_tools(server: FastMCP) -> None:
         spreadsheet_id: str,
         range_a1: str,
         values: list[list[Any]],
-        value_input_option: str = "RAW",
+        value_input_option: Literal["RAW", "USER_ENTERED"] = "RAW",
         include_values_in_response: bool = False,
     ) -> dict[str, Any]:
         return update_sheet_values_payload(

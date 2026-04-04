@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import drive_service
 from ..schemas import (
     CreatePermissionRequest,
@@ -39,7 +40,7 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.info(f"Listing permissions for file {request.file_id}.")
-        result = (
+        result = await execute_google_request(
             service.permissions()
             .list(
                 fileId=request.file_id,
@@ -49,7 +50,6 @@ def register(server: FastMCP) -> None:
                 useDomainAdminAccess=request.use_domain_admin_access,
                 fields=request.fields,
             )
-            .execute()
         )
         items = result.get("permissions", [])
         if ctx is not None:
@@ -80,7 +80,7 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.info(f"Fetching permission {request.permission_id} for file {request.file_id}.")
-        permission = (
+        permission = await execute_google_request(
             service.permissions()
             .get(
                 fileId=request.file_id,
@@ -89,7 +89,6 @@ def register(server: FastMCP) -> None:
                 useDomainAdminAccess=request.use_domain_admin_access,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"permission": permission}
 
@@ -144,7 +143,7 @@ def register(server: FastMCP) -> None:
             await ctx.warning(
                 f"Creating permission {request.type}:{request.role} for file {request.file_id}."
             )
-        created = (
+        created = await execute_google_request(
             service.permissions()
             .create(
                 fileId=request.file_id,
@@ -156,7 +155,6 @@ def register(server: FastMCP) -> None:
                 useDomainAdminAccess=request.use_domain_admin_access,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"status": "ok", "permission": created}
 
@@ -202,7 +200,7 @@ def register(server: FastMCP) -> None:
             await ctx.warning(
                 f"Updating permission {request.permission_id} for file {request.file_id}."
             )
-        updated = (
+        updated = await execute_google_request(
             service.permissions()
             .update(
                 fileId=request.file_id,
@@ -213,7 +211,6 @@ def register(server: FastMCP) -> None:
                 useDomainAdminAccess=request.use_domain_admin_access,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"status": "ok", "permission": updated}
 
@@ -237,12 +234,14 @@ def register(server: FastMCP) -> None:
             await ctx.warning(
                 f"Deleting permission {request.permission_id} from file {request.file_id}."
             )
-        service.permissions().delete(
-            fileId=request.file_id,
-            permissionId=request.permission_id,
-            supportsAllDrives=request.supports_all_drives,
-            useDomainAdminAccess=request.use_domain_admin_access,
-        ).execute()
+        await execute_google_request(
+            service.permissions().delete(
+                fileId=request.file_id,
+                permissionId=request.permission_id,
+                supportsAllDrives=request.supports_all_drives,
+                useDomainAdminAccess=request.use_domain_admin_access,
+            )
+        )
         return {
             "status": "ok",
             "file_id": request.file_id,

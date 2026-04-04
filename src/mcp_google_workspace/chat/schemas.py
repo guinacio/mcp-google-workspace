@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ..common.request_model import ToolRequestModel
 

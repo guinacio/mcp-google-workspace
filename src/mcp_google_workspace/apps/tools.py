@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import base64
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 import pytz
 from fastmcp import Context, FastMCP
 
 from ..auth import build_calendar_service, build_gmail_service
+from ..common.async_ops import run_blocking
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from .actions import (
     cancel_meeting,
@@ -24,8 +25,6 @@ from .schemas import (
     DashboardState,
     DashboardStatePatch,
     FindMeetingSlotsRequest,
-    GetEmailDetailRequest,
-    GetEventDetailRequest,
     RespondToEventRequest,
     RescheduleMeetingRequest,
 )
@@ -71,6 +70,25 @@ def _resolve_session_id(candidate: str | None, ctx: Context | None = None) -> st
     return "default"
 
 
+def _normalize_participants(
+    participants: list[str] | str | None,
+) -> list[str]:
+    if participants is None:
+        return ["primary"]
+    if isinstance(participants, str):
+        raw = participants.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            import json
+
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    return participants
+
+
 def _compute_window(state: DashboardState) -> tuple[str, str]:
     tz = pytz.timezone(state.timezone)
     anchor_date = state.anchor_date
@@ -108,8 +126,8 @@ def _fetch_calendar_events(state: DashboardState) -> list[dict[str, Any]]:
                 orderBy="startTime",
                 maxResults=100,
             )
-            .execute()
         )
+        page = run_sync(page)
         for item in page.get("items", []):
             enriched = dict(item)
             enriched["calendar_id"] = calendar_id
@@ -132,11 +150,8 @@ def _fetch_inbox_summary(
     unread_query = "is:unread in:inbox"
     if state.inbox_query:
         unread_query = f"{unread_query} {state.inbox_query}"
-    unread_response = (
-        service.users()
-        .messages()
-        .list(userId="me", q=unread_query, maxResults=list_limit)
-        .execute()
+    unread_response = run_sync(
+        service.users().messages().list(userId="me", q=unread_query, maxResults=list_limit)
     )
     unread = unread_response.get("resultSizeEstimate", 0)
     unread_ids = [
@@ -147,11 +162,8 @@ def _fetch_inbox_summary(
     list_query = "in:inbox"
     if state.inbox_query:
         list_query = f"{list_query} {state.inbox_query}"
-    latest = (
-        service.users()
-        .messages()
-        .list(userId="me", q=list_query, maxResults=list_limit)
-        .execute()
+    latest = run_sync(
+        service.users().messages().list(userId="me", q=list_query, maxResults=list_limit)
     )
     latest_ids = [
         msg.get("id")
@@ -161,11 +173,8 @@ def _fetch_inbox_summary(
 
     items: list[dict[str, Any]] = []
     for message_id in latest_ids:
-        full = (
-            service.users()
-            .messages()
-            .get(userId="me", id=message_id, format="metadata")
-            .execute()
+        full = run_sync(
+            service.users().messages().get(userId="me", id=message_id, format="metadata")
         )
         headers = {
             h.get("name", "").lower(): h.get("value", "")
@@ -187,17 +196,14 @@ def _fetch_inbox_summary(
 
 def _fetch_event_detail(calendar_id: str, event_id: str) -> dict[str, Any]:
     service = build_calendar_service()
-    event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+    event = run_sync(service.events().get(calendarId=calendar_id, eventId=event_id))
     return build_event_detail_view_model(event, calendar_id).model_dump(mode="json")
 
 
 def _fetch_email_detail(message_id: str) -> dict[str, Any]:
     service = build_gmail_service()
-    message = (
-        service.users()
-        .messages()
-        .get(userId="me", id=message_id, format="full")
-        .execute()
+    message = run_sync(
+        service.users().messages().get(userId="me", id=message_id, format="full")
     )
     return build_email_detail_view_model(message).model_dump(mode="json")
 
@@ -210,11 +216,8 @@ def _fallback_attachment_filename(mime_type: str | None) -> str:
 
 def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, Any]:
     service = build_gmail_service()
-    message = (
-        service.users()
-        .messages()
-        .get(userId="me", id=message_id, format="full")
-        .execute()
+    message = run_sync(
+        service.users().messages().get(userId="me", id=message_id, format="full")
     )
     payload = message.get("payload") or {}
 
@@ -232,12 +235,11 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
         size = body.get("size", 0) or 0
         break
 
-    attachment = (
+    attachment = run_sync(
         service.users()
         .messages()
         .attachments()
         .get(userId="me", messageId=message_id, id=attachment_id)
-        .execute()
     )
     raw = attachment.get("data")
     if not raw:
@@ -304,13 +306,16 @@ async def build_dashboard_payload_with_progress(
 
     try:
         await ctx.report_progress(20, 100, "Loading calendar events")
-        events = _fetch_calendar_events(week_state)
+        events = await run_blocking(_fetch_calendar_events, week_state)
     except Exception as exc:  # pragma: no cover - external API
         section_errors["calendar"] = str(exc)
 
     try:
         await ctx.report_progress(55, 100, "Loading inbox summary")
-        unread_count, messages, unread_message_ids = _fetch_inbox_summary(state)
+        unread_count, messages, unread_message_ids = await run_blocking(
+            _fetch_inbox_summary,
+            state,
+        )
     except Exception as exc:  # pragma: no cover - external API
         section_errors["inbox"] = str(exc)
 
@@ -375,7 +380,10 @@ async def build_weekly_calendar_payload_with_progress(
         )
 
     await ctx.report_progress(35, 100, "Loading weekly calendar events")
-    events = _fetch_calendar_events(weekly_state.model_copy(update={"view": "week"}))
+    events = await run_blocking(
+        _fetch_calendar_events,
+        weekly_state.model_copy(update={"view": "week"}),
+    )
 
     await ctx.report_progress(80, 100, "Building weekly view model")
     model = build_weekly_calendar_view_model(
@@ -386,6 +394,10 @@ async def build_weekly_calendar_payload_with_progress(
     )
     await ctx.report_progress(100, 100, "Weekly calendar ready")
     return model.model_dump(mode="json")
+
+
+def run_sync(request: Any) -> Any:
+    return request.execute()
 
 
 def register_tools(server: FastMCP) -> None:
@@ -435,7 +447,7 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="patch_state")
     async def apps_patch_state(
         session_id: str | None = None,
-        view: str | None = None,
+        view: Literal["agenda", "day", "week", "month"] | None = None,
         anchor_date: date | None = None,
         timezone: str | None = None,
         selected_calendars: list[str] | None = None,
@@ -509,7 +521,7 @@ def register_tools(server: FastMCP) -> None:
             state = state.model_copy(update={"anchor_date": date_override})
         if ctx is not None:
             return await build_dashboard_payload_with_progress(state, ctx)
-        return build_dashboard_payload(state)
+        return await run_blocking(build_dashboard_payload, state)
 
     @server.tool(
         name="get_weekly_calendar_view",
@@ -538,7 +550,8 @@ def register_tools(server: FastMCP) -> None:
                 date_override=date_override,
                 include_weekend_override=include_weekend,
             )
-        return build_weekly_calendar_payload(
+        return await run_blocking(
+            build_weekly_calendar_payload,
             state,
             date_override=date_override,
             include_weekend_override=include_weekend,
@@ -554,7 +567,7 @@ def register_tools(server: FastMCP) -> None:
         """Return full event details (attendees, location, description, conference)."""
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading event details")
-        payload = _fetch_event_detail(calendar_id, event_id)
+        payload = await run_blocking(_fetch_event_detail, calendar_id, event_id)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Event details ready")
         return payload
@@ -568,7 +581,7 @@ def register_tools(server: FastMCP) -> None:
         """Return full email details (headers + body)."""
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading email details")
-        payload = _fetch_email_detail(message_id)
+        payload = await run_blocking(_fetch_email_detail, message_id)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Email details ready")
         return payload
@@ -583,7 +596,7 @@ def register_tools(server: FastMCP) -> None:
         """Return attachment content (base64) for one Gmail message attachment."""
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading attachment data")
-        payload = _fetch_email_attachment(message_id, attachment_id)
+        payload = await run_blocking(_fetch_email_attachment, message_id, attachment_id)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Attachment ready")
         return payload
@@ -611,7 +624,7 @@ def register_tools(server: FastMCP) -> None:
             meeting_duration if meeting_duration is not None else slot_duration_minutes
         )
         request = FindMeetingSlotsRequest(
-            participants=participants or ["primary"],
+            participants=_normalize_participants(participants),
             time_min=time_min,
             time_max=time_max,
             slot_duration_minutes=effective_duration,
@@ -705,7 +718,7 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="respond_to_event")
     async def apps_respond_to_event(
         event_id: str,
-        response_status: str,
+        response_status: Literal["accepted", "tentative", "declined"],
         idempotency_key: str,
         session_id: str | None = None,
         calendar_id: str = "primary",

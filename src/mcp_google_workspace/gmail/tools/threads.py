@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..schemas import GetThreadRequest, ListThreadsRequest, ModifyThreadRequest, ThreadIdRequest
 
@@ -14,7 +15,7 @@ def register(server: FastMCP) -> None:
     @server.tool(name="list_threads")
     async def list_threads(
         query: str | None = None,
-        label_ids: list[str] = [],
+        label_ids: list[str] | None = None,
         max_results: int = 25,
         page_token: str | None = None,
         include_spam_trash: bool = False,
@@ -23,7 +24,7 @@ def register(server: FastMCP) -> None:
         """List conversation threads with optional query/label filters."""
         request = ListThreadsRequest(
             query=query,
-            label_ids=label_ids,
+            label_ids=label_ids or [],
             max_results=max_results,
             page_token=page_token,
             include_spam_trash=include_spam_trash,
@@ -31,7 +32,7 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info("Listing Gmail threads.")
-        result = (
+        result = await execute_google_request(
             service.users()
             .threads()
             .list(
@@ -42,7 +43,6 @@ def register(server: FastMCP) -> None:
                 pageToken=request.page_token,
                 includeSpamTrash=request.include_spam_trash,
             )
-            .execute()
         )
         threads = result.get("threads", [])
         if ctx is not None:
@@ -56,20 +56,20 @@ def register(server: FastMCP) -> None:
     @server.tool(name="get_thread")
     async def get_thread(
         thread_id: str,
-        format: str = "full",
-        metadata_headers: list[str] = [],
+        format: Literal["full", "metadata", "minimal"] = "full",
+        metadata_headers: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Fetch one thread with message set and history metadata."""
         request = GetThreadRequest(
             thread_id=thread_id,
             format=format,
-            metadata_headers=metadata_headers,
+            metadata_headers=metadata_headers or [],
         )
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Reading thread {request.thread_id}.")
-        thread = (
+        thread = await execute_google_request(
             service.users()
             .threads()
             .get(
@@ -78,7 +78,6 @@ def register(server: FastMCP) -> None:
                 format=request.format,
                 metadataHeaders=request.metadata_headers or None,
             )
-            .execute()
         )
         messages = thread.get("messages", [])
         return {
@@ -91,22 +90,22 @@ def register(server: FastMCP) -> None:
     @server.tool(name="modify_thread")
     async def modify_thread(
         thread_id: str,
-        add_label_ids: list[str] = [],
-        remove_label_ids: list[str] = [],
+        add_label_ids: list[str] | None = None,
+        remove_label_ids: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Apply label changes to all messages in a thread."""
         request = ModifyThreadRequest(
             thread_id=thread_id,
-            add_label_ids=add_label_ids,
-            remove_label_ids=remove_label_ids,
+            add_label_ids=add_label_ids or [],
+            remove_label_ids=remove_label_ids or [],
         )
         service = gmail_service()
         if not request.add_label_ids and not request.remove_label_ids:
             raise ValueError("At least one of add_label_ids/remove_label_ids must be provided.")
         if ctx is not None:
             await ctx.info(f"Modifying thread {request.thread_id}.")
-        result = (
+        result = await execute_google_request(
             service.users()
             .threads()
             .modify(
@@ -117,7 +116,6 @@ def register(server: FastMCP) -> None:
                     "removeLabelIds": request.remove_label_ids,
                 },
             )
-            .execute()
         )
         return {"status": "ok", "thread": result}
 
@@ -131,7 +129,9 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Moving thread {request.thread_id} to trash.")
-        trashed = service.users().threads().trash(userId="me", id=request.thread_id).execute()
+        trashed = await execute_google_request(
+            service.users().threads().trash(userId="me", id=request.thread_id)
+        )
         return {"status": "ok", "thread": trashed}
 
     @server.tool(name="untrash_thread")
@@ -144,7 +144,9 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Restoring thread {request.thread_id} from trash.")
-        restored = service.users().threads().untrash(userId="me", id=request.thread_id).execute()
+        restored = await execute_google_request(
+            service.users().threads().untrash(userId="me", id=request.thread_id)
+        )
         return {"status": "ok", "thread": restored}
 
     @server.tool(name="delete_thread")
@@ -157,5 +159,5 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Permanently deleting thread {request.thread_id}.")
-        service.users().threads().delete(userId="me", id=request.thread_id).execute()
+        await execute_google_request(service.users().threads().delete(userId="me", id=request.thread_id))
         return {"status": "ok", "thread_id": request.thread_id}

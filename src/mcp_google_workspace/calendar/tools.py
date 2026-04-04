@@ -6,18 +6,20 @@ import io
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytz
 from fastmcp import Context, FastMCP
 from googleapiclient.http import MediaIoBaseDownload
 
 from ..auth import build_calendar_service, build_drive_service
+from ..common.async_ops import execute_google_request, run_blocking, write_bytes_file
 from .schemas import (
     AddEventAttachmentRequest,
     CreateEventRequest,
     DeleteEventRequest,
     DownloadEventAttachmentRequest,
+    EventAttachmentInput,
     FindCommonFreeSlotsRequest,
     FreeBusyRequest,
     GetEventRequest,
@@ -42,6 +44,23 @@ def _validate_and_fix_datetime(dt_string: str | None, timezone_name: str) -> str
         tz = pytz.timezone(timezone_name)
         return tz.localize(dt).isoformat()
     return dt_string
+
+
+def _normalize_participants(
+    participants: list[str] | str,
+) -> list[str]:
+    if isinstance(participants, str):
+        raw = participants.strip()
+        if not raw:
+            return []
+        if raw.startswith("["):
+            import json
+
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    return participants
 
 
 GOOGLE_EXPORT_MIME_DEFAULTS = {
@@ -272,7 +291,7 @@ def register_tools(server: FastMCP) -> None:
         max_results: int = 25,
         single_events: bool = True,
         order_by: str = "startTime",
-        range_preset: str | None = None,
+        range_preset: Literal["today", "tomorrow", "this_week", "next_7_days"] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """List calendar events for a time window.
@@ -292,7 +311,8 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         if ctx is not None:
             await ctx.info(f"Listing events for calendar {request.calendar_id}.")
-        user_timezone = service.settings().get(setting="timezone").execute().get("value", "UTC")
+        timezone_settings = await execute_google_request(service.settings().get(setting="timezone"))
+        user_timezone = timezone_settings.get("value", "UTC")
         preset_min, preset_max = _resolve_relative_range(request.range_preset, user_timezone)
         effective_time_min = request.time_min or preset_min
         effective_time_max = request.time_max or preset_max
@@ -306,10 +326,9 @@ def register_tools(server: FastMCP) -> None:
         # Google Calendar only supports orderBy=startTime when singleEvents=True.
         if request.order_by and (request.single_events or request.order_by == "updated"):
             list_kwargs["orderBy"] = request.order_by
-        result = (
+        result = await execute_google_request(
             service.events()
             .list(**list_kwargs)
-            .execute()
         )
         if request.range_preset:
             result["range_preset"] = request.range_preset
@@ -335,7 +354,7 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         if ctx is not None:
             await ctx.info(f"Reading event {request.event_id}.")
-        event = (
+        event = await execute_google_request(
             service.events()
             .get(
                 calendarId=request.calendar_id,
@@ -343,7 +362,6 @@ def register_tools(server: FastMCP) -> None:
                 timeZone=request.time_zone,
                 maxAttendees=request.max_attendees,
             )
-            .execute()
         )
         return {"event": event}
 
@@ -351,13 +369,13 @@ def register_tools(server: FastMCP) -> None:
     async def list_calendars() -> dict[str, Any]:
         """List calendars visible to the authenticated account."""
         service = build_calendar_service()
-        return service.calendarList().list().execute()
+        return await execute_google_request(service.calendarList().list())
 
     @server.tool(name="get_timezone_info")
     async def get_timezone_info() -> dict[str, Any]:
         """Return user's calendar timezone and current localized time details."""
         service = build_calendar_service()
-        settings = service.settings().get(setting="timezone").execute()
+        settings = await execute_google_request(service.settings().get(setting="timezone"))
         user_tz = settings.get("value", "UTC")
         now_utc = datetime.now(pytz.UTC)
         now_local = now_utc.astimezone(pytz.timezone(user_tz))
@@ -373,7 +391,7 @@ def register_tools(server: FastMCP) -> None:
     async def get_current_date() -> dict[str, Any]:
         """Return current date/time using the account's calendar timezone."""
         service = build_calendar_service()
-        settings = service.settings().get(setting="timezone").execute()
+        settings = await execute_google_request(service.settings().get(setting="timezone"))
         user_tz = settings.get("value", "UTC")
         now_utc = datetime.now(pytz.UTC)
         now_local = now_utc.astimezone(pytz.timezone(user_tz))
@@ -400,7 +418,9 @@ def register_tools(server: FastMCP) -> None:
             timeZone=time_zone,
         )
         service = build_calendar_service()
-        return service.freebusy().query(body=request.model_dump(exclude_none=True)).execute()
+        return await execute_google_request(
+            service.freebusy().query(body=request.model_dump(exclude_none=True))
+        )
 
     @server.tool(name="find_common_free_slots")
     async def find_common_free_slots(
@@ -425,7 +445,7 @@ def register_tools(server: FastMCP) -> None:
         """
         effective_duration = meeting_duration if meeting_duration is not None else slot_duration_minutes
         request = FindCommonFreeSlotsRequest(
-            participants=participants,
+            participants=_normalize_participants(participants),
             time_min=time_min,
             time_max=time_max,
             slot_duration_minutes=effective_duration,
@@ -459,7 +479,7 @@ def register_tools(server: FastMCP) -> None:
         }
         if request.time_zone:
             body["timeZone"] = request.time_zone
-        freebusy_result = service.freebusy().query(body=body).execute()
+        freebusy_result = await execute_google_request(service.freebusy().query(body=body))
 
         calendars = freebusy_result.get("calendars", {})
         all_busy_ranges: list[tuple[datetime, datetime]] = []
@@ -532,16 +552,16 @@ def register_tools(server: FastMCP) -> None:
         description: str | None = None,
         location: str | None = None,
         color_id: str | None = None,
-        visibility: str = "default",
-        transparency: str = "opaque",
+        visibility: Literal["default", "public", "private", "confidential"] = "default",
+        transparency: Literal["opaque", "transparent"] = "opaque",
         conference_data: dict[str, Any] | None = None,
         attendees: list[dict[str, Any]] | None = None,
-        attachments: list[dict[str, Any]] | None = None,
+        attachments: list[EventAttachmentInput] | None = None,
         supports_attachments: bool = True,
         send_updates: str | None = None,
         reminders: dict[str, Any] | None = None,
         recurrence: list[str] | None = None,
-        on_conflict: str = "fail",
+        on_conflict: Literal["fail", "suggest_next_slot"] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a calendar event with optional attendees, reminders, and recurrence."""
@@ -569,6 +589,8 @@ def register_tools(server: FastMCP) -> None:
         timezone_val = request.timezone or "UTC"
         start = _validate_and_fix_datetime(request.start_datetime, timezone_val)
         end = _validate_and_fix_datetime(request.end_datetime, timezone_val)
+        assert start is not None
+        assert end is not None
         body: dict[str, Any] = {
             "summary": request.summary,
             "start": {"dateTime": start, "timeZone": timezone_val},
@@ -594,7 +616,8 @@ def register_tools(server: FastMCP) -> None:
             body["reminders"] = request.reminders
         if request.recurrence:
             body["recurrence"] = request.recurrence
-        conflict_check = _check_time_slot_conflicts(
+        conflict_check = await run_blocking(
+            _check_time_slot_conflicts,
             service,
             request.calendar_id,
             start,
@@ -608,7 +631,8 @@ def register_tools(server: FastMCP) -> None:
                 "conflict_check_error": conflict_check["error"],
             }
             if request.on_conflict == "suggest_next_slot":
-                response["suggested_slots"] = _suggest_next_available_slots(
+                response["suggested_slots"] = await run_blocking(
+                    _suggest_next_available_slots,
                     service=service,
                     calendar_id=request.calendar_id,
                     requested_start=start,
@@ -617,7 +641,7 @@ def register_tools(server: FastMCP) -> None:
             return response
         if ctx is not None:
             await ctx.info(f"Creating event '{request.summary}'.")
-        event = (
+        event = await execute_google_request(
             service.events()
             .insert(
                 calendarId=request.calendar_id,
@@ -626,7 +650,6 @@ def register_tools(server: FastMCP) -> None:
                 supportsAttachments=request.supports_attachments,
                 conferenceDataVersion=1 if body.get("conferenceData") else 0,
             )
-            .execute()
         )
         return {"success": True, "event": event}
 
@@ -641,16 +664,16 @@ def register_tools(server: FastMCP) -> None:
         description: str | None = None,
         location: str | None = None,
         color_id: str | None = None,
-        visibility: str | None = None,
-        transparency: str | None = None,
+        visibility: Literal["default", "public", "private", "confidential"] | None = None,
+        transparency: Literal["opaque", "transparent"] | None = None,
         conference_data: dict[str, Any] | None = None,
         attendees: list[dict[str, Any]] | None = None,
-        attachments: list[dict[str, Any]] | None = None,
+        attachments: list[EventAttachmentInput] | None = None,
         supports_attachments: bool = True,
         reminders: dict[str, Any] | None = None,
         recurrence: list[str] | None = None,
         send_updates: str | None = None,
-        on_conflict: str = "fail",
+        on_conflict: Literal["fail", "suggest_next_slot"] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Patch an existing calendar event with the provided fields."""
@@ -698,17 +721,22 @@ def register_tools(server: FastMCP) -> None:
         if request.attachments is not None:
             patch_data["attachments"] = [a.to_api() for a in request.attachments]
         if request.start_datetime:
+            start_datetime_value = _validate_and_fix_datetime(request.start_datetime, timezone_val)
+            assert start_datetime_value is not None
             patch_data["start"] = {
-                "dateTime": _validate_and_fix_datetime(request.start_datetime, timezone_val),
+                "dateTime": start_datetime_value,
                 "timeZone": timezone_val,
             }
         if request.end_datetime:
+            end_datetime_value = _validate_and_fix_datetime(request.end_datetime, timezone_val)
+            assert end_datetime_value is not None
             patch_data["end"] = {
-                "dateTime": _validate_and_fix_datetime(request.end_datetime, timezone_val),
+                "dateTime": end_datetime_value,
                 "timeZone": timezone_val,
             }
         if patch_data.get("start") and patch_data.get("end"):
-            conflict_check = _check_time_slot_conflicts(
+            conflict_check = await run_blocking(
+                _check_time_slot_conflicts,
                 service,
                 request.calendar_id,
                 patch_data["start"]["dateTime"],
@@ -722,7 +750,8 @@ def register_tools(server: FastMCP) -> None:
                     "conflict_check_error": conflict_check["error"],
                 }
                 if request.on_conflict == "suggest_next_slot":
-                    response["suggested_slots"] = _suggest_next_available_slots(
+                    response["suggested_slots"] = await run_blocking(
+                        _suggest_next_available_slots,
                         service=service,
                         calendar_id=request.calendar_id,
                         requested_start=patch_data["start"]["dateTime"],
@@ -731,7 +760,7 @@ def register_tools(server: FastMCP) -> None:
                 return response
         if ctx is not None:
             await ctx.info(f"Updating event {request.event_id}.")
-        event = (
+        event = await execute_google_request(
             service.events()
             .patch(
                 calendarId=request.calendar_id,
@@ -741,7 +770,6 @@ def register_tools(server: FastMCP) -> None:
                 supportsAttachments=request.supports_attachments,
                 conferenceDataVersion=1 if patch_data.get("conferenceData") else 0,
             )
-            .execute()
         )
         return {"success": True, "event": event}
 
@@ -759,10 +787,9 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         if ctx is not None:
             await ctx.info(f"Listing attachments for event {request.event_id}.")
-        event = (
+        event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
-            .execute()
         )
         attachments = event.get("attachments", [])
         return {"calendar_id": request.calendar_id, "event_id": request.event_id, "attachments": attachments}
@@ -770,7 +797,7 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="add_event_attachment")
     async def add_event_attachment(
         event_id: str,
-        attachment: dict[str, Any],
+        attachment: EventAttachmentInput,
         calendar_id: str = "primary",
         send_updates: str | None = None,
         ctx: Context | None = None,
@@ -785,16 +812,15 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         if ctx is not None:
             await ctx.info(f"Adding attachment to event {request.event_id}.")
-        event = (
+        event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
-            .execute()
         )
         attachments = list(event.get("attachments", []))
         candidate = request.attachment.to_api()
         if not any(isinstance(a, dict) and a.get("fileUrl") == candidate.get("fileUrl") for a in attachments):
             attachments.append(candidate)
-        updated = (
+        updated = await execute_google_request(
             service.events()
             .patch(
                 calendarId=request.calendar_id,
@@ -803,7 +829,6 @@ def register_tools(server: FastMCP) -> None:
                 sendUpdates=request.send_updates,
                 supportsAttachments=True,
             )
-            .execute()
         )
         return {"event": updated}
 
@@ -829,10 +854,9 @@ def register_tools(server: FastMCP) -> None:
             raise ValueError("Provide at least one of file_url or file_id.")
         if ctx is not None:
             await ctx.info(f"Removing attachment from event {request.event_id}.")
-        event = (
+        event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
-            .execute()
         )
         attachments = list(event.get("attachments", []))
         filtered = []
@@ -844,7 +868,7 @@ def register_tools(server: FastMCP) -> None:
             if same_url or same_id:
                 continue
             filtered.append(item)
-        updated = (
+        updated = await execute_google_request(
             service.events()
             .patch(
                 calendarId=request.calendar_id,
@@ -853,7 +877,6 @@ def register_tools(server: FastMCP) -> None:
                 sendUpdates=request.send_updates,
                 supportsAttachments=True,
             )
-            .execute()
         )
         return {"event": updated, "removed_count": len(attachments) - len(filtered)}
 
@@ -882,10 +905,9 @@ def register_tools(server: FastMCP) -> None:
         drive = build_drive_service()
         if ctx is not None:
             await ctx.info(f"Resolving attachment for event {request.event_id}.")
-        event = (
+        event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
-            .execute()
         )
         attachments = event.get("attachments", [])
 
@@ -912,13 +934,15 @@ def register_tools(server: FastMCP) -> None:
         if not file_id_resolved:
             raise ValueError("Could not resolve Drive file_id from attachment metadata.")
 
-        meta = drive.files().get(fileId=file_id_resolved, fields="id,name,mimeType").execute()
+        meta = await execute_google_request(
+            drive.files().get(fileId=file_id_resolved, fields="id,name,mimeType")
+        )
         mime_type = meta.get("mimeType", "")
         name = meta.get("name", file_id_resolved)
         out_path = Path(request.output_path)
-        if out_path.exists() and not request.overwrite:
+        if await run_blocking(out_path.exists) and not request.overwrite:
             raise FileExistsError(f"Output path already exists: {out_path}")
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        await run_blocking(out_path.parent.mkdir, parents=True, exist_ok=True)
 
         if mime_type.startswith("application/vnd.google-apps"):
             export_mime = request.export_mime_type or GOOGLE_EXPORT_MIME_DEFAULTS.get(mime_type)
@@ -938,7 +962,7 @@ def register_tools(server: FastMCP) -> None:
         downloader = MediaIoBaseDownload(buffer, req)
         done = False
         while not done:
-            status, done = downloader.next_chunk()
+            status, done = await run_blocking(downloader.next_chunk)
             if status is not None:
                 if ctx is not None:
                     await ctx.report_progress(
@@ -948,7 +972,7 @@ def register_tools(server: FastMCP) -> None:
                     )
 
         data = buffer.getvalue()
-        out_path.write_bytes(data)
+        await write_bytes_file(out_path, data)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Attachment saved")
         return {
@@ -980,6 +1004,8 @@ def register_tools(server: FastMCP) -> None:
             force=force,
         )
         if not request.force:
+            if ctx is None:
+                raise RuntimeError("delete_event requires MCP context for confirmation.")
             response = await ctx.elicit(
                 f"Delete event {request.event_id} from calendar {request.calendar_id}?",
                 response_type=bool,  # type: ignore[arg-type]
@@ -987,9 +1013,11 @@ def register_tools(server: FastMCP) -> None:
             if response.action != "accept" or not bool(response.data):
                 return {"status": "cancelled"}
         service = build_calendar_service()
-        service.events().delete(
-            calendarId=request.calendar_id,
-            eventId=request.event_id,
-            sendUpdates=request.send_updates,
-        ).execute()
+        await execute_google_request(
+            service.events().delete(
+                calendarId=request.calendar_id,
+                eventId=request.event_id,
+                sendUpdates=request.send_updates,
+            )
+        )
         return {"success": True, "event_id": request.event_id}

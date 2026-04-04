@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import inspect
-from typing import Any
+from typing import Any, Protocol, cast
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+
+
+class _ToolComponent(Protocol):
+    name: str
+    title: str | None
+    description: str | None
+    tags: set[str]
+    parameters: dict[str, Any] | None
+    fn: Any
+    annotations: ToolAnnotations | Mapping[str, Any] | None
 
 _NAMESPACES = {
     "apps",
@@ -16,6 +26,7 @@ _NAMESPACES = {
     "docs",
     "drive",
     "forms",
+    "gemini",
     "gmail",
     "keep",
     "meet",
@@ -140,6 +151,117 @@ _IDEMPOTENT_TOOLS = {
     "update_vacation_settings",
 }
 
+_NAMESPACE_TITLES = {
+    "apps": "Workspace Apps",
+    "calendar": "Calendar",
+    "chat": "Chat",
+    "docs": "Docs",
+    "drive": "Drive",
+    "forms": "Forms",
+    "gemini": "Gemini",
+    "gmail": "Gmail",
+    "keep": "Keep",
+    "meet": "Meet",
+    "people": "People",
+    "sheets": "Sheets",
+    "slides": "Slides",
+    "tasks": "Tasks",
+}
+
+_NAMESPACE_TAGS = {
+    "apps": {"dashboard", "workspace-ui", "assistant-workflow"},
+    "calendar": {"calendar", "events", "schedule", "meetings"},
+    "chat": {"chat", "messaging", "spaces", "channels"},
+    "docs": {"documents", "docs", "writing"},
+    "drive": {"drive", "storage", "files", "folders", "shared-drive"},
+    "forms": {"forms", "surveys"},
+    "gemini": {"ai", "llm", "generation"},
+    "gmail": {"gmail", "email", "mail", "inbox", "messages"},
+    "keep": {"keep", "notes", "checklists"},
+    "meet": {"meet", "video", "conference"},
+    "people": {"people", "contacts", "directory"},
+    "sheets": {"sheets", "spreadsheets", "tables"},
+    "slides": {"slides", "presentations", "decks"},
+    "tasks": {"tasks", "todos", "task-management"},
+}
+
+_TAG_STOPWORDS = {"a", "an", "as", "by", "for", "from", "in", "of", "the", "to"}
+
+_TAG_SYNONYMS = {
+    "add": {"append", "insert"},
+    "apply": {"assign"},
+    "archive": {"hide"},
+    "attachment": {"file", "files", "downloadable"},
+    "batch": {"bulk", "multiple"},
+    "bcc": {"blind-copy"},
+    "calendar": {"schedule"},
+    "cc": {"copy-recipient"},
+    "check": {"availability", "validate"},
+    "copy": {"duplicate", "clone"},
+    "create": {"new", "add"},
+    "delete": {"remove", "erase"},
+    "document": {"doc", "docs"},
+    "download": {"save", "export"},
+    "draft": {"drafts", "compose"},
+    "drive": {"storage"},
+    "email": {"mail", "message"},
+    "event": {"calendar-event", "meeting"},
+    "export": {"download", "convert"},
+    "file": {"document", "content"},
+    "filter": {"rule", "rules"},
+    "find": {"search", "lookup"},
+    "folder": {"directory"},
+    "forwarding": {"routing", "forward"},
+    "get": {"fetch", "retrieve", "lookup", "view", "details"},
+    "label": {"labels", "tag", "tags"},
+    "list": {"browse", "enumerate", "index"},
+    "mark": {"status"},
+    "message": {"messages", "email", "mail"},
+    "move": {"relocate", "transfer"},
+    "note": {"notes"},
+    "patch": {"update", "modify"},
+    "permission": {"permissions", "sharing", "access"},
+    "person": {"contact", "contacts"},
+    "post": {"send", "publish"},
+    "read": {"view", "inspect", "lookup"},
+    "reply": {"respond"},
+    "search": {"find", "query", "lookup"},
+    "send": {"deliver", "compose"},
+    "sheet": {"spreadsheet"},
+    "slides": {"presentation", "deck"},
+    "space": {"room", "channel"},
+    "task": {"todo", "todos"},
+    "thread": {"conversation", "conversations"},
+    "trash": {"delete", "bin"},
+    "untrash": {"restore"},
+    "update": {"edit", "modify"},
+    "upload": {"import", "attach"},
+}
+
+_ACTION_OBJECT_FALLBACKS = {
+    "calendar": "event",
+    "chat": "message",
+    "drive": "file",
+    "gmail": "email",
+    "keep": "note",
+    "tasks": "task",
+}
+
+_SPECIAL_TOOL_DESCRIPTIONS = {
+    "get_current_date": "Get the current date and time in the user's configured calendar timezone.",
+    "get_timezone_info": "Get the user's calendar timezone and localized current time details.",
+    "mark_as_not_spam": "Mark the Gmail message as not spam and optionally return it to the inbox.",
+    "mark_as_read": "Mark the Gmail message as read.",
+    "mark_as_spam": "Mark the Gmail message as spam.",
+    "mark_as_unread": "Mark the Gmail message as unread.",
+    "next_range": "Move the workspace dashboard or calendar view to the next date range.",
+    "patch_state": "Update the workspace dashboard session state with a partial patch.",
+    "prev_range": "Move the workspace dashboard or calendar view to the previous date range.",
+    "today": "Move the workspace dashboard or calendar view back to today.",
+    "untrash_email": "Restore the Gmail message from trash.",
+    "untrash_thread": "Restore the Gmail thread from trash.",
+}
+
 
 def _server_namespace(server: FastMCP) -> str | None:
     prefix, _, _ = server.name.partition("-")
@@ -161,16 +283,31 @@ def _base_tool_name(name: str, namespace_hint: str | None = None) -> str:
     return _split_tool_name(name, namespace_hint=namespace_hint)[1]
 
 
+def _humanize_segment(segment: str) -> str:
+    special = {
+        "api": "API",
+        "bcc": "BCC",
+        "cc": "CC",
+        "csv": "CSV",
+        "html": "HTML",
+        "id": "ID",
+        "ids": "IDs",
+        "json": "JSON",
+        "pdf": "PDF",
+        "rsvp": "RSVP",
+        "ui": "UI",
+        "uri": "URI",
+        "url": "URL",
+    }
+    return special.get(segment, segment.upper() if segment.isupper() else segment.capitalize())
+
+
 def _humanize_tool_title(name: str, namespace_hint: str | None = None) -> str:
     namespace, base_name = _split_tool_name(name, namespace_hint=namespace_hint)
-    words = [
-        segment.upper() if segment.isupper() else segment.capitalize()
-        for segment in base_name.split("_")
-        if segment
-    ]
+    words = [_humanize_segment(segment) for segment in base_name.split("_") if segment]
     if namespace is None:
         return " ".join(words) or name
-    namespace_title = "Google Chat" if namespace == "chat" else namespace.capitalize()
+    namespace_title = _NAMESPACE_TITLES.get(namespace, namespace.capitalize())
     return f"{namespace_title} {' '.join(words)}".strip()
 
 
@@ -179,17 +316,15 @@ def _tool_tags(name: str, namespace_hint: str | None = None) -> set[str]:
     tags = {"google-workspace"}
     if namespace is not None:
         tags.add(namespace)
-    tags.update(segment for segment in base_name.split("_") if segment)
-    if "list" in tags:
-        tags.add("browse")
-    if "get" in tags or "read" in tags:
-        tags.add("lookup")
-    if namespace == "drive":
-        tags.update({"files", "folders", "shared-drive"})
-    elif namespace == "gmail":
-        tags.update({"email", "mail", "inbox"})
-    elif namespace == "calendar":
-        tags.update({"events", "schedule"})
+        tags.update(_NAMESPACE_TAGS.get(namespace, set()))
+        tags.add(f"google-{namespace}")
+    parts = [segment for segment in base_name.split("_") if segment and segment not in _TAG_STOPWORDS]
+    tags.update(parts)
+    tags.add(base_name.replace("_", "-"))
+    for segment in parts:
+        tags.update(_TAG_SYNONYMS.get(segment, set()))
+    if len(parts) > 1:
+        tags.add(" ".join(parts))
     return tags
 
 
@@ -228,22 +363,23 @@ def _merge_annotations(existing: ToolAnnotations | Mapping[str, Any] | None, *, 
     idempotent = _is_idempotent(base_name, read_only=read_only)
     open_world = _open_world(base_name)
 
-    return ToolAnnotations(
+    annotations = ToolAnnotations(
         title=current.title if current is not None else None,
         readOnlyHint=read_only if current is None or current.readOnlyHint is None else current.readOnlyHint,
         destructiveHint=destructive if current is None or current.destructiveHint is None else current.destructiveHint,
         idempotentHint=idempotent if current is None or current.idempotentHint is None else current.idempotentHint,
         openWorldHint=open_world if current is None or current.openWorldHint is None else current.openWorldHint,
-        _meta=current._meta if current is not None else None,
     )
+    existing_meta = getattr(current, "_meta", None) if current is not None else None
+    if existing_meta is not None:
+        setattr(annotations, "_meta", existing_meta)
+    return annotations
 
 
 def _namespace_display(namespace: str | None) -> str:
-    if namespace == "chat":
-        return "Google Chat"
     if namespace is None:
         return "Google Workspace"
-    return f"Google {namespace.capitalize()}"
+    return _NAMESPACE_TITLES.get(namespace, f"Google {namespace.capitalize()}")
 
 
 def _tool_subject(base_name: str) -> str:
@@ -254,7 +390,7 @@ def _tool_subject(base_name: str) -> str:
     remainder = " ".join(words[1:]).strip()
     if verb in {"get", "list", "search", "read", "download", "export", "summarize", "check", "find"} and remainder:
         return remainder
-    if verb in {"create", "update", "delete", "move", "copy", "share", "unshare", "mark", "set", "patch", "respond", "reschedule", "cancel", "upload", "send", "add", "remove", "replace", "modify", "complete", "archive", "unarchive", "trash", "untrash", "reply", "hide", "unhide", "post", "append"} and remainder:
+    if verb in {"create", "update", "delete", "move", "copy", "share", "unshare", "mark", "set", "patch", "respond", "reschedule", "cancel", "upload", "send", "add", "remove", "replace", "modify", "complete", "archive", "unarchive", "trash", "untrash", "reply", "hide", "unhide", "post", "append", "generate"} and remainder:
         return remainder
     return base_name.replace("_", " ")
 
@@ -305,8 +441,13 @@ _COMMON_PARAMETER_DESCRIPTIONS = {
 
 def _infer_tool_description(name: str, namespace_hint: str | None = None) -> str:
     namespace, base_name = _split_tool_name(name, namespace_hint=namespace_hint)
+    if base_name in _SPECIAL_TOOL_DESCRIPTIONS:
+        return _SPECIAL_TOOL_DESCRIPTIONS[base_name]
+
     namespace_display = _namespace_display(namespace)
     subject = _tool_subject(base_name)
+    default_object = _ACTION_OBJECT_FALLBACKS.get(namespace, "resource") if namespace is not None else "resource"
+
     if base_name.startswith("list_"):
         return f"List {subject} from {namespace_display}."
     if base_name.startswith("get_"):
@@ -315,12 +456,26 @@ def _infer_tool_description(name: str, namespace_hint: str | None = None) -> str
         return f"Search {namespace_display} for {subject}."
     if base_name.startswith("read_"):
         return f"Read {subject} from {namespace_display}."
+    if base_name.startswith("find_"):
+        return f"Find available {subject} in {namespace_display}."
     if base_name.startswith("create_"):
         return f"Create {subject} in {namespace_display}."
     if base_name.startswith("update_"):
         return f"Update {subject} in {namespace_display}."
+    if base_name.startswith("patch_"):
+        return f"Apply a partial update to {subject} in {namespace_display}."
     if base_name.startswith("delete_"):
         return f"Delete {subject} from {namespace_display}."
+    if base_name.startswith("batch_delete"):
+        return f"Delete multiple {default_object}s in {namespace_display}."
+    if base_name.startswith("batch_modify"):
+        return f"Apply bulk updates to multiple {default_object}s in {namespace_display}."
+    if base_name.startswith("add_"):
+        return f"Add {subject} in {namespace_display}."
+    if base_name.startswith("append_"):
+        return f"Append {subject} in {namespace_display}."
+    if base_name.startswith("apply_"):
+        return f"Apply {subject} in {namespace_display}."
     if base_name.startswith("move_"):
         return f"Move {subject} in {namespace_display}."
     if base_name.startswith("copy_"):
@@ -331,14 +486,35 @@ def _infer_tool_description(name: str, namespace_hint: str | None = None) -> str
         return f"Download {subject} from {namespace_display}."
     if base_name.startswith("export_"):
         return f"Export {subject} from {namespace_display}."
+    if base_name.startswith("generate_"):
+        return f"Generate {subject} with {namespace_display}."
     if base_name.startswith("send_"):
         return f"Send {subject} with {namespace_display}."
+    if base_name.startswith("mark_as_"):
+        state = base_name.removeprefix("mark_as_").replace("_", " ")
+        return f"Mark the {default_object} as {state} in {namespace_display}."
     if base_name.startswith("mark_"):
         return f"Update the status of {subject} in {namespace_display}."
     if base_name.startswith("respond_"):
         return f"Respond to {subject} in {namespace_display}."
+    if base_name.startswith("reply_"):
+        return f"Reply to {subject} in {namespace_display}."
+    if base_name.startswith("remove_"):
+        return f"Remove {subject} from {namespace_display}."
     if base_name.startswith("reschedule_"):
         return f"Reschedule {subject} in {namespace_display}."
+    if base_name.startswith("share_"):
+        return f"Share {subject} from {namespace_display}."
+    if base_name.startswith("unshare_"):
+        return f"Remove sharing from {subject} in {namespace_display}."
+    if base_name.startswith("hide_"):
+        return f"Hide {subject} in {namespace_display}."
+    if base_name.startswith("unhide_"):
+        return f"Unhide {subject} in {namespace_display}."
+    if base_name.startswith("trash_"):
+        return f"Move the {subject} to trash in {namespace_display}."
+    if base_name.startswith("untrash_"):
+        return f"Restore the {subject} from trash in {namespace_display}."
     if base_name.startswith("summarize_"):
         return f"Summarize {subject} from {namespace_display}."
     return f"Run the {base_name.replace('_', ' ')} operation in {namespace_display}."
@@ -448,15 +624,16 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
     for component_id, component in server._local_provider._components.items():
         if not component_id.startswith("tool:"):
             continue
-        derived_title = _humanize_tool_title(component.name, namespace_hint=namespace_hint)
-        base_title = _humanize_tool_title(_base_tool_name(component.name), namespace_hint=None)
-        if component.title in {None, "", base_title}:
-            component.title = derived_title
-        if not (component.description or "").strip():
-            component.description = _infer_tool_description(component.name, namespace_hint=namespace_hint)
-        component.tags.update(_tool_tags(component.name, namespace_hint=namespace_hint))
-        _enrich_parameters_schema(component, namespace_hint=namespace_hint)
-        component.annotations = _merge_annotations(
-            component.annotations,
-            base_name=_base_tool_name(component.name, namespace_hint=namespace_hint),
+        tool_component = cast(_ToolComponent, component)
+        derived_title = _humanize_tool_title(tool_component.name, namespace_hint=namespace_hint)
+        base_title = _humanize_tool_title(_base_tool_name(tool_component.name), namespace_hint=None)
+        if tool_component.title in {None, "", base_title}:
+            tool_component.title = derived_title
+        if not (tool_component.description or "").strip():
+            tool_component.description = _infer_tool_description(tool_component.name, namespace_hint=namespace_hint)
+        tool_component.tags.update(_tool_tags(tool_component.name, namespace_hint=namespace_hint))
+        _enrich_parameters_schema(tool_component, namespace_hint=namespace_hint)
+        tool_component.annotations = _merge_annotations(
+            tool_component.annotations,
+            base_name=_base_tool_name(tool_component.name, namespace_hint=namespace_hint),
         )

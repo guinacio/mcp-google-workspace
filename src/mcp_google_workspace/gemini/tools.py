@@ -8,6 +8,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ..common.async_ops import run_blocking
 from ..drive.client import download_media_to_bytes, drive_service
 from ..runtime import get_runtime_settings
 from .client import GeminiMediaClient
@@ -254,7 +255,7 @@ def register_tools(server: FastMCP) -> None:
         )
         await _report_tool_start(ctx, "Starting Gemini image generation.")
         await _report_tool_progress(ctx, 10, 100, "Generating image")
-        payload = generate_image_payload(request)
+        payload = await run_blocking(generate_image_payload, request)
         LOGGER.info(
             "Gemini image generation completed model=%s output=%s",
             payload["model"],
@@ -284,7 +285,7 @@ def register_tools(server: FastMCP) -> None:
         )
         await _report_tool_start(ctx, "Starting Gemini image edit.")
         await _report_tool_progress(ctx, 10, 100, "Preparing image input")
-        payload = edit_image_payload(request)
+        payload = await run_blocking(edit_image_payload, request)
         LOGGER.info(
             "Gemini image edit completed model=%s source=%s output=%s",
             payload["model"],
@@ -311,7 +312,7 @@ def register_tools(server: FastMCP) -> None:
         )
         await _report_tool_start(ctx, "Starting Gemini video understanding.")
         await _report_tool_progress(ctx, 10, 100, "Preparing video input")
-        payload = describe_video_payload(request)
+        payload = await run_blocking(describe_video_payload, request)
         LOGGER.info(
             "Gemini video understanding completed model=%s source=%s",
             payload["model"],
@@ -337,7 +338,7 @@ def register_tools(server: FastMCP) -> None:
         )
         await _report_tool_start(ctx, "Starting Gemini audio understanding.")
         await _report_tool_progress(ctx, 10, 100, "Preparing audio input")
-        payload = analyze_audio_payload(request)
+        payload = await run_blocking(analyze_audio_payload, request)
         LOGGER.info(
             "Gemini audio understanding completed model=%s source=%s",
             payload["model"],

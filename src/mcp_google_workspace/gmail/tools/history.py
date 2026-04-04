@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..schemas import ListHistoryRequest
 
@@ -14,7 +15,9 @@ def register(server: FastMCP) -> None:
     @server.tool(name="list_history")
     async def list_history(
         start_history_id: str,
-        history_types: list[str] = [],
+        history_types: list[
+            Literal["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]
+        ] | None = None,
         label_id: str | None = None,
         max_results: int = 100,
         page_token: str | None = None,
@@ -23,7 +26,7 @@ def register(server: FastMCP) -> None:
         """List mailbox history events starting at a given history ID."""
         request = ListHistoryRequest(
             start_history_id=start_history_id,
-            history_types=history_types,
+            history_types=history_types or [],
             label_id=label_id,
             max_results=max_results,
             page_token=page_token,
@@ -31,7 +34,7 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Listing Gmail history from {request.start_history_id}.")
-        result = (
+        result = await execute_google_request(
             service.users()
             .history()
             .list(
@@ -42,7 +45,6 @@ def register(server: FastMCP) -> None:
                 maxResults=request.max_results,
                 pageToken=request.page_token,
             )
-            .execute()
         )
         history = result.get("history", [])
         if ctx is not None:

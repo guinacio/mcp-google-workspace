@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..schemas import CreateFilterRequest, DeleteFilterRequest, FilterActionInput, FilterCriteriaInput
 
@@ -16,14 +17,14 @@ def register(server: FastMCP) -> None:
         """List Gmail server-side filters (rules)."""
         service = gmail_service()
         await ctx.info("Listing Gmail filters.")
-        result = service.users().settings().filters().list(userId="me").execute()
+        result = await execute_google_request(service.users().settings().filters().list(userId="me"))
         filters = result.get("filter", [])
         return {"filters": filters, "count": len(filters)}
 
     @server.tool(name="create_filter")
     async def create_filter(
-        criteria: dict[str, Any],
-        action: dict[str, Any],
+        criteria: FilterCriteriaInput,
+        action: FilterActionInput,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a Gmail filter from criteria and action blocks."""
@@ -41,12 +42,11 @@ def register(server: FastMCP) -> None:
 
         if ctx is not None:
             await ctx.info("Creating Gmail filter.")
-        created = (
+        created = await execute_google_request(
             service.users()
             .settings()
             .filters()
             .create(userId="me", body={"criteria": criteria_api, "action": action_api})
-            .execute()
         )
         return {"filter": created}
 
@@ -60,5 +60,7 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Deleting Gmail filter {request.filter_id}.")
-        service.users().settings().filters().delete(userId="me", id=request.filter_id).execute()
+        await execute_google_request(
+            service.users().settings().filters().delete(userId="me", id=request.filter_id)
+        )
         return {"status": "ok", "filter_id": request.filter_id}

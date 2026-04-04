@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ..common.async_ops import execute_google_request
 from .client import keep_service, normalize_note_name
 from .schemas import (
     AppendNoteRequest,
@@ -90,7 +91,7 @@ def register_tools(server: FastMCP) -> None:
 
         note = _build_note_body(request)
         await ctx.info("Creating Google Keep note.")
-        created = service.notes().create(body=note).execute()
+        created = await execute_google_request(service.notes().create(body=note))
 
         if request.collaborator_emails:
             await ctx.info("Applying collaborator permissions.")
@@ -102,9 +103,11 @@ def register_tools(server: FastMCP) -> None:
                 }
                 for email in request.collaborator_emails
             ]
-            service.notes().permissions().batchCreate(
-                parent=parent, body={"requests": create_requests}
-            ).execute()
+            await execute_google_request(
+                service.notes().permissions().batchCreate(
+                    parent=parent, body={"requests": create_requests}
+                )
+            )
 
         return {"status": "ok", "note": created}
 
@@ -113,20 +116,19 @@ def register_tools(server: FastMCP) -> None:
         service = keep_service()
         name = normalize_note_name(request.note_name)
         await ctx.info(f"Fetching Keep note {name}.")
-        return service.notes().get(name=name).execute()
+        return await execute_google_request(service.notes().get(name=name))
 
     @server.tool(name="list_notes")
     async def list_notes(request: ListNotesRequest, ctx: Context) -> dict[str, Any]:
         service = keep_service()
         await ctx.info("Listing Keep notes.")
-        result = (
+        result = await execute_google_request(
             service.notes()
             .list(
                 filter=request.filter,
                 pageSize=request.page_size,
                 pageToken=request.page_token,
             )
-            .execute()
         )
         notes = result.get("notes", [])
         await ctx.report_progress(len(notes), request.page_size, "Keep notes page loaded")
@@ -147,7 +149,7 @@ def register_tools(server: FastMCP) -> None:
             )
             if response.action != "accept" or not bool(response.data):
                 return {"status": "cancelled"}
-        service.notes().delete(name=name).execute()
+        await execute_google_request(service.notes().delete(name=name))
         return {"status": "ok", "note_name": name}
 
     @server.tool(name="update_note")
@@ -243,7 +245,7 @@ def register_tools(server: FastMCP) -> None:
         service = keep_service()
         source_name = normalize_note_name(request.note_name)
         await ctx.info(f"Preparing append operation for Keep note {source_name}.")
-        original = service.notes().get(name=source_name).execute()
+        original = await execute_google_request(service.notes().get(name=source_name))
         existing_text = _extract_note_text(original)
         existing_checklist = _extract_note_checklist(original)
         title = original.get("title")
@@ -272,7 +274,7 @@ def register_tools(server: FastMCP) -> None:
             return response
 
         await ctx.warning("Applying replacement-note workflow (create new note).")
-        created = service.notes().create(body=replacement_note).execute()
+        created = await execute_google_request(service.notes().create(body=replacement_note))
         response.update(
             {
                 "status": "applied",
@@ -280,7 +282,7 @@ def register_tools(server: FastMCP) -> None:
             }
         )
         if request.delete_original_on_apply:
-            service.notes().delete(name=source_name).execute()
+            await execute_google_request(service.notes().delete(name=source_name))
             response["original_deleted"] = True
         return response
 
@@ -290,7 +292,7 @@ def register_tools(server: FastMCP) -> None:
         service = keep_service()
         source_name = normalize_note_name(request.note_name)
         await ctx.info(f"Preparing checklist patch for Keep note {source_name}.")
-        original = service.notes().get(name=source_name).execute()
+        original = await execute_google_request(service.notes().get(name=source_name))
         title = original.get("title")
         checklist = _extract_note_checklist(original)
 
@@ -329,7 +331,7 @@ def register_tools(server: FastMCP) -> None:
             return response
 
         await ctx.warning("Applying replacement-note checklist patch (create new note).")
-        created = service.notes().create(body=replacement_note).execute()
+        created = await execute_google_request(service.notes().create(body=replacement_note))
         response.update(
             {
                 "status": "applied",
@@ -337,7 +339,7 @@ def register_tools(server: FastMCP) -> None:
             }
         )
         if request.delete_original_on_apply:
-            service.notes().delete(name=source_name).execute()
+            await execute_google_request(service.notes().delete(name=source_name))
             response["original_deleted"] = True
         return response
 
@@ -353,9 +355,11 @@ def register_tools(server: FastMCP) -> None:
             }
             for email in request.collaborator_emails
         ]
-        result = service.notes().permissions().batchCreate(
-            parent=note_name, body={"requests": create_requests}
-        ).execute()
+        result = await execute_google_request(
+            service.notes().permissions().batchCreate(
+                parent=note_name, body={"requests": create_requests}
+            )
+        )
         return {"status": "ok", "result": result}
 
     @server.tool(name="unshare_note")
@@ -363,8 +367,10 @@ def register_tools(server: FastMCP) -> None:
         service = keep_service()
         note_name = normalize_note_name(request.note_name)
         await ctx.info(f"Removing collaborators from {note_name}.")
-        service.notes().permissions().batchDelete(
-            parent=note_name,
-            body={"names": request.permission_names},
-        ).execute()
+        await execute_google_request(
+            service.notes().permissions().batchDelete(
+                parent=note_name,
+                body={"names": request.permission_names},
+            )
+        )
         return {"status": "ok", "removed_permissions": request.permission_names}

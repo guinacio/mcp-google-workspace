@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..schemas import MarkNotSpamRequest, MessageIdRequest
 
@@ -21,10 +22,12 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Restoring message {request.message_id} from trash.")
-        restored = service.users().messages().untrash(
-            userId="me",
-            id=request.message_id,
-        ).execute()
+        restored = await execute_google_request(
+            service.users().messages().untrash(
+                userId="me",
+                id=request.message_id,
+            )
+        )
         return {"status": "ok", "message": restored}
 
     @server.tool(name="mark_as_spam")
@@ -37,14 +40,16 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Marking message {request.message_id} as spam.")
-        result = service.users().messages().modify(
-            userId="me",
-            id=request.message_id,
-            body={
-                "addLabelIds": ["SPAM"],
-                "removeLabelIds": ["INBOX"],
-            },
-        ).execute()
+        result = await execute_google_request(
+            service.users().messages().modify(
+                userId="me",
+                id=request.message_id,
+                body={
+                    "addLabelIds": ["SPAM"],
+                    "removeLabelIds": ["INBOX"],
+                },
+            )
+        )
         return {"status": "ok", "message": result}
 
     @server.tool(name="mark_as_not_spam")
@@ -59,12 +64,14 @@ def register(server: FastMCP) -> None:
         if ctx is not None:
             await ctx.info(f"Marking message {request.message_id} as not spam.")
         add_label_ids = ["INBOX"] if request.add_to_inbox else []
-        result = service.users().messages().modify(
-            userId="me",
-            id=request.message_id,
-            body={
-                "addLabelIds": add_label_ids,
-                "removeLabelIds": ["SPAM"],
-            },
-        ).execute()
+        result = await execute_google_request(
+            service.users().messages().modify(
+                userId="me",
+                id=request.message_id,
+                body={
+                    "addLabelIds": add_label_ids,
+                    "removeLabelIds": ["SPAM"],
+                },
+            )
+        )
         return {"status": "ok", "message": result}

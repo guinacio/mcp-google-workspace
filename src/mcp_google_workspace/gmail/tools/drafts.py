@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..mime_utils import build_email_message, email_to_gmail_raw
 from ..schemas import (
+    AttachmentInput,
     CreateDraftRequest,
     DeleteDraftRequest,
     GetDraftRequest,
     ListDraftsRequest,
+    RecipientSet,
     SendDraftRequest,
     UpdateDraftRequest,
 )
@@ -51,6 +54,19 @@ def _attachment_payloads(items: list[Any]) -> list[dict[str, str]]:
     ]
 
 
+def _recipient_set(
+    *,
+    to: list[str] | None = None,
+    cc: list[str] | None = None,
+    bcc: list[str] | None = None,
+) -> RecipientSet:
+    return RecipientSet(to=to or [], cc=cc or [], bcc=bcc or [])
+
+
+def _attachment_inputs(items: list[dict[str, Any]] | None) -> list[AttachmentInput]:
+    return [AttachmentInput.model_validate(item) for item in (items or [])]
+
+
 def register(server: FastMCP) -> None:
     @server.tool(name="list_drafts")
     async def list_drafts(
@@ -68,7 +84,7 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info("Listing Gmail drafts.")
-        result = (
+        result = await execute_google_request(
             service.users()
             .drafts()
             .list(
@@ -77,7 +93,6 @@ def register(server: FastMCP) -> None:
                 pageToken=request.page_token,
                 includeSpamTrash=request.include_spam_trash,
             )
-            .execute()
         )
         drafts = result.get("drafts", [])
         if ctx is not None:
@@ -91,20 +106,20 @@ def register(server: FastMCP) -> None:
     @server.tool(name="get_draft")
     async def get_draft(
         draft_id: str,
-        format: str = "full",
-        metadata_headers: list[str] = [],
+        format: Literal["full", "metadata", "minimal", "raw"] = "full",
+        metadata_headers: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Fetch a single draft and its underlying message metadata/body payload."""
         request = GetDraftRequest(
             draft_id=draft_id,
             format=format,
-            metadata_headers=metadata_headers,
+            metadata_headers=metadata_headers or [],
         )
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Reading draft {request.draft_id}.")
-        draft = (
+        draft = await execute_google_request(
             service.users()
             .drafts()
             .get(
@@ -112,7 +127,6 @@ def register(server: FastMCP) -> None:
                 id=request.draft_id,
                 format=request.format,
             )
-            .execute()
         )
         message = draft.get("message", {})
         return {
@@ -127,22 +141,22 @@ def register(server: FastMCP) -> None:
     @server.tool(name="create_draft")
     async def create_draft(
         subject: str,
-        to: list[str] = [],
-        cc: list[str] = [],
-        bcc: list[str] = [],
+        to: list[str] | None = None,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
         text_body: str | None = None,
         html_body: str | None = None,
-        attachments: list[dict[str, Any]] = [],
+        attachments: list[dict[str, Any]] | None = None,
         thread_id: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a draft message from recipients, content, and optional attachments."""
         request = CreateDraftRequest(
-            recipients={"to": to, "cc": cc, "bcc": bcc},
+            recipients=_recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=attachments,
+            attachments=_attachment_inputs(attachments),
             thread_id=thread_id,
         )
         service = gmail_service()
@@ -160,11 +174,10 @@ def register(server: FastMCP) -> None:
         message_payload: dict[str, Any] = {"raw": raw}
         if request.thread_id:
             message_payload["threadId"] = request.thread_id
-        created = (
+        created = await execute_google_request(
             service.users()
             .drafts()
             .create(userId="me", body={"message": message_payload})
-            .execute()
         )
         return {"draft": created}
 
@@ -172,23 +185,23 @@ def register(server: FastMCP) -> None:
     async def update_draft(
         draft_id: str,
         subject: str,
-        to: list[str] = [],
-        cc: list[str] = [],
-        bcc: list[str] = [],
+        to: list[str] | None = None,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
         text_body: str | None = None,
         html_body: str | None = None,
-        attachments: list[dict[str, Any]] = [],
+        attachments: list[dict[str, Any]] | None = None,
         thread_id: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Replace an existing draft's message payload."""
         request = UpdateDraftRequest(
             draft_id=draft_id,
-            recipients={"to": to, "cc": cc, "bcc": bcc},
+            recipients=_recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=attachments,
+            attachments=_attachment_inputs(attachments),
             thread_id=thread_id,
         )
         service = gmail_service()
@@ -206,7 +219,7 @@ def register(server: FastMCP) -> None:
         message_payload: dict[str, Any] = {"raw": raw}
         if request.thread_id:
             message_payload["threadId"] = request.thread_id
-        updated = (
+        updated = await execute_google_request(
             service.users()
             .drafts()
             .update(
@@ -214,7 +227,6 @@ def register(server: FastMCP) -> None:
                 id=request.draft_id,
                 body={"id": request.draft_id, "message": message_payload},
             )
-            .execute()
         )
         return {"draft": updated}
 
@@ -228,7 +240,7 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Deleting Gmail draft {request.draft_id}.")
-        service.users().drafts().delete(userId="me", id=request.draft_id).execute()
+        await execute_google_request(service.users().drafts().delete(userId="me", id=request.draft_id))
         return {"status": "ok", "draft_id": request.draft_id}
 
     @server.tool(name="send_draft")
@@ -241,11 +253,10 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Sending Gmail draft {request.draft_id}.")
-        sent = (
+        sent = await execute_google_request(
             service.users()
             .drafts()
             .send(userId="me", body={"id": request.draft_id})
-            .execute()
         )
         return {
             "status": "sent",

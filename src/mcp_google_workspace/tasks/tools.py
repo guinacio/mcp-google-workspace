@@ -18,6 +18,7 @@ from .schemas import (
     ListTasksRequest,
     ListTasklistsRequest,
     MoveTaskRequest,
+    TaskStatus,
     UpdateTaskRequest,
 )
 
@@ -169,7 +170,7 @@ def register_tools(server: FastMCP) -> None:
         due: str | None = None,
         parent: str | None = None,
         previous: str | None = None,
-        status: str = "needsAction",
+        status: TaskStatus = "needsAction",
     ) -> dict[str, Any]:
         return create_task_payload(
             CreateTaskRequest(
@@ -190,7 +191,7 @@ def register_tools(server: FastMCP) -> None:
         title: str | None = None,
         notes: str | None = None,
         due: str | None = None,
-        status: str | None = None,
+        status: TaskStatus | None = None,
         completed: str | None = None,
         deleted: bool | None = None,
         hidden: bool | None = None,

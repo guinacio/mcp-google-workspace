@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..schemas import LabelCreateRequest, LabelDeleteRequest, LabelUpdateRequest, ModifyMessageRequest
 
 
 def _label_payload(
     name: str | None,
-    message_list_visibility: str | None,
-    label_list_visibility: str | None,
+    message_list_visibility: Literal["show", "hide"] | None,
+    label_list_visibility: Literal["labelShow", "labelShowIfUnread", "labelHide"] | None,
     background_color: str | None,
     text_color: str | None,
 ) -> dict[str, Any]:
@@ -39,14 +40,15 @@ def register(server: FastMCP) -> None:
         """List all Gmail labels available in the mailbox."""
         service = gmail_service()
         await ctx.info("Listing Gmail labels.")
-        labels = service.users().labels().list(userId="me").execute().get("labels", [])
+        result = await execute_google_request(service.users().labels().list(userId="me"))
+        labels = result.get("labels", [])
         return {"labels": labels, "count": len(labels)}
 
     @server.tool(name="create_label")
     async def create_label(
         name: str,
-        message_list_visibility: str | None = None,
-        label_list_visibility: str | None = None,
+        message_list_visibility: Literal["show", "hide"] | None = None,
+        label_list_visibility: Literal["labelShow", "labelShowIfUnread", "labelHide"] | None = None,
         background_color: str | None = None,
         text_color: str | None = None,
         ctx: Context | None = None,
@@ -69,15 +71,17 @@ def register(server: FastMCP) -> None:
         )
         if ctx is not None:
             await ctx.info(f"Creating label {request.name}.")
-        created = service.users().labels().create(userId="me", body=payload).execute()
+        created = await execute_google_request(
+            service.users().labels().create(userId="me", body=payload)
+        )
         return {"label": created}
 
     @server.tool(name="update_label")
     async def update_label(
         label_id: str,
         name: str | None = None,
-        message_list_visibility: str | None = None,
-        label_list_visibility: str | None = None,
+        message_list_visibility: Literal["show", "hide"] | None = None,
+        label_list_visibility: Literal["labelShow", "labelShowIfUnread", "labelHide"] | None = None,
         background_color: str | None = None,
         text_color: str | None = None,
         ctx: Context | None = None,
@@ -101,8 +105,8 @@ def register(server: FastMCP) -> None:
         )
         if ctx is not None:
             await ctx.info(f"Updating label {request.label_id}.")
-        updated = (
-            service.users().labels().patch(userId="me", id=request.label_id, body=payload).execute()
+        updated = await execute_google_request(
+            service.users().labels().patch(userId="me", id=request.label_id, body=payload)
         )
         return {"label": updated}
 
@@ -116,26 +120,26 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Deleting label {request.label_id}.")
-        service.users().labels().delete(userId="me", id=request.label_id).execute()
+        await execute_google_request(service.users().labels().delete(userId="me", id=request.label_id))
         return {"status": "ok", "label_id": request.label_id}
 
     @server.tool(name="apply_labels")
     async def apply_labels(
         message_id: str,
-        add_label_ids: list[str] = [],
-        remove_label_ids: list[str] = [],
+        add_label_ids: list[str] | None = None,
+        remove_label_ids: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Apply/remove labels on a single message."""
         request = ModifyMessageRequest(
             message_id=message_id,
-            add_label_ids=add_label_ids,
-            remove_label_ids=remove_label_ids,
+            add_label_ids=add_label_ids or [],
+            remove_label_ids=remove_label_ids or [],
         )
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Applying labels on message {request.message_id}.")
-        result = (
+        result = await execute_google_request(
             service.users()
             .messages()
             .modify(
@@ -146,6 +150,5 @@ def register(server: FastMCP) -> None:
                     "removeLabelIds": request.remove_label_ids,
                 },
             )
-            .execute()
         )
         return {"message": result}

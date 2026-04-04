@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ..common.async_ops import execute_google_request
 from .client import chat_service, normalize_message_name, normalize_space_name
 from .schemas import (
     CreateMessageRequest,
@@ -25,14 +26,13 @@ def register_tools(server: FastMCP) -> None:
     async def list_spaces(request: ListSpacesRequest, ctx: Context) -> dict[str, Any]:
         service = chat_service()
         await ctx.info("Listing Google Chat spaces.")
-        result = (
+        result = await execute_google_request(
             service.spaces()
             .list(
                 pageSize=request.page_size,
                 pageToken=request.page_token,
                 filter=request.filter,
             )
-            .execute()
         )
         spaces = result.get("spaces", [])
         await ctx.report_progress(len(spaces), request.page_size, "Chat spaces page loaded")
@@ -47,7 +47,7 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_space_name(request.space_name)
         await ctx.info(f"Getting Chat space {name}.")
-        return service.spaces().get(name=name).execute()
+        return await execute_google_request(service.spaces().get(name=name))
 
     @server.tool(name="list_messages")
     async def list_messages(request: ListMessagesRequest, ctx: Context) -> dict[str, Any]:
@@ -63,7 +63,7 @@ def register_tools(server: FastMCP) -> None:
         }
         if request.thread_name:
             query["thread.name"] = request.thread_name
-        result = service.spaces().messages().list(**query).execute()
+        result = await execute_google_request(service.spaces().messages().list(**query))
         messages = result.get("messages", [])
         await ctx.report_progress(len(messages), request.page_size, "Chat messages page loaded")
         return {
@@ -77,7 +77,7 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_message_name(request.message_name)
         await ctx.info(f"Getting Chat message {name}.")
-        return service.spaces().messages().get(name=name).execute()
+        return await execute_google_request(service.spaces().messages().get(name=name))
 
     @server.tool(name="create_message")
     async def create_message(request: CreateMessageRequest, ctx: Context) -> dict[str, Any]:
@@ -102,7 +102,7 @@ def register_tools(server: FastMCP) -> None:
             )
             if response.action != "accept" or not bool(response.data):
                 return {"status": "cancelled"}
-        created = service.spaces().messages().create(**query).execute()
+        created = await execute_google_request(service.spaces().messages().create(**query))
         return {"status": "ok", "message": created}
 
     @server.tool(name="delete_message")
@@ -116,7 +116,7 @@ def register_tools(server: FastMCP) -> None:
             )
             if response.action != "accept" or not bool(response.data):
                 return {"status": "cancelled"}
-        service.spaces().messages().delete(name=name).execute()
+        await execute_google_request(service.spaces().messages().delete(name=name))
         return {"status": "ok", "message_name": name}
 
     @server.tool(name="update_message")
@@ -124,11 +124,13 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_message_name(request.message_name)
         await ctx.info(f"Updating Chat message {name}.")
-        updated = service.spaces().messages().patch(
-            name=name,
-            updateMask=request.update_mask,
-            body={"name": name, "text": request.text},
-        ).execute()
+        updated = await execute_google_request(
+            service.spaces().messages().patch(
+                name=name,
+                updateMask=request.update_mask,
+                body={"name": name, "text": request.text},
+            )
+        )
         return {"status": "ok", "message": updated}
 
     @server.tool(name="post_message_simple")
@@ -143,10 +145,12 @@ def register_tools(server: FastMCP) -> None:
             )
             if response.action != "accept" or not bool(response.data):
                 return {"status": "cancelled"}
-        created = service.spaces().messages().create(
-            parent=parent,
-            body={"text": request.text},
-        ).execute()
+        created = await execute_google_request(
+            service.spaces().messages().create(
+                parent=parent,
+                body={"text": request.text},
+            )
+        )
         return {"status": "ok", "message": created}
 
     @server.tool(name="reply_to_message")
@@ -161,14 +165,16 @@ def register_tools(server: FastMCP) -> None:
             )
             if response.action != "accept" or not bool(response.data):
                 return {"status": "cancelled"}
-        source = service.spaces().messages().get(name=message_name).execute()
+        source = await execute_google_request(service.spaces().messages().get(name=message_name))
         parent = message_name.split("/messages/", 1)[0]
         body: dict[str, Any] = {"text": request.text}
         thread_name = source.get("thread", {}).get("name")
         if thread_name:
             body["thread"] = {"name": thread_name}
-        created = service.spaces().messages().create(
-            parent=parent,
-            body=body,
-        ).execute()
+        created = await execute_google_request(
+            service.spaces().messages().create(
+                parent=parent,
+                body=body,
+            )
+        )
         return {"status": "ok", "message": created, "replied_to": message_name, "thread_name": thread_name}

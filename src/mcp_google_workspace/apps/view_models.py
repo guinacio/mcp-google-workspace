@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any
+from typing import Any, Literal, cast
 
 import pytz
 
@@ -81,6 +81,15 @@ def _self_response_status(event: dict[str, Any]) -> str | None:
     return None
 
 
+_ResponseStatus = Literal["needsAction", "declined", "tentative", "accepted"]
+
+
+def _coerce_response_status(value: Any) -> _ResponseStatus | None:
+    if value in {"needsAction", "declined", "tentative", "accepted"}:
+        return cast(_ResponseStatus, value)
+    return None
+
+
 def _description_snippet(description: str | None) -> str | None:
     if not description:
         return None
@@ -124,8 +133,8 @@ def build_weekly_calendar_view_model(
     for event in events:
         start_local = _parse_event_start_local(event, tz)
         end_local = _parse_event_end_local(event, tz)
-        day = day_map.get(start_local.date())
-        if day is None:
+        target_day = day_map.get(start_local.date())
+        if target_day is None:
             continue
         attendees = event.get("attendees") or []
         conference_data = event.get("conferenceData") or {}
@@ -137,7 +146,7 @@ def build_weekly_calendar_view_model(
             end=end_local.isoformat(),
             all_day=_is_all_day(event),
             status=event.get("status", "confirmed"),
-            attendee_response_status=_self_response_status(event),
+            attendee_response_status=_coerce_response_status(_self_response_status(event)),
             location=event.get("location"),
             description_snippet=_description_snippet(event.get("description")),
             attendee_count=len(attendees),
@@ -145,9 +154,9 @@ def build_weekly_calendar_view_model(
             color_id=event.get("colorId"),
         )
         if normalized.all_day:
-            day.all_day_events.append(normalized)
+            target_day.all_day_events.append(normalized)
         else:
-            day.timed_events.append(normalized)
+            target_day.timed_events.append(normalized)
 
     for day in days:
         day.timed_events.sort(key=lambda item: item.start)
@@ -395,7 +404,7 @@ def build_event_detail_view_model(
         conference_provider=conference_provider,
         organizer_email=organizer.get("email"),
         organizer_name=organizer.get("displayName"),
-        self_response_status=_self_response_status(event),
+        self_response_status=_coerce_response_status(_self_response_status(event)),
         attendees=attendees,
         attachments=attachments,
     )

@@ -205,7 +205,9 @@ class GeminiMediaClient:
             )
         finally:
             try:
-                self._client.files.delete(name=uploaded.name)
+                uploaded_name = uploaded.name
+                if uploaded_name is not None:
+                    self._client.files.delete(name=uploaded_name)
             except Exception:  # pragma: no cover - cleanup best effort
                 LOGGER.warning("Failed to delete uploaded Gemini file %s.", uploaded.name)
         return {

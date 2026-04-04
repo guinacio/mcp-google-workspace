@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import Context, FastMCP
 
+from ..common.async_ops import execute_google_request
 from ..common.component_annotations import apply_default_tool_annotations
 from .client import gmail_service
 from .mime_utils import extract_message_bodies
@@ -22,7 +23,9 @@ register_prompts(gmail_mcp)
 async def summarize_email(message_id: str, ctx: Context) -> dict[str, str]:
     """Use MCP sampling to summarize an email body."""
     service = gmail_service()
-    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    message = await execute_google_request(
+        service.users().messages().get(userId="me", id=message_id, format="full")
+    )
     payload = message.get("payload", {})
     bodies = extract_message_bodies(payload)
     source = bodies.get("text") or message.get("snippet", "")

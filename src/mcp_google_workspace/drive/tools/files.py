@@ -5,11 +5,12 @@ from __future__ import annotations
 import io
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 from googleapiclient.http import MediaIoBaseDownload
 
+from ...common.async_ops import execute_google_request, run_blocking, write_bytes_file
 from ..client import drive_service, media_file_upload, write_bytes_to_path
 from ..schemas import (
     CopyFileRequest,
@@ -78,19 +79,20 @@ def _renamed_filename(original_name: str) -> str:
 
 async def _execute_resumable_upload_with_progress(
     request: Any,
-    ctx: Context,
+    ctx: Context | None,
     progress_message: str,
 ) -> dict[str, Any]:
     response: dict[str, Any] | None = None
     while response is None:
-        status, response = request.next_chunk()
-        if status is not None:
+        status, response = await run_blocking(request.next_chunk)
+        if status is not None and ctx is not None:
             await ctx.report_progress(
                 int(status.progress() * 100),
                 100,
                 progress_message,
             )
-    await ctx.report_progress(100, 100, f"{progress_message} completed")
+    if ctx is not None:
+        await ctx.report_progress(100, 100, f"{progress_message} completed")
     return response
 
 
@@ -125,7 +127,7 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.info("Listing Google Drive files.")
-        result = (
+        result = await execute_google_request(
             service.files()
             .list(
                 q=request.query,
@@ -139,7 +141,6 @@ def register(server: FastMCP) -> None:
                 spaces=request.spaces,
                 fields=request.fields,
             )
-            .execute()
         )
         files = result.get("files", [])
         if ctx is not None:
@@ -166,21 +167,20 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.info(f"Fetching Drive file {request.file_id}.")
-        file_obj = (
+        file_obj = await execute_google_request(
             service.files()
             .get(
                 fileId=request.file_id,
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"file": file_obj}
 
     @server.tool(name="create_folder")
     async def create_folder(
         name: str,
-        parent_ids: list[str] = [],
+        parent_ids: list[str] | None = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,parents,driveId,webViewLink",
         ctx: Context | None = None,
@@ -188,7 +188,7 @@ def register(server: FastMCP) -> None:
         """Create a folder in Drive."""
         request = CreateFolderRequest(
             name=name,
-            parent_ids=parent_ids,
+            parent_ids=parent_ids or [],
             supports_all_drives=supports_all_drives,
             fields=fields,
         )
@@ -201,14 +201,13 @@ def register(server: FastMCP) -> None:
             body["parents"] = request.parent_ids
         if ctx is not None:
             await ctx.info(f"Creating Drive folder '{request.name}'.")
-        created = (
+        created = await execute_google_request(
             service.files()
             .create(
                 body=body,
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"status": "ok", "file": created}
 
@@ -216,7 +215,7 @@ def register(server: FastMCP) -> None:
     async def create_file_metadata(
         name: str,
         mime_type: str | None = None,
-        parent_ids: list[str] = [],
+        parent_ids: list[str] | None = None,
         description: str | None = None,
         app_properties: dict[str, Any] | None = None,
         properties: dict[str, Any] | None = None,
@@ -228,7 +227,7 @@ def register(server: FastMCP) -> None:
         request = CreateFileMetadataRequest(
             name=name,
             mime_type=mime_type,
-            parent_ids=parent_ids,
+            parent_ids=parent_ids or [],
             description=description,
             app_properties=app_properties,
             properties=properties,
@@ -239,14 +238,13 @@ def register(server: FastMCP) -> None:
         body = _build_metadata_body(request)
         if ctx is not None:
             await ctx.info(f"Creating Drive metadata-only file '{request.name}'.")
-        created = (
+        created = await execute_google_request(
             service.files()
             .create(
                 body=body,
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"status": "ok", "file": created}
 
@@ -254,10 +252,10 @@ def register(server: FastMCP) -> None:
     async def upload_file(
         local_path: str,
         name: str | None = None,
-        parent_ids: list[str] = [],
+        parent_ids: list[str] | None = None,
         mime_type: str | None = None,
         resumable: bool = True,
-        if_exists: str = "rename",
+        if_exists: Literal["rename", "overwrite", "skip"] = "rename",
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,size,parents,driveId,webViewLink",
         ctx: Context | None = None,
@@ -266,7 +264,7 @@ def register(server: FastMCP) -> None:
         request = UploadFileRequest(
             local_path=local_path,
             name=name,
-            parent_ids=parent_ids,
+            parent_ids=parent_ids or [],
             mime_type=mime_type,
             resumable=resumable,
             if_exists=if_exists,
@@ -275,10 +273,11 @@ def register(server: FastMCP) -> None:
         )
         service = drive_service()
         src = Path(request.local_path)
-        if not src.exists():
+        if not await run_blocking(src.exists):
             raise FileNotFoundError(f"Local file not found: {src}")
         requested_name = request.name or src.name
-        existing_file = _find_existing_file_by_name(
+        existing_file = await run_blocking(
+            _find_existing_file_by_name,
             service,
             name=requested_name,
             parent_ids=request.parent_ids,
@@ -322,7 +321,7 @@ def register(server: FastMCP) -> None:
                     "Overwriting Drive file",
                 )
             else:
-                updated = update_request.execute()
+                updated = await execute_google_request(update_request)
                 if ctx is not None:
                     await ctx.report_progress(100, 100, "Overwriting Drive file completed")
             return {"status": "ok", "mode": "overwrite", "file": updated}
@@ -344,7 +343,7 @@ def register(server: FastMCP) -> None:
                 "Uploading Drive file",
             )
         else:
-            created = create_request.execute()
+            created = await execute_google_request(create_request)
             if ctx is not None:
                 await ctx.report_progress(100, 100, "Uploading Drive file completed")
         return {"status": "ok", "mode": "create", "file": created}
@@ -356,8 +355,8 @@ def register(server: FastMCP) -> None:
         description: str | None = None,
         app_properties: dict[str, Any] | None = None,
         properties: dict[str, Any] | None = None,
-        remove_property_keys: list[str] = [],
-        remove_app_property_keys: list[str] = [],
+        remove_property_keys: list[str] | None = None,
+        remove_app_property_keys: list[str] | None = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink",
         ctx: Context | None = None,
@@ -369,8 +368,8 @@ def register(server: FastMCP) -> None:
             description=description,
             app_properties=app_properties,
             properties=properties,
-            remove_property_keys=remove_property_keys,
-            remove_app_property_keys=remove_app_property_keys,
+            remove_property_keys=remove_property_keys or [],
+            remove_app_property_keys=remove_app_property_keys or [],
             supports_all_drives=supports_all_drives,
             fields=fields,
         )
@@ -394,7 +393,7 @@ def register(server: FastMCP) -> None:
                 body["appProperties"][key] = None
         if ctx is not None:
             await ctx.info(f"Updating metadata for Drive file {request.file_id}.")
-        updated = (
+        updated = await execute_google_request(
             service.files()
             .update(
                 fileId=request.file_id,
@@ -402,7 +401,6 @@ def register(server: FastMCP) -> None:
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"status": "ok", "file": updated}
 
@@ -448,7 +446,7 @@ def register(server: FastMCP) -> None:
                 "Uploading replacement Drive content",
             )
         else:
-            updated = update_request.execute()
+            updated = await execute_google_request(update_request)
             if ctx is not None:
                 await ctx.report_progress(100, 100, "Uploading replacement Drive content completed")
         return {"status": "ok", "file": updated}
@@ -456,8 +454,8 @@ def register(server: FastMCP) -> None:
     @server.tool(name="move_file")
     async def move_file(
         file_id: str,
-        add_parent_ids: list[str] = [],
-        remove_parent_ids: list[str] = [],
+        add_parent_ids: list[str] | None = None,
+        remove_parent_ids: list[str] | None = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,parents,driveId,webViewLink",
         ctx: Context | None = None,
@@ -465,15 +463,15 @@ def register(server: FastMCP) -> None:
         """Move file by adding/removing parent folders."""
         request = MoveFileRequest(
             file_id=file_id,
-            add_parent_ids=add_parent_ids,
-            remove_parent_ids=remove_parent_ids,
+            add_parent_ids=add_parent_ids or [],
+            remove_parent_ids=remove_parent_ids or [],
             supports_all_drives=supports_all_drives,
             fields=fields,
         )
         service = drive_service()
         if ctx is not None:
             await ctx.info(f"Moving Drive file {request.file_id}.")
-        updated = (
+        updated = await execute_google_request(
             service.files()
             .update(
                 fileId=request.file_id,
@@ -482,7 +480,6 @@ def register(server: FastMCP) -> None:
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"status": "ok", "file": updated}
 
@@ -490,7 +487,7 @@ def register(server: FastMCP) -> None:
     async def copy_file(
         file_id: str,
         name: str | None = None,
-        parent_ids: list[str] = [],
+        parent_ids: list[str] | None = None,
         description: str | None = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,parents,driveId,webViewLink",
@@ -500,7 +497,7 @@ def register(server: FastMCP) -> None:
         request = CopyFileRequest(
             file_id=file_id,
             name=name,
-            parent_ids=parent_ids,
+            parent_ids=parent_ids or [],
             description=description,
             supports_all_drives=supports_all_drives,
             fields=fields,
@@ -515,7 +512,7 @@ def register(server: FastMCP) -> None:
             body["description"] = request.description
         if ctx is not None:
             await ctx.info(f"Copying Drive file {request.file_id}.")
-        copied = (
+        copied = await execute_google_request(
             service.files()
             .copy(
                 fileId=request.file_id,
@@ -523,14 +520,13 @@ def register(server: FastMCP) -> None:
                 supportsAllDrives=request.supports_all_drives,
                 fields=request.fields,
             )
-            .execute()
         )
         return {"status": "ok", "file": copied}
 
     @server.tool(name="delete_file")
     async def delete_file(
         file_id: str,
-        delete_mode: str = "trash",
+        delete_mode: Literal["trash", "permanent"] = "trash",
         confirm_permanent: bool = True,
         supports_all_drives: bool = True,
         ctx: Context | None = None,
@@ -546,14 +542,18 @@ def register(server: FastMCP) -> None:
         if request.delete_mode == "trash":
             if ctx is not None:
                 await ctx.info(f"Moving Drive file {request.file_id} to trash.")
-            updated = service.files().update(
-                fileId=request.file_id,
-                body={"trashed": True},
-                supportsAllDrives=request.supports_all_drives,
-                fields="id,name,trashed,driveId,webViewLink",
-            ).execute()
+            updated = await execute_google_request(
+                service.files().update(
+                    fileId=request.file_id,
+                    body={"trashed": True},
+                    supportsAllDrives=request.supports_all_drives,
+                    fields="id,name,trashed,driveId,webViewLink",
+                )
+            )
             return {"status": "ok", "mode": "trash", "file": updated}
         if request.confirm_permanent:
+            if ctx is None:
+                raise RuntimeError("delete_file permanent mode requires MCP context for confirmation.")
             response = await ctx.elicit(
                 f"Permanently delete Drive file {request.file_id}? This cannot be undone.",
                 response_type=bool,  # type: ignore[arg-type]
@@ -562,10 +562,12 @@ def register(server: FastMCP) -> None:
                 return {"status": "cancelled", "mode": "permanent"}
         if ctx is not None:
             await ctx.warning(f"Permanently deleting Drive file {request.file_id}.")
-        service.files().delete(
-            fileId=request.file_id,
-            supportsAllDrives=request.supports_all_drives,
-        ).execute()
+        await execute_google_request(
+            service.files().delete(
+                fileId=request.file_id,
+                supportsAllDrives=request.supports_all_drives,
+            )
+        )
         return {"status": "ok", "mode": "permanent", "file_id": request.file_id}
 
     @server.tool(name="download_file")
@@ -587,9 +589,9 @@ def register(server: FastMCP) -> None:
         )
         service = drive_service()
         out = Path(request.output_path)
-        if out.exists() and not request.overwrite:
+        if await run_blocking(out.exists) and not request.overwrite:
             raise FileExistsError(f"Output path already exists: {out}")
-        out.parent.mkdir(parents=True, exist_ok=True)
+        await run_blocking(out.parent.mkdir, parents=True, exist_ok=True)
 
         media_req = service.files().get_media(
             fileId=request.file_id,
@@ -600,7 +602,7 @@ def register(server: FastMCP) -> None:
         downloader = MediaIoBaseDownload(buf, media_req)
         done = False
         while not done:
-            status, done = downloader.next_chunk()
+            status, done = await run_blocking(downloader.next_chunk)
             if status is not None:
                 if ctx is not None:
                     await ctx.report_progress(
@@ -609,7 +611,7 @@ def register(server: FastMCP) -> None:
                         "Downloading Drive file",
                     )
         data = buf.getvalue()
-        out.write_bytes(data)
+        await write_bytes_file(out, data)
         return {
             "status": "ok",
             "file_id": request.file_id,
@@ -640,7 +642,7 @@ def register(server: FastMCP) -> None:
         downloader = MediaIoBaseDownload(stream, media_req)
         done = False
         while not done:
-            status, done = downloader.next_chunk()
+            status, done = await run_blocking(downloader.next_chunk)
             if status is not None:
                 if ctx is not None:
                     await ctx.report_progress(
@@ -648,13 +650,14 @@ def register(server: FastMCP) -> None:
                         100,
                         "Exporting Google-native file",
                     )
-        path = write_bytes_to_path(stream.getvalue(), request.output_path, request.overwrite)
+        data = stream.getvalue()
+        path = await run_blocking(write_bytes_to_path, data, request.output_path, request.overwrite)
         return {
             "status": "ok",
             "file_id": request.file_id,
             "mime_type": request.mime_type,
             "saved_to": str(path),
-            "bytes_written": path.stat().st_size,
+            "bytes_written": len(data),
         }
 
     @server.tool(name="get_file_content_capabilities")
@@ -671,14 +674,13 @@ def register(server: FastMCP) -> None:
         service = drive_service()
         if ctx is not None:
             await ctx.info(f"Inspecting content capabilities for file {request.file_id}.")
-        file_obj = (
+        file_obj = await execute_google_request(
             service.files()
             .get(
                 fileId=request.file_id,
                 supportsAllDrives=request.supports_all_drives,
                 fields="id,name,mimeType,size,capabilities(canDownload,canEdit),webContentLink,exportLinks",
             )
-            .execute()
         )
         mime_type = file_obj.get("mimeType")
         is_google_native = str(mime_type).startswith("application/vnd.google-apps.")

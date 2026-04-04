@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
+from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..schemas import ListEmailsRequest, SearchEmailRequest
 
@@ -66,7 +67,7 @@ def register(server: FastMCP) -> None:
         query_str = _build_search_query(request)
         if ctx is not None:
             await ctx.info("Running Gmail search query.")
-        result = (
+        result = await execute_google_request(
             service.users()
             .messages()
             .list(
@@ -77,7 +78,6 @@ def register(server: FastMCP) -> None:
                 pageToken=request.page_token,
                 includeSpamTrash=request.include_spam_trash,
             )
-            .execute()
         )
         messages = result.get("messages", [])
         if ctx is not None:
@@ -112,7 +112,7 @@ def register(server: FastMCP) -> None:
             await ctx.info(
                 f"Listing emails from labels {label_ids or ['INBOX']} (max_results={request.max_results})."
             )
-        result = (
+        result = await execute_google_request(
             service.users()
             .messages()
             .list(
@@ -121,7 +121,6 @@ def register(server: FastMCP) -> None:
                 maxResults=request.max_results,
                 pageToken=request.page_token,
             )
-            .execute()
         )
         messages = result.get("messages", [])
         if ctx is not None:
