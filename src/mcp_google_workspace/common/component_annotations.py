@@ -187,57 +187,6 @@ _NAMESPACE_TAGS = {
 
 _TAG_STOPWORDS = {"a", "an", "as", "by", "for", "from", "in", "of", "the", "to"}
 
-_TAG_SYNONYMS = {
-    "add": {"append", "insert"},
-    "apply": {"assign"},
-    "archive": {"hide"},
-    "attachment": {"file", "files", "downloadable"},
-    "batch": {"bulk", "multiple"},
-    "bcc": {"blind-copy"},
-    "calendar": {"schedule"},
-    "cc": {"copy-recipient"},
-    "check": {"availability", "validate"},
-    "copy": {"duplicate", "clone"},
-    "create": {"new", "add"},
-    "delete": {"remove", "erase"},
-    "document": {"doc", "docs"},
-    "download": {"save", "export"},
-    "draft": {"drafts", "compose"},
-    "drive": {"storage"},
-    "email": {"mail", "message"},
-    "event": {"calendar-event", "meeting"},
-    "export": {"download", "convert"},
-    "file": {"document", "content"},
-    "filter": {"rule", "rules"},
-    "find": {"search", "lookup"},
-    "folder": {"directory"},
-    "forwarding": {"routing", "forward"},
-    "get": {"fetch", "retrieve", "lookup", "view", "details"},
-    "label": {"labels", "tag", "tags"},
-    "list": {"browse", "enumerate", "index"},
-    "mark": {"status"},
-    "message": {"messages", "email", "mail"},
-    "move": {"relocate", "transfer"},
-    "note": {"notes"},
-    "patch": {"update", "modify"},
-    "permission": {"permissions", "sharing", "access"},
-    "person": {"contact", "contacts"},
-    "post": {"send", "publish"},
-    "read": {"view", "inspect", "lookup"},
-    "reply": {"respond"},
-    "search": {"find", "query", "lookup"},
-    "send": {"deliver", "compose"},
-    "sheet": {"spreadsheet"},
-    "slides": {"presentation", "deck"},
-    "space": {"room", "channel"},
-    "task": {"todo", "todos"},
-    "thread": {"conversation", "conversations"},
-    "trash": {"delete", "bin"},
-    "untrash": {"restore"},
-    "update": {"edit", "modify"},
-    "upload": {"import", "attach"},
-}
-
 _ACTION_OBJECT_FALLBACKS = {
     "calendar": "event",
     "chat": "message",
@@ -321,10 +270,6 @@ def _tool_tags(name: str, namespace_hint: str | None = None) -> set[str]:
     parts = [segment for segment in base_name.split("_") if segment and segment not in _TAG_STOPWORDS]
     tags.update(parts)
     tags.add(base_name.replace("_", "-"))
-    for segment in parts:
-        tags.update(_TAG_SYNONYMS.get(segment, set()))
-    if len(parts) > 1:
-        tags.add(" ".join(parts))
     return tags
 
 
