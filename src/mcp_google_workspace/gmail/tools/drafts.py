@@ -9,13 +9,12 @@ from fastmcp import Context, FastMCP
 from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..mime_utils import build_email_message, email_to_gmail_raw
+from ..helpers import attachment_inputs, recipient_set
 from ..schemas import (
-    AttachmentInput,
     CreateDraftRequest,
     DeleteDraftRequest,
     GetDraftRequest,
     ListDraftsRequest,
-    RecipientSet,
     SendDraftRequest,
     UpdateDraftRequest,
 )
@@ -52,19 +51,6 @@ def _attachment_payloads(items: list[Any]) -> list[dict[str, str]]:
         }
         for item in items
     ]
-
-
-def _recipient_set(
-    *,
-    to: list[str] | None = None,
-    cc: list[str] | None = None,
-    bcc: list[str] | None = None,
-) -> RecipientSet:
-    return RecipientSet(to=to or [], cc=cc or [], bcc=bcc or [])
-
-
-def _attachment_inputs(items: list[dict[str, Any]] | None) -> list[AttachmentInput]:
-    return [AttachmentInput.model_validate(item) for item in (items or [])]
 
 
 def register(server: FastMCP) -> None:
@@ -152,11 +138,11 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Create a draft message from recipients, content, and optional attachments."""
         request = CreateDraftRequest(
-            recipients=_recipient_set(to=to, cc=cc, bcc=bcc),
+            recipients=recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=_attachment_inputs(attachments),
+            attachments=attachment_inputs(attachments),
             thread_id=thread_id,
         )
         service = gmail_service()
@@ -197,11 +183,11 @@ def register(server: FastMCP) -> None:
         """Replace an existing draft's message payload."""
         request = UpdateDraftRequest(
             draft_id=draft_id,
-            recipients=_recipient_set(to=to, cc=cc, bcc=bcc),
+            recipients=recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=_attachment_inputs(attachments),
+            attachments=attachment_inputs(attachments),
             thread_id=thread_id,
         )
         service = gmail_service()

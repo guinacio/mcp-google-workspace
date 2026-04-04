@@ -7,7 +7,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request
+from ...common.async_ops import execute_google_request, require_elicitation_context
 from ..client import gmail_service
 from ..mime_utils import (
     build_email_message,
@@ -16,37 +16,13 @@ from ..mime_utils import (
     extract_message_bodies,
     flatten_parts,
 )
+from ..helpers import attachment_inputs, recipient_set
 from ..schemas import (
-    AttachmentInput,
     DeleteMessageRequest,
     ModifyMessageRequest,
     ReadEmailRequest,
-    RecipientSet,
     SendEmailRequest,
 )
-
-
-def _recipient_set(
-    *,
-    to: list[str] | None = None,
-    cc: list[str] | None = None,
-    bcc: list[str] | None = None,
-) -> RecipientSet:
-    return RecipientSet(
-        to=to or [],
-        cc=cc or [],
-        bcc=bcc or [],
-    )
-
-
-def _attachment_inputs(items: list[dict[str, Any]] | None) -> list[AttachmentInput]:
-    return [AttachmentInput.model_validate(item) for item in (items or [])]
-
-
-def _require_elicitation_context(ctx: Context | None, action_name: str) -> Context:
-    if ctx is None:
-        raise RuntimeError(f"{action_name} requires MCP context for user confirmation.")
-    return ctx
 
 
 def _header_value(header: dict[str, Any], key: str) -> str:
@@ -69,16 +45,16 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Send an email with TO/CC/BCC, text/HTML body, and optional attachments."""
         request = SendEmailRequest(
-            recipients=_recipient_set(to=to, cc=cc, bcc=bcc),
+            recipients=recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=_attachment_inputs(attachments),
+            attachments=attachment_inputs(attachments),
             confirm_send=confirm_send,
         )
         service = gmail_service()
         if request.confirm_send:
-            confirm_ctx = _require_elicitation_context(ctx, "send_email")
+            confirm_ctx = require_elicitation_context(ctx, "send_email")
 
             @dataclass
             class Confirmation:
@@ -268,7 +244,7 @@ def register(server: FastMCP) -> None:
         request = DeleteMessageRequest(message_id=message_id, permanent=permanent)
         service = gmail_service()
         if request.permanent:
-            confirm_ctx = _require_elicitation_context(ctx, "delete_email")
+            confirm_ctx = require_elicitation_context(ctx, "delete_email")
             response = await confirm_ctx.elicit(
                 "Permanently delete this email? This cannot be undone.",
                 response_type=bool,  # type: ignore[arg-type]

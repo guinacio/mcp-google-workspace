@@ -11,6 +11,7 @@ from fastmcp import Context, FastMCP
 
 from ..auth import build_calendar_service, build_gmail_service
 from ..common.async_ops import run_blocking
+from ..common.parsing import normalize_participants
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from .actions import (
     cancel_meeting,
@@ -70,24 +71,6 @@ def _resolve_session_id(candidate: str | None, ctx: Context | None = None) -> st
     return "default"
 
 
-def _normalize_participants(
-    participants: list[str] | str | None,
-) -> list[str]:
-    if participants is None:
-        return ["primary"]
-    if isinstance(participants, str):
-        raw = participants.strip()
-        if not raw:
-            return []
-        if raw.startswith("["):
-            import json
-
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                return [str(item).strip() for item in parsed if str(item).strip()]
-        return [item.strip() for item in raw.split(",") if item.strip()]
-    return participants
-
 
 def _compute_window(state: DashboardState) -> tuple[str, str]:
     tz = pytz.timezone(state.timezone)
@@ -127,7 +110,7 @@ def _fetch_calendar_events(state: DashboardState) -> list[dict[str, Any]]:
                 maxResults=100,
             )
         )
-        page = run_sync(page)
+        page = _execute_request(page)
         for item in page.get("items", []):
             enriched = dict(item)
             enriched["calendar_id"] = calendar_id
@@ -150,7 +133,7 @@ def _fetch_inbox_summary(
     unread_query = "is:unread in:inbox"
     if state.inbox_query:
         unread_query = f"{unread_query} {state.inbox_query}"
-    unread_response = run_sync(
+    unread_response = _execute_request(
         service.users().messages().list(userId="me", q=unread_query, maxResults=list_limit)
     )
     unread = unread_response.get("resultSizeEstimate", 0)
@@ -162,7 +145,7 @@ def _fetch_inbox_summary(
     list_query = "in:inbox"
     if state.inbox_query:
         list_query = f"{list_query} {state.inbox_query}"
-    latest = run_sync(
+    latest = _execute_request(
         service.users().messages().list(userId="me", q=list_query, maxResults=list_limit)
     )
     latest_ids = [
@@ -173,7 +156,7 @@ def _fetch_inbox_summary(
 
     items: list[dict[str, Any]] = []
     for message_id in latest_ids:
-        full = run_sync(
+        full = _execute_request(
             service.users().messages().get(userId="me", id=message_id, format="metadata")
         )
         headers = {
@@ -196,13 +179,13 @@ def _fetch_inbox_summary(
 
 def _fetch_event_detail(calendar_id: str, event_id: str) -> dict[str, Any]:
     service = build_calendar_service()
-    event = run_sync(service.events().get(calendarId=calendar_id, eventId=event_id))
+    event = _execute_request(service.events().get(calendarId=calendar_id, eventId=event_id))
     return build_event_detail_view_model(event, calendar_id).model_dump(mode="json")
 
 
 def _fetch_email_detail(message_id: str) -> dict[str, Any]:
     service = build_gmail_service()
-    message = run_sync(
+    message = _execute_request(
         service.users().messages().get(userId="me", id=message_id, format="full")
     )
     return build_email_detail_view_model(message).model_dump(mode="json")
@@ -216,7 +199,7 @@ def _fallback_attachment_filename(mime_type: str | None) -> str:
 
 def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, Any]:
     service = build_gmail_service()
-    message = run_sync(
+    message = _execute_request(
         service.users().messages().get(userId="me", id=message_id, format="full")
     )
     payload = message.get("payload") or {}
@@ -235,7 +218,7 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
         size = body.get("size", 0) or 0
         break
 
-    attachment = run_sync(
+    attachment = _execute_request(
         service.users()
         .messages()
         .attachments()
@@ -396,7 +379,7 @@ async def build_weekly_calendar_payload_with_progress(
     return model.model_dump(mode="json")
 
 
-def run_sync(request: Any) -> Any:
+def _execute_request(request: Any) -> Any:
     return request.execute()
 
 
@@ -624,7 +607,7 @@ def register_tools(server: FastMCP) -> None:
             meeting_duration if meeting_duration is not None else slot_duration_minutes
         )
         request = FindMeetingSlotsRequest(
-            participants=_normalize_participants(participants),
+            participants=normalize_participants(participants) or ["primary"],
             time_min=time_min,
             time_max=time_max,
             slot_duration_minutes=effective_duration,

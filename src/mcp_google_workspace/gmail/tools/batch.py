@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request
+from ...common.async_ops import execute_google_request, require_elicitation_context
 from ..client import gmail_service
 from ..schemas import BatchDeleteRequest, BatchModifyRequest
 
@@ -57,9 +57,8 @@ def register(server: FastMCP) -> None:
         request = BatchDeleteRequest(message_ids=message_ids, permanent=permanent)
         service = gmail_service()
         if request.permanent:
-            if ctx is None:
-                raise RuntimeError("batch_delete permanent mode requires MCP context for confirmation.")
-            response = await ctx.elicit(
+            confirm_ctx = require_elicitation_context(ctx, "batch_delete")
+            response = await confirm_ctx.elicit(
                 f"Permanently delete {len(request.message_ids)} messages?",
                 response_type=bool,  # type: ignore[arg-type]
             )

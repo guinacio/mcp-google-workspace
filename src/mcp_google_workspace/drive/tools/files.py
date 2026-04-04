@@ -10,7 +10,7 @@ from typing import Any, Literal
 from fastmcp import Context, FastMCP
 from googleapiclient.http import MediaIoBaseDownload
 
-from ...common.async_ops import execute_google_request, run_blocking, write_bytes_file
+from ...common.async_ops import execute_google_request, require_elicitation_context, run_blocking, write_bytes_file
 from ..client import drive_service, media_file_upload, write_bytes_to_path
 from ..schemas import (
     CopyFileRequest,
@@ -552,9 +552,8 @@ def register(server: FastMCP) -> None:
             )
             return {"status": "ok", "mode": "trash", "file": updated}
         if request.confirm_permanent:
-            if ctx is None:
-                raise RuntimeError("delete_file permanent mode requires MCP context for confirmation.")
-            response = await ctx.elicit(
+            confirm_ctx = require_elicitation_context(ctx, "delete_file")
+            response = await confirm_ctx.elicit(
                 f"Permanently delete Drive file {request.file_id}? This cannot be undone.",
                 response_type=bool,  # type: ignore[arg-type]
             )

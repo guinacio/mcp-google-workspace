@@ -13,7 +13,8 @@ from fastmcp import Context, FastMCP
 from googleapiclient.http import MediaIoBaseDownload
 
 from ..auth import build_calendar_service, build_drive_service
-from ..common.async_ops import execute_google_request, run_blocking, write_bytes_file
+from ..common.async_ops import execute_google_request, require_elicitation_context, run_blocking, write_bytes_file
+from ..common.parsing import normalize_participants
 from .schemas import (
     AddEventAttachmentRequest,
     CreateEventRequest,
@@ -45,22 +46,6 @@ def _validate_and_fix_datetime(dt_string: str | None, timezone_name: str) -> str
         return tz.localize(dt).isoformat()
     return dt_string
 
-
-def _normalize_participants(
-    participants: list[str] | str,
-) -> list[str]:
-    if isinstance(participants, str):
-        raw = participants.strip()
-        if not raw:
-            return []
-        if raw.startswith("["):
-            import json
-
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                return [str(item).strip() for item in parsed if str(item).strip()]
-        return [item.strip() for item in raw.split(",") if item.strip()]
-    return participants
 
 
 GOOGLE_EXPORT_MIME_DEFAULTS = {
@@ -445,7 +430,7 @@ def register_tools(server: FastMCP) -> None:
         """
         effective_duration = meeting_duration if meeting_duration is not None else slot_duration_minutes
         request = FindCommonFreeSlotsRequest(
-            participants=_normalize_participants(participants),
+            participants=normalize_participants(participants),
             time_min=time_min,
             time_max=time_max,
             slot_duration_minutes=effective_duration,
@@ -589,8 +574,10 @@ def register_tools(server: FastMCP) -> None:
         timezone_val = request.timezone or "UTC"
         start = _validate_and_fix_datetime(request.start_datetime, timezone_val)
         end = _validate_and_fix_datetime(request.end_datetime, timezone_val)
-        assert start is not None
-        assert end is not None
+        if start is None:
+            raise ValueError("start_datetime is required and could not be parsed.")
+        if end is None:
+            raise ValueError("end_datetime is required and could not be parsed.")
         body: dict[str, Any] = {
             "summary": request.summary,
             "start": {"dateTime": start, "timeZone": timezone_val},
@@ -722,14 +709,16 @@ def register_tools(server: FastMCP) -> None:
             patch_data["attachments"] = [a.to_api() for a in request.attachments]
         if request.start_datetime:
             start_datetime_value = _validate_and_fix_datetime(request.start_datetime, timezone_val)
-            assert start_datetime_value is not None
+            if start_datetime_value is None:
+                raise ValueError("start_datetime is required and could not be parsed.")
             patch_data["start"] = {
                 "dateTime": start_datetime_value,
                 "timeZone": timezone_val,
             }
         if request.end_datetime:
             end_datetime_value = _validate_and_fix_datetime(request.end_datetime, timezone_val)
-            assert end_datetime_value is not None
+            if end_datetime_value is None:
+                raise ValueError("end_datetime is required and could not be parsed.")
             patch_data["end"] = {
                 "dateTime": end_datetime_value,
                 "timeZone": timezone_val,
@@ -1004,9 +993,8 @@ def register_tools(server: FastMCP) -> None:
             force=force,
         )
         if not request.force:
-            if ctx is None:
-                raise RuntimeError("delete_event requires MCP context for confirmation.")
-            response = await ctx.elicit(
+            confirm_ctx = require_elicitation_context(ctx, "delete_event")
+            response = await confirm_ctx.elicit(
                 f"Delete event {request.event_id} from calendar {request.calendar_id}?",
                 response_type=bool,  # type: ignore[arg-type]
             )

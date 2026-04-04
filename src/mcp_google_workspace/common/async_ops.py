@@ -7,8 +7,19 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import anyio
+from fastmcp import Context
 
 T = TypeVar("T")
+
+
+def require_elicitation_context(ctx: Context | None, action_name: str) -> Context:
+    """Validate that *ctx* is not ``None`` before an elicitation call.
+
+    Returns the narrowed ``Context`` so callers can use it directly.
+    """
+    if ctx is None:
+        raise RuntimeError(f"{action_name} requires MCP context for user confirmation.")
+    return ctx
 
 
 async def run_blocking(

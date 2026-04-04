@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request
+from ...common.async_ops import execute_google_request, require_elicitation_context
 from ..client import gmail_service
 from ..schemas import GetThreadRequest, ListThreadsRequest, ModifyThreadRequest, ThreadIdRequest
 
@@ -156,6 +156,13 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Permanently delete a thread."""
         request = ThreadIdRequest(thread_id=thread_id)
+        confirm_ctx = require_elicitation_context(ctx, "delete_thread")
+        response = await confirm_ctx.elicit(
+            f"Permanently delete thread {request.thread_id}? This cannot be undone.",
+            response_type=bool,  # type: ignore[arg-type]
+        )
+        if response.action != "accept" or not bool(response.data):
+            return {"status": "cancelled"}
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Permanently deleting thread {request.thread_id}.")
