@@ -527,7 +527,7 @@ def register(server: FastMCP) -> None:
     async def delete_file(
         file_id: str,
         delete_mode: Literal["trash", "permanent"] = "trash",
-        confirm_permanent: bool = True,
+        confirm_permanent: bool = False,
         supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:

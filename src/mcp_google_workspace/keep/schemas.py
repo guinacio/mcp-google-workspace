@@ -46,7 +46,14 @@ class ListNotesRequest(ToolRequestModel):
 
 class DeleteNoteRequest(ToolRequestModel):
     note_name: str = Field(description="Google Keep note resource name.")
-    confirm_delete: bool = Field(default=True, description="Ask for confirmation before deleting.")
+    confirm_delete: bool = Field(
+        default=False,
+        description=(
+            "Ask for confirmation before deleting when true. Default is false so the "
+            "tool works on MCP clients that don't implement elicitation; set to true "
+            "to request a confirmation prompt on supported clients."
+        ),
+    )
 
 
 class UpdateNoteRequest(ToolRequestModel):

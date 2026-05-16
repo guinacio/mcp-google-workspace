@@ -121,8 +121,12 @@ class DeleteFileRequest(ToolRequestModel):
         description="Safer delete mode. 'trash' moves to trash, 'permanent' irreversibly deletes.",
     )
     confirm_permanent: bool = Field(
-        default=True,
-        description="Require interactive confirmation before permanent delete when true.",
+        default=False,
+        description=(
+            "Require interactive confirmation before permanent delete when true. "
+            "Default is false so the tool works on MCP clients that don't implement "
+            "elicitation; set to true to request a confirmation prompt on supported clients."
+        ),
     )
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 

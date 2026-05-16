@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httplib2
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_httplib2 import AuthorizedHttp
@@ -179,17 +180,43 @@ def get_credentials() -> Credentials:
 
     if creds and creds.expired and creds.refresh_token:
         LOGGER.info("Refreshing Google OAuth token.")
-        creds.refresh(Request())
-    else:
+        try:
+            creds.refresh(Request())
+        except RefreshError as exc:
+            # Refresh token is no longer valid (common cause: enterprise
+            # password rotation invalidates the grant). Discard the stale
+            # token so the next branch can run a fresh consent flow.
+            LOGGER.warning(
+                "Refresh failed (%s); deleting stale token at %s and re-running OAuth consent.",
+                exc,
+                token_path,
+            )
+            try:
+                token_path.unlink()
+            except OSError as unlink_exc:
+                LOGGER.warning("Failed to delete stale token file: %s", unlink_exc)
+            creds = None
+
+    if not creds or not creds.valid:
         LOGGER.info(
             "Starting browser-based Google OAuth flow using credentials at %s.",
             credentials_path,
         )
-        flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), scopes)
-        creds = flow.run_local_server(
-            port=settings.oauth_port,
-            open_browser=settings.oauth_open_browser,
-        )
+        try:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(credentials_path), scopes
+            )
+            creds = flow.run_local_server(
+                port=settings.oauth_port,
+                open_browser=settings.oauth_open_browser,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Google OAuth re-authentication is required but failed. "
+                "The stored token has been invalidated (likely due to password "
+                "rotation or revoked access). Please complete the consent flow "
+                f"in your browser and retry the request. Underlying error: {exc}"
+            ) from exc
 
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(creds.to_json(), encoding="utf-8")

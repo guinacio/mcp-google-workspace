@@ -171,7 +171,14 @@ class DeleteEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
     event_id: str = Field(description="Calendar event ID to delete.")
     send_updates: str | None = Field(default=None, description="Guest notification mode for deletion.")
-    force: bool = Field(default=False, description="Skip interactive confirmation when true.")
+    force: bool = Field(
+        default=True,
+        description=(
+            "Skip interactive confirmation when true. Default is true so the tool "
+            "works on MCP clients that don't implement elicitation; set to false to "
+            "request an interactive confirmation prompt on supported clients."
+        ),
+    )
 
 
 class FreeBusyRequest(ToolRequestModel):
