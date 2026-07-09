@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
@@ -14,20 +14,15 @@ from ..mime_utils import (
     decode_rfc2047,
     email_to_gmail_raw,
     extract_message_bodies,
-    flatten_parts,
 )
 from ..helpers import attachment_inputs, recipient_set
+from ..presentation import clean_message_content, envelope, header_map, message_attachments
 from ..schemas import (
     DeleteMessageRequest,
     ModifyMessageRequest,
     ReadEmailRequest,
     SendEmailRequest,
 )
-
-
-def _header_value(header: dict[str, Any], key: str) -> str:
-    value = header.get(key)
-    return value if isinstance(value, str) else ""
 
 
 def register(server: FastMCP) -> None:
@@ -115,11 +110,15 @@ def register(server: FastMCP) -> None:
     @server.tool(name="read_email")
     async def read_email(
         message_id: str,
+        format: Literal["metadata", "preview", "clean", "full"] = "clean",
+        offset: int = 0,
         summary_mode: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Fetch one Gmail message by ID."""
-        request = ReadEmailRequest(message_id=message_id, summary_mode=summary_mode)
+        """Fetch one Gmail message; clean text is the default, full raw HTML is opt-in."""
+        request = ReadEmailRequest(
+            message_id=message_id, format=format, offset=offset, summary_mode=summary_mode
+        )
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Reading message {request.message_id}.")
@@ -129,54 +128,31 @@ def register(server: FastMCP) -> None:
             .get(userId="me", id=request.message_id, format="full")
         )
         payload = message.get("payload", {})
-        headers = payload.get("headers", [])
-        header_map = {
-            _header_value(header, "name").lower(): _header_value(header, "value")
-            for header in headers
-            if isinstance(header, dict)
-        }
-        if request.summary_mode:
-            bodies: dict[str, str | None] = {"text": None, "html": None}
-        else:
-            extracted_bodies = extract_message_bodies(payload)
-            bodies = {
-                "text": extracted_bodies.get("text"),
-                "html": extracted_bodies.get("html"),
-            }
-        attachments: list[dict[str, Any]] = []
-        for part in flatten_parts(payload):
-            filename = part.get("filename")
-            body = part.get("body", {})
-            attachment_id = body.get("attachmentId")
-            if filename and attachment_id:
-                attachments.append(
-                    {
-                        "filename": filename,
-                        "mime_type": part.get("mimeType"),
-                        "size": body.get("size", 0),
-                        "download_id": attachment_id,
-                    }
-                )
+        headers = header_map(payload)
+        output = envelope(message)
+        effective_format = "metadata" if request.summary_mode else request.format
+        attachments = message_attachments(payload)
 
         if ctx is not None:
             await ctx.info(f"Parsed MIME structure with {len(attachments)} attachment(s).")
-        return {
-            "id": message.get("id"),
-            "thread_id": message.get("threadId"),
-            "snippet": message.get("snippet"),
-            "subject": decode_rfc2047(header_map.get("subject")),
-            "from": decode_rfc2047(header_map.get("from")),
-            "to": decode_rfc2047(header_map.get("to")),
-            "date": header_map.get("date"),
-            "text_body": bodies["text"],
-            "html_body": bodies["html"],
+        output.update({
+            "to": decode_rfc2047(headers.get("to")),
             "attachments": attachments,
             "label_ids": message.get("labelIds", []),
             "history_id": message.get("historyId"),
             "internal_date": message.get("internalDate"),
-            "summary_mode": request.summary_mode,
-            "bodies_omitted": request.summary_mode,
-        }
+            "format": effective_format,
+        })
+        if effective_format == "metadata":
+            output["bodies_omitted"] = True
+        if effective_format == "preview":
+            output.update(clean_message_content(message, offset=request.offset, limit=1_000))
+        elif effective_format == "clean":
+            output.update(clean_message_content(message, offset=request.offset))
+        elif effective_format == "full":
+            bodies = extract_message_bodies(payload)
+            output.update({"text_body": bodies.get("text"), "html_body": bodies.get("html"), "truncated": False})
+        return output
 
     @server.tool(name="mark_as_read")
     async def mark_as_read(message_id: str, ctx: Context) -> dict[str, Any]:

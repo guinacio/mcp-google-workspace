@@ -156,6 +156,7 @@ Gmail (namespaced as `gmail_*` in composed server):
 - `read_email`
 - `search_emails`
 - `list_emails`
+- `get_emails`, `digest`, `check_new` (compact mailbox triage and incremental heartbeat)
 - `list_labels`, `create_label`, `update_label`, `delete_label`, `apply_labels`
 - `list_attachments`, `download_attachment`
 - `mark_as_read`, `mark_as_unread`, `move_email`, `delete_email`
@@ -163,7 +164,7 @@ Gmail (namespaced as `gmail_*` in composed server):
 - `batch_modify`, `batch_delete`
 - `list_filters`, `create_filter`, `delete_filter`
 - Drafts: `list_drafts`, `get_draft`, `create_draft`, `update_draft`, `delete_draft`, `send_draft`
-- Threads: `list_threads`, `get_thread`, `modify_thread`, `trash_thread`, `untrash_thread`, `delete_thread`
+- Threads: `list_threads`, `get_thread` (clean latest message by default), `modify_thread`, `trash_thread`, `untrash_thread`, `delete_thread`
 - `list_history`
 - Forwarding addresses: `list_forwarding_addresses`, `get_forwarding_address`, `create_forwarding_address`, `delete_forwarding_address`
 - Vacation settings: `get_vacation_settings`, `update_vacation_settings`

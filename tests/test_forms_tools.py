@@ -1,6 +1,7 @@
 import anyio
 
 from mcp_google_workspace.forms.server import forms_mcp
+from mcp_google_workspace.forms.presentation import question_titles, response_envelope
 from mcp_google_workspace.forms.tools import (
     BatchUpdateFormRequest,
     CreateFormRequest,
@@ -130,3 +131,9 @@ def test_forms_tool_annotations():
 
     assert get_tool.annotations.readOnlyHint is True
     assert publish_tool.annotations.idempotentHint is True
+
+
+def test_response_envelope_resolves_question_ids_to_titles():
+    titles = question_titles({"items": [{"title": "Priority", "questionItem": {"question": {"questionId": "q1"}}}]})
+    result = response_envelope({"responseId": "r1", "answers": {"q1": {"textAnswers": {"answers": [{"value": "High"}]}}}}, titles)
+    assert result["answers"] == [{"question_id": "q1", "question": "Priority", "values": ["High"]}]

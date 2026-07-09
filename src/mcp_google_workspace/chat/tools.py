@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -9,9 +10,8 @@ from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
-
-LOGGER = logging.getLogger(__name__)
 from .client import chat_service, normalize_message_name, normalize_space_name, normalize_user_name, resolve_space_members
+from .presentation import enrich_messages, space_envelope
 from .schemas import (
     CreateMessageRequest,
     DeleteMessageRequest,
@@ -19,11 +19,14 @@ from .schemas import (
     GetMessageRequest,
     GetSpaceRequest,
     ListMessagesRequest,
+    ListSpaceMembersRequest,
     ListSpacesRequest,
     PostSimpleMessageRequest,
     ReplyToMessageRequest,
     UpdateMessageRequest,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register_tools(server: FastMCP) -> None:
@@ -43,26 +46,36 @@ def register_tools(server: FastMCP) -> None:
         spaces = result.get("spaces", [])
         await ctx.report_progress(len(spaces), request.page_size, "Chat spaces page loaded")
 
+        enriched_by_id: dict[str, dict[str, Any]] = {}
         if request.enrich_dms:
             dm_spaces = [s for s in spaces if s.get("spaceType") == "DIRECT_MESSAGE"]
-            total = len(dm_spaces)
-            for idx, space in enumerate(dm_spaces, 1):
+            semaphore = asyncio.Semaphore(10)
+
+            async def enrich_dm(space: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
                 space_name = space.get("name", "")
-                try:
-                    peers = await resolve_space_members(space_name)
-                    if peers:
-                        peer = peers[0]
-                        space["peer_display_name"] = peer.get("displayName")
-                        space["peer_email"] = peer.get("email")
-                        space["peer_user"] = peer.get("name")
-                except Exception:
-                    LOGGER.debug("DM enrichment failed for %s", space_name, exc_info=True)
+                async with semaphore:
+                    try:
+                        peers, _ = await resolve_space_members(space_name)
+                        return space_name, space_envelope(space, peers[0]) if peers else None
+                    except Exception:
+                        LOGGER.debug("DM enrichment failed for %s", space_name, exc_info=True)
+                        return space_name, None
+
+            for idx, (space_name, enriched) in enumerate(await asyncio.gather(*(enrich_dm(space) for space in dm_spaces)), 1):
+                if enriched is not None:
+                    enriched_by_id[space_name] = enriched
                 await ctx.report_progress(
-                    len(spaces) + idx, len(spaces) + total, "Enriching DM spaces"
+                    len(spaces) + idx, len(spaces) + len(dm_spaces), "Enriching DM spaces"
                 )
 
+        if request.enrich_dms:
+            enriched_spaces = [
+                enriched_by_id.get(str(space.get("name")), space_envelope(space)) for space in spaces
+            ]
+        else:
+            enriched_spaces = [space_envelope(space) for space in spaces]
         return {
-            "spaces": spaces,
+            "spaces": enriched_spaces,
             "next_page_token": result.get("nextPageToken"),
             "count": len(spaces),
         }
@@ -72,7 +85,13 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_space_name(request.space_name)
         await ctx.info(f"Getting Chat space {name}.")
-        return await execute_google_request(service.spaces().get(name=name))
+        space = await execute_google_request(service.spaces().get(name=name))
+        try:
+            peers, _ = await resolve_space_members(name) if space.get("spaceType") == "DIRECT_MESSAGE" else ([], None)
+        except Exception:
+            LOGGER.debug("DM enrichment failed for %s", name, exc_info=True)
+            peers = []
+        return space_envelope(space, peers[0] if peers else None)
 
     @server.tool(name="find_direct_message")
     async def find_direct_message(
@@ -97,7 +116,7 @@ def register_tools(server: FastMCP) -> None:
         return {
             "found": True,
             "user": user_name,
-            "space": space,
+            "space": space_envelope(space),
         }
 
     @server.tool(name="list_messages")
@@ -118,7 +137,7 @@ def register_tools(server: FastMCP) -> None:
         messages = result.get("messages", [])
         await ctx.report_progress(len(messages), request.page_size, "Chat messages page loaded")
         return {
-            "messages": messages,
+            "messages": await enrich_messages(messages) if request.enrich_authors else messages,
             "next_page_token": result.get("nextPageToken"),
             "count": len(messages),
         }
@@ -128,7 +147,33 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_message_name(request.message_name)
         await ctx.info(f"Getting Chat message {name}.")
-        return await execute_google_request(service.spaces().messages().get(name=name))
+        message = await execute_google_request(service.spaces().messages().get(name=name))
+        return (await enrich_messages([message], max_text=None))[0]
+
+    @server.tool(name="list_space_members")
+    async def list_space_members(
+        request: ListSpaceMembersRequest, ctx: Context
+    ) -> dict[str, Any]:
+        """List people in a space with display names and email addresses when available."""
+        space_name = normalize_space_name(request.space_name)
+        await ctx.info(f"Listing members for Chat space {space_name}.")
+        members, next_page_token = await resolve_space_members(
+            space_name, exclude_self=not request.include_self, page_token=request.page_token
+        )
+        return {
+            "space_id": space_name,
+            "members": [
+                {
+                    "name": member.get("displayName") or member.get("name"),
+                    "email": member.get("email"),
+                    "user_id": member.get("name"),
+                    "type": member.get("type"),
+                }
+                for member in members
+            ],
+            "count": len(members),
+            "next_page_token": next_page_token,
+        }
 
     @server.tool(name="create_message")
     async def create_message(request: CreateMessageRequest, ctx: Context) -> dict[str, Any]:

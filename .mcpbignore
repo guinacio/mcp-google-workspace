@@ -1,5 +1,6 @@
 .git/
 .claude-plugin/
+.claude/
 .cursor/
 .mypy_cache/
 .pytest_cache/
@@ -14,6 +15,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.mcpb
 credentials.json
 token.json
 src/credentials/credentials.json

@@ -21,6 +21,7 @@ from .schemas import (
     TaskStatus,
     UpdateTaskRequest,
 )
+from .presentation import task_envelope, tasklist_envelope, tasks_digest
 
 
 def _utc_now() -> str:
@@ -116,11 +117,13 @@ def delete_task_payload(request: DeleteTaskRequest) -> dict[str, Any]:
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_tasklists")
     async def list_tasklists(max_results: int = 100, page_token: str | None = None) -> dict[str, Any]:
-        return list_tasklists_payload(ListTasklistsRequest(max_results=max_results, page_token=page_token))
+        result = list_tasklists_payload(ListTasklistsRequest(max_results=max_results, page_token=page_token))
+        items = result.get("items", [])
+        return {"tasklists": [tasklist_envelope(item) for item in items], "next_page_token": result.get("nextPageToken"), "count": len(items)}
 
     @server.tool(name="get_tasklist")
     async def get_tasklist(tasklist_id: str) -> dict[str, Any]:
-        return get_tasklist_payload(GetTasklistRequest(tasklist_id=tasklist_id))
+        return tasklist_envelope(get_tasklist_payload(GetTasklistRequest(tasklist_id=tasklist_id)))
 
     @server.tool(name="create_tasklist")
     async def create_tasklist(title: str) -> dict[str, Any]:
@@ -141,7 +144,7 @@ def register_tools(server: FastMCP) -> None:
         show_hidden: bool = False,
         updated_min: str | None = None,
     ) -> dict[str, Any]:
-        return list_tasks_payload(
+        result = list_tasks_payload(
             ListTasksRequest(
                 tasklist_id=tasklist_id,
                 completed_max=completed_max,
@@ -157,10 +160,27 @@ def register_tools(server: FastMCP) -> None:
                 updated_min=updated_min,
             )
         )
+        items = result.get("items", [])
+        return {
+            "tasklist_id": tasklist_id,
+            "tasks": [task_envelope(item) for item in items],
+            "next_page_token": result.get("nextPageToken"),
+            "count": len(items),
+        }
 
     @server.tool(name="get_task")
     async def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
-        return get_task_payload(GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id))
+        return task_envelope(get_task_payload(GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id)))
+
+    @server.tool(name="tasks_digest")
+    async def tasks_digest_tool(tasklist_id: str, days: int = 7, max_results: int = 100) -> dict[str, Any]:
+        """Group incomplete tasks into overdue, upcoming, and unscheduled work."""
+        result = list_tasks_payload(
+            ListTasksRequest(tasklist_id=tasklist_id, max_results=max_results, show_completed=False)
+        )
+        digest = tasks_digest(result.get("items", []), days=days)
+        digest.update({"tasklist_id": tasklist_id, "window_days": days})
+        return digest
 
     @server.tool(name="create_task")
     async def create_task(

@@ -185,6 +185,17 @@ _NAMESPACE_TAGS = {
     "tasks": {"tasks", "todos", "task-management"},
 }
 
+_READ_ONLY_TOOLS = {
+    "digest",
+    "tasks_digest",
+    "upcoming_calendar_digest",
+}
+
+_EXTRA_TOOL_TAGS = {
+    # Drive file listing is the connector's primary browsing surface.
+    "drive_list_files": {"browse"},
+}
+
 _TAG_STOPWORDS = {"a", "an", "as", "by", "for", "from", "in", "of", "the", "to"}
 
 _ACTION_OBJECT_FALLBACKS = {
@@ -270,10 +281,14 @@ def _tool_tags(name: str, namespace_hint: str | None = None) -> set[str]:
     parts = [segment for segment in base_name.split("_") if segment and segment not in _TAG_STOPWORDS]
     tags.update(parts)
     tags.add(base_name.replace("_", "-"))
+    canonical_name = f"{namespace}_{base_name}" if namespace is not None else name
+    tags.update(_EXTRA_TOOL_TAGS.get(canonical_name, set()))
     return tags
 
 
 def _is_read_only(base_name: str) -> bool:
+    if base_name in _READ_ONLY_TOOLS:
+        return True
     if base_name in _MUTATING_TOOLS:
         return False
     if base_name.startswith(_MUTATING_PREFIXES):

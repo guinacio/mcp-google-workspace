@@ -2,16 +2,46 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request, require_elicitation_context
 from ..client import gmail_service
-from ..schemas import BatchDeleteRequest, BatchModifyRequest
+from ..presentation import clean_message_content, envelope
+from ..schemas import BatchDeleteRequest, BatchModifyRequest, GetEmailsRequest
 
 
 def register(server: FastMCP) -> None:
+    @server.tool(name="get_emails")
+    async def get_emails(
+        message_ids: list[str],
+        format: Literal["metadata", "preview", "clean", "full"] = "clean",
+        offset: int = 0,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Fetch up to 100 messages in one MCP call at the requested detail level."""
+        request = GetEmailsRequest(message_ids=message_ids, format=format, offset=offset)
+        service = gmail_service()
+        messages: list[dict[str, Any]] = []
+        for index, message_id in enumerate(request.message_ids, start=1):
+            message = await execute_google_request(
+                service.users().messages().get(userId="me", id=message_id, format="full")
+            )
+            item = envelope(message)
+            if request.format == "preview":
+                item.update(clean_message_content(message, offset=request.offset, limit=1_000))
+            elif request.format == "clean":
+                item.update(clean_message_content(message, offset=request.offset))
+            elif request.format == "full":
+                from ..mime_utils import extract_message_bodies
+                bodies = extract_message_bodies(message.get("payload", {}))
+                item.update({"text_body": bodies.get("text"), "html_body": bodies.get("html")})
+            messages.append(item)
+            if ctx is not None:
+                await ctx.report_progress(index, len(request.message_ids), "Messages loaded")
+        return {"messages": messages, "format": request.format}
+
     @server.tool(name="batch_modify")
     async def batch_modify(
         message_ids: list[str],

@@ -1,6 +1,7 @@
 import anyio
 
 from mcp_google_workspace.drive.server import drive_mcp
+from mcp_google_workspace.drive.presentation import file_envelope
 
 
 async def _list_drive_tools() -> list[str]:
@@ -32,3 +33,16 @@ def test_drive_server_registers_expected_tools():
     assert "get_drive" in tool_names
     assert "hide_drive" in tool_names
     assert "unhide_drive" in tool_names
+
+
+def test_file_envelope_surfaces_owner_state_and_capabilities():
+    result = file_envelope(
+        {
+            "id": "file-1", "name": "Plan", "mimeType": "application/vnd.google-apps.document",
+            "owners": [{"displayName": "Ada", "emailAddress": "ada@example.com"}],
+            "capabilities": {"canEdit": True, "canDownload": True}, "shared": True,
+        }
+    )
+    assert result["kind"] == "document"
+    assert result["owners"][0]["email"] == "ada@example.com"
+    assert result["can_edit"] is True

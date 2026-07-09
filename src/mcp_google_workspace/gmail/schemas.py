@@ -42,7 +42,7 @@ class ReadEmailRequest(ToolRequestModel):
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {"message_id": "18c9c7b7e2a1f123", "summary_mode": True},
+                {"message_id": "18c9c7b7e2a1f123", "format": "clean"},
             ]
         }
     }
@@ -50,6 +50,23 @@ class ReadEmailRequest(ToolRequestModel):
         default=False,
         description="When true, return a compact summary without full text/html bodies.",
     )
+    format: Literal["metadata", "preview", "clean", "full"] = Field(
+        default="clean",
+        description="Detail level. clean is hygienic text capped near 2k tokens; full includes raw text/html.",
+    )
+    offset: int = Field(default=0, ge=0, description="Character offset for continuing a truncated clean body.")
+
+
+class GetEmailsRequest(ToolRequestModel):
+    message_ids: list[str] = Field(min_length=1, max_length=100, description="Message IDs to read in one call.")
+    format: Literal["metadata", "preview", "clean", "full"] = Field(default="clean", description="Detail level for each message.")
+    offset: int = Field(default=0, ge=0, description="Character offset for clean-body continuation.")
+
+
+class DigestRequest(ToolRequestModel):
+    window: str = Field(default="3d", pattern=r"^\d+[dhw]$", description="Lookback window such as 3d, 24h, or 1w.")
+    unread_only: bool = Field(default=False, description="Include only unread messages.")
+    max_items: int = Field(default=25, ge=1, le=100, description="Maximum latest messages to inspect.")
 
 
 class SearchEmailRequest(ToolRequestModel):
@@ -243,7 +260,7 @@ class ListThreadsRequest(ToolRequestModel):
 
 class GetThreadRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID to fetch.")
-    format: Literal["full", "metadata", "minimal"] = Field(default="full", description="Message format for thread payload.")
+    format: Literal["full", "metadata", "minimal"] = Field(default="full", description="Gmail API message format for thread payload.")
     metadata_headers: list[str] = Field(default_factory=list, description="Headers to include when format is metadata.")
 
 

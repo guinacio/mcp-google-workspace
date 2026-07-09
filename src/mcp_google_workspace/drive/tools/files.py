@@ -27,6 +27,7 @@ from ..schemas import (
     UpdateFileMetadataRequest,
     UploadFileRequest,
 )
+from ..presentation import file_envelope
 
 
 def _build_metadata_body(request: CreateFileMetadataRequest) -> dict[str, Any]:
@@ -108,7 +109,7 @@ def register(server: FastMCP) -> None:
         include_items_from_all_drives: bool = True,
         supports_all_drives: bool = True,
         spaces: str | None = None,
-        fields: str = "nextPageToken, files(id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink)",
+        fields: str = "nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload))",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """List/search files with Shared Drives-aware query options."""
@@ -146,7 +147,7 @@ def register(server: FastMCP) -> None:
         if ctx is not None:
             await ctx.report_progress(len(files), request.page_size, "Drive files page loaded")
         return {
-            "files": files,
+            "files": [file_envelope(file) for file in files],
             "next_page_token": result.get("nextPageToken"),
             "count": len(files),
         }
@@ -155,7 +156,7 @@ def register(server: FastMCP) -> None:
     async def get_file(
         file_id: str,
         supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink,capabilities",
+        fields: str = "id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload)",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Get metadata for a single Drive file."""
@@ -175,7 +176,7 @@ def register(server: FastMCP) -> None:
                 fields=request.fields,
             )
         )
-        return {"file": file_obj}
+        return {"file": file_envelope(file_obj)}
 
     @server.tool(name="create_folder")
     async def create_folder(

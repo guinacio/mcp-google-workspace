@@ -12,7 +12,7 @@ class ListSpacesRequest(ToolRequestModel):
     page_token: str | None = Field(default=None, description="Pagination token from previous response.")
     filter: str | None = Field(default=None, description="Optional Chat API filter expression.")
     enrich_dms: bool = Field(
-        default=False,
+        default=True,
         description=(
             "When true, resolve member details for DIRECT_MESSAGE spaces "
             "so each DM includes the peer's display name and email."
@@ -31,6 +31,16 @@ class ListMessagesRequest(ToolRequestModel):
     filter: str | None = Field(default=None, description="Optional message filter expression.")
     order_by: str | None = Field(default=None, description="Sort order expression.")
     thread_name: str | None = Field(default=None, description="Optional thread resource name to scope messages.")
+    enrich_authors: bool = Field(
+        default=True,
+        description="Resolve message authors to display names and emails; disable only for raw ID-only output.",
+    )
+
+
+class ListSpaceMembersRequest(ToolRequestModel):
+    space_name: str = Field(description="Chat space resource name.")
+    include_self: bool = Field(default=False, description="Whether to include the authenticated user in the member list.")
+    page_token: str | None = Field(default=None, description="Pagination token from a previous member-list response.")
 
 
 class GetMessageRequest(ToolRequestModel):

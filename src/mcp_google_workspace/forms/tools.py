@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastmcp import FastMCP
 
 from .client import forms_service
+from .presentation import question_titles, response_envelope
 from .schemas import (
     BatchUpdateFormRequest,
     CreateFormRequest,
@@ -152,8 +153,9 @@ def register_tools(server: FastMCP) -> None:
         page_size: int = 50,
         page_token: str | None = None,
         filter: str | None = None,
+        enrich_questions: bool = True,
     ) -> dict[str, Any]:
-        return list_form_responses_payload(
+        result = list_form_responses_payload(
             ListFormResponsesRequest(
                 form_id=form_id,
                 page_size=page_size,
@@ -161,7 +163,17 @@ def register_tools(server: FastMCP) -> None:
                 filter=filter,
             )
         )
+        titles = question_titles(get_form_payload(GetFormRequest(form_id=form_id))) if enrich_questions else {}
+        responses = result.get("responses", [])
+        return {
+            "form_id": form_id,
+            "responses": [response_envelope(response, titles) for response in responses],
+            "next_page_token": result.get("nextPageToken"),
+            "count": len(responses),
+        }
 
     @server.tool(name="get_form_response")
-    async def get_form_response(form_id: str, response_id: str) -> dict[str, Any]:
-        return get_form_response_payload(GetFormResponseRequest(form_id=form_id, response_id=response_id))
+    async def get_form_response(form_id: str, response_id: str, enrich_questions: bool = True) -> dict[str, Any]:
+        response = get_form_response_payload(GetFormResponseRequest(form_id=form_id, response_id=response_id))
+        titles = question_titles(get_form_payload(GetFormRequest(form_id=form_id))) if enrich_questions else {}
+        return response_envelope(response, titles)

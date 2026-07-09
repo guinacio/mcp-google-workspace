@@ -8,6 +8,7 @@ from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request, require_elicitation_context
 from ..client import gmail_service
+from ..presentation import clean_message_content, envelope
 from ..schemas import GetThreadRequest, ListThreadsRequest, ModifyThreadRequest, ThreadIdRequest
 
 
@@ -45,10 +46,18 @@ def register(server: FastMCP) -> None:
             )
         )
         threads = result.get("threads", [])
+        envelopes = []
+        for item in threads:
+            thread = await execute_google_request(
+                service.users().threads().get(userId="me", id=item["id"], format="full")
+            )
+            messages = thread.get("messages", [])
+            if messages:
+                envelopes.append({**envelope(messages[-1]), "message_count": len(messages)})
         if ctx is not None:
             await ctx.report_progress(len(threads), request.max_results, "Threads listed")
         return {
-            "threads": threads,
+            "threads": envelopes,
             "next_page_token": result.get("nextPageToken"),
             "result_size_estimate": result.get("resultSizeEstimate", 0),
         }
@@ -56,14 +65,15 @@ def register(server: FastMCP) -> None:
     @server.tool(name="get_thread")
     async def get_thread(
         thread_id: str,
-        format: Literal["full", "metadata", "minimal"] = "full",
+        format: Literal["full", "metadata", "minimal", "clean"] = "clean",
         metadata_headers: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Fetch one thread with message set and history metadata."""
+        """Fetch a thread cleanly: latest full message plus compact prior-message lines."""
+        api_format: Literal["full", "metadata", "minimal"] = "full" if format == "clean" else format
         request = GetThreadRequest(
             thread_id=thread_id,
-            format=format,
+            format=api_format,
             metadata_headers=metadata_headers or [],
         )
         service = gmail_service()
@@ -80,6 +90,19 @@ def register(server: FastMCP) -> None:
             )
         )
         messages = thread.get("messages", [])
+        if format == "clean":
+            items = [envelope(item) for item in messages]
+            latest = messages[-1] if messages else None
+            return {
+                "thread_id": thread.get("id"),
+                "history_id": thread.get("historyId"),
+                "message_count": len(messages),
+                "latest": {**envelope(latest), **clean_message_content(latest)} if latest else None,
+                "prior_messages": [
+                    {"from": item["from"], "date": item["date"], "subject": item["subject"], "snippet": item["snippet"]}
+                    for item in items[:-1]
+                ],
+            }
         return {
             "thread_id": thread.get("id"),
             "history_id": thread.get("historyId"),

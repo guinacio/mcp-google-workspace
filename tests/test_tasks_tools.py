@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import anyio
 import pytest
 
@@ -23,6 +25,7 @@ from mcp_google_workspace.tasks.tools import (
     move_task_payload,
     update_task_payload,
 )
+from mcp_google_workspace.tasks.presentation import task_envelope, tasks_digest
 
 
 async def _list_tool_names(server):
@@ -160,3 +163,16 @@ def test_tasks_tool_annotations():
     assert list_tool.annotations.readOnlyHint is True
     assert complete_tool.annotations.idempotentHint is True
     assert delete_tool.annotations.destructiveHint is True
+
+
+def test_task_envelope_and_digest_surface_actionable_state():
+    task = {"id": "task-1", "title": "Reply", "due": "2026-07-01T00:00:00Z", "notes": "Send a concise update."}
+    now = datetime(2026, 7, 9, tzinfo=UTC)
+
+    envelope = task_envelope(task, now=now)
+    digest = tasks_digest([task, {"id": "task-2", "title": "Someday"}], now=now)
+
+    assert envelope["is_overdue"] is True
+    assert envelope["notes_snippet"] == "Send a concise update."
+    assert digest["overdue"][0]["id"] == "task-1"
+    assert digest["unscheduled"][0]["id"] == "task-2"

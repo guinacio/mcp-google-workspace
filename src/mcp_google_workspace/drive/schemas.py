@@ -29,7 +29,7 @@ class ListFilesRequest(ToolRequestModel):
     )
     spaces: str | None = Field(default=None, description="Spaces to query, usually 'drive'.")
     fields: str = Field(
-        default="nextPageToken, files(id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink)",
+        default="nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload))",
         description="Partial response fields selector.",
     )
 
@@ -38,7 +38,7 @@ class GetFileRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
     fields: str = Field(
-        default="id,name,mimeType,size,parents,owners,permissions,driveId,webViewLink,webContentLink,capabilities,exportLinks",
+        default="id,name,mimeType,size,parents,owners(displayName,emailAddress),driveId,webViewLink,webContentLink,description,createdTime,modifiedTime,shared,starred,trashed,ownedByMe,lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload),exportLinks",
         description="Partial response fields selector.",
     )
 

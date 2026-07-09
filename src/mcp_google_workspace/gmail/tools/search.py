@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
 from ..client import gmail_service
-from ..schemas import ListEmailsRequest, SearchEmailRequest
+from ..presentation import envelope
+from ..presentation import clean_message_content
+from ..schemas import DigestRequest, ListEmailsRequest, SearchEmailRequest
 
 
 def _build_search_query(request: SearchEmailRequest) -> str | None:
@@ -34,6 +38,46 @@ def _build_search_query(request: SearchEmailRequest) -> str | None:
 
 
 def register(server: FastMCP) -> None:
+    @server.tool(name="digest")
+    async def digest(
+        window: str = "3d",
+        unread_only: bool = False,
+        max_items: int = 25,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Summarize recent mail into direct-person and automated groups, deduplicated by thread."""
+        request = DigestRequest(window=window, unread_only=unread_only, max_items=max_items)
+        amount, unit = re.fullmatch(r"(\d+)([dhw])", request.window).groups()  # validated by the schema
+        seconds = int(amount) * {"d": 86_400, "h": 3_600, "w": 604_800}[unit]
+        after = int((datetime.now(UTC) - timedelta(seconds=seconds)).timestamp())
+        query = f"after:{after}" + (" is:unread" if request.unread_only else "")
+        service = gmail_service()
+        result = await execute_google_request(
+            service.users().messages().list(userId="me", q=query, maxResults=request.max_items)
+        )
+        seen_threads: set[str] = set()
+        people: list[dict[str, Any]] = []
+        automated: list[dict[str, Any]] = []
+        for ref in result.get("messages", []):
+            message = await execute_google_request(
+                service.users().messages().get(userId="me", id=ref["id"], format="full")
+            )
+            item = envelope(message)
+            thread_id = str(item.get("thread_id") or item.get("id"))
+            if thread_id in seen_threads:
+                continue
+            seen_threads.add(thread_id)
+            text = clean_message_content(message, limit=500)["body"].replace("\n", " ")
+            item["gist"] = text[:240] or item["snippet"]
+            item["requires_response"] = bool(
+                not item["is_automated"]
+                and re.search(r"\?|\b(?:please|can you|could you|let me know|respond|reply|deadline|due)\b", text, re.I)
+            )
+            deadline = re.search(r"\b(?:by|before|due)\s+[^.\n]{1,80}", text, re.I)
+            item["deadline_detected"] = deadline.group(0) if deadline else None
+            (automated if item["is_automated"] or item["is_newsletter"] else people).append(item)
+        return {"window": request.window, "people": people, "automated": automated, "next_history_id": None}
+
     @server.tool(name="search_emails")
     async def search_emails(
         query: str | None = None,
@@ -80,10 +124,14 @@ def register(server: FastMCP) -> None:
             )
         )
         messages = result.get("messages", [])
+        envelopes = [
+            envelope(await execute_google_request(service.users().messages().get(userId="me", id=item["id"], format="full")))
+            for item in messages
+        ]
         if ctx is not None:
             await ctx.report_progress(len(messages), request.max_results, "Search results loaded")
         return {
-            "messages": messages,
+            "messages": envelopes,
             "result_size_estimate": result.get("resultSizeEstimate", 0),
             "next_page_token": result.get("nextPageToken"),
             "effective_query": query_str,
@@ -123,10 +171,14 @@ def register(server: FastMCP) -> None:
             )
         )
         messages = result.get("messages", [])
+        envelopes = [
+            envelope(await execute_google_request(service.users().messages().get(userId="me", id=item["id"], format="full")))
+            for item in messages
+        ]
         if ctx is not None:
             await ctx.report_progress(len(messages), request.max_results, "Messages listed")
         return {
-            "messages": messages,
+            "messages": envelopes,
             "next_page_token": result.get("nextPageToken"),
             "result_size_estimate": result.get("resultSizeEstimate", 0),
         }

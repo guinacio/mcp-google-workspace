@@ -14,6 +14,7 @@ from googleapiclient.http import MediaIoBaseDownload
 
 from ..auth import build_calendar_service, build_drive_service
 from ..common.async_ops import execute_google_request, require_elicitation_context, run_blocking, write_bytes_file
+from .presentation import event_envelope
 from ..common.parsing import normalize_participants
 from .schemas import (
     AddEventAttachmentRequest,
@@ -315,11 +316,14 @@ def register_tools(server: FastMCP) -> None:
             service.events()
             .list(**list_kwargs)
         )
-        if request.range_preset:
-            result["range_preset"] = request.range_preset
-            result["effective_time_min"] = effective_time_min
-            result["effective_time_max"] = effective_time_max
-        return result
+        return {
+            "events": [event_envelope(event) for event in result.get("items", [])],
+            "next_page_token": result.get("nextPageToken"),
+            "count": len(result.get("items", [])),
+            "range_preset": request.range_preset,
+            "effective_time_min": effective_time_min,
+            "effective_time_max": effective_time_max,
+        }
 
     @server.tool(name="get_event")
     async def get_event(
@@ -348,7 +352,32 @@ def register_tools(server: FastMCP) -> None:
                 maxAttendees=request.max_attendees,
             )
         )
-        return {"event": event}
+        return {"event": event_envelope(event)}
+
+    @server.tool(name="upcoming_calendar_digest")
+    async def upcoming_calendar_digest(days: int = 7, max_results: int = 50) -> dict[str, Any]:
+        """Return upcoming events and those needing the user's RSVP in one call."""
+        service = build_calendar_service()
+        timezone_settings = await execute_google_request(service.settings().get(setting="timezone"))
+        user_timezone = timezone_settings.get("value", "UTC")
+        now = datetime.now(pytz.timezone(user_timezone))
+        result = await execute_google_request(
+            service.events().list(
+                calendarId="primary",
+                timeMin=now.isoformat(),
+                timeMax=(now + timedelta(days=days)).isoformat(),
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+        )
+        events = [event_envelope(event) for event in result.get("items", [])]
+        return {
+            "window_days": days,
+            "events": events,
+            "requires_response": [event for event in events if event["requires_response"]],
+            "count": len(events),
+        }
 
     @server.tool(name="list_calendars")
     async def list_calendars() -> dict[str, Any]:

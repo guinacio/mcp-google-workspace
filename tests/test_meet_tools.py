@@ -1,6 +1,7 @@
 import anyio
 
 from mcp_google_workspace.meet.client import normalize_conference_record_name, normalize_space_name
+from mcp_google_workspace.meet.presentation import participant_envelope
 from mcp_google_workspace.meet.server import meet_mcp
 from mcp_google_workspace.meet.tools import (
     CreateSpaceRequest,
@@ -184,3 +185,9 @@ def test_meet_tool_annotations():
 
     assert get_tool.annotations.readOnlyHint is True
     assert end_tool.annotations.destructiveHint is True
+
+
+def test_participant_envelope_uses_human_identity():
+    result = participant_envelope({"name": "conferenceRecords/r/participants/p", "signedinUser": {"user": "users/123", "displayName": "Ada"}})
+    assert result["name"] == "Ada"
+    assert result["identity_type"] == "signed_in"

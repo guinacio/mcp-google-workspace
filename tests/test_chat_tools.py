@@ -9,6 +9,8 @@ from mcp_google_workspace.chat.client import (
     normalize_space_name,
     normalize_user_name,
 )
+from mcp_google_workspace.chat.presentation import message_envelope, space_envelope
+from mcp_google_workspace.chat.schemas import ListMessagesRequest, ListSpacesRequest
 
 
 def test_normalize_space_name():
@@ -39,3 +41,39 @@ def test_describe_http_error():
     assert "status=403" in details
     assert "reason=Forbidden" in details
     assert "PERMISSION_DENIED" in details
+
+
+def test_message_envelope_exposes_a_human_author_and_compact_content():
+    message = {
+        "name": "spaces/AAA/messages/BBB",
+        "text": "Hello\nthere",
+        "sender": {"name": "users/123", "type": "HUMAN"},
+        "createTime": "2026-07-09T12:00:00Z",
+        "attachment": [{"name": "spaces/AAA/attachments/1"}],
+    }
+
+    result = message_envelope(message, {"displayName": "Ada Lovelace", "email": "ada@example.com"})
+
+    assert result["author"] == {
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "user_id": "users/123",
+        "type": "HUMAN",
+    }
+    assert result["text"] == "Hello there"
+    assert result["attachment_count"] == 1
+
+
+def test_space_envelope_exposes_dm_peer():
+    result = space_envelope(
+        {"name": "spaces/AAA", "spaceType": "DIRECT_MESSAGE"},
+        {"name": "users/123", "displayName": "Ada Lovelace", "email": "ada@example.com"},
+    )
+
+    assert result["is_direct_message"] is True
+    assert result["peer"]["name"] == "Ada Lovelace"
+
+
+def test_chat_listings_default_to_enriched_people():
+    assert ListSpacesRequest().enrich_dms is True
+    assert ListMessagesRequest(space_name="spaces/AAA").enrich_authors is True

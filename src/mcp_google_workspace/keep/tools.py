@@ -8,6 +8,7 @@ from fastmcp import Context, FastMCP
 
 from ..common.async_ops import execute_google_request
 from .client import keep_service, normalize_note_name
+from .presentation import note_envelope
 from .schemas import (
     AppendNoteRequest,
     CreateNoteRequest,
@@ -116,7 +117,7 @@ def register_tools(server: FastMCP) -> None:
         service = keep_service()
         name = normalize_note_name(request.note_name)
         await ctx.info(f"Fetching Keep note {name}.")
-        return await execute_google_request(service.notes().get(name=name))
+        return note_envelope(await execute_google_request(service.notes().get(name=name)), max_text=None)
 
     @server.tool(name="list_notes")
     async def list_notes(request: ListNotesRequest, ctx: Context) -> dict[str, Any]:
@@ -133,7 +134,7 @@ def register_tools(server: FastMCP) -> None:
         notes = result.get("notes", [])
         await ctx.report_progress(len(notes), request.page_size, "Keep notes page loaded")
         return {
-            "notes": notes,
+            "notes": [note_envelope(note) for note in notes],
             "next_page_token": result.get("nextPageToken"),
             "count": len(notes),
         }

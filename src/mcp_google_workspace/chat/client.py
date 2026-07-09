@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from threading import Lock
@@ -196,12 +197,25 @@ async def _resolve_user_profile(user_name: str) -> dict[str, Any]:
         return cached or {"name": user_name, "type": "HUMAN"}
 
 
+async def resolve_chat_users(user_names: set[str]) -> dict[str, dict[str, Any]]:
+    """Resolve distinct Chat users with bounded concurrency and cache reuse."""
+    semaphore = asyncio.Semaphore(10)
+
+    async def resolve_one(user_name: str) -> tuple[str, dict[str, Any]]:
+        async with semaphore:
+            return user_name, await _resolve_user_profile(user_name)
+
+    resolved = await asyncio.gather(*(resolve_one(name) for name in user_names))
+    return dict(resolved)
+
+
 async def resolve_space_members(
     space_name: str,
     *,
     exclude_self: bool = True,
     resolve_profiles: bool = True,
-) -> list[dict[str, Any]]:
+    page_token: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
     """Fetch members of a space and return user data for each.
 
     When *exclude_self* is ``True`` the authenticated user is filtered
@@ -215,7 +229,7 @@ async def resolve_space_members(
     name = normalize_space_name(space_name)
     service = chat_service()
     result = await execute_google_request(
-        service.spaces().members().list(parent=name, pageSize=100)
+        service.spaces().members().list(parent=name, pageSize=100, pageToken=page_token)
     )
     memberships = result.get("memberships", [])
 
@@ -224,7 +238,7 @@ async def resolve_space_members(
         self_user_name = await _resolve_self_user_name(name)
         LOGGER.debug("Self-exclusion filter: %s", self_user_name)
 
-    members: list[dict[str, Any]] = []
+    member_records: list[dict[str, Any]] = []
     for membership in memberships:
         member = membership.get("member", {})
         member_name = member.get("name", "")
@@ -236,16 +250,21 @@ async def resolve_space_members(
             LOGGER.debug("Excluding self: %s", member_name)
             continue
 
+        member_records.append(member)
+
+    profiles = await resolve_chat_users({str(member["name"]) for member in member_records}) if resolve_profiles else {}
+    members: list[dict[str, Any]] = []
+    for member in member_records:
+        member_name = str(member["name"])
         if resolve_profiles:
-            user_data = await _resolve_user_profile(member_name)
+            user_data = profiles.get(member_name, {"name": member_name, "type": member.get("type")})
         else:
             user_data = {"name": member_name, "type": member.get("type")}
             email_hint = _extract_email_hint(member_name)
             if email_hint:
                 user_data["email"] = email_hint
-
         _set_cached_user(member_name, user_data)
         members.append(user_data)
         LOGGER.debug("Keeping peer: %s (%s)", member_name, user_data.get("displayName"))
 
-    return members
+    return members, result.get("nextPageToken")

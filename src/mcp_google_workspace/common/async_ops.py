@@ -32,7 +32,15 @@ async def run_blocking(
 
 
 async def execute_google_request(request: Any) -> Any:
-    return await run_blocking(request.execute)
+    try:
+        return await run_blocking(request.execute)
+    except Exception as exc:
+        # A raw OAuth ``invalid_grant`` is not actionable to an MCP caller.
+        if "invalid_grant" in str(exc).lower():
+            raise RuntimeError(
+                '{"error":"reauth_required","action":"Reconnect Google Workspace in Settings → Connectors"}'
+            ) from exc
+        raise
 
 
 async def read_text_file(path: Path, *, encoding: str = "utf-8") -> str:

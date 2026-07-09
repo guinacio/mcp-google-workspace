@@ -32,3 +32,6 @@ wheels/
 # .cursor files
 .cursor/
 
+# Local AI-assistant settings and generated bundle archives
+.claude/
+*.mcpb

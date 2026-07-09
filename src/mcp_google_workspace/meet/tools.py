@@ -7,6 +7,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from .client import meet_service, normalize_conference_record_name, normalize_space_name
+from .presentation import conference_envelope, participant_envelope, recording_envelope, transcript_envelope
 from .schemas import (
     CreateSpaceRequest,
     EndActiveConferenceRequest,
@@ -111,13 +112,15 @@ def register_tools(server: FastMCP) -> None:
         page_token: str | None = None,
         filter: str | None = None,
     ) -> dict[str, Any]:
-        return list_conference_records_payload(
+        result = list_conference_records_payload(
             ListConferenceRecordsRequest(page_size=page_size, page_token=page_token, filter=filter)
         )
+        records = result.get("conferenceRecords", [])
+        return {"conference_records": [conference_envelope(record) for record in records], "next_page_token": result.get("nextPageToken"), "count": len(records)}
 
     @server.tool(name="get_conference_record")
     async def get_conference_record(conference_record_name: str) -> dict[str, Any]:
-        return get_conference_record_payload(GetConferenceRecordRequest(conference_record_name=conference_record_name))
+        return conference_envelope(get_conference_record_payload(GetConferenceRecordRequest(conference_record_name=conference_record_name)))
 
     @server.tool(name="list_conference_participants")
     async def list_conference_participants(
@@ -126,7 +129,7 @@ def register_tools(server: FastMCP) -> None:
         page_token: str | None = None,
         filter: str | None = None,
     ) -> dict[str, Any]:
-        return list_conference_participants_payload(
+        result = list_conference_participants_payload(
             ListConferenceParticipantsRequest(
                 conference_record_name=conference_record_name,
                 page_size=page_size,
@@ -134,6 +137,8 @@ def register_tools(server: FastMCP) -> None:
                 filter=filter,
             )
         )
+        participants = result.get("participants", [])
+        return {"participants": [participant_envelope(item) for item in participants], "next_page_token": result.get("nextPageToken"), "count": len(participants)}
 
     @server.tool(name="list_conference_recordings")
     async def list_conference_recordings(
@@ -141,13 +146,15 @@ def register_tools(server: FastMCP) -> None:
         page_size: int = 50,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        return list_conference_recordings_payload(
+        result = list_conference_recordings_payload(
             ListConferenceRecordingsRequest(
                 conference_record_name=conference_record_name,
                 page_size=page_size,
                 page_token=page_token,
             )
         )
+        recordings = result.get("recordings", [])
+        return {"recordings": [recording_envelope(item) for item in recordings], "next_page_token": result.get("nextPageToken"), "count": len(recordings)}
 
     @server.tool(name="list_conference_transcripts")
     async def list_conference_transcripts(
@@ -155,10 +162,12 @@ def register_tools(server: FastMCP) -> None:
         page_size: int = 50,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        return list_conference_transcripts_payload(
+        result = list_conference_transcripts_payload(
             ListConferenceTranscriptsRequest(
                 conference_record_name=conference_record_name,
                 page_size=page_size,
                 page_token=page_token,
             )
         )
+        transcripts = result.get("transcripts", [])
+        return {"transcripts": [transcript_envelope(item) for item in transcripts], "next_page_token": result.get("nextPageToken"), "count": len(transcripts)}
