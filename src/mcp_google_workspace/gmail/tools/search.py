@@ -10,8 +10,14 @@ from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
 from ..client import gmail_service
-from ..presentation import envelope
-from ..presentation import clean_message_content
+from ..presentation import (
+    cleaned_message_body,
+    detect_deadline,
+    envelope,
+    first_meaningful_sentence,
+    header_map,
+    requires_response,
+)
 from ..schemas import DigestRequest, ListEmailsRequest, SearchEmailRequest
 
 
@@ -67,14 +73,18 @@ def register(server: FastMCP) -> None:
             if thread_id in seen_threads:
                 continue
             seen_threads.add(thread_id)
-            text = clean_message_content(message, limit=500)["body"].replace("\n", " ")
-            item["gist"] = text[:240] or item["snippet"]
-            item["requires_response"] = bool(
-                not item["is_automated"]
-                and re.search(r"\?|\b(?:please|can you|could you|let me know|respond|reply|deadline|due)\b", text, re.I)
+            text, _ = cleaned_message_body(message)
+            gist = first_meaningful_sentence(text)
+            if gist and gist != item["snippet"]:
+                item["gist"] = gist
+            item["requires_response"] = requires_response(
+                text,
+                is_automated=item["is_automated"],
+                is_newsletter=item["is_newsletter"],
             )
-            deadline = re.search(r"\b(?:by|before|due)\s+[^.\n]{1,80}", text, re.I)
-            item["deadline_detected"] = deadline.group(0) if deadline else None
+            item["deadline_detected"] = detect_deadline(
+                text, date_header=header_map(message.get("payload", {})).get("date")
+            )
             (automated if item["is_automated"] or item["is_newsletter"] else people).append(item)
         return {"window": request.window, "people": people, "automated": automated, "next_history_id": None}
 

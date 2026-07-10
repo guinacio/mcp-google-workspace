@@ -1,10 +1,16 @@
 import asyncio
+import base64
 
 import pytest
 
 from mcp_google_workspace.common.async_ops import execute_google_request
 from mcp_google_workspace.gmail.mime_utils import build_email_message, encode_subject, extract_message_bodies
-from mcp_google_workspace.gmail.presentation import clean_message_content, envelope
+from mcp_google_workspace.gmail.presentation import (
+    clean_message_content,
+    detect_deadline,
+    envelope,
+    requires_response,
+)
 from mcp_google_workspace.gmail.schemas import SendEmailRequest
 
 
@@ -86,12 +92,44 @@ def test_clean_message_content_collapses_quote_and_truncates():
     assert result["truncated"] is True
 
 
-def test_invalid_grant_has_an_actionable_error():
+def test_invalid_grant_deletes_the_cached_token_and_has_an_actionable_error(monkeypatch):
     class FailedRequest:
         def execute(self):
             raise RuntimeError("invalid_grant: Bad Request")
 
+    deleted = []
+    monkeypatch.setattr("mcp_google_workspace.common.async_ops.delete_cached_token", lambda: deleted.append(True))
+
     with pytest.raises(RuntimeError, match="reauth_required") as error:
         asyncio.run(execute_google_request(FailedRequest()))
 
-    assert "Reconnect Google Workspace" in str(error.value)
+    assert deleted == [True]
+    assert "OAuth consent" in str(error.value)
+
+
+def test_deadline_detection_requires_a_real_date_or_time_and_supports_portuguese():
+    text = "Aguardo sua devolutiva até segunda-feira, dia 13/07, às 18h."
+
+    assert detect_deadline(text, date_header="Thu, 9 Jul 2026 10:00:00 -0300") == "2026-07-13T18:00-03:00"
+    assert detect_deadline("Built by Docker and maintained by LangChain.") is None
+
+
+def test_html_placeholder_falls_back_to_html_and_snippet_hygiene():
+    html = "<p>Hello ____ https://example.com?track=1</p>"
+    message = {
+        "payload": {
+            "parts": [
+                {"mimeType": "text/plain", "body": {"data": "VGhpcyBtZXNzYWdlIGNvbnRhaW5zIEhUTUwgY29udGVudC4="}},
+                {"mimeType": "text/html", "body": {"data": base64.urlsafe_b64encode(html.encode()).decode()}},
+            ]
+        }
+    }
+
+    assert "HTML content" not in envelope(message)["snippet"]
+    assert "?track" not in envelope(message)["snippet"]
+    assert "____" not in envelope(message)["snippet"]
+
+
+def test_response_detection_excludes_newsletters_and_automated_messages():
+    assert requires_response("What do you do now?", is_automated=True, is_newsletter=False) is False
+    assert requires_response("Can you reply today?", is_automated=False, is_newsletter=False) is True

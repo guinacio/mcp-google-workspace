@@ -154,6 +154,18 @@ def resolve_credentials_paths() -> tuple[Path, Path]:
     )
 
 
+def delete_cached_token() -> bool:
+    """Delete only the resolved OAuth token so the next request starts consent again."""
+    _, token_path = resolve_credentials_paths()
+    try:
+        token_path.unlink(missing_ok=True)
+        LOGGER.info("Deleted cached Google OAuth token at %s after an authentication failure.", token_path)
+        return True
+    except OSError as exc:
+        LOGGER.warning("Failed to delete cached Google OAuth token at %s: %s", token_path, exc)
+        return False
+
+
 def get_credentials() -> Credentials:
     """Load or create OAuth credentials with browser-based consent flow."""
     settings = get_runtime_settings()
@@ -191,10 +203,7 @@ def get_credentials() -> Credentials:
                 exc,
                 token_path,
             )
-            try:
-                token_path.unlink()
-            except OSError as unlink_exc:
-                LOGGER.warning("Failed to delete stale token file: %s", unlink_exc)
+            delete_cached_token()
             creds = None
 
     if not creds or not creds.valid:

@@ -25,12 +25,27 @@ function fmtTime(iso: string): string {
   }
 }
 
-function fmtDayDate(value: string): string {
+function fmtWeekRange(start: string, end: string): string {
   try {
-    const d = new Date(`${value}T00:00:00`);
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const startDate = new Date(`${start}T00:00:00`);
+    const endDate = new Date(`${end}T00:00:00`);
+    const startLabel = startDate.toLocaleDateString([], { month: "short", day: "numeric" });
+    const endLabel = endDate.toLocaleDateString([], {
+      month: startDate.getMonth() === endDate.getMonth() ? undefined : "short",
+      day: "numeric",
+      year: startDate.getFullYear() === endDate.getFullYear() ? undefined : "numeric",
+    });
+    return `${startLabel} – ${endLabel}`;
   } catch {
-    return value;
+    return `${start} – ${end}`;
+  }
+}
+
+function dayNumber(value: string): string {
+  try {
+    return String(new Date(`${value}T00:00:00`).getDate());
+  } catch {
+    return value.slice(-2);
   }
 }
 
@@ -107,8 +122,9 @@ function sanitizeInlineStyle(styleText: string | null | undefined): string {
   if (!styleText) return "";
   const probe = document.createElement("div");
   probe.setAttribute("style", styleText);
+  // Sender-defined foreground and background colors can be unreadable in the
+  // host theme, so message text always inherits the app's contrast-safe palette.
   const allowed = [
-    "backgroundColor",
     "borderBottomColor",
     "borderBottomStyle",
     "borderBottomWidth",
@@ -126,7 +142,6 @@ function sanitizeInlineStyle(styleText: string | null | undefined): string {
     "borderTopStyle",
     "borderTopWidth",
     "borderWidth",
-    "color",
     "fontFamily",
     "fontSize",
     "fontStyle",
@@ -485,60 +500,104 @@ function showEventTooltipLayer(anchor: HTMLElement, html: string) {
 
 export const RENDER_CSS = `
 .dashboard {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 14px 12px 24px;
+  padding: 18px 16px 32px;
   display: grid;
-  gap: 12px;
+  gap: 18px;
 }
 
 /* ── Top bar ─────────────────────────────────────────────────────────── */
 .top-bar {
-  background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--radius-md);
+  background: var(--workspace-header);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 82%, transparent);
+  border-radius: var(--radius-lg);
   box-shadow: var(--md-sys-elevation-1);
-  padding: 14px 18px;
+  padding: 15px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
+}
+
+.top-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.workspace-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #4285f4 0%, #1a73e8 100%);
+  color: #fff;
+  box-shadow: 0 3px 7px color-mix(in srgb, #1a73e8 30%, transparent);
+  font-size: 1.02rem;
+  font-weight: 700;
 }
 
 .top-bar h1 {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-size: 1.08rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.top-eyebrow,
+.calendar-kicker {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .top-sub {
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 0.82rem;
-  margin-top: 2px;
+  font-size: 0.76rem;
+  margin-top: 1px;
 }
 
 .quick-stats {
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .stat-chip {
   border-radius: 999px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-variant);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 85%, transparent);
+  background: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface-variant);
-  padding: 5px 10px;
-  font-size: 0.76rem;
-  font-weight: 500;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary);
+}
+
+.stat-chip-mail .stat-dot {
+  background: #34a853;
 }
 
 /* ── Two-column layout ───────────────────────────────────────────────── */
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 65fr) minmax(320px, 35fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 68fr) minmax(320px, 32fr);
+  gap: 18px;
 }
 
 .main-grid-full {
@@ -547,47 +606,88 @@ export const RENDER_CSS = `
 
 .surface {
   background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 85%, transparent);
+  border-radius: var(--radius-lg);
   box-shadow: var(--md-sys-elevation-1);
 }
 
 .calendar-shell {
-  padding: 14px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 16px;
   overflow-x: auto;
+}
+
+.calendar-heading {
+  min-width: max-content;
+}
+
+.calendar-title-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 2px 0;
+}
+
+.calendar-title-line h2 {
+  margin: 0;
+  color: var(--md-sys-color-on-surface);
+  font-size: 1.12rem;
+  font-weight: 500;
+  letter-spacing: -0.016em;
+}
+
+.calendar-count {
+  border-radius: 999px;
+  background: var(--workspace-tint);
+  color: var(--md-sys-color-primary);
+  font-size: 0.69rem;
+  font-weight: 700;
+  padding: 3px 7px;
 }
 
 .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 11px;
   gap: 10px;
 }
 
 .section-title {
-  font-size: 0.82rem;
+  color: var(--md-sys-color-on-surface);
+  font-size: 0.98rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--md-sys-color-on-surface-variant);
+  letter-spacing: -0.01em;
 }
 
 .section-subtitle {
-  font-size: 0.78rem;
-  color: var(--md-sys-color-outline);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.73rem;
 }
 
 /* ── Navigation / chip buttons ───────────────────────────────────────── */
 .week-nav {
   display: inline-flex;
-  gap: 6px;
+  align-items: center;
+  gap: 3px;
+  padding: 2px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 999px;
 }
 
 .calendar-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 7px;
   flex-wrap: wrap;
 }
 
@@ -637,12 +737,13 @@ export const RENDER_CSS = `
 .nav-btn,
 .chip-btn,
 .action-btn {
-  border: 1px solid var(--md-sys-color-outline-variant);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
   border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 0.76rem;
+  padding: 6px 11px;
+  font-size: 0.73rem;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
@@ -650,32 +751,62 @@ export const RENDER_CSS = `
 .nav-btn:hover,
 .chip-btn:hover,
 .action-btn:hover {
-  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
-  border-color: var(--md-sys-color-primary);
+  background: var(--workspace-tint);
+  border-color: transparent;
   color: var(--md-sys-color-primary);
+}
+
+.nav-icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.nav-today {
+  padding-inline: 9px;
+}
+
+.create-event-btn {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+}
+
+.create-event-btn:hover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 88%, #000);
+  color: var(--md-sys-color-on-primary);
 }
 
 /* ── Weekly calendar grid ────────────────────────────────────────────── */
 .week-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(150px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(var(--day-count, 7), minmax(150px, 1fr));
+  gap: 0;
   position: relative;
   isolation: isolate;
   overflow-x: auto;
-  padding-bottom: 6px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  padding-bottom: 0;
   scrollbar-gutter: stable both-edges;
 }
 
 .day-col {
-  background: var(--md-sys-color-surface-container-high);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--radius-sm);
-  padding: 8px;
-  min-height: 420px;
+  background: var(--md-sys-color-surface-container);
+  border: 0;
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+  padding: 12px 10px;
+  min-height: 470px;
   overflow: visible;
   position: relative;
   z-index: 1;
+}
+
+.day-col:last-child {
+  border-right: 0;
 }
 
 .day-col:hover {
@@ -683,35 +814,65 @@ export const RENDER_CSS = `
 }
 
 .day-col.today {
-  border-color: var(--md-sys-color-primary);
-  background: color-mix(in srgb, var(--md-sys-color-primary) 5%, var(--md-sys-color-surface-container-high));
+  background: color-mix(in srgb, var(--md-sys-color-primary) 3%, var(--md-sys-color-surface-container));
 }
 
 .day-head {
-  font-size: 0.76rem;
-  color: var(--md-sys-color-on-surface-variant);
-  margin-bottom: 8px;
-  font-weight: 600;
+  min-height: 42px;
+  margin-bottom: 12px;
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 6px;
 }
 
-.day-col.today .day-head {
+.day-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.day-label-name {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.day-label-number {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--md-sys-color-on-surface);
+  font-size: 0.96rem;
+  font-weight: 500;
+}
+
+.day-col.today .day-label-name {
   color: var(--md-sys-color-primary);
+}
+
+.day-col.today .day-label-number {
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
 }
 
 .day-all-day {
   display: grid;
-  gap: 4px;
-  margin-bottom: 8px;
+  gap: 5px;
+  margin-bottom: 10px;
 }
 
 .all-day-chip {
-  font-size: 0.72rem;
-  border-radius: var(--radius-xs);
-  padding: 3px 7px;
-  background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+  font-size: 0.7rem;
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: var(--workspace-tint);
   color: var(--md-sys-color-primary);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -720,16 +881,23 @@ export const RENDER_CSS = `
 
 .day-events {
   display: grid;
-  gap: 6px;
+  gap: 7px;
   overflow: visible;
+}
+
+.day-empty {
+  color: var(--md-sys-color-outline);
+  font-size: 0.7rem;
+  padding: 12px 2px;
 }
 
 /* ── Event card ──────────────────────────────────────────────────────── */
 .calendar-event {
-  border-radius: var(--radius-xs);
-  border-left: 3px solid var(--event-color);
-  background: color-mix(in srgb, var(--event-color) 10%, var(--md-sys-color-surface-container));
-  padding: 7px 8px;
+  border-radius: 7px;
+  border-left: 4px solid var(--event-color);
+  background: color-mix(in srgb, var(--event-color) 16%, var(--md-sys-color-surface-container));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--event-color) 22%, transparent);
+  padding: 8px 9px;
   cursor: pointer;
   position: relative;
   z-index: 1;
@@ -737,21 +905,22 @@ export const RENDER_CSS = `
 }
 
 .calendar-event:hover {
-  background: color-mix(in srgb, var(--event-color) 20%, var(--md-sys-color-surface-container));
+  background: color-mix(in srgb, var(--event-color) 26%, var(--md-sys-color-surface-container));
+  box-shadow: var(--md-sys-elevation-1), inset 0 0 0 1px color-mix(in srgb, var(--event-color) 36%, transparent);
   z-index: 120;
 }
 
 .event-time {
-  font-size: 0.7rem;
-  color: var(--md-sys-color-outline);
-  font-weight: 600;
+  font-size: 0.68rem;
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 72%, var(--event-color));
+  font-weight: 700;
   letter-spacing: 0.01em;
 }
 
 .event-title {
-  font-size: 0.78rem;
-  font-weight: 500;
-  margin-top: 1px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  margin-top: 2px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -759,9 +928,9 @@ export const RENDER_CSS = `
 }
 
 .event-meta {
-  margin-top: 2px;
-  color: var(--md-sys-color-outline);
-  font-size: 0.7rem;
+  margin-top: 3px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.68rem;
 }
 
 /* ── Event hover tooltip ─────────────────────────────────────────────── */
@@ -825,44 +994,56 @@ export const RENDER_CSS = `
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
 .sidebar {
   display: grid;
-  gap: 12px;
+  gap: 16px;
   align-content: start;
 }
 
 .inbox-shell {
-  padding: 12px;
+  overflow: hidden;
+  padding: 16px 0 0;
+  border-radius: var(--radius-lg);
+}
+
+.inbox-shell .section-head {
+  margin: 0;
+  padding: 0 16px 12px;
 }
 
 /* ── Inbox ────────────────────────────────────────────────────────────── */
 .inbox-list {
   display: grid;
-  gap: 1px;
+  gap: 0;
   max-height: 460px;
   overflow: auto;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .inbox-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 7px 6px;
-  border-radius: var(--radius-xs);
+  gap: 9px;
+  min-height: 61px;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  border-left: 3px solid transparent;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.12s, box-shadow 0.12s;
 }
 
 .inbox-row:hover {
-  background: var(--md-sys-color-surface-variant);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, var(--md-sys-color-surface-container-high));
+  box-shadow: inset 2px 0 0 var(--md-sys-color-primary);
 }
 
 .inbox-row.unread {
-  background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+  background: var(--workspace-tint);
+  border-left-color: var(--md-sys-color-primary);
 }
 
 .avatar {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
   color: var(--md-sys-color-primary);
@@ -872,12 +1053,26 @@ export const RENDER_CSS = `
   font-weight: 700;
 }
 
+.mail-avatar {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 20%, var(--md-sys-color-surface-container-highest));
+}
+
 .mail-content {
   min-width: 0;
 }
 
+.mail-from {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .mail-subject {
-  font-size: 0.78rem;
+  margin-top: 1px;
+  font-size: 0.72rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -885,22 +1080,31 @@ export const RENDER_CSS = `
 }
 
 .mail-subject.unread {
-  font-weight: 700;
-  color: var(--md-sys-color-primary);
+  font-weight: 650;
+  color: var(--md-sys-color-on-surface);
 }
 
-.mail-subline {
-  font-size: 0.7rem;
-  color: var(--md-sys-color-outline);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.mail-subject span {
+  color: var(--md-sys-color-on-surface-variant);
+  font-weight: 400;
+}
+
+.inbox-title span {
+  margin-left: 6px;
+  color: var(--md-sys-color-on-primary-container);
+  background: var(--md-sys-color-primary-container);
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 0.66rem;
+  font-weight: 600;
 }
 
 .mail-date {
-  font-size: 0.68rem;
-  color: var(--md-sys-color-outline);
-  padding-left: 6px;
+  align-self: start;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.67rem;
+  font-weight: 600;
+  padding-left: 5px;
   white-space: nowrap;
 }
 
@@ -1060,6 +1264,128 @@ export const RENDER_CSS = `
   flex-wrap: wrap;
 }
 
+.email-panel {
+  width: min(920px, 96vw);
+  padding: 0;
+  overflow: hidden;
+  background: var(--md-sys-color-surface);
+}
+
+.email-panel-body {
+  gap: 14px;
+  padding: 22px clamp(18px, 4vw, 42px) 26px;
+  margin-top: 0;
+}
+
+.email-toolbar {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.email-toolbar .nav-btn {
+  margin-left: auto;
+}
+
+.email-back {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface);
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.email-back:hover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
+}
+
+.email-subject-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.email-subject-line h2 {
+  margin: 0;
+  color: var(--md-sys-color-on-surface);
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+.email-sender-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0 4px;
+}
+
+.email-sender-avatar {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.email-sender-identities {
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--md-sys-color-on-surface);
+}
+
+.email-sender-identities span,
+.email-recipient-extra,
+.email-sender-row time {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.72rem;
+}
+
+.email-sender-row time {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.email-attachments {
+  padding: 11px 13px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container);
+  font-size: 0.76rem;
+}
+
+.email-attachments .attachment-list {
+  margin-top: 8px;
+}
+
+.gmail-message-surface {
+  border-radius: 12px;
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.email-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
 .email-chip {
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 999px;
@@ -1117,12 +1443,12 @@ export const RENDER_CSS = `
 }
 
 .email-body-content {
-  padding: 16px 18px;
+  padding: clamp(18px, 4vw, 34px);
   max-height: min(58vh, 760px);
   overflow: auto;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-surface) 88%, transparent), transparent 90px),
-    var(--md-sys-color-surface-container-high);
+    var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
 }
 
@@ -1275,7 +1601,7 @@ export const RENDER_CSS = `
   }
 
   .week-grid {
-    grid-template-columns: repeat(7, minmax(140px, 1fr));
+    grid-template-columns: repeat(var(--day-count, 7), minmax(140px, 1fr));
   }
 
   .day-col {
@@ -1285,11 +1611,87 @@ export const RENDER_CSS = `
 
 @media (max-width: 760px) {
   .dashboard {
-    padding: 10px 8px 16px;
+    padding: 10px 8px 20px;
+    gap: 12px;
+  }
+
+  .top-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 14px;
+  }
+
+  .quick-stats {
+    justify-content: flex-start;
+  }
+
+  .calendar-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px 14px 14px;
+  }
+
+  .calendar-actions {
+    justify-content: flex-start;
+  }
+
+  .calendar-title-line h2 {
+    font-size: 1rem;
   }
 
   .week-grid {
-    grid-template-columns: repeat(7, minmax(130px, 1fr));
+    grid-template-columns: repeat(var(--day-count, 7), minmax(128px, 1fr));
+  }
+
+  .day-col {
+    min-height: 380px;
+    padding: 10px 8px;
+  }
+
+  .inbox-row {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    min-height: 56px;
+    padding: 9px 10px;
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+  }
+
+  .email-panel {
+    width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .email-panel-body {
+    padding: 18px;
+  }
+
+  .email-subject-line {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .email-sender-row {
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .email-sender-avatar {
+    width: 38px;
+    height: 38px;
+  }
+
+  .email-sender-row time {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .email-footer-actions {
+    justify-content: flex-start;
   }
 
   .editor-row {
@@ -1685,15 +2087,19 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
 }
 
 function renderTopBar(eventsCount: number, unreadCount?: number): string {
-  const unreadChip = unreadCount !== undefined ? `<span class="stat-chip">${unreadCount} unread</span>` : "";
+  const unreadChip = unreadCount !== undefined ? `<span class="stat-chip stat-chip-mail"><span class="stat-dot"></span>${unreadCount} unread</span>` : "";
   return `
     <div class="top-bar surface">
-      <div>
-        <h1>${esc(getGreeting())}</h1>
-        <div class="top-sub">${esc(fmtTopDate())}</div>
+      <div class="top-brand">
+        <div class="workspace-mark" aria-hidden="true">W</div>
+        <div>
+          <div class="top-eyebrow">Google Workspace</div>
+          <h1>${esc(getGreeting())}</h1>
+          <div class="top-sub">${esc(fmtTopDate())}</div>
+        </div>
       </div>
       <div class="quick-stats">
-        <span class="stat-chip">${eventsCount} events</span>
+        <span class="stat-chip stat-chip-calendar"><span class="stat-dot"></span>${eventsCount} events</span>
         ${unreadChip}
       </div>
     </div>
@@ -1712,22 +2118,26 @@ function renderCalendarArea(
   if (!weekly) {
     return `<section class="calendar-shell surface"><div class="section-subtitle">Calendar data unavailable.</div></section>`;
   }
-  const weekRange = `${weekly.week_start} - ${weekly.week_end}`;
+  const weekRange = fmtWeekRange(weekly.week_start, weekly.week_end);
   const canCreate = options.tool_capabilities?.can_create_event ?? false;
   const canToggleWeekend = options.tool_capabilities?.can_toggle_weekend ?? false;
   const canSelectCalendars = options.tool_capabilities?.can_select_calendars ?? false;
   return `
     <section class="calendar-shell surface">
-      <div class="section-head">
-        <div>
-          <div class="section-title">Week View</div>
-          <div class="section-subtitle">${esc(weekRange)} · ${esc(weekly.timezone)}</div>
+      <div class="calendar-header">
+        <div class="calendar-heading">
+          <div class="calendar-kicker">Google Calendar</div>
+          <div class="calendar-title-line">
+            <h2>Week of ${esc(weekRange)}</h2>
+            <span class="calendar-count">${weekly.total_events} event${weekly.total_events === 1 ? "" : "s"}</span>
+          </div>
+          <div class="section-subtitle">${esc(weekly.timezone)}</div>
         </div>
         <div class="calendar-actions">
           <div class="week-nav">
-            <button type="button" class="nav-btn" data-week-nav="prev">Prev</button>
-            <button type="button" class="nav-btn" data-week-nav="today">Today</button>
-            <button type="button" class="nav-btn" data-week-nav="next">Next</button>
+            <button type="button" class="nav-btn nav-icon" data-week-nav="prev" aria-label="Previous week" title="Previous week">‹</button>
+            <button type="button" class="nav-btn nav-today" data-week-nav="today">Today</button>
+            <button type="button" class="nav-btn nav-icon" data-week-nav="next" aria-label="Next week" title="Next week">›</button>
           </div>
           ${canToggleWeekend ? `
             <label class="inline-toggle">
@@ -1736,10 +2146,10 @@ function renderCalendarArea(
             </label>
           ` : ""}
           ${canSelectCalendars ? renderCalendarSelector(options.calendar_catalog, options.selected_calendar_ids) : ""}
-          ${canCreate ? `<button type="button" class="action-btn" data-open-event-editor="create">New event</button>` : ""}
+          ${canCreate ? `<button type="button" class="action-btn create-event-btn" data-open-event-editor="create"><span aria-hidden="true">＋</span> Create</button>` : ""}
         </div>
       </div>
-      <div class="week-grid">${weekly.days.map((day) => renderDay(day, weekly.timezone, canCreate, options.tool_capabilities)).join("")}</div>
+      <div class="week-grid" style="--day-count:${weekly.days.length}">${weekly.days.map((day) => renderDay(day, weekly.timezone, canCreate, options.tool_capabilities)).join("")}</div>
     </section>
   `;
 }
@@ -1778,12 +2188,14 @@ function renderDay(
   const allDay = day.all_day_events
     .map((event) => `<div class="all-day-chip" title="${esc(event.title)}">${esc(event.title)}</div>`)
     .join("");
-  const empty = !timed && !allDay ? `<div class="section-subtitle">No events</div>` : "";
+  const empty = !timed && !allDay ? `<div class="day-empty">No events</div>` : "";
   return `
     <div class="day-col ${day.is_today ? "today" : ""}">
       <div class="day-head">
-        <span>${esc(day.day_label)}</span>
-        <span>${esc(fmtDayDate(day.date))}</span>
+        <div class="day-label">
+          <span class="day-label-name">${esc(day.day_label)}</span>
+          <span class="day-label-number">${esc(dayNumber(day.date))}</span>
+        </div>
         ${canCreate ? `<button type="button" class="chip-btn" data-open-event-editor="create" data-seed-date="${esc(day.date)}">Add</button>` : ""}
       </div>
       ${allDay ? `<div class="day-all-day">${allDay}</div>` : ""}
@@ -1859,10 +2271,10 @@ function renderInboxPanel(messages: InboxMessage[], unreadCount: number): string
       const unreadClass = isUnread ? "unread" : "";
       return `
         <div class="inbox-row ${unreadClass}" data-open-email="1" data-message-id="${esc(msg.id || "")}">
-          <div class="avatar">${esc(initials(msg.from || ""))}</div>
+          <div class="avatar mail-avatar">${esc(initials(msg.from || ""))}</div>
           <div class="mail-content">
-            <div class="mail-subject ${unreadClass}">${esc(msg.subject || "(No subject)")}</div>
-            <div class="mail-subline">${esc((msg.from || "Unknown sender").replace(/<.*?>/g, "").trim())}${msg.snippet ? ` · ${esc(msg.snippet)}` : ""}</div>
+            <div class="mail-from">${esc((msg.from || "Unknown sender").replace(/<.*?>/g, "").trim())}</div>
+            <div class="mail-subject ${unreadClass}">${esc(msg.subject || "(No subject)")}${msg.snippet ? ` <span>— ${esc(msg.snippet)}</span>` : ""}</div>
           </div>
           <div class="mail-date">${esc(relDate(msg.date))}</div>
         </div>
@@ -1874,8 +2286,8 @@ function renderInboxPanel(messages: InboxMessage[], unreadCount: number): string
     <section class="inbox-shell surface">
       <div class="section-head">
         <div>
-          <div class="section-title">Inbox</div>
-          <div class="section-subtitle">${unreadCount} unread</div>
+          <div class="section-title inbox-title">Inbox <span>${unreadCount} unread</span></div>
+          <div class="section-subtitle">Recent messages</div>
         </div>
       </div>
       <div class="inbox-list">${rows || `<div class="section-subtitle">No messages</div>`}</div>
@@ -2068,6 +2480,8 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
     inTrash ? `<span class="status-chip">Trash</span>` : "",
     inSpam ? `<span class="status-chip">Spam</span>` : "",
   ].filter(Boolean).join("");
+  const sender = detail.from_value || "Unknown sender";
+  const senderInitials = initials(sender);
   const attachments = detail.attachments
     .map((attachment) => {
       const label = attachment.mime_type ? `${attachment.filename} (${attachment.mime_type})` : attachment.filename;
@@ -2092,31 +2506,34 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
     .join("");
   return `
     <div class="overlay" role="dialog" aria-modal="true">
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <div class="panel-title">${esc(detail.subject || "(No subject)")}</div>
-            <div class="panel-sub">${esc(detail.from_value)}${detail.date ? ` · ${esc(detail.date)}` : ""}</div>
-          </div>
+      <section class="panel email-panel">
+        <div class="email-toolbar">
+          <button type="button" class="email-back" data-close-email="1" aria-label="Back to inbox">←</button>
+          <span>Message</span>
           <button type="button" class="nav-btn" data-close-email="1">Close</button>
         </div>
-        <div class="panel-body">
-          <div class="email-meta-grid">
-            <div class="detail-block"><strong>From:</strong> ${esc(detail.from_value)}</div>
-            <div class="detail-block"><strong>To:</strong> ${esc(detail.to || "(not set)")}</div>
-            ${detail.cc ? `<div class="detail-block"><strong>Cc:</strong> ${esc(detail.cc)}</div>` : ""}
-            <div class="detail-block"><strong>Labels:</strong> ${esc(detail.labels.join(", ") || "none")}</div>
-            <div class="detail-block"><strong>Status:</strong> <div class="email-statuses" style="margin-top:6px;">${statusChips}</div></div>
+        <div class="panel-body email-panel-body">
+          <div class="email-subject-line">
+            <h2>${esc(detail.subject || "(No subject)")}</h2>
+            <div class="email-statuses">${statusChips}</div>
           </div>
-          <div class="detail-block"><strong>Attachments</strong><ul class="attachment-list">${attachments || "<li>No attachments.</li>"}</ul></div>
-          <div class="detail-block email-body-block">
+          <div class="email-sender-row">
+            <div class="email-sender-avatar">${esc(senderInitials)}</div>
+            <div class="email-sender-identities">
+              <div><strong>${esc(sender)}</strong> <span>to ${esc(detail.to || "me")}</span></div>
+              ${detail.cc ? `<div class="email-recipient-extra">Cc ${esc(detail.cc)}</div>` : ""}
+            </div>
+            <time>${esc(detail.date || "")}</time>
+          </div>
+          ${detail.attachments.length ? `<div class="email-attachments"><strong>Attachments</strong><ul class="attachment-list">${attachments}</ul></div>` : ""}
+          <div class="detail-block email-body-block gmail-message-surface">
             <div class="email-body-header">
-              <strong>Body</strong>
-              <span class="email-body-mode">${bodyMode}</span>
+              <strong>Message</strong>
+              <span class="email-body-mode">${bodyMode}${bodyMode === "HTML" ? " · sanitized" : ""}</span>
             </div>
             <div class="email-body-content">${bodyHtml}</div>
           </div>
-          <div class="detail-block">
+          <div class="email-footer-actions">
             <div class="email-actions">
               ${canRead ? `<button type="button" class="email-chip ${!isUnread ? "active" : ""}" data-email-action="mark_read" data-message-id="${esc(detail.message_id)}">Mark read</button>` : ""}
               ${canUnread ? `<button type="button" class="email-chip ${isUnread ? "active" : ""}" data-email-action="mark_unread" data-message-id="${esc(detail.message_id)}">Mark unread</button>` : ""}

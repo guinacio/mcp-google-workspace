@@ -118,8 +118,41 @@ if (isStandalone) {
 function initStandaloneMode() {
   applyTheme("dark");
   renderLoading(root);
+  let standaloneData: DashboardData | undefined;
+
+  const renderStandaloneData = () => {
+    if (!standaloneData || (!standaloneData.weekly_calendar && !standaloneData.dashboard)) {
+      renderLoading(root);
+      return;
+    }
+    const state = readDashboardState(standaloneData);
+    renderDashboard(root, standaloneData, {
+      include_weekend: state.include_weekend,
+      selected_calendar_ids: state.selected_calendar_ids,
+      calendar_catalog: standaloneData.calendar_catalog?.items ?? [],
+      tool_capabilities: standaloneData.tool_capabilities,
+    });
+  };
 
   setActionHandler((action: UiAction) => {
+    if (action.type === "close_event_detail") {
+      standaloneData = standaloneData ? { ...standaloneData, event_detail: undefined } : standaloneData;
+      renderStandaloneData();
+      return;
+    }
+
+    if (action.type === "close_email_detail") {
+      standaloneData = standaloneData ? { ...standaloneData, email_detail: undefined } : standaloneData;
+      renderStandaloneData();
+      return;
+    }
+
+    if (action.type === "close_event_editor") {
+      standaloneData = standaloneData ? { ...standaloneData, event_editor: undefined } : standaloneData;
+      renderStandaloneData();
+      return;
+    }
+
     if (action.type === "chat") {
       window.parent.postMessage({ type: "inject_chat_message", text: action.text }, "*");
       return;
@@ -140,8 +173,6 @@ function initStandaloneMode() {
       text = `Open details for email ${action.messageId}.`;
     } else if (action.type === "open_event_editor") {
       text = `Open ${action.mode} event editor.`;
-    } else if (action.type === "close_event_editor") {
-      text = "Close event editor.";
     } else if (action.type === "save_event_editor") {
       text = `${action.draft.mode === "create" ? "Create" : "Update"} event ${action.draft.summary}.`;
     } else if (action.type === "toggle_weekend") {
@@ -179,17 +210,8 @@ function initStandaloneMode() {
     switch (e.data.type) {
       case "dashboard_data": {
         const data = e.data.data as DashboardData;
-        if (data && (data.weekly_calendar || data.dashboard)) {
-          const state = readDashboardState(data);
-          renderDashboard(root, data, {
-            include_weekend: state.include_weekend,
-            selected_calendar_ids: state.selected_calendar_ids,
-            calendar_catalog: data.calendar_catalog?.items ?? [],
-            tool_capabilities: data.tool_capabilities,
-          });
-        } else {
-          renderLoading(root);
-        }
+        standaloneData = data;
+        renderStandaloneData();
         break;
       }
       case "theme_changed": {

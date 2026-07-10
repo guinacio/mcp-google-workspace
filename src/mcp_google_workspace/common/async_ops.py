@@ -9,6 +9,8 @@ from typing import Any, TypeVar
 import anyio
 from fastmcp import Context
 
+from ..auth.google_auth import delete_cached_token
+
 T = TypeVar("T")
 
 
@@ -35,10 +37,16 @@ async def execute_google_request(request: Any) -> Any:
     try:
         return await run_blocking(request.execute)
     except Exception as exc:
-        # A raw OAuth ``invalid_grant`` is not actionable to an MCP caller.
-        if "invalid_grant" in str(exc).lower():
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        message = str(exc).lower()
+        auth_failure = status == 401 or any(
+            marker in message
+            for marker in ("invalid_grant", "invalid_token", "unauthenticated", "token has been expired")
+        )
+        if auth_failure:
+            await run_blocking(delete_cached_token)
             raise RuntimeError(
-                '{"error":"reauth_required","action":"Reconnect Google Workspace in Settings → Connectors"}'
+                '{"error":"reauth_required","action":"Retry the request to start Google Workspace OAuth consent"}'
             ) from exc
         raise
 
