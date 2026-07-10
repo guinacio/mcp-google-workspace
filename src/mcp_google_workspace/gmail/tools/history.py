@@ -8,6 +8,7 @@ from typing import Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
+from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import envelope
 from ..schemas import ListHistoryRequest
@@ -24,6 +25,7 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return a compact incremental mailbox heartbeat, with direct-mail highlights."""
         service = gmail_service()
+        account_timezone = await resolve_user_timezone()
         if since_history_id:
             result = await execute_google_request(
                 service.users().history().list(
@@ -50,7 +52,9 @@ def register(server: FastMCP) -> None:
             profile = await execute_google_request(service.users().getProfile(userId="me"))
             if timestamp:
                 try:
-                    after = int(datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp())
+                    after: int | str = int(
+                        datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp()
+                    )
                 except ValueError:
                     after = timestamp
                 query = f"after:{after}"
@@ -65,7 +69,12 @@ def register(server: FastMCP) -> None:
             next_page_token = listed.get("nextPageToken")
             next_history_id = profile.get("historyId") if not next_page_token else None
         messages = [
-            envelope(await execute_google_request(service.users().messages().get(userId="me", id=message_id, format="full")))
+            envelope(
+                await execute_google_request(
+                    service.users().messages().get(userId="me", id=message_id, format="full")
+                ),
+                account_timezone=account_timezone,
+            )
             for message_id in ids
         ]
         counts: dict[str, int] = {}
@@ -81,6 +90,7 @@ def register(server: FastMCP) -> None:
             "next_page_token": next_page_token,
             "continue_from_history_id": since_history_id if next_page_token and since_history_id else None,
             "continue_from_timestamp": timestamp if next_page_token and not since_history_id else None,
+            "account_timezone": account_timezone,
         }
 
     @server.tool(name="list_history")

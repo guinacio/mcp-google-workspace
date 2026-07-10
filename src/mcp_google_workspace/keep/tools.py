@@ -7,6 +7,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from ..common.async_ops import execute_google_request
+from ..common.timezone import resolve_user_timezone
 from .client import keep_service, normalize_note_name
 from .presentation import note_envelope
 from .schemas import (
@@ -115,13 +116,19 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_note")
     async def get_note(request: GetNoteRequest, ctx: Context) -> dict[str, Any]:
         service = keep_service()
+        account_timezone = await resolve_user_timezone()
         name = normalize_note_name(request.note_name)
         await ctx.info(f"Fetching Keep note {name}.")
-        return note_envelope(await execute_google_request(service.notes().get(name=name)), max_text=None)
+        return note_envelope(
+            await execute_google_request(service.notes().get(name=name)),
+            account_timezone=account_timezone,
+            max_text=None,
+        )
 
     @server.tool(name="list_notes")
     async def list_notes(request: ListNotesRequest, ctx: Context) -> dict[str, Any]:
         service = keep_service()
+        account_timezone = await resolve_user_timezone()
         await ctx.info("Listing Keep notes.")
         result = await execute_google_request(
             service.notes()
@@ -134,9 +141,10 @@ def register_tools(server: FastMCP) -> None:
         notes = result.get("notes", [])
         await ctx.report_progress(len(notes), request.page_size, "Keep notes page loaded")
         return {
-            "notes": [note_envelope(note) for note in notes],
+            "notes": [note_envelope(note, account_timezone=account_timezone) for note in notes],
             "next_page_token": result.get("nextPageToken"),
             "count": len(notes),
+            "account_timezone": account_timezone,
         }
 
     @server.tool(name="delete_note")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..common.timezone import in_account_timezone
+
 
 def _file_kind(mime_type: str | None) -> str:
     mapping = {
@@ -31,7 +33,7 @@ def _people(people: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     ]
 
 
-def file_envelope(file: dict[str, Any]) -> dict[str, Any]:
+def file_envelope(file: dict[str, Any], *, account_timezone: str) -> dict[str, Any]:
     """Present file metadata suitable for selecting the next action."""
     capabilities = file.get("capabilities", {})
     return {
@@ -40,8 +42,11 @@ def file_envelope(file: dict[str, Any]) -> dict[str, Any]:
         "kind": _file_kind(file.get("mimeType")),
         "mime_type": file.get("mimeType"),
         "size": file.get("size"),
-        "created_at": file.get("createdTime"),
-        "modified_at": file.get("modifiedTime"),
+        "created_at": in_account_timezone(file.get("createdTime"), account_timezone),
+        "modified_at": in_account_timezone(file.get("modifiedTime"), account_timezone),
+        "timezone": account_timezone,
+        "source_created_at": file.get("createdTime"),
+        "source_modified_at": file.get("modifiedTime"),
         "description": file.get("description"),
         "owners": _people(file.get("owners")),
         "last_modified_by": _people([file["lastModifyingUser"]] if file.get("lastModifyingUser") else [])[0] if file.get("lastModifyingUser") else None,

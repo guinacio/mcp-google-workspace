@@ -10,9 +10,12 @@ import pytz
 from fastmcp import Context, FastMCP
 
 from ..auth import build_calendar_service, build_gmail_service
+from ..auth.identity import current_principal
 from ..common.async_ops import run_blocking
 from ..common.parsing import normalize_participants
+from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
+from ..gmail.presentation import envelope as gmail_envelope
 from .actions import (
     cancel_meeting,
     create_meeting_from_slot,
@@ -62,13 +65,32 @@ _ATTACHMENT_EXTENSION_BY_MIME: dict[str, str] = {
 
 
 def _resolve_session_id(candidate: str | None, ctx: Context | None = None) -> str:
+    principal_prefix = current_principal().storage_key
     if candidate:
-        return candidate
+        return f"{principal_prefix}:{candidate}"
     if ctx is not None:
         session_id = getattr(ctx, "session_id", None)
         if isinstance(session_id, str) and session_id:
-            return session_id
-    return "default"
+            return f"{principal_prefix}:{session_id}"
+    return f"{principal_prefix}:default"
+
+
+async def _get_account_state(
+    session_id: str, *, timezone_name: str | None = None
+) -> DashboardState:
+    """Materialize a session using the account-local date and timezone once."""
+    effective_timezone = timezone_name or await resolve_user_timezone()
+    state = get_state(
+        session_id,
+        timezone=effective_timezone,
+        anchor_date=user_now(effective_timezone).date(),
+    )
+    if state.timezone != effective_timezone:
+        state = set_state(
+            session_id,
+            state.model_copy(update={"timezone": effective_timezone}),
+        )
+    return state
 
 
 
@@ -163,12 +185,14 @@ def _fetch_inbox_summary(
             h.get("name", "").lower(): h.get("value", "")
             for h in full.get("payload", {}).get("headers", [])
         }
+        message_envelope = gmail_envelope(full, account_timezone=state.timezone)
         items.append(
             {
                 "id": full.get("id"),
                 "subject": decode_rfc2047(headers.get("subject")),
                 "from": decode_rfc2047(headers.get("from")),
-                "date": headers.get("date"),
+                "date": message_envelope["date"],
+                "date_timezone": message_envelope["date_timezone"],
                 "snippet": full.get("snippet"),
                 "label_ids": full.get("labelIds", []),
                 "is_unread": "UNREAD" in (full.get("labelIds", []) or []),
@@ -177,18 +201,31 @@ def _fetch_inbox_summary(
     return unread, items, unread_ids
 
 
-def _fetch_event_detail(calendar_id: str, event_id: str) -> dict[str, Any]:
+def _fetch_event_detail(
+    calendar_id: str, event_id: str, account_timezone: str
+) -> dict[str, Any]:
     service = build_calendar_service()
-    event = _execute_request(service.events().get(calendarId=calendar_id, eventId=event_id))
+    event = _execute_request(
+        service.events().get(
+            calendarId=calendar_id,
+            eventId=event_id,
+            timeZone=account_timezone,
+        )
+    )
     return build_event_detail_view_model(event, calendar_id).model_dump(mode="json")
 
 
-def _fetch_email_detail(message_id: str) -> dict[str, Any]:
+def _fetch_email_detail(message_id: str, account_timezone: str) -> dict[str, Any]:
     service = build_gmail_service()
     message = _execute_request(
         service.users().messages().get(userId="me", id=message_id, format="full")
     )
-    return build_email_detail_view_model(message).model_dump(mode="json")
+    payload = build_email_detail_view_model(message).model_dump(mode="json")
+    normalized = gmail_envelope(message, account_timezone=account_timezone)
+    payload["date"] = normalized["date"]
+    payload["date_timezone"] = normalized["date_timezone"]
+    payload["source_date"] = normalized["source_date"]
+    return payload
 
 
 def _fallback_attachment_filename(mime_type: str | None) -> str:
@@ -392,7 +429,7 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Get current dashboard state for the caller session."""
         sid = _resolve_session_id(session_id, ctx)
-        state = get_state(sid, timezone=timezone)
+        state = await _get_account_state(sid, timezone_name=timezone)
         return state.model_dump(mode="json")
 
     @server.tool(name="set_state")
@@ -408,13 +445,14 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Replace dashboard state for the caller session."""
         sid = _resolve_session_id(session_id, ctx)
-        fields: dict[str, Any] = {"session_id": sid}
+        effective_timezone = timezone or await resolve_user_timezone()
+        fields: dict[str, Any] = {
+            "session_id": sid,
+            "timezone": effective_timezone,
+            "anchor_date": anchor_date or user_now(effective_timezone).date(),
+        }
         if view is not None:
             fields["view"] = view
-        if anchor_date is not None:
-            fields["anchor_date"] = anchor_date
-        if timezone is not None:
-            fields["timezone"] = timezone
         if selected_calendars is not None:
             fields["selected_calendars"] = selected_calendars
         if inbox_query is not None:
@@ -448,6 +486,7 @@ def register_tools(server: FastMCP) -> None:
             include_weekend=include_weekend,
         )
         sid = _resolve_session_id(session_id, ctx)
+        await _get_account_state(sid)
         updated = patch_state(sid, request)
         return updated.model_dump(mode="json")
 
@@ -458,6 +497,7 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Move dashboard anchor date to the next range based on current view."""
         sid = _resolve_session_id(session_id, ctx)
+        await _get_account_state(sid)
         updated = next_range(sid)
         return updated.model_dump(mode="json")
 
@@ -468,6 +508,7 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Move dashboard anchor date to the previous range based on current view."""
         sid = _resolve_session_id(session_id, ctx)
+        await _get_account_state(sid)
         updated = prev_range(sid)
         return updated.model_dump(mode="json")
 
@@ -478,7 +519,9 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Reset dashboard anchor date to today for this session."""
         sid = _resolve_session_id(session_id, ctx)
-        updated = today(sid)
+        timezone_name = await resolve_user_timezone()
+        await _get_account_state(sid, timezone_name=timezone_name)
+        updated = today(sid, current_date=user_now(timezone_name).date())
         return updated.model_dump(mode="json")
 
     @server.tool(
@@ -499,7 +542,7 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Build workspace dashboard view model from calendar and inbox data."""
         sid = _resolve_session_id(session_id, ctx)
-        state = get_state(sid)
+        state = await _get_account_state(sid)
         if date_override is not None:
             state = state.model_copy(update={"anchor_date": date_override})
         if ctx is not None:
@@ -525,7 +568,7 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Return a Google Calendar-like weekly view model (columns per day)."""
         sid = _resolve_session_id(session_id, ctx)
-        state = get_state(sid)
+        state = await _get_account_state(sid)
         if ctx is not None:
             return await build_weekly_calendar_payload_with_progress(
                 state,
@@ -548,9 +591,15 @@ def register_tools(server: FastMCP) -> None:
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Return full event details (attendees, location, description, conference)."""
+        account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading event details")
-        payload = await run_blocking(_fetch_event_detail, calendar_id, event_id)
+        payload = await run_blocking(
+            _fetch_event_detail,
+            calendar_id,
+            event_id,
+            account_timezone,
+        )
         if ctx is not None:
             await ctx.report_progress(100, 100, "Event details ready")
         return payload
@@ -562,9 +611,10 @@ def register_tools(server: FastMCP) -> None:
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Return full email details (headers + body)."""
+        account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading email details")
-        payload = await run_blocking(_fetch_email_detail, message_id)
+        payload = await run_blocking(_fetch_email_detail, message_id, account_timezone)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Email details ready")
         return payload
@@ -593,7 +643,7 @@ def register_tools(server: FastMCP) -> None:
         meeting_duration: int | None = None,
         granularity_minutes: int = 15,
         max_results: int = 10,
-        time_zone: str = "UTC",
+        time_zone: str | None = None,
         working_hours_start: str = "08:00",
         working_hours_end: str = "17:00",
     ) -> dict[str, Any]:
@@ -606,6 +656,7 @@ def register_tools(server: FastMCP) -> None:
         effective_duration = (
             meeting_duration if meeting_duration is not None else slot_duration_minutes
         )
+        effective_timezone = time_zone or await resolve_user_timezone()
         request = FindMeetingSlotsRequest(
             participants=normalize_participants(participants) or ["primary"],
             time_min=time_min,
@@ -613,7 +664,7 @@ def register_tools(server: FastMCP) -> None:
             slot_duration_minutes=effective_duration,
             granularity_minutes=granularity_minutes,
             max_results=max_results,
-            time_zone=time_zone,
+            time_zone=effective_timezone,
             working_hours_start=working_hours_start,
             working_hours_end=working_hours_end,
         )
@@ -627,20 +678,21 @@ def register_tools(server: FastMCP) -> None:
         idempotency_key: str,
         session_id: str | None = None,
         calendar_id: str = "primary",
-        timezone: str = "UTC",
+        timezone: str | None = None,
         description: str | None = None,
         attendees: list[str] | None = None,
         create_conference: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a meeting from an explicit slot with idempotency support."""
+        effective_timezone = timezone or await resolve_user_timezone()
         request = CreateMeetingFromSlotRequest(
             session_id=session_id,
             calendar_id=calendar_id,
             title=title,
             start=start,
             end=end,
-            timezone=timezone,
+            timezone=effective_timezone,
             description=description,
             attendees=attendees or [],
             create_conference=create_conference,
@@ -658,17 +710,18 @@ def register_tools(server: FastMCP) -> None:
         idempotency_key: str,
         session_id: str | None = None,
         calendar_id: str = "primary",
-        timezone: str = "UTC",
+        timezone: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Reschedule an existing meeting with idempotency support."""
+        effective_timezone = timezone or await resolve_user_timezone()
         request = RescheduleMeetingRequest(
             session_id=session_id,
             calendar_id=calendar_id,
             event_id=event_id,
             start=start,
             end=end,
-            timezone=timezone,
+            timezone=effective_timezone,
             idempotency_key=idempotency_key,
         )
         sid = _resolve_session_id(request.session_id, ctx)

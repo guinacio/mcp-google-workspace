@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request, require_elicitation_context
+from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import clean_message_content, envelope
 from ..schemas import GetThreadRequest, ListThreadsRequest, ModifyThreadRequest, ThreadIdRequest
@@ -31,6 +32,7 @@ def register(server: FastMCP) -> None:
             include_spam_trash=include_spam_trash,
         )
         service = gmail_service()
+        account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.info("Listing Gmail threads.")
         result = await execute_google_request(
@@ -53,7 +55,12 @@ def register(server: FastMCP) -> None:
             )
             messages = thread.get("messages", [])
             if messages:
-                envelopes.append({**envelope(messages[-1]), "message_count": len(messages)})
+                envelopes.append(
+                    {
+                        **envelope(messages[-1], account_timezone=account_timezone),
+                        "message_count": len(messages),
+                    }
+                )
         if ctx is not None:
             await ctx.report_progress(len(threads), request.max_results, "Threads listed")
         return {
@@ -77,6 +84,7 @@ def register(server: FastMCP) -> None:
             metadata_headers=metadata_headers or [],
         )
         service = gmail_service()
+        account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.info(f"Reading thread {request.thread_id}.")
         thread = await execute_google_request(
@@ -91,17 +99,21 @@ def register(server: FastMCP) -> None:
         )
         messages = thread.get("messages", [])
         if format == "clean":
-            items = [envelope(item) for item in messages]
+            items = [envelope(item, account_timezone=account_timezone) for item in messages]
             latest = messages[-1] if messages else None
             return {
                 "thread_id": thread.get("id"),
                 "history_id": thread.get("historyId"),
                 "message_count": len(messages),
-                "latest": {**envelope(latest), **clean_message_content(latest)} if latest else None,
+                "latest": {
+                    **envelope(latest, account_timezone=account_timezone),
+                    **clean_message_content(latest),
+                } if latest else None,
                 "prior_messages": [
                     {"from": item["from"], "date": item["date"], "subject": item["subject"], "snippet": item["snippet"]}
                     for item in items[:-1]
                 ],
+                "account_timezone": account_timezone,
             }
         return {
             "thread_id": thread.get("id"),

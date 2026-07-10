@@ -13,6 +13,7 @@ from .auth import (
     is_keep_enabled,
     is_meet_enabled,
 )
+from .auth.google_oauth import register_connection_tools
 from .calendar import calendar_mcp
 from .chat import chat_mcp
 from .docs import docs_mcp
@@ -55,4 +56,5 @@ if is_keep_enabled():
 if is_meet_enabled():
     workspace_mcp.mount(meet_mcp, namespace="meet")
 
+register_connection_tools(workspace_mcp)
 apply_default_tool_annotations(workspace_mcp)

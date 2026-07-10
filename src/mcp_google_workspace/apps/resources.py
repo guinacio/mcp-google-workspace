@@ -9,6 +9,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 from ..common.async_ops import read_text_file, run_blocking
+from ..common.timezone import resolve_user_timezone, user_now
 from .schemas import DashboardState
 from .tools import build_dashboard_payload, build_weekly_calendar_payload
 
@@ -18,8 +19,15 @@ _MCP_APP_UI_URI_LEGACY = "ui://dashboard-ui"
 _MCP_APP_UI_MIME = "text/html;profile=mcp-app"
 
 
-def _resource_state(*, anchor_date: date | None = None, view: str = "week") -> DashboardState:
-    state = DashboardState(session_id="resource-default")
+async def _resource_state(
+    *, anchor_date: date | None = None, view: str = "week"
+) -> DashboardState:
+    timezone_name = await resolve_user_timezone()
+    state = DashboardState(
+        session_id="resource-default",
+        timezone=timezone_name,
+        anchor_date=user_now(timezone_name).date(),
+    )
     updates: dict[str, date | str] = {"view": view}
     if anchor_date is not None:
         updates["anchor_date"] = anchor_date
@@ -29,7 +37,7 @@ def _resource_state(*, anchor_date: date | None = None, view: str = "week") -> D
 def register_resources(server: FastMCP) -> None:
     @server.resource("apps://dashboard/current", name="apps_dashboard_current")
     async def apps_dashboard_current() -> str:
-        payload = await run_blocking(build_dashboard_payload, _resource_state())
+        payload = await run_blocking(build_dashboard_payload, await _resource_state())
         return json.dumps(payload, indent=2)
 
     @server.resource("apps://dashboard/day/{ymd}", name="apps_dashboard_day")
@@ -37,7 +45,7 @@ def register_resources(server: FastMCP) -> None:
         target = date.fromisoformat(ymd)
         payload = await run_blocking(
             build_dashboard_payload,
-            _resource_state(anchor_date=target, view="day"),
+            await _resource_state(anchor_date=target, view="day"),
         )
         return json.dumps(payload, indent=2)
 
@@ -46,7 +54,7 @@ def register_resources(server: FastMCP) -> None:
         target = date.fromisoformat(ymd)
         payload = await run_blocking(
             build_dashboard_payload,
-            _resource_state(anchor_date=target, view="week"),
+            await _resource_state(anchor_date=target, view="week"),
         )
         return json.dumps(payload, indent=2)
 
@@ -55,7 +63,7 @@ def register_resources(server: FastMCP) -> None:
         target = date.fromisoformat(ymd)
         payload = await run_blocking(
             build_weekly_calendar_payload,
-            _resource_state(anchor_date=target, view="week"),
+            await _resource_state(anchor_date=target, view="week"),
             date_override=target,
         )
         return json.dumps(payload, indent=2)

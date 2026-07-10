@@ -15,8 +15,13 @@ from mcp_google_workspace.apps.server import apps_mcp
 
 
 @pytest.fixture(autouse=True)
-def clear_apps_state() -> None:
+def clear_apps_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_resolve_user_timezone() -> str:
+        return "America/Sao_Paulo"
+
     apps_state._STATE_BY_SESSION.clear()
+    monkeypatch.setattr(apps_tools, "resolve_user_timezone", fake_resolve_user_timezone)
+    monkeypatch.setattr(apps_resources, "resolve_user_timezone", fake_resolve_user_timezone)
     yield
     apps_state._STATE_BY_SESSION.clear()
 

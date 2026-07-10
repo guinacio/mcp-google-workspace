@@ -32,7 +32,7 @@ from .google_auth import (
     is_gemini_enabled,
     is_keep_enabled,
     is_meet_enabled,
-    resolve_credentials_paths,
+    resolve_client_credentials_path,
 )
 
 __all__ = [
@@ -67,5 +67,5 @@ __all__ = [
     "is_gemini_enabled",
     "is_keep_enabled",
     "is_meet_enabled",
-    "resolve_credentials_paths",
+    "resolve_client_credentials_path",
 ]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..common.timezone import in_account_timezone
 from .client import resolve_chat_users
 
 
@@ -44,7 +45,11 @@ def space_envelope(space: dict[str, Any], peer: dict[str, Any] | None = None) ->
 
 
 def message_envelope(
-    message: dict[str, Any], profile: dict[str, Any] | None = None, *, max_text: int | None = 500
+    message: dict[str, Any],
+    profile: dict[str, Any] | None = None,
+    *,
+    account_timezone: str,
+    max_text: int | None = 500,
 ) -> dict[str, Any]:
     """Return a triage-friendly Chat message while retaining reply/thread identity."""
     text = _clean_text(str(message.get("text") or message.get("formattedText") or ""))
@@ -55,8 +60,9 @@ def message_envelope(
         "author": user_envelope(message.get("sender", {}), profile),
         "text": text[:max_text] if max_text is not None else text,
         "text_truncated": max_text is not None and len(text) > max_text,
-        "created_at": message.get("createTime"),
-        "updated_at": message.get("lastUpdateTime"),
+        "created_at": in_account_timezone(message.get("createTime"), account_timezone),
+        "updated_at": in_account_timezone(message.get("lastUpdateTime"), account_timezone),
+        "timezone": account_timezone,
         "thread_id": thread_name,
         "has_attachments": bool(message.get("attachment")),
         "attachment_count": len(message.get("attachment", [])),
@@ -65,7 +71,7 @@ def message_envelope(
 
 
 async def enrich_messages(
-    messages: list[dict[str, Any]], *, max_text: int | None = 500
+    messages: list[dict[str, Any]], *, account_timezone: str, max_text: int | None = 500
 ) -> list[dict[str, Any]]:
     """Resolve unique human authors once, then return compact message envelopes."""
     user_names = {
@@ -78,7 +84,10 @@ async def enrich_messages(
     profiles = await resolve_chat_users(user_names)
     return [
         message_envelope(
-            message, profiles.get(str(message.get("sender", {}).get("name"))), max_text=max_text
+            message,
+            profiles.get(str(message.get("sender", {}).get("name"))),
+            account_timezone=account_timezone,
+            max_text=max_text,
         )
         for message in messages
     ]

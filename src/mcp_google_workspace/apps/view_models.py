@@ -53,7 +53,7 @@ def _parse_event_start_local(event: dict[str, Any], tz: pytz.BaseTzInfo) -> date
         return tz.localize(
             datetime.combine(date.fromisoformat(start["date"]), time.min)
         )
-    return tz.localize(datetime.combine(date.today(), time.min))
+    return tz.localize(datetime.combine(datetime.now(tz).date(), time.min))
 
 
 def _parse_event_end_local(event: dict[str, Any], tz: pytz.BaseTzInfo) -> datetime:
@@ -65,7 +65,7 @@ def _parse_event_end_local(event: dict[str, Any], tz: pytz.BaseTzInfo) -> dateti
         return parsed.astimezone(tz)
     if "date" in end:
         return tz.localize(datetime.combine(date.fromisoformat(end["date"]), time.min))
-    return tz.localize(datetime.combine(date.today(), time.min))
+    return tz.localize(datetime.combine(datetime.now(tz).date(), time.min))
 
 
 def _is_all_day(event: dict[str, Any]) -> bool:

@@ -810,9 +810,10 @@ wheels = [
 
 [[package]]
 name = "mcp-google-workspace"
-version = "0.3.3"
+version = "0.3.4"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastmcp" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
@@ -833,6 +834,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=46.0.5" },
     { name = "fastmcp", specifier = ">=3.0.2" },
     { name = "google-api-python-client", specifier = ">=2.190.0" },
     { name = "google-auth", specifier = ">=2.48.0" },

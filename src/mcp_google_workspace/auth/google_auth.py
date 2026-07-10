@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 from ..runtime import RuntimeSettings, get_runtime_settings
+from ..runtime import get_token_storage_settings
+from .identity import Principal, current_principal
+from .token_store import EncryptedTokenStore, TokenStoreError
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
@@ -76,6 +80,30 @@ MEET_SCOPES = [
 LOGGER = logging.getLogger(__name__)
 
 
+class GoogleAccountConnectionRequired(PermissionError):
+    """Raised when the authenticated MCP user has not connected Google yet."""
+
+
+class GoogleAccountReauthenticationRequired(PermissionError):
+    """Raised after an invalid per-user Google refresh token is discarded."""
+
+
+def _is_sse_oauth_mode() -> bool:
+    return bool(os.getenv("MCP_GOOGLE_OAUTH_REDIRECT_URL", "").strip())
+
+
+def _run_local_oauth(principal: Principal, credentials_path: Path, scopes: list[str]) -> Credentials:
+    """Connect the local stdio principal without weakening the SSE security model."""
+    settings = get_runtime_settings()
+    flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), scopes)
+    credentials = flow.run_local_server(
+        port=settings.oauth_port,
+        open_browser=settings.oauth_open_browser,
+    )
+    get_token_store().save_credentials_json(principal, credentials.to_json())
+    return credentials
+
+
 def _env_truthy(value: str | None) -> bool:
     if value is None:
         return False
@@ -128,66 +156,72 @@ def get_google_scopes() -> list[str]:
     return sorted(set(scopes))
 
 
-def resolve_credentials_paths() -> tuple[Path, Path]:
+def resolve_client_credentials_path() -> Path:
+    """Locate the server-owned Google OAuth client configuration, never a user token."""
     env_dir = os.environ.get("MCP_CREDENTIALS_DIR")
     if env_dir:
         directory = Path(env_dir)
-        creds, token = directory / "credentials.json", directory / "token.json"
-        if creds.exists():
-            return creds, token
+        credentials = directory / "credentials.json"
+        if credentials.exists():
+            return credentials
 
     src_dir = Path(__file__).resolve().parent.parent.parent
     package_credentials = src_dir / "credentials" / "credentials.json"
-    package_token = src_dir / "credentials" / "token.json"
     if package_credentials.exists():
-        return package_credentials, package_token
+        return package_credentials
 
     cwd = Path.cwd()
     credentials = cwd / "credentials.json"
-    token = cwd / "token.json"
     if credentials.exists():
-        return credentials, token
+        return credentials
 
-    return (
-        cwd / "src" / "credentials" / "credentials.json",
-        cwd / "src" / "credentials" / "token.json",
-    )
+    return cwd / "src" / "credentials" / "credentials.json"
 
 
-def delete_cached_token() -> bool:
-    """Delete only the resolved OAuth token so the next request starts consent again."""
-    _, token_path = resolve_credentials_paths()
+def get_token_store() -> EncryptedTokenStore:
+    settings = get_token_storage_settings()
+    return EncryptedTokenStore(settings.user_token_dir, settings.token_encryption_key)
+
+
+def delete_cached_token(principal: Principal | None = None) -> bool:
+    """Delete credentials only for the authenticated user that owns the token."""
+    principal = principal or current_principal()
     try:
-        token_path.unlink(missing_ok=True)
-        LOGGER.info("Deleted cached Google OAuth token at %s after an authentication failure.", token_path)
-        return True
-    except OSError as exc:
-        LOGGER.warning("Failed to delete cached Google OAuth token at %s: %s", token_path, exc)
+        get_token_store().delete_credentials(principal)
+        LOGGER.info("Deleted invalid Google OAuth token for principal %s.", principal.storage_key)
+    except TokenStoreError as exc:
+        LOGGER.warning("Failed to delete invalid Google OAuth token for principal %s: %s", principal.storage_key, exc)
         return False
+    return True
 
 
 def get_credentials() -> Credentials:
-    """Load or create OAuth credentials with browser-based consent flow."""
-    settings = get_runtime_settings()
-    credentials_path, token_path = resolve_credentials_paths()
+    """Load and refresh credentials isolated to the authenticated MCP user."""
+    principal = current_principal()
+    credentials_path = resolve_client_credentials_path()
     scopes = get_google_scopes()
     if not credentials_path.exists():
         raise FileNotFoundError(
-            "credentials.json not found. Set MCP_CREDENTIALS_DIR or place credentials.json in the project root "
-            "or src/credentials/credentials.json."
+            "Google OAuth client credentials.json not found. Set MCP_CREDENTIALS_DIR or place it in the project root."
         )
 
-    creds: Credentials | None = None
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path))
-        if creds and not creds.has_scopes(scopes):
-            LOGGER.warning(
-                "Stored token is missing required scopes; forcing OAuth re-consent."
-            )
-            creds = None
+    token_json = get_token_store().load_credentials_json(principal)
+    if token_json is None:
+        if not _is_sse_oauth_mode():
+            return _run_local_oauth(principal, credentials_path, scopes)
+        raise GoogleAccountConnectionRequired(
+            "Google Workspace is not connected for this user. Call connect_google_workspace and complete consent."
+        )
+    creds = Credentials.from_authorized_user_info(json.loads(token_json), scopes=scopes)
+    if creds and not creds.has_scopes(scopes):
+        delete_cached_token(principal)
+        if not _is_sse_oauth_mode():
+            return _run_local_oauth(principal, credentials_path, scopes)
+        raise GoogleAccountConnectionRequired(
+            "The Google connection is missing required scopes. Call connect_google_workspace to reconnect."
+        )
 
-    if creds and creds.valid:
-        LOGGER.debug("Using cached Google OAuth token at %s.", token_path)
+    if creds.valid:
         return creds
 
     if creds and creds.expired and creds.refresh_token:
@@ -195,41 +229,24 @@ def get_credentials() -> Credentials:
         try:
             creds.refresh(Request())
         except RefreshError as exc:
-            # Refresh token is no longer valid (common cause: enterprise
-            # password rotation invalidates the grant). Discard the stale
-            # token so the next branch can run a fresh consent flow.
             LOGGER.warning(
-                "Refresh failed (%s); deleting stale token at %s and re-running OAuth consent.",
+                "Refresh failed for principal %s (%s); deleting that user's stale token.",
+                principal.storage_key,
                 exc,
-                token_path,
             )
-            delete_cached_token()
-            creds = None
-
-    if not creds or not creds.valid:
-        LOGGER.info(
-            "Starting browser-based Google OAuth flow using credentials at %s.",
-            credentials_path,
-        )
-        try:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(credentials_path), scopes
-            )
-            creds = flow.run_local_server(
-                port=settings.oauth_port,
-                open_browser=settings.oauth_open_browser,
-            )
-        except Exception as exc:
-            raise RuntimeError(
-                "Google OAuth re-authentication is required but failed. "
-                "The stored token has been invalidated (likely due to password "
-                "rotation or revoked access). Please complete the consent flow "
-                f"in your browser and retry the request. Underlying error: {exc}"
+            delete_cached_token(principal)
+            if not _is_sse_oauth_mode():
+                return _run_local_oauth(principal, credentials_path, scopes)
+            raise GoogleAccountReauthenticationRequired(
+                "Google authorization expired for this user. Call connect_google_workspace to reconnect."
             ) from exc
 
-    token_path.parent.mkdir(parents=True, exist_ok=True)
-    token_path.write_text(creds.to_json(), encoding="utf-8")
-    LOGGER.debug("Persisted refreshed Google OAuth token to %s.", token_path)
+    if not creds or not creds.valid:
+        raise GoogleAccountConnectionRequired(
+            "Google Workspace is not connected for this user. Call connect_google_workspace and complete consent."
+        )
+
+    get_token_store().save_credentials_json(principal, creds.to_json())
     return creds
 
 

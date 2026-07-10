@@ -8,6 +8,7 @@ from typing import Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request, require_elicitation_context
+from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..mime_utils import (
     build_email_message,
@@ -127,9 +128,10 @@ def register(server: FastMCP) -> None:
             .messages()
             .get(userId="me", id=request.message_id, format="full")
         )
+        account_timezone = await resolve_user_timezone()
         payload = message.get("payload", {})
         headers = header_map(payload)
-        output = envelope(message)
+        output = envelope(message, account_timezone=account_timezone)
         effective_format = "metadata" if request.summary_mode else request.format
         attachments = message_attachments(payload)
 

@@ -41,7 +41,8 @@ def test_file_envelope_surfaces_owner_state_and_capabilities():
             "id": "file-1", "name": "Plan", "mimeType": "application/vnd.google-apps.document",
             "owners": [{"displayName": "Ada", "emailAddress": "ada@example.com"}],
             "capabilities": {"canEdit": True, "canDownload": True}, "shared": True,
-        }
+        },
+        account_timezone="America/Sao_Paulo",
     )
     assert result["kind"] == "document"
     assert result["owners"][0]["email"] == "ada@example.com"

@@ -24,11 +24,18 @@ def _shift_date(anchor: date, view: str, forward: bool) -> date:
     return anchor
 
 
-def get_state(session_id: str, timezone: str | None = None) -> DashboardState:
+def get_state(
+    session_id: str,
+    timezone: str | None = None,
+    anchor_date: date | None = None,
+) -> DashboardState:
     with _LOCK:
         existing = _STATE_BY_SESSION.get(session_id)
         if existing is None:
-            created = DashboardState(session_id=session_id)
+            created = DashboardState(
+                session_id=session_id,
+                anchor_date=anchor_date or date.today(),
+            )
             if timezone:
                 created.timezone = timezone
             _STATE_BY_SESSION[session_id] = created
@@ -52,10 +59,10 @@ def patch_state(session_id: str, patch: DashboardStatePatch) -> DashboardState:
         return deepcopy(merged)
 
 
-def today(session_id: str) -> DashboardState:
+def today(session_id: str, *, current_date: date | None = None) -> DashboardState:
     with _LOCK:
         current = _STATE_BY_SESSION.get(session_id, DashboardState(session_id=session_id))
-        current.anchor_date = date.today()
+        current.anchor_date = current_date or date.today()
         _STATE_BY_SESSION[session_id] = current
         return deepcopy(current)
 

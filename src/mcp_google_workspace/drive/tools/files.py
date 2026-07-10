@@ -11,6 +11,7 @@ from fastmcp import Context, FastMCP
 from googleapiclient.http import MediaIoBaseDownload
 
 from ...common.async_ops import execute_google_request, require_elicitation_context, run_blocking, write_bytes_file
+from ...common.timezone import resolve_user_timezone, user_now
 from ..client import drive_service, media_file_upload, write_bytes_to_path
 from ..schemas import (
     CopyFileRequest,
@@ -71,10 +72,10 @@ def _find_existing_file_by_name(
     return files[0] if files else None
 
 
-def _renamed_filename(original_name: str) -> str:
+def _renamed_filename(original_name: str, *, now: datetime) -> str:
     stem = Path(original_name).stem
     suffix = Path(original_name).suffix
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    ts = now.strftime("%Y%m%d-%H%M%S")
     return f"{stem} (upload {ts}){suffix}"
 
 
@@ -126,6 +127,7 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
+        account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.info("Listing Google Drive files.")
         result = await execute_google_request(
@@ -147,9 +149,10 @@ def register(server: FastMCP) -> None:
         if ctx is not None:
             await ctx.report_progress(len(files), request.page_size, "Drive files page loaded")
         return {
-            "files": [file_envelope(file) for file in files],
+            "files": [file_envelope(file, account_timezone=account_timezone) for file in files],
             "next_page_token": result.get("nextPageToken"),
             "count": len(files),
+            "account_timezone": account_timezone,
         }
 
     @server.tool(name="get_file")
@@ -166,6 +169,7 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
+        account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.info(f"Fetching Drive file {request.file_id}.")
         file_obj = await execute_google_request(
@@ -176,7 +180,10 @@ def register(server: FastMCP) -> None:
                 fields=request.fields,
             )
         )
-        return {"file": file_envelope(file_obj)}
+        return {
+            "file": file_envelope(file_obj, account_timezone=account_timezone),
+            "account_timezone": account_timezone,
+        }
 
     @server.tool(name="create_folder")
     async def create_folder(
@@ -296,7 +303,10 @@ def register(server: FastMCP) -> None:
             }
         target_name = requested_name
         if existing_file and request.if_exists == "rename":
-            target_name = _renamed_filename(requested_name)
+            target_name = _renamed_filename(
+                requested_name,
+                now=user_now(await resolve_user_timezone()),
+            )
             if ctx is not None:
                 await ctx.info(f"File exists; renaming upload target to '{target_name}'.")
         body: dict[str, Any] = {"name": target_name}

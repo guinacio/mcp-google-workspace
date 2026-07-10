@@ -26,6 +26,9 @@ def test_build_note_body_checklist():
 
 
 def test_note_envelope_surfaces_preview_and_checklist_progress():
-    result = note_envelope({"name": "notes/a", "title": "Plan", "body": {"list": {"listItems": [{"text": {"text": "Ship"}, "checked": True}, {"text": {"text": "Test"}, "checked": False}]}}})
+    result = note_envelope(
+        {"name": "notes/a", "title": "Plan", "body": {"list": {"listItems": [{"text": {"text": "Ship"}, "checked": True}, {"text": {"text": "Test"}, "checked": False}]}}},
+        account_timezone="America/Sao_Paulo",
+    )
     assert result["checklist"] == {"total": 2, "completed": 1}
     assert result["text"] == "Ship\nTest"

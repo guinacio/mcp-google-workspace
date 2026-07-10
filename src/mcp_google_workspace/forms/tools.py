@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 
+from ..common.timezone import resolve_user_timezone
 from .client import forms_service
 from .presentation import question_titles, response_envelope
 from .schemas import (
@@ -163,17 +164,23 @@ def register_tools(server: FastMCP) -> None:
                 filter=filter,
             )
         )
+        account_timezone = await resolve_user_timezone()
         titles = question_titles(get_form_payload(GetFormRequest(form_id=form_id))) if enrich_questions else {}
         responses = result.get("responses", [])
         return {
             "form_id": form_id,
-            "responses": [response_envelope(response, titles) for response in responses],
+            "responses": [
+                response_envelope(response, titles, account_timezone=account_timezone)
+                for response in responses
+            ],
             "next_page_token": result.get("nextPageToken"),
             "count": len(responses),
+            "account_timezone": account_timezone,
         }
 
     @server.tool(name="get_form_response")
     async def get_form_response(form_id: str, response_id: str, enrich_questions: bool = True) -> dict[str, Any]:
         response = get_form_response_payload(GetFormResponseRequest(form_id=form_id, response_id=response_id))
+        account_timezone = await resolve_user_timezone()
         titles = question_titles(get_form_payload(GetFormRequest(form_id=form_id))) if enrich_questions else {}
-        return response_envelope(response, titles)
+        return response_envelope(response, titles, account_timezone=account_timezone)

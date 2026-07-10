@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, tzinfo
 from email.utils import parseaddr, parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any
+
+import pytz
 
 from .mime_utils import decode_rfc2047, extract_message_bodies, flatten_parts
 
@@ -21,6 +23,11 @@ _DATE_TOKEN = re.compile(r"\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}(?:[/-]\
 _TIME_TOKEN = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])(?::(?P<minute>[0-5]\d))?\s*(?:h|hrs?|am|pm)\b", re.IGNORECASE)
 _RESPONSE_LANGUAGE = re.compile(
     r"\?|\b(?:please|can you|could you|let me know|respond|reply|deadline|due|responda|retorne|devolutiva)\b",
+    re.IGNORECASE,
+)
+_GREETING_SENTENCE = re.compile(
+    r"^(?:ol[áa]|oi|hi|hello|dear|prezad[oa])"
+    r"(?:\s*,?\s*(?:[A-ZÀ-Ý][\wÀ-ÿ.'-]*)(?:\s+[A-ZÀ-Ý][\wÀ-ÿ.'-]*){0,2})?[!,.]*$",
     re.IGNORECASE,
 )
 
@@ -110,7 +117,11 @@ def cleaned_message_body(message: dict[str, Any]) -> tuple[str, int]:
 def first_meaningful_sentence(text: str, *, max_length: int = 240) -> str | None:
     for sentence in re.split(r"(?<=[.!?])\s+", text):
         candidate = sentence.strip()
-        if len(candidate) >= 12 and not candidate.startswith("[quoted:"):
+        if (
+            len(candidate) >= 12
+            and not candidate.startswith("[quoted:")
+            and not _GREETING_SENTENCE.fullmatch(candidate)
+        ):
             return candidate[:max_length]
     return None
 
@@ -126,11 +137,33 @@ def _reference_datetime(date_header: str | None) -> datetime:
     return datetime.now().astimezone()
 
 
-def _normalize_deadline(value: str, reference: datetime) -> str | None:
+def _deadline_timezone(account_timezone: str | None, reference: datetime) -> tzinfo:
+    if account_timezone:
+        try:
+            return pytz.timezone(account_timezone)
+        except pytz.UnknownTimeZoneError:
+            pass
+    if reference.tzinfo is not None:
+        return reference.tzinfo
+    local_timezone = datetime.now().astimezone().tzinfo
+    if local_timezone is None:  # pragma: no cover - datetime always provides one locally
+        return pytz.UTC
+    return local_timezone
+
+
+def _normalize_deadline(
+    value: str,
+    reference: datetime,
+    *,
+    account_timezone: str | None = None,
+) -> str | None:
     date_match = _DATE_TOKEN.search(value)
     time_match = _TIME_TOKEN.search(value)
     if not date_match and not time_match:
         return None
+
+    deadline_timezone = _deadline_timezone(account_timezone, reference)
+    reference = reference.astimezone(deadline_timezone)
 
     if date_match:
         token = date_match.group(0).replace("-", "/")
@@ -150,7 +183,18 @@ def _normalize_deadline(value: str, reference: datetime) -> str | None:
     if time_match and time_match.group(0).casefold().endswith("pm") and hour < 12:
         hour += 12
     try:
-        deadline = reference.replace(year=year, month=month, day=day, hour=hour, minute=minute, second=0, microsecond=0)
+        deadline_naive = datetime(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+        )
+        deadline = (
+            deadline_timezone.localize(deadline_naive)
+            if isinstance(deadline_timezone, pytz.BaseTzInfo)
+            else deadline_naive.replace(tzinfo=deadline_timezone)
+        )
     except ValueError:
         return None
     if not date_match:
@@ -160,15 +204,28 @@ def _normalize_deadline(value: str, reference: datetime) -> str | None:
     return deadline.isoformat(timespec="minutes") if time_match else deadline.date().isoformat()
 
 
-def detect_deadline(text: str, *, date_header: str | None = None) -> str | None:
-    """Return an ISO deadline only when a deadline marker is paired with a real date/time token."""
+def detect_deadline(
+    text: str,
+    *,
+    date_header: str | None = None,
+    account_timezone: str | None = None,
+) -> str | None:
+    """Return an ISO deadline only when a marker is paired with a real date/time token.
+
+    A deadline phrase without its own timezone is interpreted in the account's
+    Calendar timezone, not the message header's transport timezone.
+    """
     reference = _reference_datetime(date_header)
     for marker in _DEADLINE_MARKERS.finditer(text):
         candidate = text[marker.end() : marker.end() + 120]
         # Bare "by" is common in prose; only accept it when a date/time begins immediately after it.
         if marker.group(0).casefold() == "by" and not re.match(r"\s*(?:on\s+)?(?:\d{1,4}|[01]?\d(?::\d{2})?\s*(?:am|pm|h))", candidate, re.I):
             continue
-        if normalized := _normalize_deadline(candidate, reference):
+        if normalized := _normalize_deadline(
+            candidate,
+            reference,
+            account_timezone=account_timezone,
+        ):
             return normalized
     return None
 
@@ -177,7 +234,26 @@ def requires_response(text: str, *, is_automated: bool, is_newsletter: bool) -> 
     return not is_automated and not is_newsletter and bool(_RESPONSE_LANGUAGE.search(text))
 
 
-def envelope(message: dict[str, Any]) -> dict[str, Any]:
+def _received_at_in_account_timezone(
+    message: dict[str, Any], headers: dict[str, str], account_timezone: str
+) -> str | None:
+    timezone = pytz.timezone(account_timezone)
+    internal_date = message.get("internalDate")
+    try:
+        if internal_date is not None:
+            return datetime.fromtimestamp(int(internal_date) / 1000, tz=pytz.UTC).astimezone(timezone).isoformat()
+    except (TypeError, ValueError, OSError):
+        pass
+    try:
+        header_date = parsedate_to_datetime(headers.get("date", ""))
+        if header_date.tzinfo is not None:
+            return header_date.astimezone(timezone).isoformat()
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def envelope(message: dict[str, Any], *, account_timezone: str) -> dict[str, Any]:
     payload = message.get("payload", {})
     headers = header_map(payload)
     sender = decode_rfc2047(headers.get("from"))
@@ -188,16 +264,28 @@ def envelope(message: dict[str, Any]) -> dict[str, Any]:
     snippet, _ = clean_body(source)
     snippet = clean_whitespace(snippet).replace("\n", " ")[:150]
     sender_email = email.lower()
+    sender_local_part, _, sender_domain = sender_email.partition("@")
+    github_notification = (
+        "x-github-reason" in headers
+        or (
+            sender_domain == "github.com"
+            and sender_local_part in {"notifications", "noreply"}
+        )
+    )
     automated = (
         headers.get("precedence", "").lower() == "bulk"
         or bool(re.search(r"(?:no[._-]?reply|donotreply|mailer-daemon)@", sender_email))
+        or github_notification
     )
+    received_at = _received_at_in_account_timezone(message, headers, account_timezone)
     return {
         "id": message.get("id"),
         "thread_id": message.get("threadId"),
         "from": {"name": name or sender, "email": email},
         "subject": decode_rfc2047(headers.get("subject")),
-        "date": headers.get("date"),
+        "date": received_at,
+        "date_timezone": account_timezone if received_at else None,
+        "source_date": headers.get("date"),
         "snippet": snippet,
         "category": categories[0] if categories else None,
         "unread": "UNREAD" in labels,

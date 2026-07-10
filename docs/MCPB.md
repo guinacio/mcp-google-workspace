@@ -23,6 +23,7 @@ The entrypoint adds:
 - stderr logging with configurable log level
 - validated timeout and retry settings for Google API clients
 - OAuth port/browser configuration for local desktop consent flows
+- encrypted, per-principal Google OAuth token storage
 - clearer startup errors when bundle configuration is invalid
 
 ## User Configuration Mapped By The Manifest
@@ -30,6 +31,9 @@ The entrypoint adds:
 The MCPB manifest exposes these settings through the host UI and passes them into the local process as environment variables:
 
 - `credentials_dir` -> `MCP_CREDENTIALS_DIR`
+- `user_token_dir` -> `MCP_USER_TOKEN_DIR`
+- `token_encryption_key` -> `MCP_TOKEN_ENCRYPTION_KEY`
+- `local_principal` -> `MCP_LOCAL_PRINCIPAL`
 - `enable_apps_dashboard` -> `ENABLE_APPS_DASHBOARD`
 - `enable_chat` -> `ENABLE_CHAT`
 - `enable_gemini` -> `ENABLE_GEMINI`

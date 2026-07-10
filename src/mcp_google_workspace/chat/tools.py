@@ -7,6 +7,8 @@ import logging
 from typing import Any
 
 from fastmcp import Context, FastMCP
+
+from ..common.timezone import resolve_user_timezone
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
@@ -134,12 +136,18 @@ def register_tools(server: FastMCP) -> None:
         if request.thread_name:
             query["thread.name"] = request.thread_name
         result = await execute_google_request(service.spaces().messages().list(**query))
+        account_timezone = await resolve_user_timezone()
         messages = result.get("messages", [])
         await ctx.report_progress(len(messages), request.page_size, "Chat messages page loaded")
         return {
-            "messages": await enrich_messages(messages) if request.enrich_authors else messages,
+            "messages": (
+                await enrich_messages(messages, account_timezone=account_timezone)
+                if request.enrich_authors
+                else messages
+            ),
             "next_page_token": result.get("nextPageToken"),
             "count": len(messages),
+            "account_timezone": account_timezone,
         }
 
     @server.tool(name="get_message")
@@ -148,7 +156,8 @@ def register_tools(server: FastMCP) -> None:
         name = normalize_message_name(request.message_name)
         await ctx.info(f"Getting Chat message {name}.")
         message = await execute_google_request(service.spaces().messages().get(name=name))
-        return (await enrich_messages([message], max_text=None))[0]
+        account_timezone = await resolve_user_timezone()
+        return (await enrich_messages([message], account_timezone=account_timezone, max_text=None))[0]
 
     @server.tool(name="list_space_members")
     async def list_space_members(

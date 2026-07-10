@@ -52,7 +52,11 @@ def test_message_envelope_exposes_a_human_author_and_compact_content():
         "attachment": [{"name": "spaces/AAA/attachments/1"}],
     }
 
-    result = message_envelope(message, {"displayName": "Ada Lovelace", "email": "ada@example.com"})
+    result = message_envelope(
+        message,
+        {"displayName": "Ada Lovelace", "email": "ada@example.com"},
+        account_timezone="America/Sao_Paulo",
+    )
 
     assert result["author"] == {
         "name": "Ada Lovelace",

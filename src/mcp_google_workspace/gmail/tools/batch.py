@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request, require_elicitation_context
+from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import clean_message_content, envelope
 from ..schemas import BatchDeleteRequest, BatchModifyRequest, GetEmailsRequest
@@ -23,12 +24,13 @@ def register(server: FastMCP) -> None:
         """Fetch up to 100 messages in one MCP call at the requested detail level."""
         request = GetEmailsRequest(message_ids=message_ids, format=format, offset=offset)
         service = gmail_service()
+        account_timezone = await resolve_user_timezone()
         messages: list[dict[str, Any]] = []
         for index, message_id in enumerate(request.message_ids, start=1):
             message = await execute_google_request(
                 service.users().messages().get(userId="me", id=message_id, format="full")
             )
-            item = envelope(message)
+            item = envelope(message, account_timezone=account_timezone)
             if request.format == "preview":
                 item.update(clean_message_content(message, offset=request.offset, limit=1_000))
             elif request.format == "clean":
@@ -40,7 +42,7 @@ def register(server: FastMCP) -> None:
             messages.append(item)
             if ctx is not None:
                 await ctx.report_progress(index, len(request.message_ids), "Messages loaded")
-        return {"messages": messages, "format": request.format}
+        return {"messages": messages, "format": request.format, "account_timezone": account_timezone}
 
     @server.tool(name="batch_modify")
     async def batch_modify(

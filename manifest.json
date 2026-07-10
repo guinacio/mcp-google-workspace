@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "mcp-google-workspace",
   "display_name": "Google Workspace MCP",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Production Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, Slides, and optional Apps, Chat, Keep, Meet, and Gemini integrations.",
   "long_description": "Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, and Slides, with optional Google Chat, Google Keep, Google Meet, and Gemini media integrations. Authenticates via OAuth with your Google account and gives Claude Desktop full read/write access to your Workspace data through natural language.",
   "author": {
@@ -56,6 +56,9 @@
       ],
       "env": {
         "MCP_CREDENTIALS_DIR": "${user_config.credentials_dir}",
+        "MCP_USER_TOKEN_DIR": "${user_config.user_token_dir}",
+        "MCP_TOKEN_ENCRYPTION_KEY": "${user_config.token_encryption_key}",
+        "MCP_LOCAL_PRINCIPAL": "${user_config.local_principal}",
         "ENABLE_APPS_DASHBOARD": "${user_config.enable_apps_dashboard}",
         "ENABLE_CHAT": "${user_config.enable_chat}",
         "ENABLE_GEMINI": "${user_config.enable_gemini}",
@@ -81,7 +84,26 @@
     "credentials_dir": {
       "type": "directory",
       "title": "Credentials Directory",
-      "description": "Directory containing credentials.json and where token.json should be stored. Leave empty to use the bundle defaults.",
+      "description": "Directory containing the server-owned Google OAuth client credentials.json.",
+      "required": false
+    },
+    "user_token_dir": {
+      "type": "directory",
+      "title": "Encrypted User Token Directory",
+      "description": "Directory for encrypted per-user Google OAuth credentials. Keep it private to this MCP installation.",
+      "required": false
+    },
+    "token_encryption_key": {
+      "type": "string",
+      "title": "Token Encryption Key",
+      "description": "Fernet key used to encrypt Google OAuth credentials at rest. Generate once with cryptography.fernet.Fernet.generate_key().decode().",
+      "required": true
+    },
+    "local_principal": {
+      "type": "string",
+      "title": "Local Principal",
+      "description": "Stable local identity used only by the stdio bundle instance.",
+      "default": "local-user",
       "required": false
     },
     "enable_apps_dashboard": {

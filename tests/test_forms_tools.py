@@ -135,5 +135,9 @@ def test_forms_tool_annotations():
 
 def test_response_envelope_resolves_question_ids_to_titles():
     titles = question_titles({"items": [{"title": "Priority", "questionItem": {"question": {"questionId": "q1"}}}]})
-    result = response_envelope({"responseId": "r1", "answers": {"q1": {"textAnswers": {"answers": [{"value": "High"}]}}}}, titles)
+    result = response_envelope(
+        {"responseId": "r1", "answers": {"q1": {"textAnswers": {"answers": [{"value": "High"}]}}}},
+        titles,
+        account_timezone="America/Sao_Paulo",
+    )
     assert result["answers"] == [{"question_id": "q1", "question": "Priority", "values": ["High"]}]

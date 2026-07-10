@@ -11,18 +11,19 @@ from typing import Any
 from googleapiclient.errors import HttpError
 
 from ..auth import build_chat_service, build_gmail_service, build_people_service
+from ..auth.identity import current_principal
 from ..common.async_ops import execute_google_request
 
 LOGGER = logging.getLogger(__name__)
 
 _USER_CACHE_TTL = 900  # 15 minutes
-_USER_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_USER_CACHE: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _USER_CACHE_LOCK = Lock()
 
-_SELF_EMAIL: str | None = None
+_SELF_EMAIL: dict[str, str] = {}
 _SELF_EMAIL_LOCK = Lock()
 
-_SELF_USER_NAME: str | None = None
+_SELF_USER_NAME: dict[str, str] = {}
 _SELF_USER_NAME_LOCK = Lock()
 
 
@@ -49,20 +50,22 @@ def normalize_user_name(user_name: str) -> str:
 
 
 def _get_cached_user(user_name: str) -> dict[str, Any] | None:
+    cache_key = (current_principal().storage_key, user_name)
     with _USER_CACHE_LOCK:
-        entry = _USER_CACHE.get(user_name)
+        entry = _USER_CACHE.get(cache_key)
         if entry is None:
             return None
         ts, data = entry
         if time.monotonic() - ts > _USER_CACHE_TTL:
-            del _USER_CACHE[user_name]
+            del _USER_CACHE[cache_key]
             return None
         return data
 
 
 def _set_cached_user(user_name: str, data: dict[str, Any]) -> None:
+    cache_key = (current_principal().storage_key, user_name)
     with _USER_CACHE_LOCK:
-        _USER_CACHE[user_name] = (time.monotonic(), data)
+        _USER_CACHE[cache_key] = (time.monotonic(), data)
 
 
 def _extract_email_hint(user_name: str) -> str | None:
@@ -87,10 +90,10 @@ async def _get_self_email() -> str | None:
 
     Cached for the lifetime of the process.
     """
-    global _SELF_EMAIL  # noqa: PLW0603
+    principal_key = current_principal().storage_key
     with _SELF_EMAIL_LOCK:
-        if _SELF_EMAIL is not None:
-            return _SELF_EMAIL
+        if cached := _SELF_EMAIL.get(principal_key):
+            return cached
     try:
         service = build_gmail_service()
         profile = await execute_google_request(
@@ -99,7 +102,7 @@ async def _get_self_email() -> str | None:
         email = profile.get("emailAddress")
         if email:
             with _SELF_EMAIL_LOCK:
-                _SELF_EMAIL = email
+                _SELF_EMAIL[principal_key] = email
             LOGGER.debug("Resolved self email: %s", email)
             return email
     except Exception:
@@ -115,10 +118,10 @@ async def _resolve_self_user_name(space_name: str) -> str | None:
     ``member.name`` is the *exact* Chat-internal ``users/{id}``
     that appears in membership lists.  Cached for the process lifetime.
     """
-    global _SELF_USER_NAME  # noqa: PLW0603
+    principal_key = current_principal().storage_key
     with _SELF_USER_NAME_LOCK:
-        if _SELF_USER_NAME is not None:
-            return _SELF_USER_NAME
+        if cached := _SELF_USER_NAME.get(principal_key):
+            return cached
     self_email = await _get_self_email()
     if not self_email:
         return None
@@ -133,7 +136,7 @@ async def _resolve_self_user_name(space_name: str) -> str | None:
         user_name = member.get("name")
         if user_name:
             with _SELF_USER_NAME_LOCK:
-                _SELF_USER_NAME = user_name
+                _SELF_USER_NAME[principal_key] = user_name
             LOGGER.debug("Resolved self Chat user name: %s", user_name)
             return user_name
     except Exception:

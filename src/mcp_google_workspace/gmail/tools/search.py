@@ -9,6 +9,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
+from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import (
     cleaned_message_body,
@@ -53,11 +54,15 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Summarize recent mail into direct-person and automated groups, deduplicated by thread."""
         request = DigestRequest(window=window, unread_only=unread_only, max_items=max_items)
-        amount, unit = re.fullmatch(r"(\d+)([dhw])", request.window).groups()  # validated by the schema
+        window_match = re.fullmatch(r"(\d+)([dhw])", request.window)
+        if window_match is None:  # pragma: no cover - DigestRequest validates this shape
+            raise ValueError("window must be a positive number followed by d, h, or w")
+        amount, unit = window_match.groups()
         seconds = int(amount) * {"d": 86_400, "h": 3_600, "w": 604_800}[unit]
         after = int((datetime.now(UTC) - timedelta(seconds=seconds)).timestamp())
         query = f"after:{after}" + (" is:unread" if request.unread_only else "")
         service = gmail_service()
+        account_timezone = await resolve_user_timezone()
         result = await execute_google_request(
             service.users().messages().list(userId="me", q=query, maxResults=request.max_items)
         )
@@ -68,7 +73,7 @@ def register(server: FastMCP) -> None:
             message = await execute_google_request(
                 service.users().messages().get(userId="me", id=ref["id"], format="full")
             )
-            item = envelope(message)
+            item = envelope(message, account_timezone=account_timezone)
             thread_id = str(item.get("thread_id") or item.get("id"))
             if thread_id in seen_threads:
                 continue
@@ -83,10 +88,18 @@ def register(server: FastMCP) -> None:
                 is_newsletter=item["is_newsletter"],
             )
             item["deadline_detected"] = detect_deadline(
-                text, date_header=header_map(message.get("payload", {})).get("date")
+                text,
+                date_header=header_map(message.get("payload", {})).get("date"),
+                account_timezone=account_timezone,
             )
             (automated if item["is_automated"] or item["is_newsletter"] else people).append(item)
-        return {"window": request.window, "people": people, "automated": automated, "next_history_id": None}
+        return {
+            "window": request.window,
+            "account_timezone": account_timezone,
+            "people": people,
+            "automated": automated,
+            "next_history_id": None,
+        }
 
     @server.tool(name="search_emails")
     async def search_emails(
@@ -118,6 +131,7 @@ def register(server: FastMCP) -> None:
             newer_than_days=newer_than_days,
         )
         service = gmail_service()
+        account_timezone = await resolve_user_timezone()
         query_str = _build_search_query(request)
         if ctx is not None:
             await ctx.info("Running Gmail search query.")
@@ -135,7 +149,12 @@ def register(server: FastMCP) -> None:
         )
         messages = result.get("messages", [])
         envelopes = [
-            envelope(await execute_google_request(service.users().messages().get(userId="me", id=item["id"], format="full")))
+            envelope(
+                await execute_google_request(
+                    service.users().messages().get(userId="me", id=item["id"], format="full")
+                ),
+                account_timezone=account_timezone,
+            )
             for item in messages
         ]
         if ctx is not None:
@@ -145,6 +164,7 @@ def register(server: FastMCP) -> None:
             "result_size_estimate": result.get("resultSizeEstimate", 0),
             "next_page_token": result.get("nextPageToken"),
             "effective_query": query_str,
+            "account_timezone": account_timezone,
         }
 
     @server.tool(name="list_emails")
@@ -163,6 +183,7 @@ def register(server: FastMCP) -> None:
             page_token=page_token,
         )
         service = gmail_service()
+        account_timezone = await resolve_user_timezone()
         label_ids = [request.label_id] if request.label_id else []
         if request.unread_only and "UNREAD" not in label_ids:
             label_ids.append("UNREAD")
@@ -182,7 +203,12 @@ def register(server: FastMCP) -> None:
         )
         messages = result.get("messages", [])
         envelopes = [
-            envelope(await execute_google_request(service.users().messages().get(userId="me", id=item["id"], format="full")))
+            envelope(
+                await execute_google_request(
+                    service.users().messages().get(userId="me", id=item["id"], format="full")
+                ),
+                account_timezone=account_timezone,
+            )
             for item in messages
         ]
         if ctx is not None:
@@ -191,4 +217,5 @@ def register(server: FastMCP) -> None:
             "messages": envelopes,
             "next_page_token": result.get("nextPageToken"),
             "result_size_estimate": result.get("resultSizeEstimate", 0),
+            "account_timezone": account_timezone,
         }

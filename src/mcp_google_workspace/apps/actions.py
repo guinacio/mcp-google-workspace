@@ -105,6 +105,8 @@ def _compute_open_ranges(
 
 def find_meeting_slots(request: FindMeetingSlotsRequest) -> dict[str, Any]:
     participants = request.participants or ["primary"]
+    if not request.time_zone:
+        raise ValueError("time_zone must be resolved from the account before finding slots")
     free_ranges, calendar_errors = _compute_open_ranges(
         participants=participants,
         time_min=request.time_min,
@@ -134,6 +136,8 @@ def create_meeting_from_slot(session_id: str, request: CreateMeetingFromSlotRequ
     cached = _from_cache(session_id, request.idempotency_key)
     if cached is not None:
         return cached
+    if not request.timezone:
+        raise ValueError("timezone must be resolved from the account before creating a meeting")
     service = build_calendar_service()
     start = _validate_and_fix_datetime(request.start, request.timezone)
     end = _validate_and_fix_datetime(request.end, request.timezone)
@@ -179,6 +183,8 @@ def reschedule_meeting(session_id: str, request: RescheduleMeetingRequest) -> Ap
     cached = _from_cache(session_id, request.idempotency_key)
     if cached is not None:
         return cached
+    if not request.timezone:
+        raise ValueError("timezone must be resolved from the account before rescheduling a meeting")
     service = build_calendar_service()
     start = _validate_and_fix_datetime(request.start, request.timezone)
     end = _validate_and_fix_datetime(request.end, request.timezone)

@@ -16,6 +16,7 @@ from ..auth import build_calendar_service, build_drive_service
 from ..common.async_ops import execute_google_request, require_elicitation_context, run_blocking, write_bytes_file
 from .presentation import event_envelope
 from ..common.parsing import normalize_participants
+from ..common.timezone import resolve_user_timezone, user_now
 from .schemas import (
     AddEventAttachmentRequest,
     CreateEventRequest,
@@ -100,8 +101,7 @@ def _resolve_relative_range(
 ) -> tuple[str | None, str | None]:
     if not range_preset:
         return None, None
-    tz = pytz.timezone(timezone_name)
-    now = datetime.now(tz)
+    now = user_now(timezone_name)
     start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if range_preset == "today":
         start, end = start_of_day, start_of_day + timedelta(days=1)
@@ -297,8 +297,7 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         if ctx is not None:
             await ctx.info(f"Listing events for calendar {request.calendar_id}.")
-        timezone_settings = await execute_google_request(service.settings().get(setting="timezone"))
-        user_timezone = timezone_settings.get("value", "UTC")
+        user_timezone = await resolve_user_timezone()
         preset_min, preset_max = _resolve_relative_range(request.range_preset, user_timezone)
         effective_time_min = request.time_min or preset_min
         effective_time_max = request.time_max or preset_max
@@ -317,7 +316,10 @@ def register_tools(server: FastMCP) -> None:
             .list(**list_kwargs)
         )
         return {
-            "events": [event_envelope(event) for event in result.get("items", [])],
+            "events": [
+                event_envelope(event, account_timezone=user_timezone)
+                for event in result.get("items", [])
+            ],
             "next_page_token": result.get("nextPageToken"),
             "count": len(result.get("items", [])),
             "range_preset": request.range_preset,
@@ -343,24 +345,24 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         if ctx is not None:
             await ctx.info(f"Reading event {request.event_id}.")
+        effective_time_zone = request.time_zone or await resolve_user_timezone()
         event = await execute_google_request(
             service.events()
             .get(
                 calendarId=request.calendar_id,
                 eventId=request.event_id,
-                timeZone=request.time_zone,
+                timeZone=effective_time_zone,
                 maxAttendees=request.max_attendees,
             )
         )
-        return {"event": event_envelope(event)}
+        return {"event": event_envelope(event, account_timezone=effective_time_zone)}
 
     @server.tool(name="upcoming_calendar_digest")
     async def upcoming_calendar_digest(days: int = 7, max_results: int = 50) -> dict[str, Any]:
         """Return upcoming events and those needing the user's RSVP in one call."""
         service = build_calendar_service()
-        timezone_settings = await execute_google_request(service.settings().get(setting="timezone"))
-        user_timezone = timezone_settings.get("value", "UTC")
-        now = datetime.now(pytz.timezone(user_timezone))
+        user_timezone = await resolve_user_timezone()
+        now = user_now(user_timezone)
         result = await execute_google_request(
             service.events().list(
                 calendarId="primary",
@@ -371,12 +373,16 @@ def register_tools(server: FastMCP) -> None:
                 orderBy="startTime",
             )
         )
-        events = [event_envelope(event) for event in result.get("items", [])]
+        events = [
+            event_envelope(event, account_timezone=user_timezone)
+            for event in result.get("items", [])
+        ]
         return {
             "window_days": days,
             "events": events,
             "requires_response": [event for event in events if event["requires_response"]],
             "count": len(events),
+            "account_timezone": user_timezone,
         }
 
     @server.tool(name="list_calendars")
@@ -388,11 +394,9 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_timezone_info")
     async def get_timezone_info() -> dict[str, Any]:
         """Return user's calendar timezone and current localized time details."""
-        service = build_calendar_service()
-        settings = await execute_google_request(service.settings().get(setting="timezone"))
-        user_tz = settings.get("value", "UTC")
-        now_utc = datetime.now(pytz.UTC)
-        now_local = now_utc.astimezone(pytz.timezone(user_tz))
+        user_tz = await resolve_user_timezone()
+        now_local = user_now(user_tz)
+        now_utc = now_local.astimezone(pytz.UTC)
         return {
             "timezone": user_tz,
             "current_utc_time": now_utc.isoformat(),
@@ -404,11 +408,9 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_current_date")
     async def get_current_date() -> dict[str, Any]:
         """Return current date/time using the account's calendar timezone."""
-        service = build_calendar_service()
-        settings = await execute_google_request(service.settings().get(setting="timezone"))
-        user_tz = settings.get("value", "UTC")
-        now_utc = datetime.now(pytz.UTC)
-        now_local = now_utc.astimezone(pytz.timezone(user_tz))
+        user_tz = await resolve_user_timezone()
+        now_local = user_now(user_tz)
+        now_utc = now_local.astimezone(pytz.UTC)
         return {
             "current_date": now_local.strftime("%Y-%m-%d"),
             "current_time": now_local.strftime("%H:%M:%S"),
@@ -431,9 +433,12 @@ def register_tools(server: FastMCP) -> None:
             items=items,
             timeZone=time_zone,
         )
+        effective_time_zone = request.timeZone or await resolve_user_timezone()
         service = build_calendar_service()
         return await execute_google_request(
-            service.freebusy().query(body=request.model_dump(exclude_none=True))
+            service.freebusy().query(
+                body=request.model_copy(update={"timeZone": effective_time_zone}).model_dump()
+            )
         )
 
     @server.tool(name="find_common_free_slots")
@@ -473,7 +478,7 @@ def register_tools(server: FastMCP) -> None:
         if not request.participants:
             raise ValueError("participants list cannot be empty.")
 
-        query_timezone = request.time_zone or "UTC"
+        query_timezone = request.time_zone or await resolve_user_timezone()
         fixed_min = _validate_and_fix_datetime(request.time_min, query_timezone)
         fixed_max = _validate_and_fix_datetime(request.time_max, query_timezone)
         if not fixed_min or not fixed_max:
@@ -491,8 +496,7 @@ def register_tools(server: FastMCP) -> None:
             "timeMax": fixed_max,
             "items": [{"id": participant} for participant in request.participants],
         }
-        if request.time_zone:
-            body["timeZone"] = request.time_zone
+        body["timeZone"] = query_timezone
         freebusy_result = await execute_google_request(service.freebusy().query(body=body))
 
         calendars = freebusy_result.get("calendars", {})
@@ -551,6 +555,7 @@ def register_tools(server: FastMCP) -> None:
             "granularity_minutes": request.granularity_minutes,
             "working_hours_start": request.working_hours_start,
             "working_hours_end": request.working_hours_end,
+            "timezone": query_timezone,
             "total_suggestions": len(suggestions),
             "suggested_slots": suggestions,
             "calendar_errors": calendar_errors,
@@ -600,7 +605,7 @@ def register_tools(server: FastMCP) -> None:
             on_conflict=on_conflict,
         )
         service = build_calendar_service()
-        timezone_val = request.timezone or "UTC"
+        timezone_val = request.timezone or await resolve_user_timezone()
         start = _validate_and_fix_datetime(request.start_datetime, timezone_val)
         end = _validate_and_fix_datetime(request.end_datetime, timezone_val)
         if start is None:
@@ -715,7 +720,7 @@ def register_tools(server: FastMCP) -> None:
             on_conflict=on_conflict,
         )
         service = build_calendar_service()
-        timezone_val = request.timezone or "UTC"
+        timezone_val = request.timezone or await resolve_user_timezone()
         patch_data: dict[str, Any] = {}
         for key in (
             "summary",

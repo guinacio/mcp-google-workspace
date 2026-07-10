@@ -173,6 +173,7 @@ def test_task_envelope_and_digest_surface_actionable_state():
     digest = tasks_digest([task, {"id": "task-2", "title": "Someday"}], now=now)
 
     assert envelope["is_overdue"] is True
+    assert envelope["due_date"] == "2026-07-01"
     assert envelope["notes_snippet"] == "Send a concise update."
     assert digest["overdue"][0]["id"] == "task-1"
     assert digest["unscheduled"][0]["id"] == "task-2"

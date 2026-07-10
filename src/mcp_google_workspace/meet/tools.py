@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from ..common.timezone import resolve_user_timezone
 from .client import meet_service, normalize_conference_record_name, normalize_space_name
 from .presentation import conference_envelope, participant_envelope, recording_envelope, transcript_envelope
 from .schemas import (
@@ -115,12 +116,26 @@ def register_tools(server: FastMCP) -> None:
         result = list_conference_records_payload(
             ListConferenceRecordsRequest(page_size=page_size, page_token=page_token, filter=filter)
         )
+        account_timezone = await resolve_user_timezone()
         records = result.get("conferenceRecords", [])
-        return {"conference_records": [conference_envelope(record) for record in records], "next_page_token": result.get("nextPageToken"), "count": len(records)}
+        return {
+            "conference_records": [
+                conference_envelope(record, account_timezone=account_timezone) for record in records
+            ],
+            "next_page_token": result.get("nextPageToken"),
+            "count": len(records),
+            "account_timezone": account_timezone,
+        }
 
     @server.tool(name="get_conference_record")
     async def get_conference_record(conference_record_name: str) -> dict[str, Any]:
-        return conference_envelope(get_conference_record_payload(GetConferenceRecordRequest(conference_record_name=conference_record_name)))
+        account_timezone = await resolve_user_timezone()
+        return conference_envelope(
+            get_conference_record_payload(
+                GetConferenceRecordRequest(conference_record_name=conference_record_name)
+            ),
+            account_timezone=account_timezone,
+        )
 
     @server.tool(name="list_conference_participants")
     async def list_conference_participants(
@@ -137,8 +152,16 @@ def register_tools(server: FastMCP) -> None:
                 filter=filter,
             )
         )
+        account_timezone = await resolve_user_timezone()
         participants = result.get("participants", [])
-        return {"participants": [participant_envelope(item) for item in participants], "next_page_token": result.get("nextPageToken"), "count": len(participants)}
+        return {
+            "participants": [
+                participant_envelope(item, account_timezone=account_timezone) for item in participants
+            ],
+            "next_page_token": result.get("nextPageToken"),
+            "count": len(participants),
+            "account_timezone": account_timezone,
+        }
 
     @server.tool(name="list_conference_recordings")
     async def list_conference_recordings(
@@ -153,8 +176,16 @@ def register_tools(server: FastMCP) -> None:
                 page_token=page_token,
             )
         )
+        account_timezone = await resolve_user_timezone()
         recordings = result.get("recordings", [])
-        return {"recordings": [recording_envelope(item) for item in recordings], "next_page_token": result.get("nextPageToken"), "count": len(recordings)}
+        return {
+            "recordings": [
+                recording_envelope(item, account_timezone=account_timezone) for item in recordings
+            ],
+            "next_page_token": result.get("nextPageToken"),
+            "count": len(recordings),
+            "account_timezone": account_timezone,
+        }
 
     @server.tool(name="list_conference_transcripts")
     async def list_conference_transcripts(
@@ -169,5 +200,13 @@ def register_tools(server: FastMCP) -> None:
                 page_token=page_token,
             )
         )
+        account_timezone = await resolve_user_timezone()
         transcripts = result.get("transcripts", [])
-        return {"transcripts": [transcript_envelope(item) for item in transcripts], "next_page_token": result.get("nextPageToken"), "count": len(transcripts)}
+        return {
+            "transcripts": [
+                transcript_envelope(item, account_timezone=account_timezone) for item in transcripts
+            ],
+            "next_page_token": result.get("nextPageToken"),
+            "count": len(transcripts),
+            "account_timezone": account_timezone,
+        }

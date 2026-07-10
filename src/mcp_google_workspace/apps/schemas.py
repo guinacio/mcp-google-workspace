@@ -179,7 +179,7 @@ class FindMeetingSlotsRequest(ToolRequestModel):
     )
     granularity_minutes: int = Field(default=15, ge=5, le=240, description="Step size between candidate slot starts in minutes.")
     max_results: int = Field(default=10, ge=1, le=100, description="Maximum number of slot suggestions to return.")
-    time_zone: str = Field(default="UTC", description="IANA timezone for rendering/normalizing slots.")
+    time_zone: str | None = Field(default=None, description="IANA timezone for rendering/normalizing slots; defaults to the account timezone.")
     working_hours_start: str = Field(default="08:00", description="Daily working-hours start in HH:MM 24h format.")
     working_hours_end: str = Field(default="17:00", description="Daily working-hours end in HH:MM 24h format.")
 
@@ -215,7 +215,7 @@ class CreateMeetingFromSlotRequest(ToolRequestModel):
     title: str = Field(description="Meeting title/summary.")
     start: str = Field(description="RFC3339 start datetime.")
     end: str = Field(description="RFC3339 end datetime.")
-    timezone: str = Field(default="UTC", description="IANA timezone for start/end rendering.")
+    timezone: str | None = Field(default=None, description="IANA timezone for start/end rendering; defaults to the account timezone.")
     description: str | None = Field(default=None, description="Optional meeting description.")
     attendees: list[str] = Field(default_factory=list, description="Attendee email list.")
     create_conference: bool = Field(default=True, description="Whether to request conference data (e.g., Meet).")
@@ -228,7 +228,7 @@ class RescheduleMeetingRequest(ToolRequestModel):
     event_id: str = Field(description="Existing calendar event ID to reschedule.")
     start: str = Field(description="New RFC3339 start datetime.")
     end: str = Field(description="New RFC3339 end datetime.")
-    timezone: str = Field(default="UTC", description="IANA timezone for start/end rendering.")
+    timezone: str | None = Field(default=None, description="IANA timezone for start/end rendering; defaults to the account timezone.")
     idempotency_key: str = Field(description="Stable key to prevent duplicate reschedules on retry.")
 
 

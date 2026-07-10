@@ -146,15 +146,12 @@ function sanitizeInlineStyle(styleText: string | null | undefined): string {
     "fontSize",
     "fontStyle",
     "fontWeight",
-    "height",
     "lineHeight",
     "margin",
     "marginBottom",
     "marginLeft",
     "marginRight",
     "marginTop",
-    "maxWidth",
-    "minWidth",
     "padding",
     "paddingBottom",
     "paddingLeft",
@@ -164,7 +161,6 @@ function sanitizeInlineStyle(styleText: string | null | undefined): string {
     "textDecoration",
     "verticalAlign",
     "whiteSpace",
-    "width",
   ] as const;
   const declarations: string[] = [];
   for (const property of allowed) {
@@ -279,7 +275,9 @@ function sanitizeEmailHtml(html: string): string {
         const title = esc(element.getAttribute("title") || "");
         return `<img class="email-html-image" src="${esc(src)}" alt="${alt}"${title ? ` title="${title}"` : ""} />`;
       }
-      const altText = esc(element.getAttribute("alt") || element.getAttribute("title") || "Remote image blocked");
+      const remoteImageLabel = element.getAttribute("alt") || element.getAttribute("title");
+      if (!remoteImageLabel) return "";
+      const altText = esc(remoteImageLabel);
       return `<div class="email-image-blocked">${altText}</div>`;
     }
 
@@ -287,6 +285,13 @@ function sanitizeEmailHtml(html: string): string {
     const safeStyle = sanitizeInlineStyle(element.getAttribute("style"));
     if (safeStyle) {
       attrs.push(`style="${esc(safeStyle)}"`);
+    }
+
+    if (tag === "table") {
+      const hasOwnHeaders = element.querySelector(
+        ":scope > thead th, :scope > tr > th, :scope > tbody > tr > th"
+      );
+      attrs.push(`class="${hasOwnHeaders ? "email-data-table" : "email-layout-table"}"`);
     }
 
     if (tag === "a") {
@@ -941,20 +946,66 @@ export const RENDER_CSS = `
 .event-tooltip-layer {
   position: fixed;
   z-index: 2147483000;
-  border-radius: var(--radius-sm);
+  min-width: 238px;
+  max-width: 340px;
+  border-radius: 12px;
   border: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: var(--md-sys-elevation-2);
-  padding: 8px 10px;
+  background: var(--md-sys-color-surface);
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 24%, transparent), var(--md-sys-elevation-2);
+  overflow: hidden;
   font-size: 0.74rem;
   line-height: 1.45;
   color: var(--md-sys-color-on-surface);
-  white-space: pre-wrap;
   word-break: break-word;
   max-height: 220px;
-  max-width: 320px;
   overflow-y: auto;
   pointer-events: none;
+}
+
+.event-tooltip-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 11px 12px 7px;
+}
+
+.event-tooltip-color {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--tooltip-color, var(--md-sys-color-primary));
+}
+
+.event-tooltip-title {
+  color: var(--md-sys-color-on-surface);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.event-tooltip-content {
+  display: grid;
+  gap: 5px;
+  padding: 1px 12px 10px 29px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.event-tooltip-description {
+  margin-top: 3px;
+  padding-top: 8px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface);
+}
+
+.event-tooltip-foot {
+  padding: 7px 12px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-primary);
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 /* ── Event inline actions (shown on hover) ───────────────────────────── */
@@ -1271,6 +1322,173 @@ export const RENDER_CSS = `
   background: var(--md-sys-color-surface);
 }
 
+.event-panel {
+  width: min(760px, 96vw);
+  padding: 0;
+  overflow: hidden;
+  background: var(--md-sys-color-surface);
+}
+
+.event-toolbar {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.event-toolbar .nav-btn {
+  margin-left: auto;
+}
+
+.event-panel-body {
+  gap: 16px;
+  padding: 22px clamp(18px, 4vw, 36px) 28px;
+  margin-top: 0;
+}
+
+.event-subject-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.event-color-dot {
+  width: 13px;
+  height: 13px;
+  margin-top: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--md-sys-color-primary);
+}
+
+.event-subject-line h2 {
+  margin: 0;
+  color: var(--md-sys-color-on-surface);
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+.event-when {
+  margin-top: 4px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.82rem;
+}
+
+.event-command-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 0;
+  border-block: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.event-info-list {
+  display: grid;
+  gap: 12px;
+}
+
+.event-info-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  color: var(--md-sys-color-on-surface);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.event-info-icon {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 1rem;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.event-info-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.event-description {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.event-attendee-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.event-attendee {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.event-attendee-avatar {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.event-attendee-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-attendee-status {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.72rem;
+  text-transform: capitalize;
+}
+
+.event-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.event-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 8px;
+  background: var(--md-sys-color-surface-container-high);
+}
+
+.event-attachment-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+}
+
 .email-panel-body {
   gap: 14px;
   padding: 22px clamp(18px, 4vw, 42px) 26px;
@@ -1525,20 +1743,33 @@ export const RENDER_CSS = `
 }
 
 .email-body-content table {
-  width: 100%;
   border-collapse: collapse;
-  display: block;
-  overflow-x: auto;
+  max-width: 100%;
 }
 
-.email-body-content th,
-.email-body-content td {
+.email-body-content .email-layout-table {
+  margin: 0;
+}
+
+.email-body-content .email-layout-table td,
+.email-body-content .email-layout-table th {
+  border: 0;
+}
+
+.email-body-content .email-data-table {
+  width: 100%;
+  margin: 0.9rem 0;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.email-body-content .email-data-table th,
+.email-body-content .email-data-table td {
   border: 1px solid var(--md-sys-color-outline-variant);
   padding: 0.5rem 0.65rem;
   vertical-align: top;
 }
 
-.email-body-content th {
+.email-body-content .email-data-table th {
   background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 80%, transparent);
   font-weight: 700;
 }
@@ -1849,6 +2080,30 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     hideEventTooltipLayer();
   };
 
+  root.onkeydown = (event) => {
+    const target = event.target as HTMLElement;
+    if (event.key === "Escape") {
+      if (root.querySelector("[data-close-event-editor]")) {
+        _onAction({ type: "close_event_editor" });
+      } else if (root.querySelector("[data-close-email]")) {
+        _onAction({ type: "close_email_detail" });
+      } else if (root.querySelector("[data-close-event]")) {
+        _onAction({ type: "close_event_detail" });
+      }
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (target.closest("button, a, input, select, textarea")) return;
+    const eventCard = target.closest<HTMLElement>("[data-open-event]");
+    if (!eventCard) return;
+    const calendarId = eventCard.dataset.calendarId;
+    const eventId = eventCard.dataset.eventId;
+    if (!calendarId || !eventId) return;
+    event.preventDefault();
+    hideEventTooltipLayer();
+    _onAction({ type: "select_event", calendarId, eventId });
+  };
+
   root.onclick = (event) => {
     hideEventTooltipLayer();
     const target = event.target as HTMLElement;
@@ -2136,17 +2391,17 @@ function renderCalendarArea(
         <div class="calendar-actions">
           <div class="week-nav">
             <button type="button" class="nav-btn nav-icon" data-week-nav="prev" aria-label="Previous week" title="Previous week">‹</button>
-            <button type="button" class="nav-btn nav-today" data-week-nav="today">Today</button>
+            <button type="button" class="nav-btn nav-today" data-week-nav="today" title="Return to the current week">Today</button>
             <button type="button" class="nav-btn nav-icon" data-week-nav="next" aria-label="Next week" title="Next week">›</button>
           </div>
           ${canToggleWeekend ? `
-            <label class="inline-toggle">
+            <label class="inline-toggle" title="Include Saturday and Sunday in the calendar">
               <input type="checkbox" data-toggle-weekend="1" ${options.include_weekend ? "checked" : ""} />
               Show weekend
             </label>
           ` : ""}
           ${canSelectCalendars ? renderCalendarSelector(options.calendar_catalog, options.selected_calendar_ids) : ""}
-          ${canCreate ? `<button type="button" class="action-btn create-event-btn" data-open-event-editor="create"><span aria-hidden="true">＋</span> Create</button>` : ""}
+          ${canCreate ? `<button type="button" class="action-btn create-event-btn" data-open-event-editor="create" title="Create a calendar event"><span aria-hidden="true">＋</span> Create</button>` : ""}
         </div>
       </div>
       <div class="week-grid" style="--day-count:${weekly.days.length}">${weekly.days.map((day) => renderDay(day, weekly.timezone, canCreate, options.tool_capabilities)).join("")}</div>
@@ -2172,7 +2427,7 @@ function renderCalendarSelector(catalog: CalendarCatalogItem[], selectedIds: str
     .join("");
   return `
     <details class="calendar-select">
-      <summary class="chip-btn">Calendars</summary>
+      <summary class="chip-btn" title="Choose the calendars shown in this view">Calendars</summary>
       <div class="calendar-select-list">${options}</div>
     </details>
   `;
@@ -2196,7 +2451,7 @@ function renderDay(
           <span class="day-label-name">${esc(day.day_label)}</span>
           <span class="day-label-number">${esc(dayNumber(day.date))}</span>
         </div>
-        ${canCreate ? `<button type="button" class="chip-btn" data-open-event-editor="create" data-seed-date="${esc(day.date)}">Add</button>` : ""}
+        ${canCreate ? `<button type="button" class="chip-btn" data-open-event-editor="create" data-seed-date="${esc(day.date)}" title="Create an event on ${esc(day.date)}">Add</button>` : ""}
       </div>
       ${allDay ? `<div class="day-all-day">${allDay}</div>` : ""}
       <div class="day-events">${timed || empty}</div>
@@ -2210,24 +2465,31 @@ function renderEvent(event: WeeklyCalendarEvent, timezone: string, capabilities?
     .filter(Boolean)
     .join(" \u00b7 ");
 
-  const hoverLines: string[] = [];
-  hoverLines.push(`<strong>${esc(event.title)}</strong>`);
-  hoverLines.push(`${esc(fmtTime(event.start))} \u2013 ${esc(fmtTime(event.end))}`);
-  if (event.location) hoverLines.push(`\ud83d\udccd ${esc(event.location)}`);
-  if (event.attendee_count) hoverLines.push(`\ud83d\udc65 ${event.attendee_count} attendee${event.attendee_count > 1 ? "s" : ""}`);
-  if (event.has_conference) hoverLines.push(`\ud83c\udf10 Google Meet`);
-  if (event.description_snippet) {
-    hoverLines.push("");
-    hoverLines.push(esc(event.description_snippet));
-  }
+  const tooltipDetails = [
+    `<span>◷ ${esc(fmtTime(event.start))} – ${esc(fmtTime(event.end))}</span>`,
+    event.location ? `<span>⌖ ${esc(event.location)}</span>` : "",
+    event.attendee_count ? `<span>♙ ${event.attendee_count} guest${event.attendee_count > 1 ? "s" : ""}</span>` : "",
+    event.has_conference ? "<span>↗ Google Meet</span>" : "",
+  ].filter(Boolean).join("");
+  const tooltip = `
+    <div class="event-tooltip-head">
+      <span class="event-tooltip-color" style="--tooltip-color:var(${eventColor})"></span>
+      <div class="event-tooltip-title">${esc(event.title)}</div>
+    </div>
+    <div class="event-tooltip-content">
+      ${tooltipDetails}
+      ${event.description_snippet ? `<div class="event-tooltip-description">${esc(event.description_snippet)}</div>` : ""}
+    </div>
+    <div class="event-tooltip-foot">Click to open event</div>
+  `;
 
   return `
-    <article class="calendar-event" style="--event-color: var(${eventColor})" data-open-event="1" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}">
+    <article class="calendar-event" style="--event-color: var(${eventColor})" data-open-event="1" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" role="button" tabindex="0" aria-label="Open event: ${esc(event.title)}">
       <div class="event-time">${esc(fmtTime(event.start))} - ${esc(fmtTime(event.end))}</div>
       <div class="event-title">${esc(event.title)}</div>
       ${metaParts ? `<div class="event-meta">${esc(metaParts)}</div>` : ""}
       <div class="event-actions">${renderEventActionChips(event, timezone, capabilities)}</div>
-      <div class="event-hover">${hoverLines.join("<br>")}</div>
+      <div class="event-hover">${tooltip}</div>
     </article>
   `;
 }
@@ -2303,8 +2565,17 @@ function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: 
   const canDelete = capabilities?.can_delete_event ?? false;
   const attendees = detail.attendees
     .map(
-      (attendee) =>
-        `<li>${esc(attendee.display_name || attendee.email)}${attendee.response_status ? ` · ${esc(attendee.response_status)}` : ""}</li>`
+      (attendee) => {
+        const name = attendee.display_name || attendee.email;
+        const role = attendee.organizer ? "Organizer" : attendee.self ? "You" : "Guest";
+        return `
+          <li class="event-attendee">
+            <span class="event-attendee-avatar">${esc(initials(name))}</span>
+            <span class="event-attendee-name">${esc(name)} <span class="event-attendee-status">${esc(role)}</span></span>
+            ${attendee.response_status ? `<span class="event-attendee-status">${esc(attendee.response_status)}</span>` : ""}
+          </li>
+        `;
+      }
     )
     .join("");
   const attachments = (detail.attachments || [])
@@ -2312,54 +2583,58 @@ function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: 
       const label = attachment.mime_type ? `${attachment.title} (${attachment.mime_type})` : attachment.title;
       if (attachment.file_url) {
         return `
-          <li>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <span>${esc(label)}</span>
-              <button type="button" class="chip-btn" data-open-attachment-url="${esc(attachment.file_url)}">Open</button>
-              <button
-                type="button"
-                class="chip-btn"
-                data-download-attachment-url="${esc(attachment.file_url)}"
-                data-download-attachment-name="${esc(attachment.title)}"
-                data-download-attachment-mime="${esc(attachment.mime_type || "")}">
-                Download
-              </button>
-            </div>
-          </li>
+          <div class="event-attachment">
+            <span class="event-attachment-label">${esc(label)}</span>
+            <button type="button" class="chip-btn" data-open-attachment-url="${esc(attachment.file_url)}">Open</button>
+            <button
+              type="button"
+              class="chip-btn"
+              data-download-attachment-url="${esc(attachment.file_url)}"
+              data-download-attachment-name="${esc(attachment.title)}"
+              data-download-attachment-mime="${esc(attachment.mime_type || "")}">
+              Download
+            </button>
+          </div>
         `;
       }
-      return `<li>${esc(label)}</li>`;
+      return `<div class="event-attachment"><span class="event-attachment-label">${esc(label)}</span></div>`;
     })
     .join("");
   const currentResponse = detail.self_response_status || "";
   const description = detail.description?.trim() || "No description.";
   return `
     <div class="overlay" role="dialog" aria-modal="true">
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <div class="panel-title">${esc(detail.title)}</div>
-            <div class="panel-sub">${esc(fmtTime(detail.start))} - ${esc(fmtTime(detail.end))}${detail.timezone ? ` · ${esc(detail.timezone)}` : ""}</div>
-          </div>
+      <section class="panel event-panel" aria-label="Event details">
+        <div class="event-toolbar">
+          <button type="button" class="email-back" data-close-event="1" aria-label="Back to calendar" title="Back to calendar">←</button>
+          <span>Event</span>
           <button type="button" class="nav-btn" data-close-event="1">Close</button>
         </div>
-        <div class="panel-body">
-          <div class="detail-block">${detail.location ? `<strong>Location:</strong> ${esc(detail.location)}` : "<strong>Location:</strong> None"}</div>
-          <div class="detail-block">${detail.conference_link ? `<strong>Conference:</strong> <a href="${esc(detail.conference_link)}" target="_blank" rel="noreferrer">${esc(detail.conference_link)}</a>` : "<strong>Conference:</strong> None"}</div>
-          <div class="detail-block"><strong>Attachments</strong><ul class="attachment-list">${attachments || "<li>No attachments.</li>"}</ul></div>
-          <div class="detail-block"><strong>Description</strong><div style="margin-top:6px; white-space:pre-wrap;">${esc(description)}</div></div>
-          <div class="detail-block"><strong>Attendees</strong><ul class="attendee-list">${attendees || "<li>No attendees.</li>"}</ul></div>
-          <div class="detail-block">
-            <div class="event-actions" style="display:flex; flex-wrap:wrap; gap:6px;">
-              ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "accepted" ? "active" : ""}" data-rsvp-status="accepted" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Accept</button>` : ""}
-              ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "tentative" ? "active" : ""}" data-rsvp-status="tentative" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Tentative</button>` : ""}
-              ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "declined" ? "active" : ""}" data-rsvp-status="declined" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Decline</button>` : ""}
-              ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+15m</button>` : ""}
-              ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+30m</button>` : ""}
-              ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+1h</button>` : ""}
-              ${canDelete ? `<button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Cancel event</button>` : ""}
-              ${canEdit ? `<button type="button" class="chip-btn" data-open-event-editor="edit" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Edit</button>` : ""}
+        <div class="panel-body event-panel-body">
+          <div class="event-subject-line">
+            <span class="event-color-dot" aria-hidden="true"></span>
+            <div>
+              <h2>${esc(detail.title)}</h2>
+              <div class="event-when">${esc(fmtTime(detail.start))} – ${esc(fmtTime(detail.end))}${detail.timezone ? ` · ${esc(detail.timezone)}` : ""}</div>
             </div>
+          </div>
+          <div class="event-command-bar">
+            ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "accepted" ? "active" : ""}" data-rsvp-status="accepted" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Accept</button>` : ""}
+            ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "tentative" ? "active" : ""}" data-rsvp-status="tentative" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Tentative</button>` : ""}
+            ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "declined" ? "active" : ""}" data-rsvp-status="declined" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Decline</button>` : ""}
+            ${canEdit ? `<button type="button" class="chip-btn" data-open-event-editor="edit" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Edit</button>` : ""}
+            ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+15m</button>` : ""}
+            ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+30m</button>` : ""}
+            ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+1h</button>` : ""}
+            ${canDelete ? `<button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Cancel event</button>` : ""}
+          </div>
+          <div class="event-info-list">
+            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">◷</span><div><span class="event-info-label">When</span>${esc(fmtTime(detail.start))} – ${esc(fmtTime(detail.end))}</div></div>
+            ${detail.location ? `<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">⌖</span><div><span class="event-info-label">Location</span>${esc(detail.location)}</div></div>` : ""}
+            ${detail.conference_link ? `<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">↗</span><div><span class="event-info-label">Video call</span><a href="${esc(detail.conference_link)}" target="_blank" rel="noreferrer">${esc(detail.conference_provider || "Join Google Meet")}</a></div></div>` : ""}
+            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">≡</span><div><span class="event-info-label">Description</span><div class="event-description">${esc(description)}</div></div></div>
+            ${attachments ? `<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">⌕</span><div><span class="event-info-label">Attachments</span><div class="event-attachments">${attachments}</div></div></div>` : ""}
+            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">♙</span><div><span class="event-info-label">Guests</span><ul class="event-attendee-list">${attendees || "<li>No guests.</li>"}</ul></div></div>
           </div>
         </div>
       </section>

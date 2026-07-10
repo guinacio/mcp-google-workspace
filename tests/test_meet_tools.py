@@ -188,6 +188,9 @@ def test_meet_tool_annotations():
 
 
 def test_participant_envelope_uses_human_identity():
-    result = participant_envelope({"name": "conferenceRecords/r/participants/p", "signedinUser": {"user": "users/123", "displayName": "Ada"}})
+    result = participant_envelope(
+        {"name": "conferenceRecords/r/participants/p", "signedinUser": {"user": "users/123", "displayName": "Ada"}},
+        account_timezone="America/Sao_Paulo",
+    )
     assert result["name"] == "Ada"
     assert result["identity_type"] == "signed_in"

@@ -1,4 +1,6 @@
 from mcp_google_workspace.auth import google_auth
+from mcp_google_workspace.auth.identity import Principal
+from cryptography.fernet import Fernet
 
 
 def test_default_scopes_include_new_services_and_exclude_meet(monkeypatch):
@@ -25,13 +27,19 @@ def test_meet_scopes_are_flagged(monkeypatch):
     assert set(google_auth.MEET_SCOPES).issubset(scopes)
 
 
-def test_delete_cached_token_removes_only_the_resolved_token(monkeypatch, tmp_path):
+def test_delete_cached_token_removes_only_the_authenticated_users_token(monkeypatch, tmp_path):
     credentials = tmp_path / "credentials.json"
-    token = tmp_path / "token.json"
     credentials.write_text("{}", encoding="utf-8")
-    token.write_text("cached-token", encoding="utf-8")
     monkeypatch.setenv("MCP_CREDENTIALS_DIR", str(tmp_path))
+    monkeypatch.setenv("MCP_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    primary = Principal(issuer="https://issuer.example", subject="primary")
+    other = Principal(issuer="https://issuer.example", subject="other")
+    store = google_auth.get_token_store()
+    store.save_credentials_json(primary, '{"token":"primary"}')
+    store.save_credentials_json(other, '{"token":"other"}')
+    monkeypatch.setattr(google_auth, "current_principal", lambda: primary)
 
     assert google_auth.delete_cached_token() is True
-    assert not token.exists()
+    assert store.load_credentials_json(primary) is None
+    assert store.load_credentials_json(other) == '{"token":"other"}'
     assert credentials.exists()

@@ -20,7 +20,8 @@ def test_event_envelope_surfaces_rsvp_and_meeting_link():
             "id": "event-1", "summary": "Planning", "start": {"dateTime": "2026-07-10T10:00:00Z"},
             "end": {"dateTime": "2026-07-10T11:00:00Z"}, "attendees": [{"self": True, "responseStatus": "needsAction"}],
             "hangoutLink": "https://meet.google.com/abc-defg-hij",
-        }
+        },
+        account_timezone="America/Sao_Paulo",
     )
     assert result["requires_response"] is True
     assert result["meeting_url"].startswith("https://meet")

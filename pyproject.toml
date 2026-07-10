@@ -1,6 +1,6 @@
 [project]
 name = "mcp-google-workspace"
-version = "0.3.3"
+version = "0.3.4"
 description = "Production MCP server for Gmail, Google Calendar, Keep, Drive and Chat"
 readme = "README.md"
 authors = [
@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography>=46.0.5",
     "fastmcp>=3.0.2",
     "google-genai>=1.67.0",
     "google-api-python-client>=2.190.0",

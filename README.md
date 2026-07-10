@@ -42,17 +42,23 @@ npm run build
 
 ## OAuth setup
 
-Place `credentials.json` in one of:
+Place the Google OAuth client `credentials.json` in one of:
 
 - project root: `./credentials.json`
 - package credentials folder: `./src/credentials/credentials.json`
 
-On first run, the server launches a browser for OAuth consent and writes `token.json`.
+Configure `MCP_TOKEN_ENCRYPTION_KEY` with a Fernet key before first use. The MCP encrypts each user's refresh token separately; it never writes a shared `token.json`.
+
+Generate a key once and store it in your secret manager:
+
+```powershell
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
 ### Optional service feature flags
 
 Sheets, Docs, Tasks, People, Forms, and Slides are mounted by default and their scopes are always requested.
-If you are upgrading from an older checkout, delete `token.json` once so OAuth can re-consent the expanded scope set.
+When scopes change, reconnect the affected user so their encrypted per-user token receives the expanded grant.
 
 Google Keep OAuth scope can return `invalid_scope` in standard user OAuth flows.
 Keep integration is therefore disabled by default.
@@ -97,7 +103,7 @@ $env:GEMINI_AUDIO_UNDERSTANDING_MODEL="gemini-3-flash-preview"
 $env:GEMINI_REASONING_MODEL="gemini-3.1-pro-preview"
 ```
 
-Whenever you enable one of these optional integrations or otherwise change the scope set, delete `token.json` and re-authenticate to refresh granted scopes.
+Whenever you enable an optional integration or otherwise change scopes, reconnect each affected user.
 
 ### Apps dashboard rollout flag
 
@@ -142,11 +148,22 @@ Bundle-specific documentation, runtime settings, and validation steps live in `d
 
 ## Run (SSE)
 
+SSE is multi-user only when protected by an OIDC bearer-token issuer. The server refuses to start without this configuration:
+
 ```powershell
-$env:MCP_HOST="127.0.0.1"
+$env:MCP_HOST="0.0.0.0"
 $env:MCP_PORT="8000"
+$env:MCP_SSE_BASE_URL="https://mcp.example.com"
+$env:MCP_SSE_JWT_ISSUER="https://issuer.example.com"
+$env:MCP_SSE_JWT_AUDIENCE="google-workspace-mcp"
+$env:MCP_SSE_JWKS_URI="https://issuer.example.com/.well-known/jwks.json"
+$env:MCP_GOOGLE_OAUTH_REDIRECT_URL="https://mcp.example.com/google/oauth/callback"
+$env:MCP_USER_TOKEN_DIR="/srv/mcp-google-workspace/tokens"
+$env:MCP_TOKEN_ENCRYPTION_KEY="<Fernet key from your secret manager>"
 uv run python -m mcp_google_workspace.server_sse
 ```
+
+Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience, signature, and expiry; the verified `iss` + `sub` selects an isolated encrypted Google token. Each user calls `connect_google_workspace`, opens its returned URL, and completes Google consent. The callback is PKCE-protected and one-time; it cannot connect Google credentials to a different MCP principal.
 
 ## Notable MCP tools
 

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastmcp import FastMCP
 
+from ..common.timezone import resolve_user_timezone, user_now
 from .client import tasks_service
 from .schemas import (
     CompleteTaskRequest,
@@ -24,8 +24,8 @@ from .schemas import (
 from .presentation import task_envelope, tasklist_envelope, tasks_digest
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+def _completed_now(timezone_name: str) -> str:
+    return user_now(timezone_name).replace(microsecond=0).isoformat()
 
 
 def list_tasklists_payload(request: ListTasklistsRequest) -> dict[str, Any]:
@@ -87,9 +87,13 @@ def update_task_payload(request: UpdateTaskRequest) -> dict[str, Any]:
     return service.tasks().patch(tasklist=request.tasklist_id, task=request.task_id, body=body).execute()
 
 
-def complete_task_payload(request: CompleteTaskRequest) -> dict[str, Any]:
+def complete_task_payload(
+    request: CompleteTaskRequest, *, default_completed_at: str | None = None
+) -> dict[str, Any]:
     service = tasks_service()
-    completed_at = request.completed_at or _utc_now()
+    completed_at = request.completed_at or default_completed_at
+    if not completed_at:
+        raise ValueError("completed_at must be supplied when no account timezone is available")
     return service.tasks().patch(
         tasklist=request.tasklist_id,
         task=request.task_id,
@@ -144,6 +148,8 @@ def register_tools(server: FastMCP) -> None:
         show_hidden: bool = False,
         updated_min: str | None = None,
     ) -> dict[str, Any]:
+        timezone_name = await resolve_user_timezone()
+        now = user_now(timezone_name)
         result = list_tasks_payload(
             ListTasksRequest(
                 tasklist_id=tasklist_id,
@@ -163,23 +169,37 @@ def register_tools(server: FastMCP) -> None:
         items = result.get("items", [])
         return {
             "tasklist_id": tasklist_id,
-            "tasks": [task_envelope(item) for item in items],
+            "tasks": [task_envelope(item, now=now) for item in items],
+            "account_timezone": timezone_name,
             "next_page_token": result.get("nextPageToken"),
             "count": len(items),
         }
 
     @server.tool(name="get_task")
     async def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
-        return task_envelope(get_task_payload(GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id)))
+        timezone_name = await resolve_user_timezone()
+        return task_envelope(
+            get_task_payload(GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id)),
+            now=user_now(timezone_name),
+        )
 
     @server.tool(name="tasks_digest")
     async def tasks_digest_tool(tasklist_id: str, days: int = 7, max_results: int = 100) -> dict[str, Any]:
         """Group incomplete tasks into overdue, upcoming, and unscheduled work."""
+        timezone_name = await resolve_user_timezone()
         result = list_tasks_payload(
             ListTasksRequest(tasklist_id=tasklist_id, max_results=max_results, show_completed=False)
         )
-        digest = tasks_digest(result.get("items", []), days=days)
-        digest.update({"tasklist_id": tasklist_id, "window_days": days})
+        digest = tasks_digest(
+            result.get("items", []), now=user_now(timezone_name), days=days
+        )
+        digest.update(
+            {
+                "tasklist_id": tasklist_id,
+                "window_days": days,
+                "account_timezone": timezone_name,
+            }
+        )
         return digest
 
     @server.tool(name="create_task")
@@ -232,8 +252,10 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="complete_task")
     async def complete_task(tasklist_id: str, task_id: str, completed_at: str | None = None) -> dict[str, Any]:
+        timezone_name = await resolve_user_timezone()
         return complete_task_payload(
-            CompleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id, completed_at=completed_at)
+            CompleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id, completed_at=completed_at),
+            default_completed_at=_completed_now(timezone_name),
         )
 
     @server.tool(name="move_task")
