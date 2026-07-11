@@ -65,6 +65,34 @@ def test_stale_credential_generation_cannot_delete_a_newer_refresh(tmp_path) -> 
     assert store.load_credentials_json(principal) == '{"refresh_token":"new"}'
 
 
+def test_local_oauth_requests_all_enabled_scopes_once(monkeypatch, tmp_path) -> None:
+    from mcp_google_workspace.auth import google_auth
+
+    credentials_path = tmp_path / "credentials.json"
+    credentials_path.write_text("{}")
+    captured: list[list[str]] = []
+
+    class EmptyStore:
+        def load_credentials_json(self, principal):
+            return None
+
+    sentinel = object()
+    monkeypatch.delenv("MCP_GOOGLE_OAUTH_REDIRECT_URL", raising=False)
+    monkeypatch.setattr(google_auth, "resolve_client_credentials_path", lambda: credentials_path)
+    monkeypatch.setattr(google_auth, "get_token_store", EmptyStore)
+    monkeypatch.setattr(
+        google_auth,
+        "_run_local_oauth",
+        lambda principal, path, scopes: captured.append(scopes) or sentinel,
+    )
+
+    result = google_auth._get_credentials_unlocked(google_auth.GMAIL_SCOPES)
+
+    assert result is sentinel
+    assert captured == [google_auth.get_google_scopes()]
+    assert set(google_auth.CALENDAR_SCOPES).issubset(captured[0])
+
+
 def test_oauth_state_is_one_time_and_bound_to_the_originating_principal(tmp_path) -> None:
     store = EncryptedTokenStore(tmp_path, Fernet.generate_key().decode())
     principal = Principal(issuer="https://issuer.example", subject="alice")

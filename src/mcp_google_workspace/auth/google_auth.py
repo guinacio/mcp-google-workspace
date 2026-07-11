@@ -268,7 +268,17 @@ def _get_credentials_unlocked(required_scopes: list[str] | None = None) -> Crede
     """Load and refresh credentials isolated to the authenticated MCP user."""
     principal = current_principal()
     credentials_path = resolve_client_credentials_path()
-    scopes = required_scopes or get_google_scopes()
+    remote_mode = _is_remote_oauth_mode()
+    # A local MCPB has one trusted user and one stored grant. Request the complete
+    # enabled catalog once so cross-service helpers (for example Calendar timezone
+    # normalization inside Gmail) do not replace each other's narrower grants and
+    # launch multiple browser consent flows on every tool call. Remote HTTP remains
+    # capability-incremental because each principal has an isolated grant/catalog.
+    scopes = (
+        required_scopes or get_google_scopes()
+        if remote_mode
+        else get_google_scopes()
+    )
     if not credentials_path.exists():
         raise FileNotFoundError(
             "Google OAuth client credentials.json not found. Set MCP_CREDENTIALS_DIR or place it in the project root."
@@ -276,7 +286,7 @@ def _get_credentials_unlocked(required_scopes: list[str] | None = None) -> Crede
 
     token_json = get_token_store().load_credentials_json(principal)
     if token_json is None:
-        if not _is_remote_oauth_mode():
+        if not remote_mode:
             return _run_local_oauth(principal, credentials_path, scopes)
         raise GoogleAccountConnectionRequired(
             "Google Workspace is not connected for this user. Call connect_google_workspace and complete consent."
@@ -284,7 +294,7 @@ def _get_credentials_unlocked(required_scopes: list[str] | None = None) -> Crede
     creds = Credentials.from_authorized_user_info(json.loads(token_json))
     setattr(creds, "_mcp_token_fingerprint", sha256(token_json.encode("utf-8")).hexdigest())
     if creds and not creds.has_scopes(scopes):
-        if not _is_remote_oauth_mode():
+        if not remote_mode:
             return _run_local_oauth(principal, credentials_path, scopes)
         raise GoogleAccountConnectionRequired(
             "The Google connection is missing scopes for this capability. "
@@ -311,7 +321,7 @@ def _get_credentials_unlocked(required_scopes: list[str] | None = None) -> Crede
                 exc,
             )
             delete_cached_token(principal)
-            if not _is_remote_oauth_mode():
+            if not remote_mode:
                 return _run_local_oauth(principal, credentials_path, scopes)
             raise GoogleAccountReauthenticationRequired(
                 "Google authorization expired for this user. Call connect_google_workspace to reconnect."
