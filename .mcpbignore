@@ -1,4 +1,6 @@
 .git/
+.agents/
+.codex/
 .claude-plugin/
 .claude/
 .cursor/
@@ -6,10 +8,14 @@
 .pytest_cache/
 .ruff_cache/
 .uv-cache/
+.uv-cache-*/
+.codex-uv-cache/
+.pnpm-store/
 .venv/
 build/
 dist/
 tmp/
+.test-tmp-*/
 tests/
 __pycache__/
 *.pyc
