@@ -144,7 +144,8 @@ class GoogleAccountReauthenticationRequired(PermissionError):
     """Raised after an invalid per-user Google refresh token is discarded."""
 
 
-def _is_remote_oauth_mode() -> bool:
+def is_remote_oauth_mode() -> bool:
+    """Return whether OAuth uses the authenticated remote callback flow."""
     return bool(os.getenv("MCP_GOOGLE_OAUTH_REDIRECT_URL", "").strip())
 
 
@@ -290,7 +291,7 @@ def _get_credentials_unlocked(required_scopes: list[str] | None = None) -> Crede
     """Load and refresh credentials isolated to the authenticated MCP user."""
     principal = current_principal()
     credentials_path = resolve_client_credentials_path()
-    remote_mode = _is_remote_oauth_mode()
+    remote_mode = is_remote_oauth_mode()
     # A local MCPB has one trusted user and one stored grant. Request the complete
     # enabled catalog once so cross-service helpers (for example Calendar timezone
     # normalization inside Gmail) do not replace each other's narrower grants and

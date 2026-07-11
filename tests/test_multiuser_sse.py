@@ -3,6 +3,8 @@ from __future__ import annotations
 from hashlib import sha256
 from types import SimpleNamespace
 from cryptography.fernet import Fernet
+import anyio
+from fastmcp import Client, FastMCP
 from fastmcp.server.auth import AccessToken
 import pytest
 
@@ -11,6 +13,61 @@ from mcp_google_workspace.auth.token_store import EncryptedTokenStore, TokenStor
 from mcp_google_workspace.runtime import get_remote_security_settings
 from mcp_google_workspace.server_http import build_http_auth
 import mcp_google_workspace.server_http as remote_entry
+
+
+def test_explicit_connect_tool_uses_local_loopback_flow_without_http_settings(
+    monkeypatch,
+) -> None:
+    from mcp_google_workspace.auth import google_oauth
+
+    server = FastMCP("local-connect-test")
+    google_oauth.register_connection_tools(server)
+    expected = {
+        "state": "connected",
+        "connected": True,
+        "mode": "local_stdio",
+        "granted_capabilities": ["gmail"],
+        "granted_scopes": ["scope"],
+        "requested_capabilities": ["gmail"],
+        "action": None,
+    }
+    monkeypatch.delenv("MCP_GOOGLE_OAUTH_REDIRECT_URL", raising=False)
+    monkeypatch.setattr(google_oauth, "connect_local_google_account", lambda capabilities: expected)
+
+    async def call_connect():
+        async with Client(server) as client:
+            return await client.call_tool("connect_google_workspace")
+
+    result = anyio.run(call_connect)
+    assert result.structured_content == expected
+
+
+def test_local_connect_grants_full_enabled_catalog_once(monkeypatch) -> None:
+    from mcp_google_workspace.auth import google_auth, google_oauth
+
+    requested: list[list[str]] = []
+    monkeypatch.setattr(
+        google_oauth,
+        "get_credentials",
+        lambda scopes: requested.append(scopes) or object(),
+    )
+    monkeypatch.setattr(
+        google_oauth,
+        "google_connection_status",
+        lambda: {
+            "state": "connected",
+            "connected": True,
+            "granted_capabilities": ["calendar", "gmail"],
+            "granted_scopes": google_auth.get_google_scopes(),
+            "action": None,
+        },
+    )
+
+    result = google_oauth.connect_local_google_account(["gmail"])
+
+    assert requested == [google_auth.get_google_scopes()]
+    assert result["connected"] is True
+    assert result["mode"] == "local_stdio"
 
 
 def _configure_http(monkeypatch: pytest.MonkeyPatch, tmp_path) -> str:

@@ -17,8 +17,10 @@ from ..runtime import get_remote_security_settings
 from ..common.async_ops import run_blocking
 from .google_auth import (
     CAPABILITY_SCOPES,
+    get_credentials,
     get_google_scopes,
     get_token_store,
+    is_remote_oauth_mode,
     resolve_client_credentials_path,
 )
 from .identity import Principal, current_principal
@@ -51,6 +53,8 @@ def _flow(
 
 def create_google_authorization(capabilities: list[str] | None = None) -> dict[str, Any]:
     """Create a one-time, PKCE-protected Google consent URL for the MCP caller."""
+    if not is_remote_oauth_mode():
+        raise RuntimeError("Remote Google authorization requires the HTTP OAuth callback mode.")
     principal = current_principal()
     # RFC 7636 permits 43–128 characters. token_urlsafe(72) is about 96.
     code_verifier = secrets.token_urlsafe(72)
@@ -77,6 +81,25 @@ def create_google_authorization(capabilities: list[str] | None = None) -> dict[s
         "capabilities": selected_capabilities,
         "requested_scopes": scopes,
         "newly_requested_scopes": newly_requested_scopes,
+    }
+
+
+def connect_local_google_account(capabilities: list[str] | None = None) -> dict[str, Any]:
+    """Complete or verify the single-user loopback OAuth grant used by MCPB/stdio."""
+    selected_capabilities = capabilities or ["gmail"]
+    # Validate caller-supplied names, while intentionally granting the complete
+    # enabled local catalog once so cross-service tools never churn credentials.
+    get_google_scopes(selected_capabilities)
+    get_credentials(get_google_scopes())
+    status = google_connection_status()
+    return {
+        "state": status["state"],
+        "connected": status["connected"],
+        "mode": "local_stdio",
+        "granted_capabilities": status.get("granted_capabilities", []),
+        "granted_scopes": status.get("granted_scopes", []),
+        "requested_capabilities": selected_capabilities,
+        "action": None if status["connected"] else status.get("action"),
     }
 
 
@@ -189,7 +212,9 @@ def register_connection_tools(server: FastMCP) -> None:
     async def connect_google_workspace(
         capabilities: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Grant selected Google capabilities incrementally; defaults to Gmail."""
+        """Connect locally with loopback OAuth or return a remote incremental-consent URL."""
+        if not is_remote_oauth_mode():
+            return await run_blocking(connect_local_google_account, capabilities)
         return create_google_authorization(capabilities)
 
     @server.tool(name="get_google_connection_status")
