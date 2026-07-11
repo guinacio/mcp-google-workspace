@@ -34,7 +34,9 @@ def should_ignore(relative_path: str, patterns: list[str]) -> bool:
     for pattern in patterns:
         if pattern.endswith("/"):
             prefix = pattern.rstrip("/")
-            if normalized == prefix or normalized.startswith(f"{prefix}/"):
+            if fnmatch.fnmatch(normalized, prefix) or fnmatch.fnmatch(
+                normalized, f"{prefix}/*"
+            ):
                 return True
             continue
         if fnmatch.fnmatch(normalized, pattern):
