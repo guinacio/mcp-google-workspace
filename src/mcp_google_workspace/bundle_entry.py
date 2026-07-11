@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
+
+# A desktop bundle is an offline, host-managed stdio child process. Disable
+# framework update checks before FastMCP is imported: they add network/cache I/O
+# to startup and can leave Claude waiting on a process that never establishes MCP.
+os.environ.setdefault("FASTMCP_CHECK_FOR_UPDATES", "off")
+os.environ.setdefault("MCP_RUNTIME_MODE", "bundle")
 
 if __package__ in {None, ""}:
     script_dir = Path(__file__).resolve().parent
@@ -39,7 +46,7 @@ def main() -> None:
     )
 
     try:
-        workspace_mcp.run(transport="stdio")
+        workspace_mcp.run(transport="stdio", show_banner=False)
     except KeyboardInterrupt:
         LOGGER.info("Received keyboard interrupt, shutting down MCP server.")
     except Exception:

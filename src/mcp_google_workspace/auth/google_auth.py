@@ -151,10 +151,14 @@ def _is_remote_oauth_mode() -> bool:
 def _run_local_oauth(principal: Principal, credentials_path: Path, scopes: list[str]) -> Credentials:
     """Connect the local stdio principal without weakening the remote security model."""
     settings = get_runtime_settings()
+    timeout_seconds = int(os.getenv("MCP_LOCAL_OAUTH_TIMEOUT_SECONDS", "180"))
+    if not 30 <= timeout_seconds <= 900:
+        raise ValueError("MCP_LOCAL_OAUTH_TIMEOUT_SECONDS must be between 30 and 900.")
     flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), scopes)
     credentials = flow.run_local_server(
         port=settings.oauth_port,
         open_browser=settings.oauth_open_browser,
+        timeout_seconds=timeout_seconds,
     )
     get_token_store().save_credentials_json(principal, credentials.to_json())
     return credentials

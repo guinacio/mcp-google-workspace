@@ -76,7 +76,8 @@
         "MCP_GOOGLE_HTTP_RETRIES": "${user_config.http_retries}",
         "MCP_GOOGLE_LOG_LEVEL": "${user_config.log_level}",
         "MCP_GOOGLE_OAUTH_PORT": "${user_config.oauth_port}",
-        "MCP_GOOGLE_OAUTH_OPEN_BROWSER": "${user_config.oauth_open_browser}"
+        "MCP_GOOGLE_OAUTH_OPEN_BROWSER": "${user_config.oauth_open_browser}",
+        "FASTMCP_CHECK_FOR_UPDATES": "off"
       }
     }
   },

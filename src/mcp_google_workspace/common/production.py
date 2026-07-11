@@ -523,6 +523,11 @@ async def production_lifespan(_: Any):
         yield
     finally:
         RUNTIME_STATE.begin_draining()
+        # Claude Desktop owns the stdio process lifetime. Once stdin closes it
+        # must be able to remove the extension directory immediately; HTTP-style
+        # draining here can make uninstall wait for the full grace period.
+        if os.getenv("MCP_RUNTIME_MODE", "").strip().lower() == "bundle":
+            return
         deadline = time.monotonic() + _integer_env("MCP_SHUTDOWN_GRACE_SECONDS", 30, 1, 300)
         while RUNTIME_STATE.active_requests and time.monotonic() < deadline:
             await anyio.sleep(0.05)

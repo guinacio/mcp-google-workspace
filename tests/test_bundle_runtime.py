@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -78,12 +79,33 @@ def test_bundle_entry_runs_workspace_over_stdio(monkeypatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        bundle_entry.workspace_mcp, "run", lambda transport: calls.append(transport)
+        bundle_entry.workspace_mcp,
+        "run",
+        lambda transport, **kwargs: calls.append(f"{transport}:{kwargs.get('show_banner')}"),
     )
 
     bundle_entry.main()
 
-    assert calls == ["stdio"]
+    assert calls == ["stdio:False"]
+
+
+def test_bundle_exits_cleanly_when_host_closes_stdin() -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    started = time.monotonic()
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "src" / "mcp_google_workspace" / "bundle_entry.py")],
+        cwd=ROOT,
+        input="",
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=20,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert time.monotonic() - started < 15
 
 
 def test_bundle_entry_script_bootstrap_supports_file_execution() -> None:
