@@ -1318,6 +1318,8 @@ export const RENDER_CSS = `
 .email-panel {
   width: min(920px, 96vw);
   padding: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--md-sys-color-surface);
 }
@@ -1325,6 +1327,8 @@ export const RENDER_CSS = `
 .event-panel {
   width: min(760px, 96vw);
   padding: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--md-sys-color-surface);
 }
@@ -1350,6 +1354,10 @@ export const RENDER_CSS = `
   gap: 16px;
   padding: 22px clamp(18px, 4vw, 36px) 28px;
   margin-top: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .event-subject-line {
@@ -1493,6 +1501,10 @@ export const RENDER_CSS = `
   gap: 14px;
   padding: 22px clamp(18px, 4vw, 42px) 26px;
   margin-top: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .email-toolbar {
