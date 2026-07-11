@@ -27,6 +27,15 @@ def test_meet_scopes_are_flagged(monkeypatch):
     assert set(google_auth.MEET_SCOPES).issubset(scopes)
 
 
+def test_timezone_dependent_capabilities_use_narrow_calendar_settings_scope():
+    gmail = google_auth.get_google_scopes(["gmail"])
+    sheets = google_auth.get_google_scopes(["sheets"])
+
+    assert set(google_auth.ACCOUNT_TIMEZONE_SCOPES).issubset(gmail)
+    assert set(google_auth.CALENDAR_SCOPES).isdisjoint(gmail)
+    assert set(google_auth.ACCOUNT_TIMEZONE_SCOPES).isdisjoint(sheets)
+
+
 def test_delete_cached_token_removes_only_the_authenticated_users_token(monkeypatch, tmp_path):
     credentials = tmp_path / "credentials.json"
     credentials.write_text("{}", encoding="utf-8")

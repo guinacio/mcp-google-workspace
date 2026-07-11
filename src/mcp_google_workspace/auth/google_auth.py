@@ -35,6 +35,10 @@ CALENDAR_SCOPES = [
     "https://www.googleapis.com/auth/calendar",
 ]
 
+ACCOUNT_TIMEZONE_SCOPES = [
+    "https://www.googleapis.com/auth/calendar.settings.readonly",
+]
+
 DRIVE_SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
@@ -93,6 +97,18 @@ CAPABILITY_SCOPES: dict[str, list[str]] = {
     "keep": KEEP_SCOPES,
     "chat": CHAT_SCOPES,
     "meet": MEET_SCOPES,
+}
+
+# These namespaces normalize provider timestamps in the user's Google Calendar
+# timezone. They need only Calendar settings metadata, not broad Calendar access.
+TIMEZONE_DEPENDENT_CAPABILITIES = {
+    "gmail",
+    "drive",
+    "tasks",
+    "forms",
+    "keep",
+    "chat",
+    "meet",
 }
 
 API_CAPABILITY = {
@@ -183,13 +199,14 @@ def get_google_scopes(capabilities: list[str] | None = None) -> list[str]:
                 f"Unknown Google capabilities: {', '.join(unknown)}. "
                 f"Choose from: {', '.join(sorted(CAPABILITY_SCOPES))}."
             )
-        return sorted(
-            {
-                scope
-                for capability in capabilities
-                for scope in CAPABILITY_SCOPES[capability]
-            }
-        )
+        capability_scopes = {
+            scope
+            for capability in capabilities
+            for scope in CAPABILITY_SCOPES[capability]
+        }
+        if set(capabilities) & TIMEZONE_DEPENDENT_CAPABILITIES:
+            capability_scopes.update(ACCOUNT_TIMEZONE_SCOPES)
+        return sorted(capability_scopes)
     scopes = [
         *GMAIL_SCOPES,
         *CALENDAR_SCOPES,
@@ -200,6 +217,7 @@ def get_google_scopes(capabilities: list[str] | None = None) -> list[str]:
         *PEOPLE_SCOPES,
         *FORMS_SCOPES,
         *SLIDES_SCOPES,
+        *ACCOUNT_TIMEZONE_SCOPES,
     ]
     if is_chat_enabled():
         scopes.extend(CHAT_SCOPES)

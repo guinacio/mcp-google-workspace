@@ -21,7 +21,7 @@ from .google_auth import (
     get_token_store,
     resolve_client_credentials_path,
 )
-from .identity import current_principal
+from .identity import Principal, current_principal
 
 _REGISTERED_CALLBACK_SERVERS: set[int] = set()
 
@@ -55,7 +55,8 @@ def create_google_authorization(capabilities: list[str] | None = None) -> dict[s
     # RFC 7636 permits 43–128 characters. token_urlsafe(72) is about 96.
     code_verifier = secrets.token_urlsafe(72)
     selected_capabilities = capabilities or ["gmail"]
-    scopes = get_google_scopes(selected_capabilities)
+    newly_requested_scopes = get_google_scopes(selected_capabilities)
+    scopes = _cumulative_authorization_scopes(principal, newly_requested_scopes)
     pending = get_token_store().create_oauth_state(
         principal, code_verifier, scopes=scopes
     )
@@ -75,7 +76,22 @@ def create_google_authorization(capabilities: list[str] | None = None) -> dict[s
         "after_consent": {"tool": "refresh_workspace_catalog", "arguments": {}},
         "capabilities": selected_capabilities,
         "requested_scopes": scopes,
+        "newly_requested_scopes": newly_requested_scopes,
     }
+
+
+def _cumulative_authorization_scopes(
+    principal: Principal, newly_requested_scopes: list[str]
+) -> list[str]:
+    """Explicitly retain prior grants instead of relying on provider-side union behavior."""
+    existing_json = get_token_store().load_credentials_json(principal)
+    if existing_json is None:
+        return sorted(set(newly_requested_scopes))
+    try:
+        existing = Credentials.from_authorized_user_info(json.loads(existing_json))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return sorted(set(newly_requested_scopes))
+    return sorted(set(newly_requested_scopes) | set(existing.scopes or []))
 
 
 def google_connection_status(capability: str | None = None) -> dict[str, Any]:
@@ -102,8 +118,8 @@ def google_connection_status(capability: str | None = None) -> dict[str, Any]:
     granted_scopes = sorted(credentials.scopes or [])
     granted_capabilities = sorted(
         name
-        for name, scopes in CAPABILITY_SCOPES.items()
-        if credentials.has_scopes(scopes)
+        for name in CAPABILITY_SCOPES
+        if credentials.has_scopes(get_google_scopes([name]))
     )
     if required_scopes and not credentials.has_scopes(required_scopes):
         state = "missing_scopes"
@@ -216,13 +232,23 @@ def register_oauth_callback_route(server: FastMCP) -> None:
         if request.query_params.get("error"):
             return HTMLResponse("Google authorization was not completed. You may close this window and try again.", status_code=400)
         try:
+            previous_json = get_token_store().load_credentials_json(pending.principal)
             flow = _flow(
                 state=state,
                 code_verifier=pending.code_verifier,
                 scopes=list(pending.scopes),
             )
             flow.fetch_token(authorization_response=str(request.url))
-            get_token_store().save_credentials_json(pending.principal, flow.credentials.to_json())
+            if not flow.credentials.has_scopes(list(pending.scopes)):
+                raise RuntimeError("Google did not preserve all previously granted scopes.")
+            payload = json.loads(flow.credentials.to_json())
+            if not payload.get("refresh_token") and previous_json is not None:
+                previous = json.loads(previous_json)
+                if previous.get("refresh_token"):
+                    payload["refresh_token"] = previous["refresh_token"]
+            get_token_store().save_credentials_json(
+                pending.principal, json.dumps(payload, separators=(",", ":"))
+            )
         except Exception:  # pragma: no cover - provider error shape varies
             return HTMLResponse("Google authorization could not be completed. Return to MCP and try again.", status_code=400)
         return HTMLResponse(

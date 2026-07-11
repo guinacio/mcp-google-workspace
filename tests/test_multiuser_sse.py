@@ -93,6 +93,34 @@ def test_local_oauth_requests_all_enabled_scopes_once(monkeypatch, tmp_path) -> 
     assert set(google_auth.CALENDAR_SCOPES).issubset(captured[0])
 
 
+def test_remote_incremental_auth_explicitly_preserves_existing_scopes(monkeypatch) -> None:
+    from mcp_google_workspace.auth import google_auth, google_oauth
+
+    existing_scopes = google_auth.get_google_scopes(["gmail"])
+    stored = SimpleNamespace(
+        load_credentials_json=lambda principal: __import__("json").dumps(
+            {
+                "token": "access",
+                "refresh_token": "refresh",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "client_id": "client",
+                "client_secret": "secret",
+                "scopes": existing_scopes,
+            }
+        )
+    )
+    monkeypatch.setattr(google_oauth, "get_token_store", lambda: stored)
+
+    cumulative = google_oauth._cumulative_authorization_scopes(
+        Principal(issuer="https://issuer.example", subject="alice"),
+        google_auth.get_google_scopes(["drive"]),
+    )
+
+    assert set(existing_scopes).issubset(cumulative)
+    assert set(google_auth.DRIVE_SCOPES).issubset(cumulative)
+    assert set(google_auth.ACCOUNT_TIMEZONE_SCOPES).issubset(cumulative)
+
+
 def test_oauth_state_is_one_time_and_bound_to_the_originating_principal(tmp_path) -> None:
     store = EncryptedTokenStore(tmp_path, Fernet.generate_key().decode())
     principal = Principal(issuer="https://issuer.example", subject="alice")
