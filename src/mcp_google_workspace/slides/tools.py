@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 
+from ..common.async_ops import run_blocking
 from .client import slides_service
 from .schemas import (
     BatchUpdatePresentationRequest,
@@ -82,15 +83,15 @@ def batch_update_presentation_payload(request: BatchUpdatePresentationRequest) -
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_presentation")
-    async def get_presentation(presentation_id: str) -> dict[str, Any]:
+    def get_presentation(presentation_id: str) -> dict[str, Any]:
         return get_presentation_payload(GetPresentationRequest(presentation_id=presentation_id))
 
     @server.tool(name="create_presentation")
-    async def create_presentation(title: str) -> dict[str, Any]:
+    def create_presentation(title: str) -> dict[str, Any]:
         return create_presentation_payload(CreatePresentationRequest(title=title))
 
     @server.tool(name="replace_text_in_presentation")
-    async def replace_text_in_presentation(
+    def replace_text_in_presentation(
         presentation_id: str,
         contains_text: str,
         replace_text: str,
@@ -106,13 +107,13 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="get_slide_page")
-    async def get_slide_page(presentation_id: str, page_object_id: str) -> dict[str, Any]:
+    def get_slide_page(presentation_id: str, page_object_id: str) -> dict[str, Any]:
         return get_slide_page_payload(
             GetSlidePageRequest(presentation_id=presentation_id, page_object_id=page_object_id)
         )
 
     @server.tool(name="get_slide_thumbnail")
-    async def get_slide_thumbnail(
+    def get_slide_thumbnail(
         presentation_id: str,
         page_object_id: str,
         mime_type: Literal["PNG", "JPEG"] = "PNG",
@@ -127,11 +128,12 @@ def register_tools(server: FastMCP) -> None:
             )
         )
 
-    @server.tool(name="batch_update_presentation")
+    @server.tool(name="batch_update_presentation", task=True)
     async def batch_update_presentation(
         presentation_id: str,
         requests: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        return batch_update_presentation_payload(
+        return await run_blocking(
+            batch_update_presentation_payload,
             BatchUpdatePresentationRequest(presentation_id=presentation_id, requests=requests)
         )

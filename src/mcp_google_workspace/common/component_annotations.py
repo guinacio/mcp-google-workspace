@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime, timezone
+from functools import wraps
 import inspect
 from typing import Any, Protocol, cast
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+
+from .output_schemas import infer_tool_output_schema
 
 
 class _ToolComponent(Protocol):
@@ -16,6 +20,7 @@ class _ToolComponent(Protocol):
     description: str | None
     tags: set[str]
     parameters: dict[str, Any] | None
+    output_schema: dict[str, Any] | None
     fn: Any
     annotations: ToolAnnotations | Mapping[str, Any] | None
 
@@ -94,6 +99,10 @@ _MUTATING_PREFIXES = (
 )
 
 _MUTATING_TOOLS = {
+    "download_attachment",
+    "download_event_attachment",
+    "download_file",
+    "export_google_file",
     "next_range",
     "prev_range",
     "today",
@@ -117,7 +126,6 @@ _IDEMPOTENT_TOOLS = {
     "archive_note",
     "cancel_meeting",
     "complete_task",
-    "create_meeting_from_slot",
     "hide_drive",
     "mark_as_not_spam",
     "mark_as_read",
@@ -578,6 +586,70 @@ def _enrich_parameters_schema(component: Any, *, namespace_hint: str | None) -> 
             required.add(name)
 
     component.parameters["required"] = sorted(required)
+    apply_structural_input_limits(component.parameters)
+
+
+def apply_structural_input_limits(schema: Any) -> None:
+    """Publish the same broad anti-abuse limits enforced by middleware."""
+    if not isinstance(schema, dict):
+        return
+    schema_type = schema.get("type")
+    if schema_type == "string":
+        schema.setdefault("maxLength", 1_000_000)
+    elif schema_type == "array":
+        schema.setdefault("maxItems", 10_000)
+    elif schema_type == "object":
+        schema.setdefault("maxProperties", 10_000)
+    for value in schema.get("properties", {}).values():
+        apply_structural_input_limits(value)
+    if "items" in schema:
+        apply_structural_input_limits(schema["items"])
+    for keyword in ("anyOf", "oneOf", "allOf"):
+        for branch in schema.get(keyword, []):
+            apply_structural_input_limits(branch)
+    for definition in schema.get("$defs", {}).values():
+        apply_structural_input_limits(definition)
+
+
+def _paginated_result(result: Any) -> Any:
+    if not isinstance(result, dict):
+        return result
+    token = result.get("next_page_token", result.get("nextPageToken"))
+    result.setdefault("next_page_token", token)
+    result.setdefault("has_more", bool(token))
+    result.setdefault(
+        "fetched_at", datetime.now(timezone.utc).isoformat(timespec="seconds")
+    )
+    if "count" not in result:
+        for value in result.values():
+            if isinstance(value, list):
+                result["count"] = len(value)
+                break
+        else:
+            result["count"] = 0
+    return result
+
+
+def _wrap_pagination(component: Any, base_name: str) -> None:
+    if not base_name.startswith(("list_", "search_")):
+        return
+    original = component.fn
+    if getattr(original, "_workspace_pagination_wrapped", False):
+        return
+    if inspect.iscoroutinefunction(original):
+        @wraps(original)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            return _paginated_result(await original(*args, **kwargs))
+
+        wrapped = async_wrapper
+    else:
+        @wraps(original)
+        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            return _paginated_result(original(*args, **kwargs))
+
+        wrapped = sync_wrapper
+    setattr(wrapped, "_workspace_pagination_wrapped", True)
+    component.fn = wrapped
 
 def apply_default_tool_annotations(server: FastMCP) -> None:
     namespace_hint = _server_namespace(server)
@@ -593,6 +665,60 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
             tool_component.description = _infer_tool_description(tool_component.name, namespace_hint=namespace_hint)
         tool_component.tags.update(_tool_tags(tool_component.name, namespace_hint=namespace_hint))
         _enrich_parameters_schema(tool_component, namespace_hint=namespace_hint)
+        inferred_output_schema = infer_tool_output_schema(
+            tool_component.fn,
+            tool_name=_base_tool_name(tool_component.name, namespace_hint=namespace_hint),
+        )
+        if inferred_output_schema is not None:
+            inferred_output_schema["properties"].setdefault(
+                "resource",
+                {
+                    "type": "object",
+                    "description": "Stable cross-tool Workspace resource handle when applicable.",
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {"type": "string", "description": "Workspace resource kind."},
+                        "id": {"type": "string", "description": "Provider resource identifier."},
+                        "name": {"type": ["string", "null"], "description": "Human-readable name."},
+                        "mime_type": {"type": ["string", "null"], "description": "MIME type when applicable."},
+                        "uri": {"type": "string", "description": "Stable Workspace resource URI."},
+                        "etag": {"type": ["string", "null"], "description": "Provider entity tag."},
+                        "modified_at": {"type": ["string", "null"], "description": "Last modification time."},
+                        "web_url": {"type": ["string", "null"], "description": "Provider web URL."},
+                    },
+                    "required": ["kind", "id", "uri"],
+                },
+            )
+            _, base_name = _split_tool_name(
+                tool_component.name, namespace_hint=namespace_hint
+            )
+            if base_name.startswith(("list_", "search_")):
+                inferred_output_schema["properties"].update(
+                    {
+                        "count": {
+                            "type": "integer",
+                            "description": "Number of items in this response.",
+                        },
+                        "next_page_token": {
+                            "type": ["string", "null"],
+                            "description": "Opaque token for the next page, or null.",
+                        },
+                        "has_more": {
+                            "type": "boolean",
+                            "description": "Whether another page is available.",
+                        },
+                        "fetched_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "RFC3339 time when this response was fetched.",
+                        },
+                    }
+                )
+            tool_component.output_schema = inferred_output_schema
+        _wrap_pagination(
+            tool_component,
+            _base_tool_name(tool_component.name, namespace_hint=namespace_hint),
+        )
         tool_component.annotations = _merge_annotations(
             tool_component.annotations,
             base_name=_base_tool_name(tool_component.name, namespace_hint=namespace_hint),

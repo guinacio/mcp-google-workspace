@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 
+from ..common.async_ops import confirm_destructive_action, run_blocking
 from .client import normalize_contact_group_name, normalize_person_name, people_service
 from .schemas import (
     CreateContactGroupRequest,
@@ -159,7 +160,7 @@ def modify_contact_group_members_payload(request: ModifyContactGroupMembersReque
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_contacts")
-    async def list_contacts(
+    def list_contacts(
         page_size: int = 100,
         page_token: str | None = None,
         person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
@@ -177,7 +178,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="search_contacts")
-    async def search_contacts(
+    def search_contacts(
         query: str,
         page_size: int = 20,
         read_mask: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
@@ -193,7 +194,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="get_contact")
-    async def get_contact(
+    def get_contact(
         person_name: str,
         person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
         sources: list[str] | None = None,
@@ -207,7 +208,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="create_contact")
-    async def create_contact(
+    def create_contact(
         given_name: str | None = None,
         family_name: str | None = None,
         display_name: str | None = None,
@@ -231,7 +232,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="update_contact")
-    async def update_contact(
+    def update_contact(
         person_name: str,
         etag: str | None = None,
         given_name: str | None = None,
@@ -261,11 +262,19 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="delete_contact")
-    async def delete_contact(person_name: str) -> dict[str, Any]:
-        return delete_contact_payload(DeleteContactRequest(person_name=person_name))
+    async def delete_contact(
+        person_name: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        request = DeleteContactRequest(person_name=person_name)
+        if not await confirm_destructive_action(
+            ctx, "delete_contact", f"Permanently delete contact {request.person_name}?"
+        ):
+            return {"status": "cancelled", "person_name": request.person_name}
+        return await run_blocking(delete_contact_payload, request)
 
     @server.tool(name="list_contact_groups")
-    async def list_contact_groups(
+    def list_contact_groups(
         page_size: int = 100,
         page_token: str | None = None,
         group_fields: str = "name,groupType,memberCount,metadata",
@@ -275,11 +284,11 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="create_contact_group")
-    async def create_contact_group(name: str) -> dict[str, Any]:
+    def create_contact_group(name: str) -> dict[str, Any]:
         return create_contact_group_payload(CreateContactGroupRequest(name=name))
 
     @server.tool(name="modify_contact_group_members")
-    async def modify_contact_group_members(
+    def modify_contact_group_members(
         group_name: str,
         resource_names_to_add: list[str] | None = None,
         resource_names_to_remove: list[str] | None = None,

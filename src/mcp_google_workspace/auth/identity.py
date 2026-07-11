@@ -33,7 +33,7 @@ def current_principal(*, require_authenticated: bool = True) -> Principal:
 
     FastMCP verifies the bearer token before invoking a tool and makes its
     claims available through ``get_access_token``. Stdio uses a local identity;
-    the SSE entrypoint installs bearer authentication before Workspace tools
+    the Streamable HTTP entrypoint installs bearer authentication before Workspace tools
     can be reached.
     """
     token = get_access_token()

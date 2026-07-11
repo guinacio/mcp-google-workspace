@@ -31,3 +31,13 @@ def test_state_navigation():
 
     today_state = today(session_id)
     assert isinstance(today_state.anchor_date, date)
+
+
+def test_month_navigation_uses_calendar_months_and_clamps_day():
+    session_id = "test-month-navigation"
+    patch_state(
+        session_id,
+        DashboardStatePatch(view="month", anchor_date=date(2026, 1, 31)),
+    )
+    assert next_range(session_id).anchor_date == date(2026, 2, 28)
+    assert prev_range(session_id).anchor_date == date(2026, 1, 28)

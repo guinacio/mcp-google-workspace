@@ -6,7 +6,7 @@ import datetime as dt
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from ..common.request_model import ToolRequestModel
 
@@ -174,7 +174,6 @@ class FindMeetingSlotsRequest(ToolRequestModel):
         default=30,
         ge=5,
         le=480,
-        validation_alias=AliasChoices("slot_duration_minutes", "meeting_duration"),
         description="Desired meeting slot duration in minutes.",
     )
     granularity_minutes: int = Field(default=15, ge=5, le=240, description="Step size between candidate slot starts in minutes.")

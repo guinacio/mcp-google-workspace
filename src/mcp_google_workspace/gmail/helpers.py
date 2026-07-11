@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from .schemas import AttachmentInput, RecipientSet
+from .schemas import RecipientSet
 
 
 def recipient_set(
@@ -18,7 +16,3 @@ def recipient_set(
         cc=cc or [],
         bcc=bcc or [],
     )
-
-
-def attachment_inputs(items: list[dict[str, Any]] | None) -> list[AttachmentInput]:
-    return [AttachmentInput.model_validate(item) for item in (items or [])]

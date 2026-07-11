@@ -23,7 +23,7 @@ def build_email_message(
     bcc: list[str],
     text_body: str | None,
     html_body: str | None,
-    attachments: list[dict[str, str]],
+    attachments: list[dict[str, Any]],
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = encode_subject(subject)
@@ -44,11 +44,18 @@ def build_email_message(
         msg.set_content(text_body or "", charset="utf-8")
 
     for attachment in attachments:
-        file_path = Path(attachment["path"])
-        file_name = attachment.get("filename") or file_path.name
+        file_path_value = attachment.get("path")
+        file_path = Path(file_path_value) if file_path_value else None
+        file_name = attachment.get("filename") or (file_path.name if file_path else "attachment")
         content_type = attachment.get("mime_type") or "application/octet-stream"
         maintype, subtype = content_type.split("/", 1) if "/" in content_type else ("application", "octet-stream")
-        payload = file_path.read_bytes()
+        payload = attachment.get("data")
+        if payload is None:
+            if file_path is None:
+                raise ValueError("Attachment must include either data or path.")
+            payload = file_path.read_bytes()
+        if not isinstance(payload, bytes):
+            raise TypeError("Attachment data must be bytes.")
         msg.add_attachment(payload, maintype=maintype, subtype=subtype, filename=file_name)
 
     return msg

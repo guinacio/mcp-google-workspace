@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 
+from ..common.async_ops import confirm_destructive_action, run_blocking
 from ..common.timezone import resolve_user_timezone, user_now
 from .client import tasks_service
 from .schemas import (
@@ -120,17 +121,17 @@ def delete_task_payload(request: DeleteTaskRequest) -> dict[str, Any]:
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_tasklists")
-    async def list_tasklists(max_results: int = 100, page_token: str | None = None) -> dict[str, Any]:
+    def list_tasklists(max_results: int = 100, page_token: str | None = None) -> dict[str, Any]:
         result = list_tasklists_payload(ListTasklistsRequest(max_results=max_results, page_token=page_token))
         items = result.get("items", [])
         return {"tasklists": [tasklist_envelope(item) for item in items], "next_page_token": result.get("nextPageToken"), "count": len(items)}
 
     @server.tool(name="get_tasklist")
-    async def get_tasklist(tasklist_id: str) -> dict[str, Any]:
+    def get_tasklist(tasklist_id: str) -> dict[str, Any]:
         return tasklist_envelope(get_tasklist_payload(GetTasklistRequest(tasklist_id=tasklist_id)))
 
     @server.tool(name="create_tasklist")
-    async def create_tasklist(title: str) -> dict[str, Any]:
+    def create_tasklist(title: str) -> dict[str, Any]:
         return create_tasklist_payload(CreateTasklistRequest(title=title))
 
     @server.tool(name="list_tasks")
@@ -150,7 +151,8 @@ def register_tools(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         timezone_name = await resolve_user_timezone()
         now = user_now(timezone_name)
-        result = list_tasks_payload(
+        result = await run_blocking(
+            list_tasks_payload,
             ListTasksRequest(
                 tasklist_id=tasklist_id,
                 completed_max=completed_max,
@@ -179,7 +181,10 @@ def register_tools(server: FastMCP) -> None:
     async def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
         timezone_name = await resolve_user_timezone()
         return task_envelope(
-            get_task_payload(GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id)),
+            await run_blocking(
+                get_task_payload,
+                GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id),
+            ),
             now=user_now(timezone_name),
         )
 
@@ -187,7 +192,8 @@ def register_tools(server: FastMCP) -> None:
     async def tasks_digest_tool(tasklist_id: str, days: int = 7, max_results: int = 100) -> dict[str, Any]:
         """Group incomplete tasks into overdue, upcoming, and unscheduled work."""
         timezone_name = await resolve_user_timezone()
-        result = list_tasks_payload(
+        result = await run_blocking(
+            list_tasks_payload,
             ListTasksRequest(tasklist_id=tasklist_id, max_results=max_results, show_completed=False)
         )
         digest = tasks_digest(
@@ -203,7 +209,7 @@ def register_tools(server: FastMCP) -> None:
         return digest
 
     @server.tool(name="create_task")
-    async def create_task(
+    def create_task(
         tasklist_id: str,
         title: str,
         notes: str | None = None,
@@ -225,7 +231,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="update_task")
-    async def update_task(
+    def update_task(
         tasklist_id: str,
         task_id: str,
         title: str | None = None,
@@ -253,13 +259,14 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="complete_task")
     async def complete_task(tasklist_id: str, task_id: str, completed_at: str | None = None) -> dict[str, Any]:
         timezone_name = await resolve_user_timezone()
-        return complete_task_payload(
+        return await run_blocking(
+            complete_task_payload,
             CompleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id, completed_at=completed_at),
             default_completed_at=_completed_now(timezone_name),
         )
 
     @server.tool(name="move_task")
-    async def move_task(
+    def move_task(
         tasklist_id: str,
         task_id: str,
         parent: str | None = None,
@@ -277,5 +284,18 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="delete_task")
-    async def delete_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
-        return delete_task_payload(DeleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id))
+    async def delete_task(
+        tasklist_id: str,
+        task_id: str,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        request = DeleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id)
+        if not await confirm_destructive_action(
+            ctx, "delete_task", f"Permanently delete task {request.task_id}?"
+        ):
+            return {
+                "status": "cancelled",
+                "task_id": request.task_id,
+                "tasklist_id": request.tasklist_id,
+            }
+        return await run_blocking(delete_task_payload, request)

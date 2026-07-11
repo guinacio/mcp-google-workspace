@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import io
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
-from googleapiclient.http import MediaIoBaseDownload
 
-from ...common.async_ops import execute_google_request, require_elicitation_context, run_blocking, write_bytes_file
+from ...common.async_ops import execute_google_request, require_elicitation_context, run_blocking
 from ...common.timezone import resolve_user_timezone, user_now
-from ..client import drive_service, media_file_upload, write_bytes_to_path
+from ...file_uploads import require_local_filesystem, workspace_file_upload
+from ...common.downloads import stream_google_download
+from ..client import drive_service, media_bytes_upload, media_file_upload
 from ..schemas import (
     CopyFileRequest,
     CreateFileMetadataRequest,
@@ -256,9 +256,10 @@ def register(server: FastMCP) -> None:
         )
         return {"status": "ok", "file": created}
 
-    @server.tool(name="upload_file")
+    @server.tool(name="upload_file", task=True)
     async def upload_file(
-        local_path: str,
+        local_path: str | None = None,
+        uploaded_file: str | None = None,
         name: str | None = None,
         parent_ids: list[str] | None = None,
         mime_type: str | None = None,
@@ -271,6 +272,7 @@ def register(server: FastMCP) -> None:
         """Upload a local file to Drive."""
         request = UploadFileRequest(
             local_path=local_path,
+            uploaded_file=uploaded_file,
             name=name,
             parent_ids=parent_ids or [],
             mime_type=mime_type,
@@ -280,10 +282,21 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
-        src = Path(request.local_path)
-        if not await run_blocking(src.exists):
-            raise FileNotFoundError(f"Local file not found: {src}")
-        requested_name = request.name or src.name
+        if request.uploaded_file:
+            uploaded = workspace_file_upload.get_file(request.uploaded_file, ctx)
+            source_name = uploaded.name
+            media = media_bytes_upload(
+                uploaded.data, request.mime_type or uploaded.mime_type, request.resumable
+            )
+        else:
+            require_local_filesystem("Drive upload")
+            assert request.local_path is not None
+            src = Path(request.local_path)
+            if not await run_blocking(src.exists):
+                raise FileNotFoundError(f"Local file not found: {src}")
+            source_name = src.name
+            media = media_file_upload(request.local_path, request.mime_type, request.resumable)
+        requested_name = request.name or source_name
         existing_file = await run_blocking(
             _find_existing_file_by_name,
             service,
@@ -312,7 +325,6 @@ def register(server: FastMCP) -> None:
         body: dict[str, Any] = {"name": target_name}
         if request.parent_ids:
             body["parents"] = request.parent_ids
-        media = media_file_upload(request.local_path, request.mime_type, request.resumable)
         if existing_file and request.if_exists == "overwrite":
             if ctx is not None:
                 await ctx.info(f"Overwriting existing Drive file {existing_file.get('id')}.")
@@ -337,7 +349,7 @@ def register(server: FastMCP) -> None:
                     await ctx.report_progress(100, 100, "Overwriting Drive file completed")
             return {"status": "ok", "mode": "overwrite", "file": updated}
         if ctx is not None:
-            await ctx.info(f"Uploading local file '{src.name}' to Drive.")
+            await ctx.info(f"Uploading file '{source_name}' to Drive.")
         create_request = (
             service.files()
             .create(
@@ -418,7 +430,8 @@ def register(server: FastMCP) -> None:
     @server.tool(name="update_file_content")
     async def update_file_content(
         file_id: str,
-        local_path: str,
+        local_path: str | None = None,
+        uploaded_file: str | None = None,
         mime_type: str | None = None,
         resumable: bool = True,
         keep_revision_forever: bool | None = None,
@@ -430,6 +443,7 @@ def register(server: FastMCP) -> None:
         request = UpdateFileContentRequest(
             file_id=file_id,
             local_path=local_path,
+            uploaded_file=uploaded_file,
             mime_type=mime_type,
             resumable=resumable,
             keep_revision_forever=keep_revision_forever,
@@ -437,7 +451,15 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
-        media = media_file_upload(request.local_path, request.mime_type, request.resumable)
+        if request.uploaded_file:
+            uploaded = workspace_file_upload.get_file(request.uploaded_file, ctx)
+            media = media_bytes_upload(
+                uploaded.data, request.mime_type or uploaded.mime_type, request.resumable
+            )
+        else:
+            require_local_filesystem("Drive content update")
+            assert request.local_path is not None
+            media = media_file_upload(request.local_path, request.mime_type, request.resumable)
         if ctx is not None:
             await ctx.info(f"Uploading replacement content for file {request.file_id}.")
         update_request = (
@@ -538,7 +560,7 @@ def register(server: FastMCP) -> None:
     async def delete_file(
         file_id: str,
         delete_mode: Literal["trash", "permanent"] = "trash",
-        confirm_permanent: bool = False,
+        confirm_permanent: bool = True,
         supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
@@ -562,14 +584,17 @@ def register(server: FastMCP) -> None:
                 )
             )
             return {"status": "ok", "mode": "trash", "file": updated}
-        if request.confirm_permanent:
-            confirm_ctx = require_elicitation_context(ctx, "delete_file")
-            response = await confirm_ctx.elicit(
-                f"Permanently delete Drive file {request.file_id}? This cannot be undone.",
-                response_type=bool,  # type: ignore[arg-type]
+        if not request.confirm_permanent:
+            raise ValueError(
+                "Permanent deletion requires confirm_permanent=true and interactive confirmation."
             )
-            if response.action != "accept" or not bool(response.data):
-                return {"status": "cancelled", "mode": "permanent"}
+        confirm_ctx = require_elicitation_context(ctx, "delete_file")
+        response = await confirm_ctx.elicit(
+            f"Permanently delete Drive file {request.file_id}? This cannot be undone.",
+            response_type=bool,  # type: ignore[arg-type]
+        )
+        if response.action != "accept" or not bool(response.data):
+            return {"status": "cancelled", "mode": "permanent"}
         if ctx is not None:
             await ctx.warning(f"Permanently deleting Drive file {request.file_id}.")
         await execute_google_request(
@@ -580,7 +605,7 @@ def register(server: FastMCP) -> None:
         )
         return {"status": "ok", "mode": "permanent", "file_id": request.file_id}
 
-    @server.tool(name="download_file")
+    @server.tool(name="download_file", task=True)
     async def download_file(
         file_id: str,
         output_path: str,
@@ -597,39 +622,29 @@ def register(server: FastMCP) -> None:
             acknowledge_abuse=acknowledge_abuse,
             supports_all_drives=supports_all_drives,
         )
+        require_local_filesystem("Drive download")
         service = drive_service()
         out = Path(request.output_path)
-        if await run_blocking(out.exists) and not request.overwrite:
-            raise FileExistsError(f"Output path already exists: {out}")
-        await run_blocking(out.parent.mkdir, parents=True, exist_ok=True)
-
         media_req = service.files().get_media(
             fileId=request.file_id,
             acknowledgeAbuse=request.acknowledge_abuse,
             supportsAllDrives=request.supports_all_drives,
         )
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, media_req)
-        done = False
-        while not done:
-            status, done = await run_blocking(downloader.next_chunk)
-            if status is not None:
-                if ctx is not None:
-                    await ctx.report_progress(
-                        int(status.progress() * 100),
-                        100,
-                        "Downloading Drive file",
-                    )
-        data = buf.getvalue()
-        await write_bytes_file(out, data)
+        size = await stream_google_download(
+            media_req,
+            out,
+            overwrite=request.overwrite,
+            progress_label="Downloading Drive file",
+            ctx=ctx,
+        )
         return {
             "status": "ok",
             "file_id": request.file_id,
             "saved_to": str(out),
-            "bytes_written": len(data),
+            "bytes_written": size,
         }
 
-    @server.tool(name="export_google_file")
+    @server.tool(name="export_google_file", task=True)
     async def export_google_file(
         file_id: str,
         mime_type: str,
@@ -644,30 +659,25 @@ def register(server: FastMCP) -> None:
             output_path=output_path,
             overwrite=overwrite,
         )
+        require_local_filesystem("Drive export")
         service = drive_service()
         if ctx is not None:
             await ctx.info(f"Exporting Google file {request.file_id} as {request.mime_type}.")
         media_req = service.files().export_media(fileId=request.file_id, mimeType=request.mime_type)
-        stream = io.BytesIO()
-        downloader = MediaIoBaseDownload(stream, media_req)
-        done = False
-        while not done:
-            status, done = await run_blocking(downloader.next_chunk)
-            if status is not None:
-                if ctx is not None:
-                    await ctx.report_progress(
-                        int(status.progress() * 100),
-                        100,
-                        "Exporting Google-native file",
-                    )
-        data = stream.getvalue()
-        path = await run_blocking(write_bytes_to_path, data, request.output_path, request.overwrite)
+        path = Path(request.output_path)
+        size = await stream_google_download(
+            media_req,
+            path,
+            overwrite=request.overwrite,
+            progress_label="Exporting Google-native file",
+            ctx=ctx,
+        )
         return {
             "status": "ok",
             "file_id": request.file_id,
             "mime_type": request.mime_type,
             "saved_to": str(path),
-            "bytes_written": len(data),
+            "bytes_written": size,
         }
 
     @server.tool(name="get_file_content_capabilities")

@@ -96,18 +96,14 @@ def test_clean_message_content_collapses_quote_and_truncates():
     assert result["truncated"] is True
 
 
-def test_invalid_grant_deletes_the_cached_token_and_has_an_actionable_error(monkeypatch):
+def test_invalid_grant_from_unknown_request_preserves_token_and_has_actionable_error():
     class FailedRequest:
         def execute(self):
             raise RuntimeError("invalid_grant: Bad Request")
 
-    deleted = []
-    monkeypatch.setattr("mcp_google_workspace.common.async_ops.delete_cached_token", lambda: deleted.append(True))
-
     with pytest.raises(RuntimeError, match="reauth_required") as error:
         asyncio.run(execute_google_request(FailedRequest()))
 
-    assert deleted == [True]
     assert "OAuth consent" in str(error.value)
 
 

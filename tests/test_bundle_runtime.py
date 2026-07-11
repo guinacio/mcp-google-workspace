@@ -130,11 +130,11 @@ def test_google_service_builder_uses_runtime_timeout_and_retry(monkeypatch) -> N
             True,
         ),
     )
-    monkeypatch.setattr(google_auth, "get_credentials", lambda: object())
+    monkeypatch.setattr(google_auth, "get_credentials", lambda scopes=None: object())
     monkeypatch.setattr(
         google_auth,
         "_build_authorized_http",
-        lambda credentials, settings: "AUTHORIZED_HTTP",
+        lambda credentials, settings, api_name: "AUTHORIZED_HTTP",
     )
 
     def fake_build(api_name, version, **kwargs):
@@ -145,7 +145,8 @@ def test_google_service_builder_uses_runtime_timeout_and_retry(monkeypatch) -> N
 
     monkeypatch.setattr(google_auth, "build", fake_build)
 
-    result = google_auth.build_drive_service()
+    lazy_service = google_auth.build_drive_service()
+    result = lazy_service.materialize()
 
     assert result == {"ok": True}
     assert captured["api_name"] == "drive"

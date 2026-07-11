@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 
+from ..common.async_ops import run_blocking
 from .client import sheets_service
 from .schemas import (
     AppendSheetValuesRequest,
@@ -93,7 +94,7 @@ def batch_update_spreadsheet_payload(request: BatchUpdateSpreadsheetRequest) -> 
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_spreadsheet")
-    async def get_spreadsheet(
+    def get_spreadsheet(
         spreadsheet_id: str,
         include_grid_data: bool = False,
         ranges: list[str] | None = None,
@@ -107,13 +108,13 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="create_spreadsheet")
-    async def create_spreadsheet(title: str, sheet_titles: list[str] | None = None) -> dict[str, Any]:
+    def create_spreadsheet(title: str, sheet_titles: list[str] | None = None) -> dict[str, Any]:
         return create_spreadsheet_payload(
             CreateSpreadsheetRequest(title=title, sheet_titles=sheet_titles or [])
         )
 
     @server.tool(name="get_sheet_values")
-    async def get_sheet_values(
+    def get_sheet_values(
         spreadsheet_id: str,
         range_a1: str,
         major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS",
@@ -131,7 +132,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="batch_get_sheet_values")
-    async def batch_get_sheet_values(
+    def batch_get_sheet_values(
         spreadsheet_id: str,
         ranges: list[str],
         major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS",
@@ -149,7 +150,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="append_sheet_values")
-    async def append_sheet_values(
+    def append_sheet_values(
         spreadsheet_id: str,
         range_a1: str,
         values: list[list[Any]],
@@ -169,7 +170,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="update_sheet_values")
-    async def update_sheet_values(
+    def update_sheet_values(
         spreadsheet_id: str,
         range_a1: str,
         values: list[list[Any]],
@@ -186,13 +187,14 @@ def register_tools(server: FastMCP) -> None:
             )
         )
 
-    @server.tool(name="batch_update_spreadsheet")
+    @server.tool(name="batch_update_spreadsheet", task=True)
     async def batch_update_spreadsheet(
         spreadsheet_id: str,
         requests: list[dict[str, Any]],
         include_spreadsheet_in_response: bool = False,
     ) -> dict[str, Any]:
-        return batch_update_spreadsheet_payload(
+        return await run_blocking(
+            batch_update_spreadsheet_payload,
             BatchUpdateSpreadsheetRequest(
                 spreadsheet_id=spreadsheet_id,
                 requests=requests,

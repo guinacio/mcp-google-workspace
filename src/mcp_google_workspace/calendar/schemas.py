@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Literal
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import EmailStr, Field
 
 from ..common.request_model import ToolRequestModel
 
@@ -63,7 +62,7 @@ class GetEventRequest(ToolRequestModel):
     max_attendees: int | None = Field(default=None, ge=1, description="Optional attendee cap in response payload.")
 
 
-class EventAttachmentInput(BaseModel):
+class EventAttachmentInput(ToolRequestModel):
     file_url: str = Field(description="Attachment file URL (for Drive use file alternateLink format).")
     title: str | None = Field(default=None, description="Display title of the attachment.")
     mime_type: str | None = Field(default=None, description="Attachment MIME type.")
@@ -104,7 +103,7 @@ class CreateEventRequest(ToolRequestModel):
         default=None,
         description="Optional Google conference data payload (for Meet links).",
     )
-    attendees: list[dict[str, Any]] | None = Field(default=None, description="Attendee objects (email/displayName/etc).")
+    attendees: list["EventAttendeeInput"] | None = Field(default=None, description="Event attendees.")
     attachments: list[EventAttachmentInput] | None = Field(
         default=None,
         description="Optional event attachments metadata (up to 25).",
@@ -148,7 +147,7 @@ class UpdateEventRequest(ToolRequestModel):
         default=None,
         description="Optional Google conference data payload (for Meet links).",
     )
-    attendees: list[dict[str, Any]] | None = Field(default=None, description="Replacement attendee list.")
+    attendees: list["EventAttendeeInput"] | None = Field(default=None, description="Replacement attendee list.")
     attachments: list[EventAttachmentInput] | None = Field(
         default=None,
         description="Replacement event attachments metadata (up to 25).",
@@ -181,10 +180,30 @@ class DeleteEventRequest(ToolRequestModel):
     )
 
 
+class CalendarIdInput(ToolRequestModel):
+    id: str = Field(min_length=1, description="Calendar ID or attendee email address.")
+
+
+class EventAttendeeInput(ToolRequestModel):
+    email: EmailStr = Field(description="Attendee email address.")
+    display_name: str | None = Field(default=None, alias="displayName", description="Attendee display name.")
+    optional: bool = Field(default=False, description="Whether attendance is optional.")
+    comment: str | None = Field(default=None, description="Attendee response comment.")
+    additional_guests: int = Field(
+        default=0, alias="additionalGuests", ge=0, le=100, description="Additional unnamed guests."
+    )
+
+
+CreateEventRequest.model_rebuild()
+UpdateEventRequest.model_rebuild()
+
+
 class FreeBusyRequest(ToolRequestModel):
     timeMin: str = Field(description="RFC3339 start of availability window.")
     timeMax: str = Field(description="RFC3339 end of availability window.")
-    items: list[dict[str, str]] = Field(description="Calendars to query, each with an id field.")
+    items: list[CalendarIdInput] = Field(
+        min_length=1, max_length=50, description="Calendars to query."
+    )
     timeZone: str | None = Field(default=None, description="Timezone for response rendering.")
 
 
@@ -202,11 +221,7 @@ class FindCommonFreeSlotsRequest(ToolRequestModel):
         default=30,
         ge=5,
         le=480,
-        validation_alias=AliasChoices("slot_duration_minutes", "meeting_duration"),
-        description=(
-            "Desired duration for each suggested meeting slot in minutes. "
-            "Legacy alias `meeting_duration` is also accepted."
-        ),
+        description="Desired duration for each suggested meeting slot in minutes.",
     )
     granularity_minutes: int = Field(
         default=15,
@@ -234,46 +249,6 @@ class FindCommonFreeSlotsRequest(ToolRequestModel):
         pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
         description="Daily working-hours end in HH:MM (24h). Default is 17:00.",
     )
-
-    @field_validator("participants", mode="before")
-    @classmethod
-    def _normalize_participants(cls, value: Any) -> list[str]:
-        if isinstance(value, str):
-            raw = value.strip()
-            if not raw:
-                raise ValueError("participants cannot be empty.")
-            if raw.startswith("["):
-                try:
-                    parsed = json.loads(raw)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(
-                        "participants string must be valid JSON array text, "
-                        "for example: [\"alice@example.com\", \"bob@example.com\"]."
-                    ) from exc
-                value = parsed
-            else:
-                value = [item.strip() for item in raw.split(",") if item.strip()]
-
-        if isinstance(value, tuple):
-            value = list(value)
-
-        if not isinstance(value, list):
-            raise ValueError("participants must be an array of calendar IDs/emails.")
-
-        normalized: list[str] = []
-        for item in value:
-            if not isinstance(item, str):
-                raise ValueError("each participant must be a string calendar ID/email.")
-            trimmed = item.strip()
-            if not trimmed:
-                continue
-            normalized.append(trimmed)
-
-        if not normalized:
-            raise ValueError("participants list cannot be empty.")
-
-        return normalized
-
 
 class ListEventAttachmentsRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")

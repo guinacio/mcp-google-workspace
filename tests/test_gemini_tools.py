@@ -116,9 +116,11 @@ def test_edit_image_payload_supports_local_input(tmp_path, monkeypatch):
 
 
 def test_describe_video_payload_supports_drive_input(tmp_path, monkeypatch):
+    staged = tmp_path / "clip.mp4"
+    staged.write_bytes(b"video-bytes")
     monkeypatch.setattr(
-        "mcp_google_workspace.gemini.tools._load_drive_file_bytes",
-        lambda file_id: (b"video-bytes", "video/mp4", "clip.mp4"),
+        "mcp_google_workspace.gemini.tools._stage_drive_file",
+        lambda file_id: (staged, "video/mp4", "clip.mp4"),
     )
 
     payload = describe_video_payload(
@@ -133,10 +135,12 @@ def test_describe_video_payload_supports_drive_input(tmp_path, monkeypatch):
     assert payload["description"]
 
 
-def test_analyze_audio_payload_supports_drive_input(monkeypatch):
+def test_analyze_audio_payload_supports_drive_input(tmp_path, monkeypatch):
+    staged = tmp_path / "sample.mp3"
+    staged.write_bytes(b"audio-bytes")
     monkeypatch.setattr(
-        "mcp_google_workspace.gemini.tools._load_drive_file_bytes",
-        lambda file_id: (b"audio-bytes", "audio/mpeg", "sample.mp3"),
+        "mcp_google_workspace.gemini.tools._stage_drive_file",
+        lambda file_id: (staged, "audio/mpeg", "sample.mp3"),
     )
 
     payload = analyze_audio_payload(

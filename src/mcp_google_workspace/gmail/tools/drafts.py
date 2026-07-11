@@ -6,11 +6,13 @@ from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request
+from ...common.async_ops import confirm_destructive_action, execute_google_request
+from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
 from ..mime_utils import build_email_message, email_to_gmail_raw
-from ..helpers import attachment_inputs, recipient_set
+from ..helpers import recipient_set
 from ..schemas import (
+    AttachmentInput,
     CreateDraftRequest,
     DeleteDraftRequest,
     GetDraftRequest,
@@ -28,7 +30,7 @@ def _build_raw_message_payload(
     bcc: list[str],
     text_body: str | None,
     html_body: str | None,
-    attachments: list[dict[str, str]],
+    attachments: list[dict[str, Any]],
 ) -> str:
     email_message = build_email_message(
         subject=subject,
@@ -42,15 +44,30 @@ def _build_raw_message_payload(
     return email_to_gmail_raw(email_message)
 
 
-def _attachment_payloads(items: list[Any]) -> list[dict[str, str]]:
-    return [
-        {
-            "path": item.file_path,
-            "filename": item.filename or "",
-            "mime_type": item.mime_type or "application/octet-stream",
-        }
-        for item in items
-    ]
+def _attachment_payloads(
+    items: list[AttachmentInput], ctx: Context | None
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for item in items:
+        if item.uploaded_file:
+            uploaded = workspace_file_upload.get_file(item.uploaded_file, ctx)
+            payloads.append(
+                {
+                    "data": uploaded.data,
+                    "filename": item.filename or uploaded.name,
+                    "mime_type": item.mime_type or uploaded.mime_type,
+                }
+            )
+        else:
+            require_local_filesystem("Gmail draft attachment")
+            payloads.append(
+                {
+                    "path": item.file_path,
+                    "filename": item.filename or "",
+                    "mime_type": item.mime_type or "application/octet-stream",
+                }
+            )
+    return payloads
 
 
 def register(server: FastMCP) -> None:
@@ -132,7 +149,7 @@ def register(server: FastMCP) -> None:
         bcc: list[str] | None = None,
         text_body: str | None = None,
         html_body: str | None = None,
-        attachments: list[dict[str, Any]] | None = None,
+        attachments: list[AttachmentInput] | None = None,
         thread_id: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
@@ -142,7 +159,7 @@ def register(server: FastMCP) -> None:
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=attachment_inputs(attachments),
+            attachments=attachments or [],
             thread_id=thread_id,
         )
         service = gmail_service()
@@ -155,7 +172,7 @@ def register(server: FastMCP) -> None:
             bcc=[str(v) for v in request.recipients.bcc],
             text_body=request.text_body,
             html_body=request.html_body,
-            attachments=_attachment_payloads(request.attachments),
+            attachments=_attachment_payloads(request.attachments, ctx),
         )
         message_payload: dict[str, Any] = {"raw": raw}
         if request.thread_id:
@@ -176,7 +193,7 @@ def register(server: FastMCP) -> None:
         bcc: list[str] | None = None,
         text_body: str | None = None,
         html_body: str | None = None,
-        attachments: list[dict[str, Any]] | None = None,
+        attachments: list[AttachmentInput] | None = None,
         thread_id: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
@@ -187,7 +204,7 @@ def register(server: FastMCP) -> None:
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=attachment_inputs(attachments),
+            attachments=attachments or [],
             thread_id=thread_id,
         )
         service = gmail_service()
@@ -200,7 +217,7 @@ def register(server: FastMCP) -> None:
             bcc=[str(v) for v in request.recipients.bcc],
             text_body=request.text_body,
             html_body=request.html_body,
-            attachments=_attachment_payloads(request.attachments),
+            attachments=_attachment_payloads(request.attachments, ctx),
         )
         message_payload: dict[str, Any] = {"raw": raw}
         if request.thread_id:
@@ -223,6 +240,10 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Delete a draft by ID."""
         request = DeleteDraftRequest(draft_id=draft_id)
+        if not await confirm_destructive_action(
+            ctx, "delete_draft", f"Permanently delete Gmail draft {request.draft_id}?"
+        ):
+            return {"status": "cancelled", "draft_id": request.draft_id}
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Deleting Gmail draft {request.draft_id}.")

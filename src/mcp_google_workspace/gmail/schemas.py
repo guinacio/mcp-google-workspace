@@ -4,15 +4,53 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import EmailStr, Field
+from pydantic import EmailStr, Field, model_validator
 
 from ..common.request_model import ToolRequestModel
 
 
 class AttachmentInput(ToolRequestModel):
-    file_path: str = Field(description="Local filesystem path to file attachment.")
+    """One attachment selected in the MCP App or read from a local filesystem."""
+
+    model_config = {
+        "extra": "forbid",
+        "populate_by_name": True,
+        "json_schema_extra": {
+            "description": (
+                "Email attachment. Provide exactly one source: uploaded_file for a file "
+                "selected with the Workspace Files MCP App, or file_path for local stdio use."
+            ),
+            "oneOf": [
+                {
+                    "required": ["uploaded_file"],
+                    "properties": {"file_path": {"type": "null"}},
+                    "title": "MCP App uploaded file",
+                },
+                {
+                    "required": ["file_path"],
+                    "properties": {"uploaded_file": {"type": "null"}},
+                    "title": "Local filesystem path",
+                },
+            ],
+        },
+    }
+
+    file_path: str | None = Field(
+        default=None,
+        description="Local filesystem path (stdio/local use only).",
+    )
+    uploaded_file: str | None = Field(
+        default=None,
+        description="Filename returned by the Workspace Files MCP App picker.",
+    )
     mime_type: str | None = Field(default=None, description="Optional MIME type override.")
     filename: str | None = Field(default=None, description="Optional filename override in email.")
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> "AttachmentInput":
+        if sum(bool(value) for value in (self.file_path, self.uploaded_file)) != 1:
+            raise ValueError("Exactly one of file_path or uploaded_file must be provided.")
+        return self
 
 
 class RecipientSet(ToolRequestModel):

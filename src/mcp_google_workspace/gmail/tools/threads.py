@@ -187,24 +187,18 @@ def register(server: FastMCP) -> None:
     @server.tool(name="delete_thread")
     async def delete_thread(
         thread_id: str,
-        force: bool = True,
+        force: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Permanently delete a thread.
-
-        ``force`` defaults to true so the tool works on MCP clients that don't
-        implement elicitation; set to false to request an interactive
-        confirmation prompt on supported clients.
-        """
+        """Permanently delete a thread after mandatory interactive confirmation."""
         request = ThreadIdRequest(thread_id=thread_id)
-        if not force:
-            confirm_ctx = require_elicitation_context(ctx, "delete_thread")
-            response = await confirm_ctx.elicit(
-                f"Permanently delete thread {request.thread_id}? This cannot be undone.",
-                response_type=bool,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(response.data):
-                return {"status": "cancelled"}
+        confirm_ctx = require_elicitation_context(ctx, "delete_thread")
+        response = await confirm_ctx.elicit(
+            f"Permanently delete thread {request.thread_id}? This cannot be undone.",
+            response_type=bool,  # type: ignore[arg-type]
+        )
+        if response.action != "accept" or not bool(response.data):
+            return {"status": "cancelled"}
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Permanently deleting thread {request.thread_id}.")

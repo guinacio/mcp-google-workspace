@@ -47,13 +47,27 @@ Place the Google OAuth client `credentials.json` in one of:
 - project root: `./credentials.json`
 - package credentials folder: `./src/credentials/credentials.json`
 
-Configure `MCP_TOKEN_ENCRYPTION_KEY` with a Fernet key before first use. The MCP encrypts each user's refresh token separately; it never writes a shared `token.json`.
+Configure a versioned Fernet key ring before first use. Production deployments should mount a secret-manager document through `MCP_SECRET_FILE`; `MCP_TOKEN_ENCRYPTION_KEY` remains a single-key development option. The MCP encrypts each user's refresh token separately and never writes a shared `token.json`.
 
 Generate a key once and store it in your secret manager:
 
 ```powershell
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+Mounted secret document:
+
+```json
+{
+  "active_token_encryption_key_id": "2026-07",
+  "token_encryption_keys": {
+    "2026-07": "<active Fernet key>",
+    "2026-04": "<retained previous Fernet key>"
+  }
+}
+```
+
+Reads accept retained keys and rewrite ciphertext with the active key. Remove an old key only after a rotation/restore drill confirms all durable records have been rewritten.
 
 ### Optional service feature flags
 
@@ -146,24 +160,24 @@ Note: Claude Desktop currently rejects extra `server` metadata keys such as `pac
 
 Bundle-specific documentation, runtime settings, and validation steps live in `docs/MCPB.md`.
 
-## Run (SSE)
+## Run (Streamable HTTP)
 
-SSE is multi-user only when protected by an OIDC bearer-token issuer. The server refuses to start without this configuration:
+The remote server uses session-aware MCP Streamable HTTP and requires an OIDC bearer-token issuer. Session mode enables progress, cancellation, and `tools/list_changed` notifications; durable long-running work remains Redis-backed. The server refuses to start without this configuration:
 
 ```powershell
 $env:MCP_HOST="0.0.0.0"
 $env:MCP_PORT="8000"
-$env:MCP_SSE_BASE_URL="https://mcp.example.com"
-$env:MCP_SSE_JWT_ISSUER="https://issuer.example.com"
-$env:MCP_SSE_JWT_AUDIENCE="google-workspace-mcp"
-$env:MCP_SSE_JWKS_URI="https://issuer.example.com/.well-known/jwks.json"
+$env:MCP_HTTP_BASE_URL="https://mcp.example.com"
+$env:MCP_HTTP_JWT_ISSUER="https://issuer.example.com"
+$env:MCP_HTTP_JWT_AUDIENCE="google-workspace-mcp"
+$env:MCP_HTTP_JWKS_URI="https://issuer.example.com/.well-known/jwks.json"
 $env:MCP_GOOGLE_OAUTH_REDIRECT_URL="https://mcp.example.com/google/oauth/callback"
 $env:MCP_USER_TOKEN_DIR="/srv/mcp-google-workspace/tokens"
-$env:MCP_TOKEN_ENCRYPTION_KEY="<Fernet key from your secret manager>"
-uv run python -m mcp_google_workspace.server_sse
+$env:MCP_SECRET_FILE="/run/secrets/mcp-google-workspace.json"
+uv run python -m mcp_google_workspace.server_http
 ```
 
-Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience, signature, and expiry; the verified `iss` + `sub` selects an isolated encrypted Google token. Each user calls `connect_google_workspace`, opens its returned URL, and completes Google consent. The callback is PKCE-protected and one-time; it cannot connect Google credentials to a different MCP principal.
+Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience, signature, and expiry; the verified `iss` + `sub` selects an isolated encrypted Google token. Each user calls `connect_google_workspace`, opens its returned URL, completes Google consent, and calls `refresh_workspace_catalog`. The callback is PKCE-protected and one-time; it cannot connect Google credentials to a different MCP principal.
 
 ## Notable MCP tools
 
@@ -358,9 +372,76 @@ Prompts:
 - `draft_chat_announcement_prompt`
 - `summarize_chat_thread_prompt`
 
+## Production operations
+
+The remote runtime exposes unauthenticated minimal operational endpoints:
+
+- `/health/live` — event-loop/process liveness
+- `/health/ready` — draining, encryption, token storage, Redis, S3, and multi-worker dependency readiness
+- `/version` — package/build/MCP protocol versions without secrets
+- `/metrics` — Prometheus/OpenTelemetry-compatible low-cardinality metrics
+
+Admission control is principal- and tool-cost-aware:
+
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `120` | Per-principal request rate |
+| `MCP_GLOBAL_CONCURRENCY` | `64` | Server-wide active tool calls |
+| `MCP_PRINCIPAL_CONCURRENCY` | `8` | Active calls per principal |
+| `MCP_EXPENSIVE_CONCURRENCY` | `4` | Gemini/download/export/batch calls |
+| `MCP_TOOL_DEADLINE_SECONDS` | `120` | Standard end-to-end deadline |
+| `MCP_EXPENSIVE_DEADLINE_SECONDS` | `600` | Expensive-tool deadline |
+| `MCP_SHUTDOWN_GRACE_SECONDS` | `30` | In-flight drain interval |
+
+Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, or recipient lists.
+
+For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Readiness fails when this distributed contract is incomplete. The HTTP entrypoint uses `MCP_REDIS_URL` as `FASTMCP_DOCKET_URL` when the latter is not set. FastMCP native task-enabled tools use the standard MCP task protocol for operation IDs, progress polling, cancellation, expiry, and partial/error results. Additional workers can run with `uv run fastmcp tasks worker src/mcp_google_workspace/server.py:workspace_mcp` using the same `FASTMCP_DOCKET_URL` and queue name.
+
+High-impact reversible writes use `prepare_workspace_action` and `commit_workspace_action`. The encrypted one-time token is principal-bound, argument-bound, expires after five minutes, and returns an impact preview before commit. Stable `resource` handles (`gdrive:///...`, `gmail-message:///...`, and related schemes) are included where applicable and can be refreshed through `resolve_workspace_resource`.
+
+Emergency principal invalidation accepts hashed principal storage keys through `MCP_REVOKED_PRINCIPALS` or the Redis set `mcp:revoked_principals`. Redis-backed validation fails closed if revocation state cannot be checked.
+
 ## MCP Client-Dependent Features
 
 These features depend on active MCP client support and may be silently unavailable in clients that do not implement the corresponding MCP capabilities.
+
+### MCP Apps File Picker
+
+The composed server always exposes `files_file_manager`, a Prefab/FastMCP MCP App with drag-and-drop and native file selection. It is intended for hosted clients such as Claude where a server-local path is not useful and sending binary data through the model context is wasteful.
+
+Typical flow:
+
+1. Call `files_file_manager` and let the user choose one or more files (up to 25 MiB each).
+2. Use the opaque `upl_...` handle returned by the picker as `uploaded_file` in a Workspace tool. `display_name` is presentation-only.
+3. The integration reads the bytes directly from scoped server storage; the binary payload does not pass through the model context.
+
+`uploaded_file` is supported by:
+
+- Gmail `send_email`, `create_draft`, and `update_draft` attachments
+- Drive `upload_file` and `update_file_content`
+- Gemini `edit_image`, `describe_video`, and `analyze_audio`
+
+Local/stdio uploads are session-scoped in memory. A single remote instance can use encrypted filesystem objects plus SQLite metadata through `MCP_UPLOAD_DB`. Multi-worker production uses Redis metadata and S3-compatible encrypted object storage by configuring `MCP_REDIS_URL` and `MCP_UPLOAD_S3_BUCKET` (plus optional `MCP_UPLOAD_S3_ENDPOINT` and `MCP_UPLOAD_S3_PREFIX`). Remote files use opaque handles, expire after one hour, and have a 250 MiB per-principal aggregate quota by default. Configure `MCP_UPLOAD_TTL_SECONDS` and `MCP_UPLOAD_QUOTA_BYTES` as needed. Uploads are MIME-sniffed, archive expansion is bounded, checksums are verified, and `MCP_REQUIRE_MALWARE_SCAN=true` enforces ClamAV through `MCP_CLAMAV_HOST`/`MCP_CLAMAV_PORT`. Raw host paths are absent from the remote catalog and rejected at runtime.
+
+Use `files_delete_file` to remove an upload before its TTL expires.
+
+**Requires:** an MCP client with MCP Apps/iframe rendering support. Clients without Apps support can still use Google Drive file IDs or trusted local/stdio paths.
+
+### Progressive Remote Tool Discovery
+
+The authenticated Streamable HTTP entrypoint reduces the model-visible catalog to workflow/discovery entry points, hides namespaces whose OAuth capability is not granted, and removes host-filesystem-only tools and parameters. Use `search_tools` to discover a capability and `call_tool` to invoke the selected tool. `refresh_workspace_catalog` sends `tools/list_changed` after incremental consent.
+
+`get_workspace_capabilities` reports enabled namespaces, OAuth capability names, and supported file-input strategies. `search_workspace` searches Drive files, contacts, and Gmail message IDs concurrently and returns normalized references.
+
+### Incremental Google Consent
+
+`connect_google_workspace` accepts a `capabilities` list such as `["drive"]`, `["gmail", "calendar"]`, or `["people"]`. When omitted it requests Gmail only. Tools build clients with service-specific scopes and return an actionable reconnect error when that capability has not yet been granted. `get_google_connection_status` accepts an optional `capability` to verify one grant and reports all currently granted capabilities. Disconnect attempts to revoke the Google grant before deleting encrypted local credentials.
+
+### Response and Error Contracts
+
+All model-visible tools publish recursively bounded, documented input schemas and closed documented object output schemas. Open input objects are limited to an audited set of genuine Google polymorphic batch maps. List/search tools consistently add `count`, `next_page_token`, `has_more`, and RFC3339 `fetched_at` fields. Uncaught tool failures use a machine-readable envelope with `code`, `message`, `retryable`, `retry_after`, executable `required_action`, `provider_status`, and `field_errors`.
+
+Drive, Calendar, and Gemini Drive-media downloads stream through bounded temporary files instead of buffering complete files in memory. `MCP_MAX_DOWNLOAD_BYTES` controls the per-download ceiling (default 250 MiB, maximum 10 GiB). Local Apps idempotency uses SQLite; setting `MCP_REDIS_URL` switches idempotency and prepare/commit records to cross-replica atomic Redis state.
 
 ### MCP Apps (UI Dashboard)
 
@@ -402,16 +483,9 @@ Sampling-powered tools:
 
 **Requires:** MCP client with `sampling/createMessage` support (e.g. Claude Desktop). Without sampling support these tools will fail or return an empty summary.
 
-## Tool Input Compatibility
+## Tool Input Contract
 
-All request-schema-based tools now apply the same input normalization layer:
-
-- Accepts `camelCase` and `snake_case` parameter keys for object payloads.
-- Accepts full request payload as JSON string (must decode to an object).
-- For list/dict fields, accepts JSON-string values; list fields also accept comma-separated strings.
-- `find_common_free_slots` and `apps_find_meeting_slots` accept `meeting_duration` as alias for `slot_duration_minutes`.
-
-Recommendation: send a normal JSON object with native arrays/objects whenever possible.
+The published JSON Schema is the runtime contract. Send a native JSON object using the documented field names and native arrays/objects. Unknown keys, camelCase aliases, JSON-stringified objects, comma-delimited arrays, and legacy parameter aliases are rejected rather than silently coerced.
 
 ## Google Keep API limitations
 
@@ -509,8 +583,8 @@ Apps smoke test:
 # in-process mode (auto-enables apps namespace)
 uv run python scripts/qa_apps_smoke.py
 
-# or against a running SSE server
-uv run python scripts/qa_apps_smoke.py --sse-url http://127.0.0.1:8001/sse
+# or against a running Streamable HTTP server
+uv run python scripts/qa_apps_smoke.py --http-url http://127.0.0.1:8001/mcp
 ```
 
 ## Existing calendar project reference

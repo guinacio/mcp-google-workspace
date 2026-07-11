@@ -1,6 +1,8 @@
 from datetime import datetime
 
 import pytz
+import pytest
+from pydantic import ValidationError
 
 from mcp_google_workspace.calendar.schemas import FindCommonFreeSlotsRequest
 from mcp_google_workspace.calendar.tools import (
@@ -83,40 +85,28 @@ def test_apply_working_hours_allows_custom_window() -> None:
     assert clamped[0][1].isoformat() == "2026-03-01T18:30:00+00:00"
 
 
-def test_find_common_free_slots_request_accepts_json_string_participants() -> None:
-    request = FindCommonFreeSlotsRequest(
-        participants='["rodrigo@example.com", "bruno@example.com", "primary"]',
-        time_min="2026-03-02T00:00:00Z",
-        time_max="2026-03-03T00:00:00Z",
-    )
-
-    assert request.participants == [
-        "rodrigo@example.com",
-        "bruno@example.com",
-        "primary",
-    ]
-
-
-def test_find_common_free_slots_request_accepts_comma_separated_participants() -> None:
-    request = FindCommonFreeSlotsRequest(
-        participants="rodrigo@example.com, bruno@example.com, primary",
-        time_min="2026-03-02T00:00:00Z",
-        time_max="2026-03-03T00:00:00Z",
-    )
-
-    assert request.participants == [
-        "rodrigo@example.com",
-        "bruno@example.com",
-        "primary",
-    ]
+@pytest.mark.parametrize(
+    "participants",
+    [
+        '["rodrigo@example.com", "bruno@example.com"]',
+        "rodrigo@example.com, bruno@example.com",
+    ],
+)
+def test_find_common_free_slots_rejects_string_participants(participants: str) -> None:
+    with pytest.raises(ValidationError):
+        FindCommonFreeSlotsRequest(
+            participants=participants,  # type: ignore[arg-type]
+            time_min="2026-03-02T00:00:00Z",
+            time_max="2026-03-03T00:00:00Z",
+        )
 
 
-def test_find_common_free_slots_request_accepts_meeting_duration_alias() -> None:
+def test_find_common_free_slots_request_uses_canonical_duration_field() -> None:
     request = FindCommonFreeSlotsRequest(
         participants=["primary"],
         time_min="2026-03-02T00:00:00Z",
         time_max="2026-03-03T00:00:00Z",
-        meeting_duration=45,
+        slot_duration_minutes=45,
     )
 
     assert request.slot_duration_minutes == 45

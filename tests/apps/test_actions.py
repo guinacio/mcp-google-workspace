@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+import mcp_google_workspace.apps.actions as actions_module
+from mcp_google_workspace.apps.idempotency import DurableIdempotencyStore
+
 from mcp_google_workspace.apps.actions import (
     cancel_meeting,
     create_meeting_from_slot,
@@ -14,6 +18,15 @@ from mcp_google_workspace.apps.schemas import (
     RespondToEventRequest,
     RescheduleMeetingRequest,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_idempotency_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        actions_module,
+        "STORE",
+        DurableIdempotencyStore(tmp_path / "idempotency.sqlite3"),
+    )
 
 
 class _Exec:

@@ -46,11 +46,20 @@ async def _client_session_state_scenario() -> tuple[dict, dict, dict, dict]:
             {"include_weekend": False},
         )
         final_state = await client.call_tool("get_state")
-        return (
-            state_payload.data,
-            dashboard_payload.data,
-            weekly_payload.data,
-            final_state.data,
+        def as_dict(result) -> dict:
+            if result.structured_content is not None:
+                return result.structured_content
+            data = result.data
+            return data.model_dump(mode="json") if hasattr(data, "model_dump") else data
+
+        return tuple(
+            as_dict(result)
+            for result in (
+                state_payload,
+                dashboard_payload,
+                weekly_payload,
+                final_state,
+            )
         )
 
 

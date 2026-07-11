@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from ..common.async_ops import run_blocking
 from ..common.timezone import resolve_user_timezone
 from .client import meet_service, normalize_conference_record_name, normalize_space_name
 from .presentation import conference_envelope, participant_envelope, recording_envelope, transcript_envelope
@@ -92,19 +93,19 @@ def list_conference_transcripts_payload(request: ListConferenceTranscriptsReques
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="create_space")
-    async def create_space(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    def create_space(config: dict[str, Any] | None = None) -> dict[str, Any]:
         return create_space_payload(CreateSpaceRequest(config=config))
 
     @server.tool(name="get_space")
-    async def get_space(space_name: str) -> dict[str, Any]:
+    def get_space(space_name: str) -> dict[str, Any]:
         return get_space_payload(GetSpaceRequest(space_name=space_name))
 
     @server.tool(name="update_space")
-    async def update_space(space_name: str, config: dict[str, Any], update_mask: str | None = None) -> dict[str, Any]:
+    def update_space(space_name: str, config: dict[str, Any], update_mask: str | None = None) -> dict[str, Any]:
         return update_space_payload(UpdateSpaceRequest(space_name=space_name, config=config, update_mask=update_mask))
 
     @server.tool(name="end_active_conference")
-    async def end_active_conference(space_name: str) -> dict[str, Any]:
+    def end_active_conference(space_name: str) -> dict[str, Any]:
         return end_active_conference_payload(EndActiveConferenceRequest(space_name=space_name))
 
     @server.tool(name="list_conference_records")
@@ -113,7 +114,8 @@ def register_tools(server: FastMCP) -> None:
         page_token: str | None = None,
         filter: str | None = None,
     ) -> dict[str, Any]:
-        result = list_conference_records_payload(
+        result = await run_blocking(
+            list_conference_records_payload,
             ListConferenceRecordsRequest(page_size=page_size, page_token=page_token, filter=filter)
         )
         account_timezone = await resolve_user_timezone()
@@ -131,7 +133,8 @@ def register_tools(server: FastMCP) -> None:
     async def get_conference_record(conference_record_name: str) -> dict[str, Any]:
         account_timezone = await resolve_user_timezone()
         return conference_envelope(
-            get_conference_record_payload(
+            await run_blocking(
+                get_conference_record_payload,
                 GetConferenceRecordRequest(conference_record_name=conference_record_name)
             ),
             account_timezone=account_timezone,
@@ -144,7 +147,8 @@ def register_tools(server: FastMCP) -> None:
         page_token: str | None = None,
         filter: str | None = None,
     ) -> dict[str, Any]:
-        result = list_conference_participants_payload(
+        result = await run_blocking(
+            list_conference_participants_payload,
             ListConferenceParticipantsRequest(
                 conference_record_name=conference_record_name,
                 page_size=page_size,
@@ -169,7 +173,8 @@ def register_tools(server: FastMCP) -> None:
         page_size: int = 50,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        result = list_conference_recordings_payload(
+        result = await run_blocking(
+            list_conference_recordings_payload,
             ListConferenceRecordingsRequest(
                 conference_record_name=conference_record_name,
                 page_size=page_size,
@@ -193,7 +198,8 @@ def register_tools(server: FastMCP) -> None:
         page_size: int = 50,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        result = list_conference_transcripts_payload(
+        result = await run_blocking(
+            list_conference_transcripts_payload,
             ListConferenceTranscriptsRequest(
                 conference_record_name=conference_record_name,
                 page_size=page_size,

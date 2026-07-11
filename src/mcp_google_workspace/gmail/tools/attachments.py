@@ -9,6 +9,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request, run_blocking, write_bytes_file
+from ...file_uploads import require_local_filesystem
 from ..client import gmail_service
 from ..mime_utils import flatten_parts
 from ..schemas import DownloadAttachmentRequest, ListAttachmentsRequest
@@ -47,7 +48,7 @@ def register(server: FastMCP) -> None:
                 )
         return {"message_id": request.message_id, "attachments": attachments}
 
-    @server.tool(name="download_attachment")
+    @server.tool(name="download_attachment", task=True)
     async def download_attachment(
         message_id: str,
         attachment_id: str,
@@ -60,6 +61,7 @@ def register(server: FastMCP) -> None:
             attachment_id=attachment_id,
             output_path=output_path,
         )
+        require_local_filesystem("Gmail attachment download")
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Downloading attachment {request.attachment_id}.")

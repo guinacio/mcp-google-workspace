@@ -25,12 +25,16 @@ class _OneInputSourceModel(ToolRequestModel):
         default=None,
         description="Google Drive file ID for the input media file.",
     )
+    uploaded_file: str | None = Field(
+        default=None,
+        description="Filename returned by the Workspace Files MCP App picker.",
+    )
 
     @model_validator(mode="after")
     def _validate_exactly_one_input_source(self) -> "_OneInputSourceModel":
-        provided = [bool(self.input_path), bool(self.drive_file_id)]
+        provided = [bool(self.input_path), bool(self.drive_file_id), bool(self.uploaded_file)]
         if sum(provided) != 1:
-            raise ValueError("Exactly one of input_path or drive_file_id must be provided.")
+            raise ValueError("Exactly one of input_path, drive_file_id, or uploaded_file must be provided.")
         return self
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,12 +9,16 @@ from typing import Any, Literal
 
 import pytz
 from fastmcp import Context, FastMCP
-from googleapiclient.http import MediaIoBaseDownload
 
 from ..auth import build_calendar_service, build_drive_service
-from ..common.async_ops import execute_google_request, require_elicitation_context, run_blocking, write_bytes_file
+from ..common.async_ops import (
+    confirm_destructive_action,
+    execute_google_request,
+    require_elicitation_context,
+    run_blocking,
+)
+from ..common.downloads import stream_google_download
 from .presentation import event_envelope
-from ..common.parsing import normalize_participants
 from ..common.timezone import resolve_user_timezone, user_now
 from .schemas import (
     AddEventAttachmentRequest,
@@ -23,6 +26,8 @@ from .schemas import (
     DeleteEventRequest,
     DownloadEventAttachmentRequest,
     EventAttachmentInput,
+    EventAttendeeInput,
+    CalendarIdInput,
     FindCommonFreeSlotsRequest,
     FreeBusyRequest,
     GetEventRequest,
@@ -423,7 +428,7 @@ def register_tools(server: FastMCP) -> None:
     async def check_availability(
         time_min: str,
         time_max: str,
-        items: list[dict[str, Any]],
+        items: list[CalendarIdInput],
         time_zone: str | None = None,
     ) -> dict[str, Any]:
         """Run a FreeBusy query for one or more calendars."""
@@ -443,11 +448,10 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="find_common_free_slots")
     async def find_common_free_slots(
-        participants: list[str] | str,
+        participants: list[str],
         time_min: str,
         time_max: str,
         slot_duration_minutes: int = 30,
-        meeting_duration: int | None = None,
         granularity_minutes: int = 15,
         max_results: int = 10,
         time_zone: str | None = None,
@@ -458,16 +462,13 @@ def register_tools(server: FastMCP) -> None:
         """Suggest common available meeting slots for all participants in a time window.
 
         Notes:
-        - `participants` should be a JSON array of strings. A JSON-stringified array
-          or comma-separated string is accepted for compatibility.
-        - `meeting_duration` is accepted as a legacy alias for `slot_duration_minutes`.
+        - `participants` must be a native JSON array of calendar IDs or email addresses.
         """
-        effective_duration = meeting_duration if meeting_duration is not None else slot_duration_minutes
         request = FindCommonFreeSlotsRequest(
-            participants=normalize_participants(participants),
+            participants=participants,
             time_min=time_min,
             time_max=time_max,
-            slot_duration_minutes=effective_duration,
+            slot_duration_minutes=slot_duration_minutes,
             granularity_minutes=granularity_minutes,
             max_results=max_results,
             time_zone=time_zone,
@@ -574,7 +575,7 @@ def register_tools(server: FastMCP) -> None:
         visibility: Literal["default", "public", "private", "confidential"] = "default",
         transparency: Literal["opaque", "transparent"] = "opaque",
         conference_data: dict[str, Any] | None = None,
-        attendees: list[dict[str, Any]] | None = None,
+        attendees: list[EventAttendeeInput] | None = None,
         attachments: list[EventAttachmentInput] | None = None,
         supports_attachments: bool = True,
         send_updates: str | None = None,
@@ -630,7 +631,7 @@ def register_tools(server: FastMCP) -> None:
         if request.conference_data is not None:
             body["conferenceData"] = request.conference_data
         if request.attendees:
-            body["attendees"] = request.attendees
+            body["attendees"] = [item.model_dump(by_alias=True, exclude_none=True) for item in request.attendees]
         if request.attachments is not None:
             body["attachments"] = [a.to_api() for a in request.attachments]
         if request.reminders:
@@ -688,7 +689,7 @@ def register_tools(server: FastMCP) -> None:
         visibility: Literal["default", "public", "private", "confidential"] | None = None,
         transparency: Literal["opaque", "transparent"] | None = None,
         conference_data: dict[str, Any] | None = None,
-        attendees: list[dict[str, Any]] | None = None,
+        attendees: list[EventAttendeeInput] | None = None,
         attachments: list[EventAttachmentInput] | None = None,
         supports_attachments: bool = True,
         reminders: dict[str, Any] | None = None,
@@ -734,7 +735,11 @@ def register_tools(server: FastMCP) -> None:
         ):
             value = getattr(request, key)
             if value is not None:
-                patch_data[key] = value
+                patch_data[key] = (
+                    [item.model_dump(by_alias=True, exclude_none=True) for item in value]
+                    if key == "attendees"
+                    else value
+                )
         if request.color_id is not None:
             patch_data["colorId"] = request.color_id
         if request.conference_data is not None:
@@ -875,6 +880,12 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         if not request.file_url and not request.file_id:
             raise ValueError("Provide at least one of file_url or file_id.")
+        if not await confirm_destructive_action(
+            ctx,
+            "remove_event_attachment",
+            f"Remove the selected attachment from event {request.event_id}?",
+        ):
+            return {"status": "cancelled", "event_id": request.event_id}
         if ctx is not None:
             await ctx.info(f"Removing attachment from event {request.event_id}.")
         event = await execute_google_request(
@@ -903,7 +914,7 @@ def register_tools(server: FastMCP) -> None:
         )
         return {"event": updated, "removed_count": len(attachments) - len(filtered)}
 
-    @server.tool(name="download_event_attachment")
+    @server.tool(name="download_event_attachment", task=True)
     async def download_event_attachment(
         event_id: str,
         output_path: str,
@@ -924,6 +935,9 @@ def register_tools(server: FastMCP) -> None:
             export_mime_type=export_mime_type,
             overwrite=overwrite,
         )
+        from ..file_uploads import require_local_filesystem
+
+        require_local_filesystem("Calendar attachment download")
         service = build_calendar_service()
         drive = build_drive_service()
         if ctx is not None:
@@ -963,10 +977,6 @@ def register_tools(server: FastMCP) -> None:
         mime_type = meta.get("mimeType", "")
         name = meta.get("name", file_id_resolved)
         out_path = Path(request.output_path)
-        if await run_blocking(out_path.exists) and not request.overwrite:
-            raise FileExistsError(f"Output path already exists: {out_path}")
-        await run_blocking(out_path.parent.mkdir, parents=True, exist_ok=True)
-
         if mime_type.startswith("application/vnd.google-apps"):
             export_mime = request.export_mime_type or GOOGLE_EXPORT_MIME_DEFAULTS.get(mime_type)
             if not export_mime:
@@ -981,21 +991,13 @@ def register_tools(server: FastMCP) -> None:
             export_mime = None
             mode = "download"
 
-        buffer = io.BytesIO()
-        downloader = MediaIoBaseDownload(buffer, req)
-        done = False
-        while not done:
-            status, done = await run_blocking(downloader.next_chunk)
-            if status is not None:
-                if ctx is not None:
-                    await ctx.report_progress(
-                        int(status.progress() * 100),
-                        100,
-                        "Downloading attachment bytes",
-                    )
-
-        data = buffer.getvalue()
-        await write_bytes_file(out_path, data)
+        size = await stream_google_download(
+            req,
+            out_path,
+            overwrite=request.overwrite,
+            progress_label="Downloading attachment bytes",
+            ctx=ctx,
+        )
         if ctx is not None:
             await ctx.report_progress(100, 100, "Attachment saved")
         return {
@@ -1008,7 +1010,7 @@ def register_tools(server: FastMCP) -> None:
             "mode": mode,
             "export_mime_type": export_mime,
             "saved_to": str(out_path),
-            "bytes_written": len(data),
+            "bytes_written": size,
         }
 
     @server.tool(name="delete_event")
@@ -1016,24 +1018,23 @@ def register_tools(server: FastMCP) -> None:
         event_id: str,
         calendar_id: str = "primary",
         send_updates: str | None = None,
-        force: bool = True,
+        force: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a calendar event, with optional interactive confirmation."""
+        """Delete a calendar event after mandatory interactive confirmation."""
         request = DeleteEventRequest(
             calendar_id=calendar_id,
             event_id=event_id,
             send_updates=send_updates,
             force=force,
         )
-        if not request.force:
-            confirm_ctx = require_elicitation_context(ctx, "delete_event")
-            response = await confirm_ctx.elicit(
-                f"Delete event {request.event_id} from calendar {request.calendar_id}?",
-                response_type=bool,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(response.data):
-                return {"status": "cancelled"}
+        confirm_ctx = require_elicitation_context(ctx, "delete_event")
+        response = await confirm_ctx.elicit(
+            f"Delete event {request.event_id} from calendar {request.calendar_id}?",
+            response_type=bool,  # type: ignore[arg-type]
+        )
+        if response.action != "accept" or not bool(response.data):
+            return {"status": "cancelled"}
         service = build_calendar_service()
         await execute_google_request(
             service.events().delete(

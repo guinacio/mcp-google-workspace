@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from threading import Lock
+from threading import RLock
+import time
 from typing import Any
 
 from ..auth import build_calendar_service
@@ -22,19 +23,52 @@ from .schemas import (
     RespondToEventRequest,
     RescheduleMeetingRequest,
 )
+from .idempotency import STORE
 
 _IDEMPOTENCY_RESULTS: dict[tuple[str, str], AppActionResult] = {}
-_LOCK = Lock()
+_IDEMPOTENCY_TOUCHED: dict[tuple[str, str], float] = {}
+_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+_MAX_IDEMPOTENCY_RESULTS = 10_000
+_LOCK = RLock()
+
+
+def _prune_cache_locked() -> None:
+    now = time.monotonic()
+    expired = [
+        cache_key
+        for cache_key, touched in _IDEMPOTENCY_TOUCHED.items()
+        if now - touched > _IDEMPOTENCY_TTL_SECONDS
+    ]
+    for cache_key in expired:
+        _IDEMPOTENCY_RESULTS.pop(cache_key, None)
+        _IDEMPOTENCY_TOUCHED.pop(cache_key, None)
+    overflow = len(_IDEMPOTENCY_RESULTS) - _MAX_IDEMPOTENCY_RESULTS
+    if overflow > 0:
+        oldest = sorted(
+            _IDEMPOTENCY_TOUCHED,
+            key=lambda cache_key: _IDEMPOTENCY_TOUCHED[cache_key],
+        )[:overflow]
+        for cache_key in oldest:
+            _IDEMPOTENCY_RESULTS.pop(cache_key, None)
+            _IDEMPOTENCY_TOUCHED.pop(cache_key, None)
 
 
 def _from_cache(session_id: str, key: str) -> AppActionResult | None:
     with _LOCK:
-        return _IDEMPOTENCY_RESULTS.get((session_id, key))
+        _prune_cache_locked()
+        cache_key = (session_id, key)
+        result = _IDEMPOTENCY_RESULTS.get(cache_key)
+        if result is not None:
+            _IDEMPOTENCY_TOUCHED[cache_key] = time.monotonic()
+        return result
 
 
 def _to_cache(session_id: str, key: str, result: AppActionResult) -> AppActionResult:
     with _LOCK:
-        _IDEMPOTENCY_RESULTS[(session_id, key)] = result
+        _prune_cache_locked()
+        cache_key = (session_id, key)
+        _IDEMPOTENCY_RESULTS[cache_key] = result
+        _IDEMPOTENCY_TOUCHED[cache_key] = time.monotonic()
         return result
 
 
@@ -132,7 +166,7 @@ def find_meeting_slots(request: FindMeetingSlotsRequest) -> dict[str, Any]:
     }
 
 
-def create_meeting_from_slot(session_id: str, request: CreateMeetingFromSlotRequest) -> AppActionResult:
+def _create_meeting_from_slot(session_id: str, request: CreateMeetingFromSlotRequest) -> AppActionResult:
     cached = _from_cache(session_id, request.idempotency_key)
     if cached is not None:
         return cached
@@ -179,7 +213,7 @@ def create_meeting_from_slot(session_id: str, request: CreateMeetingFromSlotRequ
     )
 
 
-def reschedule_meeting(session_id: str, request: RescheduleMeetingRequest) -> AppActionResult:
+def _reschedule_meeting(session_id: str, request: RescheduleMeetingRequest) -> AppActionResult:
     cached = _from_cache(session_id, request.idempotency_key)
     if cached is not None:
         return cached
@@ -213,7 +247,7 @@ def reschedule_meeting(session_id: str, request: RescheduleMeetingRequest) -> Ap
     )
 
 
-def cancel_meeting(session_id: str, request: CancelMeetingRequest) -> AppActionResult:
+def _cancel_meeting(session_id: str, request: CancelMeetingRequest) -> AppActionResult:
     cached = _from_cache(session_id, request.idempotency_key)
     if cached is not None:
         return cached
@@ -236,7 +270,7 @@ def cancel_meeting(session_id: str, request: CancelMeetingRequest) -> AppActionR
     )
 
 
-def respond_to_event(session_id: str, request: RespondToEventRequest) -> AppActionResult:
+def _respond_to_event(session_id: str, request: RespondToEventRequest) -> AppActionResult:
     cached = _from_cache(session_id, request.idempotency_key)
     if cached is not None:
         return cached
@@ -287,3 +321,69 @@ def respond_to_event(session_id: str, request: RespondToEventRequest) -> AppActi
             payload={"event": updated, "response_status": request.response_status},
         ),
     )
+
+
+def create_meeting_from_slot(
+    session_id: str, request: CreateMeetingFromSlotRequest
+) -> AppActionResult:
+    """Atomically deduplicate a meeting creation within this process."""
+    claim = STORE.claim(session_id, request.idempotency_key, request.model_dump_json())
+    if claim.cached is not None:
+        return claim.cached
+    try:
+        with _LOCK:
+            result = _create_meeting_from_slot(session_id, request)
+        STORE.complete(session_id, request.idempotency_key, result)
+        return result
+    except BaseException:
+        STORE.abandon(session_id, request.idempotency_key)
+        raise
+
+
+def reschedule_meeting(
+    session_id: str, request: RescheduleMeetingRequest
+) -> AppActionResult:
+    """Atomically deduplicate a reschedule within this process."""
+    claim = STORE.claim(session_id, request.idempotency_key, request.model_dump_json())
+    if claim.cached is not None:
+        return claim.cached
+    try:
+        with _LOCK:
+            result = _reschedule_meeting(session_id, request)
+        STORE.complete(session_id, request.idempotency_key, result)
+        return result
+    except BaseException:
+        STORE.abandon(session_id, request.idempotency_key)
+        raise
+
+
+def cancel_meeting(session_id: str, request: CancelMeetingRequest) -> AppActionResult:
+    """Atomically deduplicate a cancellation within this process."""
+    claim = STORE.claim(session_id, request.idempotency_key, request.model_dump_json())
+    if claim.cached is not None:
+        return claim.cached
+    try:
+        with _LOCK:
+            result = _cancel_meeting(session_id, request)
+        STORE.complete(session_id, request.idempotency_key, result)
+        return result
+    except BaseException:
+        STORE.abandon(session_id, request.idempotency_key)
+        raise
+
+
+def respond_to_event(
+    session_id: str, request: RespondToEventRequest
+) -> AppActionResult:
+    """Atomically deduplicate an RSVP within this process."""
+    claim = STORE.claim(session_id, request.idempotency_key, request.model_dump_json())
+    if claim.cached is not None:
+        return claim.cached
+    try:
+        with _LOCK:
+            result = _respond_to_event(session_id, request)
+        STORE.complete(session_id, request.idempotency_key, result)
+        return result
+    except BaseException:
+        STORE.abandon(session_id, request.idempotency_key)
+        raise

@@ -9,6 +9,7 @@ from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request, require_elicitation_context
 from ...common.timezone import resolve_user_timezone
+from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
 from ..mime_utils import (
     build_email_message,
@@ -16,9 +17,10 @@ from ..mime_utils import (
     email_to_gmail_raw,
     extract_message_bodies,
 )
-from ..helpers import attachment_inputs, recipient_set
+from ..helpers import recipient_set
 from ..presentation import clean_message_content, envelope, header_map, message_attachments
 from ..schemas import (
+    AttachmentInput,
     DeleteMessageRequest,
     ModifyMessageRequest,
     ReadEmailRequest,
@@ -35,7 +37,7 @@ def register(server: FastMCP) -> None:
         bcc: list[str] | None = None,
         text_body: str | None = None,
         html_body: str | None = None,
-        attachments: list[dict[str, Any]] | None = None,
+        attachments: list[AttachmentInput] | None = None,
         confirm_send: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
@@ -45,7 +47,7 @@ def register(server: FastMCP) -> None:
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachments=attachment_inputs(attachments),
+            attachments=attachments or [],
             confirm_send=confirm_send,
         )
         service = gmail_service()
@@ -73,16 +75,27 @@ def register(server: FastMCP) -> None:
 
         if ctx is not None:
             await ctx.info("Building MIME email payload.")
-        attachment_payloads: list[dict[str, str]] = []
+        attachment_payloads: list[dict[str, Any]] = []
         total = max(len(request.attachments), 1)
         for i, item in enumerate(request.attachments, start=1):
-            attachment_payloads.append(
-                {
-                    "path": item.file_path,
-                    "filename": item.filename or "",
-                    "mime_type": item.mime_type or "application/octet-stream",
-                }
-            )
+            if item.uploaded_file:
+                uploaded = workspace_file_upload.get_file(item.uploaded_file, ctx)
+                attachment_payloads.append(
+                    {
+                        "data": uploaded.data,
+                        "filename": item.filename or uploaded.name,
+                        "mime_type": item.mime_type or uploaded.mime_type,
+                    }
+                )
+            else:
+                require_local_filesystem("Gmail attachment")
+                attachment_payloads.append(
+                    {
+                        "path": item.file_path,
+                        "filename": item.filename or "",
+                        "mime_type": item.mime_type or "application/octet-stream",
+                    }
+                )
             if ctx is not None:
                 await ctx.report_progress(i, total, f"Prepared attachment {i}/{total}")
 

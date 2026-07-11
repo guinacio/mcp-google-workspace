@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request
+from ...common.async_ops import confirm_destructive_action, execute_google_request
 from ..client import drive_service
 from ..schemas import (
     CreatePermissionRequest,
@@ -229,6 +229,16 @@ def register(server: FastMCP) -> None:
             use_domain_admin_access=use_domain_admin_access,
             supports_all_drives=supports_all_drives,
         )
+        if not await confirm_destructive_action(
+            ctx,
+            "delete_permission",
+            f"Remove permission {request.permission_id} from Drive file {request.file_id}?",
+        ):
+            return {
+                "status": "cancelled",
+                "file_id": request.file_id,
+                "permission_id": request.permission_id,
+            }
         service = drive_service()
         if ctx is not None:
             await ctx.warning(

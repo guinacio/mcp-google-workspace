@@ -7,12 +7,13 @@ from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 import pytz
+from dateutil.relativedelta import relativedelta
 from fastmcp import Context, FastMCP
 
 from ..auth import build_calendar_service, build_gmail_service
 from ..auth.identity import current_principal
 from ..common.async_ops import run_blocking
-from ..common.parsing import normalize_participants
+from ..common.downloads import max_download_bytes
 from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from ..gmail.presentation import envelope as gmail_envelope
@@ -108,7 +109,13 @@ def _compute_window(state: DashboardState) -> tuple[str, str]:
     elif state.view in {"agenda", "day"}:
         duration_days = 1
     else:
-        duration_days = 30
+        month_start = anchor_date.replace(day=1)
+        next_month = month_start + relativedelta(months=1)
+        start_local = tz.localize(datetime.combine(month_start, datetime.min.time()))
+        end_local = tz.localize(datetime.combine(next_month, datetime.min.time()))
+        return start_local.astimezone(pytz.UTC).isoformat(), end_local.astimezone(
+            pytz.UTC
+        ).isoformat()
     start_local = tz.localize(datetime.combine(anchor_date, datetime.min.time()))
     end_local = start_local + timedelta(days=duration_days)
     return start_local.astimezone(pytz.UTC).isoformat(), end_local.astimezone(
@@ -255,6 +262,9 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
         size = body.get("size", 0) or 0
         break
 
+    limit = max_download_bytes()
+    if size > limit:
+        raise ValueError(f"Attachment exceeds MCP_MAX_DOWNLOAD_BYTES ({limit} bytes).")
     attachment = _execute_request(
         service.users()
         .messages()
@@ -266,6 +276,8 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
         raise ValueError("Attachment content is empty.")
     # Normalize Gmail URL-safe base64 into standard base64 for host download APIs.
     decoded = base64.urlsafe_b64decode(raw.encode("utf-8"))
+    if len(decoded) > limit:
+        raise ValueError(f"Attachment exceeds MCP_MAX_DOWNLOAD_BYTES ({limit} bytes).")
     blob_base64 = base64.b64encode(decoded).decode("ascii")
     resolved_filename = filename or _fallback_attachment_filename(mime_type)
     return {
@@ -619,7 +631,10 @@ def register_tools(server: FastMCP) -> None:
             await ctx.report_progress(100, 100, "Email details ready")
         return payload
 
-    @server.tool(name="get_email_attachment")
+    @server.tool(
+        name="get_email_attachment",
+        meta={"ui": {"visibility": ["app"]}},
+    )
     async def apps_get_email_attachment(
         message_id: str,
         attachment_id: str,
@@ -638,9 +653,8 @@ def register_tools(server: FastMCP) -> None:
     async def apps_find_meeting_slots(
         time_min: str,
         time_max: str,
-        participants: list[str] | str | None = None,
+        participants: list[str] | None = None,
         slot_duration_minutes: int = 30,
-        meeting_duration: int | None = None,
         granularity_minutes: int = 15,
         max_results: int = 10,
         time_zone: str | None = None,
@@ -650,18 +664,14 @@ def register_tools(server: FastMCP) -> None:
         """Find common free slots for participants in a window.
 
         Notes:
-        - `participants` may be sent as an array, JSON-stringified array, or comma-separated string.
-        - `meeting_duration` is accepted as a legacy alias for `slot_duration_minutes`.
+        - `participants` must be a native JSON array of calendar IDs or email addresses.
         """
-        effective_duration = (
-            meeting_duration if meeting_duration is not None else slot_duration_minutes
-        )
         effective_timezone = time_zone or await resolve_user_timezone()
         request = FindMeetingSlotsRequest(
-            participants=normalize_participants(participants) or ["primary"],
+            participants=participants or ["primary"],
             time_min=time_min,
             time_max=time_max,
-            slot_duration_minutes=effective_duration,
+            slot_duration_minutes=slot_duration_minutes,
             granularity_minutes=granularity_minutes,
             max_results=max_results,
             time_zone=effective_timezone,
@@ -699,7 +709,7 @@ def register_tools(server: FastMCP) -> None:
             idempotency_key=idempotency_key,
         )
         sid = _resolve_session_id(request.session_id, ctx)
-        result = create_meeting_from_slot(sid, request)
+        result = await run_blocking(create_meeting_from_slot, sid, request)
         return result.model_dump(mode="json")
 
     @server.tool(name="reschedule_meeting")
@@ -725,7 +735,7 @@ def register_tools(server: FastMCP) -> None:
             idempotency_key=idempotency_key,
         )
         sid = _resolve_session_id(request.session_id, ctx)
-        result = reschedule_meeting(sid, request)
+        result = await run_blocking(reschedule_meeting, sid, request)
         return result.model_dump(mode="json")
 
     @server.tool(name="cancel_meeting")
@@ -748,7 +758,7 @@ def register_tools(server: FastMCP) -> None:
             idempotency_key=idempotency_key,
         )
         sid = _resolve_session_id(request.session_id, ctx)
-        result = cancel_meeting(sid, request)
+        result = await run_blocking(cancel_meeting, sid, request)
         return result.model_dump(mode="json")
 
     @server.tool(name="respond_to_event")
@@ -771,5 +781,5 @@ def register_tools(server: FastMCP) -> None:
             idempotency_key=idempotency_key,
         )
         sid = _resolve_session_id(request.session_id, ctx)
-        result = respond_to_event(sid, request)
+        result = await run_blocking(respond_to_event, sid, request)
         return result.model_dump(mode="json")

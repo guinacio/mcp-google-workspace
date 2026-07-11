@@ -9,7 +9,8 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from ..common.async_ops import run_blocking
-from ..drive.client import download_media_to_bytes, drive_service
+from ..drive.client import download_media_to_path, drive_service
+from ..file_uploads import UploadedFile, require_local_filesystem, workspace_file_upload
 from ..runtime import get_runtime_settings
 from .client import GeminiMediaClient
 from .schemas import (
@@ -28,7 +29,7 @@ from .storage import (
 LOGGER = logging.getLogger(__name__)
 
 
-def _load_drive_file_bytes(file_id: str) -> tuple[bytes, str, str]:
+def _stage_drive_file(file_id: str) -> tuple[Path, str, str]:
     service = drive_service()
     metadata = (
         service.files()
@@ -45,17 +46,25 @@ def _load_drive_file_bytes(file_id: str) -> tuple[bytes, str, str]:
             f"Drive file {file_id} uses Google Workspace native mime type {mime_type!r} and is not supported by Gemini media tools."
         )
     file_name = metadata.get("name") or file_id
-    data = download_media_to_bytes(
-        service.files().get_media(fileId=file_id, supportsAllDrives=True)
+    staged_path = stage_temp_file(b"", filename=file_name, mime_type=mime_type)
+    download_media_to_path(
+        service.files().get_media(fileId=file_id, supportsAllDrives=True),
+        staged_path,
     )
-    return data, mime_type, file_name
+    return staged_path, mime_type, file_name
 
 
 def _resolve_local_input(
     *,
     input_path: str | None,
     drive_file_id: str | None,
+    uploaded: UploadedFile | None = None,
 ) -> tuple[Path, str, str, bool]:
+    if uploaded is not None:
+        staged_path = stage_temp_file(
+            uploaded.data, filename=uploaded.name, mime_type=uploaded.mime_type
+        )
+        return staged_path, uploaded.mime_type, uploaded.name, True
     if input_path:
         local_path = Path(input_path).expanduser().resolve()
         if not local_path.exists():
@@ -65,8 +74,7 @@ def _resolve_local_input(
     if not drive_file_id:
         raise ValueError("Either input_path or drive_file_id must be provided.")
 
-    data, mime_type, file_name = _load_drive_file_bytes(drive_file_id)
-    staged_path = stage_temp_file(data, filename=file_name, mime_type=mime_type)
+    staged_path, mime_type, file_name = _stage_drive_file(drive_file_id)
     return staged_path, mime_type, file_name, True
 
 
@@ -106,12 +114,14 @@ def edit_image_payload(
     request: EditImageRequest,
     *,
     client: GeminiMediaClient | None = None,
+    uploaded: UploadedFile | None = None,
 ) -> dict[str, Any]:
     gemini_client = client or GeminiMediaClient()
     model = gemini_client.resolve_model("image_edit", request.model)
     local_path, mime_type, file_name, is_temp = _resolve_local_input(
         input_path=request.input_path,
         drive_file_id=request.drive_file_id,
+        uploaded=uploaded,
     )
     try:
         edited = gemini_client.edit_image(
@@ -141,10 +151,11 @@ def edit_image_payload(
         "output_path": str(output_path),
         "bytes_written": output_path.stat().st_size,
         "source": {
-            "type": "drive" if request.drive_file_id else "local",
+            "type": "upload" if request.uploaded_file else ("drive" if request.drive_file_id else "local"),
             "file_name": file_name,
             "drive_file_id": request.drive_file_id,
             "input_path": request.input_path,
+            "uploaded_file": request.uploaded_file,
         },
     }
 
@@ -153,12 +164,14 @@ def describe_video_payload(
     request: DescribeVideoRequest,
     *,
     client: GeminiMediaClient | None = None,
+    uploaded: UploadedFile | None = None,
 ) -> dict[str, Any]:
     gemini_client = client or GeminiMediaClient()
     model = gemini_client.resolve_model("video_understanding", request.model)
     local_path, mime_type, file_name, is_temp = _resolve_local_input(
         input_path=request.input_path,
         drive_file_id=request.drive_file_id,
+        uploaded=uploaded,
     )
     prompt = request.prompt or "Describe the important events, scenes, and notable details in this video."
     try:
@@ -179,10 +192,11 @@ def describe_video_payload(
         "mime_type": mime_type,
         "description": result["text"],
         "source": {
-            "type": "drive" if request.drive_file_id else "local",
+            "type": "upload" if request.uploaded_file else ("drive" if request.drive_file_id else "local"),
             "file_name": file_name,
             "drive_file_id": request.drive_file_id,
             "input_path": request.input_path,
+            "uploaded_file": request.uploaded_file,
         },
     }
 
@@ -191,12 +205,14 @@ def analyze_audio_payload(
     request: AnalyzeAudioRequest,
     *,
     client: GeminiMediaClient | None = None,
+    uploaded: UploadedFile | None = None,
 ) -> dict[str, Any]:
     gemini_client = client or GeminiMediaClient()
     model = gemini_client.resolve_model("audio_understanding", request.model)
     local_path, mime_type, file_name, is_temp = _resolve_local_input(
         input_path=request.input_path,
         drive_file_id=request.drive_file_id,
+        uploaded=uploaded,
     )
     prompt = request.prompt or "Analyze this audio and summarize the most important content, speakers, and notable moments."
     try:
@@ -217,10 +233,11 @@ def analyze_audio_payload(
         "mime_type": mime_type,
         "analysis": result["text"],
         "source": {
-            "type": "drive" if request.drive_file_id else "local",
+            "type": "upload" if request.uploaded_file else ("drive" if request.drive_file_id else "local"),
             "file_name": file_name,
             "drive_file_id": request.drive_file_id,
             "input_path": request.input_path,
+            "uploaded_file": request.uploaded_file,
         },
     }
 
@@ -236,7 +253,7 @@ async def _report_tool_progress(ctx: Context | None, current: int, total: int, m
 
 
 def register_tools(server: FastMCP) -> None:
-    @server.tool(name="generate_image")
+    @server.tool(name="generate_image", task=True)
     async def gemini_generate_image(
         prompt: str,
         aspect_ratio: str | None = None,
@@ -253,6 +270,8 @@ def register_tools(server: FastMCP) -> None:
             output_filename=output_filename,
             output_dir=output_dir,
         )
+        if request.output_dir:
+            require_local_filesystem("Gemini output directory override")
         await _report_tool_start(ctx, "Starting Gemini image generation.")
         await _report_tool_progress(ctx, 10, 100, "Generating image")
         payload = await run_blocking(generate_image_payload, request)
@@ -264,11 +283,12 @@ def register_tools(server: FastMCP) -> None:
         await _report_tool_progress(ctx, 100, 100, "Image generated")
         return payload
 
-    @server.tool(name="edit_image")
+    @server.tool(name="edit_image", task=True)
     async def gemini_edit_image(
         prompt: str,
         input_path: str | None = None,
         drive_file_id: str | None = None,
+        uploaded_file: str | None = None,
         model: str | None = None,
         output_filename: str | None = None,
         output_dir: str | None = None,
@@ -279,13 +299,25 @@ def register_tools(server: FastMCP) -> None:
             prompt=prompt,
             input_path=input_path,
             drive_file_id=drive_file_id,
+            uploaded_file=uploaded_file,
             model=model,
             output_filename=output_filename,
             output_dir=output_dir,
         )
+        if request.input_path:
+            require_local_filesystem("Gemini image input")
+        if request.output_dir:
+            require_local_filesystem("Gemini output directory override")
+        uploaded = (
+            workspace_file_upload.get_file(
+                request.uploaded_file, ctx, allowed_mime_prefixes=("image/",)
+            )
+            if request.uploaded_file
+            else None
+        )
         await _report_tool_start(ctx, "Starting Gemini image edit.")
         await _report_tool_progress(ctx, 10, 100, "Preparing image input")
-        payload = await run_blocking(edit_image_payload, request)
+        payload = await run_blocking(edit_image_payload, request, uploaded=uploaded)
         LOGGER.info(
             "Gemini image edit completed model=%s source=%s output=%s",
             payload["model"],
@@ -295,10 +327,11 @@ def register_tools(server: FastMCP) -> None:
         await _report_tool_progress(ctx, 100, 100, "Image edit completed")
         return payload
 
-    @server.tool(name="describe_video")
+    @server.tool(name="describe_video", task=True)
     async def gemini_describe_video(
         input_path: str | None = None,
         drive_file_id: str | None = None,
+        uploaded_file: str | None = None,
         prompt: str | None = None,
         model: str | None = None,
         ctx: Context | None = None,
@@ -307,12 +340,22 @@ def register_tools(server: FastMCP) -> None:
         request = DescribeVideoRequest(
             input_path=input_path,
             drive_file_id=drive_file_id,
+            uploaded_file=uploaded_file,
             prompt=prompt,
             model=model,
         )
+        if request.input_path:
+            require_local_filesystem("Gemini video input")
+        uploaded = (
+            workspace_file_upload.get_file(
+                request.uploaded_file, ctx, allowed_mime_prefixes=("video/",)
+            )
+            if request.uploaded_file
+            else None
+        )
         await _report_tool_start(ctx, "Starting Gemini video understanding.")
         await _report_tool_progress(ctx, 10, 100, "Preparing video input")
-        payload = await run_blocking(describe_video_payload, request)
+        payload = await run_blocking(describe_video_payload, request, uploaded=uploaded)
         LOGGER.info(
             "Gemini video understanding completed model=%s source=%s",
             payload["model"],
@@ -321,10 +364,11 @@ def register_tools(server: FastMCP) -> None:
         await _report_tool_progress(ctx, 100, 100, "Video analysis completed")
         return payload
 
-    @server.tool(name="analyze_audio")
+    @server.tool(name="analyze_audio", task=True)
     async def gemini_analyze_audio(
         input_path: str | None = None,
         drive_file_id: str | None = None,
+        uploaded_file: str | None = None,
         prompt: str | None = None,
         model: str | None = None,
         ctx: Context | None = None,
@@ -333,12 +377,22 @@ def register_tools(server: FastMCP) -> None:
         request = AnalyzeAudioRequest(
             input_path=input_path,
             drive_file_id=drive_file_id,
+            uploaded_file=uploaded_file,
             prompt=prompt,
             model=model,
         )
+        if request.input_path:
+            require_local_filesystem("Gemini audio input")
+        uploaded = (
+            workspace_file_upload.get_file(
+                request.uploaded_file, ctx, allowed_mime_prefixes=("audio/",)
+            )
+            if request.uploaded_file
+            else None
+        )
         await _report_tool_start(ctx, "Starting Gemini audio understanding.")
         await _report_tool_progress(ctx, 10, 100, "Preparing audio input")
-        payload = await run_blocking(analyze_audio_payload, request)
+        payload = await run_blocking(analyze_audio_payload, request, uploaded=uploaded)
         LOGGER.info(
             "Gemini audio understanding completed model=%s source=%s",
             payload["model"],

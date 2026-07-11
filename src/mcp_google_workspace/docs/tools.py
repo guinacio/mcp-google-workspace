@@ -6,6 +6,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from ..common.async_ops import run_blocking
 from .client import docs_service
 from .schemas import (
     AppendDocumentTextRequest,
@@ -77,7 +78,7 @@ def batch_update_document_payload(request: BatchUpdateDocumentRequest) -> dict[s
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_document")
-    async def get_document(
+    def get_document(
         document_id: str,
         include_tabs_content: bool = False,
         suggestions_view_mode: str | None = None,
@@ -91,15 +92,15 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="create_document")
-    async def create_document(title: str) -> dict[str, Any]:
+    def create_document(title: str) -> dict[str, Any]:
         return create_document_payload(CreateDocumentRequest(title=title))
 
     @server.tool(name="append_document_text")
-    async def append_document_text(document_id: str, text: str) -> dict[str, Any]:
+    def append_document_text(document_id: str, text: str) -> dict[str, Any]:
         return append_document_text_payload(AppendDocumentTextRequest(document_id=document_id, text=text))
 
     @server.tool(name="replace_document_text")
-    async def replace_document_text(
+    def replace_document_text(
         document_id: str,
         contains_text: str,
         replace_text: str,
@@ -114,13 +115,14 @@ def register_tools(server: FastMCP) -> None:
             )
         )
 
-    @server.tool(name="batch_update_document")
+    @server.tool(name="batch_update_document", task=True)
     async def batch_update_document(
         document_id: str,
         requests: list[dict[str, Any]],
         write_control: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return batch_update_document_payload(
+        return await run_blocking(
+            batch_update_document_payload,
             BatchUpdateDocumentRequest(
                 document_id=document_id,
                 requests=requests,

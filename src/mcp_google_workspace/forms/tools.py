@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 
+from ..common.async_ops import run_blocking
 from ..common.timezone import resolve_user_timezone
 from .client import forms_service
 from .presentation import question_titles, response_envelope
@@ -111,22 +112,23 @@ def get_form_response_payload(request: GetFormResponseRequest) -> dict[str, Any]
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_form")
-    async def get_form(form_id: str) -> dict[str, Any]:
+    def get_form(form_id: str) -> dict[str, Any]:
         return get_form_payload(GetFormRequest(form_id=form_id))
 
     @server.tool(name="create_form")
-    async def create_form(title: str, document_title: str | None = None, unpublished: bool = False) -> dict[str, Any]:
+    def create_form(title: str, document_title: str | None = None, unpublished: bool = False) -> dict[str, Any]:
         return create_form_payload(
             CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
         )
 
-    @server.tool(name="batch_update_form")
+    @server.tool(name="batch_update_form", task=True)
     async def batch_update_form(
         form_id: str,
         requests: list[dict[str, Any]],
         include_form_in_response: bool = False,
     ) -> dict[str, Any]:
-        return batch_update_form_payload(
+        return await run_blocking(
+            batch_update_form_payload,
             BatchUpdateFormRequest(
                 form_id=form_id,
                 requests=requests,
@@ -135,7 +137,7 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="set_form_publish_settings")
-    async def set_form_publish_settings(
+    def set_form_publish_settings(
         form_id: str,
         publish_settings: dict[str, Any],
         update_mask: str = "*",
@@ -156,7 +158,8 @@ def register_tools(server: FastMCP) -> None:
         filter: str | None = None,
         enrich_questions: bool = True,
     ) -> dict[str, Any]:
-        result = list_form_responses_payload(
+        result = await run_blocking(
+            list_form_responses_payload,
             ListFormResponsesRequest(
                 form_id=form_id,
                 page_size=page_size,
@@ -165,7 +168,11 @@ def register_tools(server: FastMCP) -> None:
             )
         )
         account_timezone = await resolve_user_timezone()
-        titles = question_titles(get_form_payload(GetFormRequest(form_id=form_id))) if enrich_questions else {}
+        titles = (
+            question_titles(await run_blocking(get_form_payload, GetFormRequest(form_id=form_id)))
+            if enrich_questions
+            else {}
+        )
         responses = result.get("responses", [])
         return {
             "form_id": form_id,
@@ -180,7 +187,14 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="get_form_response")
     async def get_form_response(form_id: str, response_id: str, enrich_questions: bool = True) -> dict[str, Any]:
-        response = get_form_response_payload(GetFormResponseRequest(form_id=form_id, response_id=response_id))
+        response = await run_blocking(
+            get_form_response_payload,
+            GetFormResponseRequest(form_id=form_id, response_id=response_id),
+        )
         account_timezone = await resolve_user_timezone()
-        titles = question_titles(get_form_payload(GetFormRequest(form_id=form_id))) if enrich_questions else {}
+        titles = (
+            question_titles(await run_blocking(get_form_payload, GetFormRequest(form_id=form_id)))
+            if enrich_questions
+            else {}
+        )
         return response_envelope(response, titles, account_timezone=account_timezone)

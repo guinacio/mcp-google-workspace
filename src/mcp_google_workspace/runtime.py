@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .common.crypto import FernetKeyring
+
 
 _LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
@@ -31,8 +33,8 @@ class RuntimeSettings:
 
 
 @dataclass(frozen=True, slots=True)
-class SseSecuritySettings:
-    """Required configuration for the authenticated multi-user SSE deployment."""
+class RemoteSecuritySettings:
+    """Required configuration for authenticated multi-user Streamable HTTP."""
 
     base_url: str
     google_oauth_redirect_url: str
@@ -45,10 +47,11 @@ class SseSecuritySettings:
 
 @dataclass(frozen=True, slots=True)
 class TokenStorageSettings:
-    """Encrypted credential storage shared by local and SSE deployments."""
+    """Encrypted credential storage shared by local and remote deployments."""
 
     token_encryption_key: str
     user_token_dir: Path
+    keyring: FernetKeyring
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -100,7 +103,7 @@ def _parse_str_env(name: str, default: str) -> str:
 def _required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
-        raise ValueError(f"{name} is required for authenticated SSE mode.")
+        raise ValueError(f"{name} is required for authenticated remote HTTP mode.")
     return value
 
 
@@ -114,38 +117,41 @@ def _require_secure_url(name: str, value: str) -> str:
     return value.rstrip("/")
 
 
-def get_sse_security_settings() -> SseSecuritySettings:
-    """Load the non-optional security contract for multi-user SSE hosting."""
-    base_url = _require_secure_url("MCP_SSE_BASE_URL", _required_env("MCP_SSE_BASE_URL"))
+def get_remote_security_settings() -> RemoteSecuritySettings:
+    """Load the non-optional security contract for remote HTTP hosting."""
+    base_url = _require_secure_url("MCP_HTTP_BASE_URL", _required_env("MCP_HTTP_BASE_URL"))
     redirect_url = _require_secure_url(
         "MCP_GOOGLE_OAUTH_REDIRECT_URL",
         _required_env("MCP_GOOGLE_OAUTH_REDIRECT_URL"),
     )
     if not redirect_url.startswith(f"{base_url}/"):
-        raise ValueError("MCP_GOOGLE_OAUTH_REDIRECT_URL must be served below MCP_SSE_BASE_URL.")
+        raise ValueError("MCP_GOOGLE_OAUTH_REDIRECT_URL must be served below MCP_HTTP_BASE_URL.")
     storage = get_token_storage_settings()
-    return SseSecuritySettings(
+    return RemoteSecuritySettings(
         base_url=base_url,
         google_oauth_redirect_url=redirect_url,
-        jwt_audience=_required_env("MCP_SSE_JWT_AUDIENCE"),
-        jwt_issuer=_required_env("MCP_SSE_JWT_ISSUER"),
-        jwt_jwks_uri=_require_secure_url("MCP_SSE_JWKS_URI", _required_env("MCP_SSE_JWKS_URI")),
-        token_encryption_key=storage.token_encryption_key,
+        jwt_audience=_required_env("MCP_HTTP_JWT_AUDIENCE"),
+        jwt_issuer=_required_env("MCP_HTTP_JWT_ISSUER"),
+        jwt_jwks_uri=_require_secure_url("MCP_HTTP_JWKS_URI", _required_env("MCP_HTTP_JWKS_URI")),
+        token_encryption_key=storage.token_encryption_key or "keyring-configured",
         user_token_dir=storage.user_token_dir,
     )
 
 
 def get_token_storage_settings() -> TokenStorageSettings:
-    """Load encrypted per-user token storage without requiring an SSE deployment."""
+    """Load encrypted per-user token storage without requiring a remote deployment."""
     raw_dir = os.getenv("MCP_USER_TOKEN_DIR", "").strip()
     if not raw_dir:
         credentials_dir = os.getenv("MCP_CREDENTIALS_DIR", "").strip()
         if not credentials_dir:
             raise ValueError("MCP_USER_TOKEN_DIR is required when MCP_CREDENTIALS_DIR is not configured.")
         raw_dir = str(Path(credentials_dir) / "workspace-user-tokens")
+    keyring = FernetKeyring.from_environment()
+    legacy_key = os.getenv("MCP_TOKEN_ENCRYPTION_KEY", "").strip()
     return TokenStorageSettings(
-        token_encryption_key=_required_env("MCP_TOKEN_ENCRYPTION_KEY"),
+        token_encryption_key=legacy_key,
         user_token_dir=Path(raw_dir).expanduser().resolve(),
+        keyring=keyring,
     )
 
 

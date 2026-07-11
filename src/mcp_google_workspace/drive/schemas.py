@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..common.request_model import ToolRequestModel
 
@@ -62,7 +62,10 @@ class CreateFileMetadataRequest(ToolRequestModel):
 
 
 class UploadFileRequest(ToolRequestModel):
-    local_path: str = Field(description="Path to local file to upload.")
+    local_path: str | None = Field(default=None, description="Local path (stdio/local use only).")
+    uploaded_file: str | None = Field(
+        default=None, description="Filename returned by the Workspace Files MCP App picker."
+    )
     name: str | None = Field(default=None, description="Name to store in Drive (defaults to local filename).")
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs.")
     mime_type: str | None = Field(default=None, description="Content MIME type; auto-detected when omitted.")
@@ -73,6 +76,12 @@ class UploadFileRequest(ToolRequestModel):
     )
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
     fields: str = Field(default="id,name,mimeType,size,parents,driveId,webViewLink", description="Fields selector.")
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> "UploadFileRequest":
+        if sum(bool(value) for value in (self.local_path, self.uploaded_file)) != 1:
+            raise ValueError("Exactly one of local_path or uploaded_file must be provided.")
+        return self
 
 
 class UpdateFileMetadataRequest(ToolRequestModel):
@@ -89,12 +98,21 @@ class UpdateFileMetadataRequest(ToolRequestModel):
 
 class UpdateFileContentRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID to update.")
-    local_path: str = Field(description="Path to local file content.")
+    local_path: str | None = Field(default=None, description="Local path (stdio/local use only).")
+    uploaded_file: str | None = Field(
+        default=None, description="Filename returned by the Workspace Files MCP App picker."
+    )
     mime_type: str | None = Field(default=None, description="Content MIME type.")
     resumable: bool = Field(default=True, description="Use resumable upload flow.")
     keep_revision_forever: bool | None = Field(default=None, description="Pin new revision when supported.")
     supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
     fields: str = Field(default="id,name,mimeType,size,modifiedTime,driveId,webViewLink", description="Fields selector.")
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> "UpdateFileContentRequest":
+        if sum(bool(value) for value in (self.local_path, self.uploaded_file)) != 1:
+            raise ValueError("Exactly one of local_path or uploaded_file must be provided.")
+        return self
 
 
 class MoveFileRequest(ToolRequestModel):
@@ -121,7 +139,7 @@ class DeleteFileRequest(ToolRequestModel):
         description="Safer delete mode. 'trash' moves to trash, 'permanent' irreversibly deletes.",
     )
     confirm_permanent: bool = Field(
-        default=False,
+        default=True,
         description=(
             "Require interactive confirmation before permanent delete when true. "
             "Default is false so the tool works on MCP clients that don't implement "

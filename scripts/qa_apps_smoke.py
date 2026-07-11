@@ -4,7 +4,7 @@ Apps-only QA smoke script for mcp-google-workspace.
 
 Usage:
   uv run python scripts/qa_apps_smoke.py
-  uv run python scripts/qa_apps_smoke.py --sse-url http://127.0.0.1:8001/sse
+  uv run python scripts/qa_apps_smoke.py --http-url http://127.0.0.1:8001/mcp
 """
 
 from __future__ import annotations
@@ -131,7 +131,12 @@ async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, s
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Run Apps MCP smoke tests.")
-    parser.add_argument("--sse-url", type=str, default=None, help="Optional SSE URL (example: http://127.0.0.1:8001/sse)")
+    parser.add_argument(
+        "--http-url",
+        type=str,
+        default=None,
+        help="Optional Streamable HTTP URL (example: http://127.0.0.1:8001/mcp)",
+    )
     parser.add_argument("--session-id", type=str, default="qa-apps-smoke", help="Session identifier used for stateful app tools.")
     args = parser.parse_args()
 
@@ -141,8 +146,8 @@ async def main() -> None:
     if not os.getenv("ENABLE_APPS_DASHBOARD"):
         os.environ["ENABLE_APPS_DASHBOARD"] = "true"
 
-    if args.sse_url:
-        client = Client(args.sse_url)
+    if args.http_url:
+        client = Client(args.http_url)
     else:
         from mcp_google_workspace.server import workspace_mcp
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request
+from ...common.async_ops import confirm_destructive_action, execute_google_request
 from ..client import gmail_service
 from ..schemas import CreateFilterRequest, DeleteFilterRequest, FilterActionInput, FilterCriteriaInput
 
@@ -57,6 +57,10 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Delete a Gmail filter by ID."""
         request = DeleteFilterRequest(filter_id=filter_id)
+        if not await confirm_destructive_action(
+            ctx, "delete_filter", f"Permanently delete Gmail filter {request.filter_id}?"
+        ):
+            return {"status": "cancelled", "filter_id": request.filter_id}
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Deleting Gmail filter {request.filter_id}.")

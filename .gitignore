@@ -4,8 +4,11 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.test-tmp-*/
 .mypy_cache/
 .ruff_cache/
+.codex-uv-cache/
+.pnpm-store/
 dist/
 build/
 *.egg-info/
