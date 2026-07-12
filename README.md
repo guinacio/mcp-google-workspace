@@ -205,7 +205,14 @@ Calendar (namespaced as `calendar_*`):
 - Smart scheduling: `find_common_free_slots`
 - Event attachments: metadata is included by `read_events`; mutations use `add_event_attachment`, `remove_event_attachment`, `download_event_attachment`
 - Event styling + conferencing fields on create/update: `color_id`, `visibility`, `transparency`, `conference_data`
-- Conflict prevention: create/update run a FreeBusy overlap check and return `status: "CONFLICT"` when slot is not available
+- Conflict prevention: create/update run overlap checks and return `status: "CONFLICT"` when the slot is unavailable; updates exclude the event being moved
+
+### Calendar availability tools
+
+Use the availability tool that matches the scheduling intent:
+
+- `check_time_availability`: verify a proposed `timeMin`/`timeMax` interval for one or more calendar IDs. Use this when the exact time is already known.
+- `find_common_free_slots`: discover candidate intervals across participants inside a broader search window. Use this when the exact meeting time is not known yet.
 
 ### Calendar smart scheduling (`find_common_free_slots`)
 
@@ -221,10 +228,7 @@ Inputs:
 - `time_zone`: optional timezone used in FreeBusy query
 - `working_hours_start`, `working_hours_end`: optional daily working-hours filter (`HH:MM`, 24h)
 
-Compatibility notes:
-
-- `participants` should be sent as a JSON array (for example `["primary", "rodrigo@example.com"]`).
-- Legacy callers can still use `meeting_duration` as an alias for `slot_duration_minutes`.
+`participants` must be sent as a native JSON array, for example `["primary", "rodrigo@example.com"]`. Use the canonical `slot_duration_minutes` field.
 
 Working-hours defaults:
 
@@ -436,9 +440,9 @@ The authenticated Streamable HTTP entrypoint reduces the model-visible catalog t
 
 ### Response and Error Contracts
 
-All model-visible tools publish recursively bounded, documented input schemas and closed documented object output schemas. Open input objects are limited to an audited set of genuine Google polymorphic batch maps. List/search tools consistently add `count`, `next_page_token`, `has_more`, and RFC3339 `fetched_at` fields. Uncaught tool failures use a machine-readable envelope with `code`, `message`, `retryable`, `retry_after`, executable `required_action`, `provider_status`, and `field_errors`.
+All model-visible tools publish recursively bounded, documented input schemas and closed documented object output schemas. Open input objects are limited to an audited set of genuine Google polymorphic batch maps. List/search responses expose their documented pagination and result-count fields without relying on undeclared conventions. Uncaught tool failures use a machine-readable envelope with `code`, `message`, `retryable`, `retry_after`, executable `required_action`, `provider_status`, and `field_errors`.
 
-Drive, Calendar, and Gemini Drive-media downloads stream through bounded temporary files instead of buffering complete files in memory. `MCP_MAX_DOWNLOAD_BYTES` controls the per-download ceiling (default 250 MiB, maximum 10 GiB). Local Apps idempotency uses SQLite; setting `MCP_REDIS_URL` switches idempotency and prepare/commit records to cross-replica atomic Redis state.
+Drive, Calendar, and Gemini Drive-media downloads stream through bounded temporary files instead of buffering complete files in memory. `MCP_MAX_DOWNLOAD_BYTES` controls the per-download ceiling (default 250 MiB, maximum 10 GiB). Setting `MCP_REDIS_URL` makes prepare/commit records cross-replica and atomic.
 
 ### MCP Apps (UI Dashboard)
 
@@ -586,10 +590,4 @@ uv run python scripts/qa_apps_smoke.py --http-url http://127.0.0.1:8001/mcp
 ## Existing calendar project reference
 
 - [guinacio/mcp-google-calendar](https://github.com/guinacio/mcp-google-calendar)
-
-
-
-
-
-
 
