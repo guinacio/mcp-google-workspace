@@ -24,6 +24,15 @@ def test_composition_mounts_default_namespaces(monkeypatch):
     tool_names = anyio.run(_list_tool_names, workspace)
 
     assert "gmail_send_email" in tool_names
+    assert "gmail_search_emails" in tool_names
+    assert "gmail_read_emails" in tool_names
+    assert "gmail_get_mail_digest" in tool_names
+    assert "gmail_check_mail_updates" in tool_names
+    assert "gmail_list_emails" not in tool_names
+    assert "gmail_read_email" not in tool_names
+    assert "gmail_get_emails" not in tool_names
+    assert "gmail_summarize_email" not in tool_names
+    assert "gmail_list_history" not in tool_names
     assert "calendar_get_events" in tool_names
     assert "drive_list_files" in tool_names
     assert "sheets_get_spreadsheet" in tool_names

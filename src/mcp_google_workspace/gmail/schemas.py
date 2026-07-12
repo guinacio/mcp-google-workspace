@@ -68,37 +68,24 @@ class SendEmailRequest(ToolRequestModel):
     confirm_send: bool = Field(default=False, description="Prompt user confirmation before sending when true.")
 
 
-class ReadEmailRequest(ToolRequestModel):
-    message_id: str = Field(
-        min_length=1,
-        description=(
-            "Gmail message ID to read. Pass as an object payload, e.g. "
-            '{"message_id":"18c9c7b7e2a1f123"}.'
-        ),
-    )
-
+class ReadEmailsRequest(ToolRequestModel):
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {"message_id": "18c9c7b7e2a1f123", "format": "clean"},
+                {"message_ids": ["18c9c7b7e2a1f123"], "format": "clean"},
             ]
         }
     }
-    summary_mode: bool = Field(
-        default=False,
-        description="When true, return a compact summary without full text/html bodies.",
+    message_ids: list[str] = Field(
+        min_length=1,
+        max_length=100,
+        description="One to 100 Gmail message IDs to read with one consistent response shape.",
     )
     format: Literal["metadata", "preview", "clean", "full"] = Field(
         default="clean",
         description="Detail level. clean is hygienic text capped near 2k tokens; full includes raw text/html.",
     )
     offset: int = Field(default=0, ge=0, description="Character offset for continuing a truncated clean body.")
-
-
-class GetEmailsRequest(ToolRequestModel):
-    message_ids: list[str] = Field(min_length=1, max_length=100, description="Message IDs to read in one call.")
-    format: Literal["metadata", "preview", "clean", "full"] = Field(default="clean", description="Detail level for each message.")
-    offset: int = Field(default=0, ge=0, description="Character offset for clean-body continuation.")
 
 
 class DigestRequest(ToolRequestModel):
@@ -124,13 +111,6 @@ class SearchEmailRequest(ToolRequestModel):
         le=3650,
         description="Optional recency helper in days, translated to newer_than:{N}d.",
     )
-
-
-class ListEmailsRequest(ToolRequestModel):
-    label_id: str = Field(default="INBOX", description="Primary label ID to list messages from.")
-    max_results: int = Field(default=5, ge=1, le=500, description="Maximum messages to return (defaults to 5).")
-    unread_only: bool = Field(default=False, description="When true, only unread messages are returned.")
-    page_token: str | None = Field(default=None, description="Pagination token from previous call.")
 
 
 class ModifyMessageRequest(ToolRequestModel):
@@ -310,21 +290,6 @@ class ModifyThreadRequest(ToolRequestModel):
 
 class ThreadIdRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID.")
-
-
-class ListHistoryRequest(ToolRequestModel):
-    start_history_id: str = Field(description="Start history ID returned by prior Gmail read/list operations.")
-    history_types: list[
-        Literal[
-            "messageAdded",
-            "messageDeleted",
-            "labelAdded",
-            "labelRemoved",
-        ]
-    ] = Field(default_factory=list, description="Optional history event types to include.")
-    label_id: str | None = Field(default=None, description="Optional label ID filter.")
-    max_results: int = Field(default=100, ge=1, le=500, description="Maximum history records to return.")
-    page_token: str | None = Field(default=None, description="Pagination token from previous response.")
 
 
 class ForwardingAddressRequest(ToolRequestModel):

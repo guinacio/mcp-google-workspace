@@ -51,9 +51,9 @@ Follow-up note:
 | # | Tool | Test | Notes |
 |---|------|------|--------|
 | 1 | gmail_list_labels | List all labels | Read-only |
-| 2 | gmail_list_emails | List INBOX, max_results=5 | Read-only |
+| 2 | gmail_search_emails | List INBOX via label_ids, max_results=5 | Read-only |
 | 3 | gmail_search_emails | Search e.g. "unsubscribe", max_results=5 | Find ad-like mail for delete |
-| 4 | gmail_read_email | Get one message by ID from list_emails | Read-only |
+| 4 | gmail_read_emails | Read one or more IDs from search_emails | Read-only |
 | 5 | gmail_send_email | Send to self, confirm_send=False | Use existing address |
 | 6 | gmail_mark_as_read | Mark one message read | Id from list |
 | 7 | gmail_mark_as_unread | Mark same message unread | Id from list |
@@ -66,7 +66,6 @@ Follow-up note:
 | 14 | gmail_update_label | Update label (e.g. name) | If create succeeded |
 | 15 | gmail_delete_label | Delete "QA-test-label" | After create/update |
 | 16 | gmail_apply_labels | Apply label to message | Id + label from above |
-| 17 | gmail_summarize_email | Summarize one message by ID | Sampling tool |
 | 18 | gmail_download_attachment | Download one attachment to temp file | If message with attachment exists |
 | 19 | gmail_list_filters | List all existing Gmail filters | Read-only |
 | 20 | gmail_create_filter | Create filter with criteria+action | Requires label or forward target |
@@ -78,12 +77,11 @@ Follow-up note:
 | 26 | gmail_send_draft | Send draft by id | Optional, side-effectful |
 | 27 | gmail_delete_draft | Delete draft by id | Cleanup |
 | 28 | gmail_list_threads | List threads | Read-only |
-| 29 | gmail_get_thread | Get one thread | Use thread_id from read_email/list_threads |
+| 29 | gmail_get_thread | Get one thread | Use thread_id from read_emails/list_threads |
 | 30 | gmail_modify_thread | Add/remove labels on a thread | Requires label ids |
 | 31 | gmail_trash_thread | Move thread to trash | Then untrash_thread |
 | 32 | gmail_untrash_thread | Restore trashed thread | Cleanup |
 | 33 | gmail_delete_thread | Permanently delete thread | Optional, destructive |
-| 34 | gmail_list_history | List history from startHistoryId | Use history id from message/thread |
 | 35 | gmail_list_forwarding_addresses | List forwarding addresses | Read-only |
 | 36 | gmail_get_forwarding_address | Get one forwarding address | If known address exists |
 | 37 | gmail_create_forwarding_address | Create forwarding address | May require account policy/verification |
@@ -182,7 +180,7 @@ Follow-up note:
 |---|----------------|------|--------|
 | 44 | gmail://inbox/summary | Read resource | Inbox summary |
 | 45 | gmail://labels | Read resource | Labels list |
-| 46 | gmail://email/{message_id} | Read with ID from list_emails | One message |
+| 46 | gmail://email/{message_id} | Read with ID from search_emails | One message |
 | 47 | calendar://today | Read resource | Today events |
 | 48 | calendar://week | Read resource | Week events |
 | 49 | drive://recent | Read resource | Recent Drive files |
@@ -236,7 +234,6 @@ uv run python scripts/qa_run_all_tools.py
 - **Namespaced resources**: Mounted resources use a path prefix (e.g. `gmail://gmail/inbox/summary`, `calendar://calendar/today`).
 - **Expected failures** (environment-dependent):
   - **Chat**: All `chat_*` tools and `chat://chat/*` resources fail with 404 if the Google Chat API / Chat app is not enabled and configured in the project.
-  - **gmail_summarize_email**: Fails with "Client does not support sampling" unless the client provides a `sampling_handler`.
   - **gmail_move_email / gmail_batch_modify**: May return 400 if messages are invalid (e.g. already trashed) or label state is inconsistent.
   - **Forwarding create/delete**: May fail due to Gmail policy, verification state, or workspace admin restrictions.
   - **Vacation update**: Mutating settings requires scope/consent and should be tested with rollback.

@@ -48,7 +48,7 @@ const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
   getDashboard: ["apps_get_dashboard", "get_dashboard"],
   getWeeklyCalendar: ["apps_get_weekly_calendar_view", "get_weekly_calendar_view"],
   getEventDetail: ["apps_get_event_detail", "get_event_detail"],
-  getEmailDetail: ["apps_get_email_detail", "get_email_detail", "gmail_read_email", "read_email"],
+  getEmailDetail: ["apps_get_email_detail", "get_email_detail"],
   getEmailAttachment: ["apps_get_email_attachment", "get_email_attachment"],
   respondToEvent: ["apps_respond_to_event", "respond_to_event"],
   rescheduleMeeting: ["apps_reschedule_meeting", "reschedule_meeting"],

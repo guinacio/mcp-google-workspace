@@ -76,7 +76,7 @@ def test_workspace_tools_include_safety_annotations() -> None:
 
     assert tools
     assert all(tool.annotations is not None for tool in tools.values())
-    assert tools["gmail_read_email"].annotations.readOnlyHint is True
+    assert tools["gmail_read_emails"].annotations.readOnlyHint is True
     assert tools["gmail_send_email"].annotations.readOnlyHint is False
     assert tools["gmail_send_email"].annotations.idempotentHint is False
     assert tools["drive_delete_file"].annotations.destructiveHint is True

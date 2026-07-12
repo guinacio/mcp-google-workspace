@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
+from googleapiclient.errors import HttpError
 
 from ...common.async_ops import execute_google_request, require_elicitation_context
 from ...common.timezone import resolve_user_timezone
@@ -23,7 +24,7 @@ from ..schemas import (
     AttachmentInput,
     DeleteMessageRequest,
     ModifyMessageRequest,
-    ReadEmailRequest,
+    ReadEmailsRequest,
     SendEmailRequest,
 )
 
@@ -121,53 +122,63 @@ def register(server: FastMCP) -> None:
             "label_ids": sent.get("labelIds", []),
         }
 
-    @server.tool(name="read_email")
-    async def read_email(
-        message_id: str,
+    @server.tool(name="read_emails")
+    async def read_emails(
+        message_ids: list[str],
         format: Literal["metadata", "preview", "clean", "full"] = "clean",
         offset: int = 0,
-        summary_mode: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Fetch one Gmail message; clean text is the default, full raw HTML is opt-in."""
-        request = ReadEmailRequest(
-            message_id=message_id, format=format, offset=offset, summary_mode=summary_mode
-        )
+        """Read one to 100 Gmail messages with a consistent, model-friendly detail level."""
+        request = ReadEmailsRequest(message_ids=message_ids, format=format, offset=offset)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Reading message {request.message_id}.")
-        message = await execute_google_request(
-            service.users()
-            .messages()
-            .get(userId="me", id=request.message_id, format="full")
-        )
         account_timezone = await resolve_user_timezone()
-        payload = message.get("payload", {})
-        headers = header_map(payload)
-        output = envelope(message, account_timezone=account_timezone)
-        effective_format = "metadata" if request.summary_mode else request.format
-        attachments = message_attachments(payload)
-
-        if ctx is not None:
-            await ctx.info(f"Parsed MIME structure with {len(attachments)} attachment(s).")
-        output.update({
-            "to": decode_rfc2047(headers.get("to")),
-            "attachments": attachments,
-            "label_ids": message.get("labelIds", []),
-            "history_id": message.get("historyId"),
-            "internal_date": message.get("internalDate"),
-            "format": effective_format,
-        })
-        if effective_format == "metadata":
-            output["bodies_omitted"] = True
-        if effective_format == "preview":
-            output.update(clean_message_content(message, offset=request.offset, limit=1_000))
-        elif effective_format == "clean":
-            output.update(clean_message_content(message, offset=request.offset))
-        elif effective_format == "full":
-            bodies = extract_message_bodies(payload)
-            output.update({"text_body": bodies.get("text"), "html_body": bodies.get("html"), "truncated": False})
-        return output
+        outputs: list[dict[str, Any]] = []
+        missing_message_ids: list[str] = []
+        for index, message_id in enumerate(request.message_ids, start=1):
+            try:
+                message = await execute_google_request(
+                    service.users().messages().get(userId="me", id=message_id, format="full")
+                )
+            except HttpError as exc:
+                if getattr(exc.resp, "status", None) != 404:
+                    raise
+                missing_message_ids.append(message_id)
+                continue
+            payload = message.get("payload", {})
+            headers = header_map(payload)
+            output = envelope(message, account_timezone=account_timezone)
+            output.update({
+                "to": decode_rfc2047(headers.get("to")),
+                "attachments": message_attachments(payload),
+                "label_ids": message.get("labelIds", []),
+                "history_id": message.get("historyId"),
+                "internal_date": message.get("internalDate"),
+                "format": request.format,
+            })
+            if request.format == "metadata":
+                output["bodies_omitted"] = True
+            elif request.format == "preview":
+                output.update(clean_message_content(message, offset=request.offset, limit=1_000))
+            elif request.format == "clean":
+                output.update(clean_message_content(message, offset=request.offset))
+            elif request.format == "full":
+                bodies = extract_message_bodies(payload)
+                output.update({
+                    "text_body": bodies.get("text"),
+                    "html_body": bodies.get("html"),
+                    "truncated": False,
+                })
+            outputs.append(output)
+            if ctx is not None:
+                await ctx.report_progress(index, len(request.message_ids), "Messages loaded")
+        return {
+            "messages": outputs,
+            "format": request.format,
+            "missing_count": len(missing_message_ids),
+            "missing_message_ids": missing_message_ids,
+            "account_timezone": account_timezone,
+        }
 
     @server.tool(name="mark_as_read")
     async def mark_as_read(message_id: str, ctx: Context) -> dict[str, Any]:

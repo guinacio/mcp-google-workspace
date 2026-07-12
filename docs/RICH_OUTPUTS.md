@@ -4,7 +4,7 @@ Read-oriented tools return compact, action-ready envelopes by default. Raw provi
 
 | Service | List/detail output | Derived value |
 | --- | --- | --- |
-| Gmail | Sender identity, category, clean snippets, unread/attachment/newsletter/automation flags | `digest`, `check_new`, and batched clean reads |
+| Gmail | Sender identity, category, clean snippets, unread/attachment/newsletter/automation flags | `get_mail_digest`, `check_mail_updates`, and `read_emails` |
 | Chat | Person-aware message authors, DM peers, member list, thread and attachment state | Cached People lookups, bounded to 10 concurrent resolutions |
 | Tasks | Title, due date, overdue state, note preview, hierarchy and lifecycle state | `tasks_digest` groups overdue, upcoming, and unscheduled tasks |
 | Drive | File kind, owner/modifier, sharing and lifecycle state, capability flags | No additional per-file requests; parent paths remain IDs to avoid fan-out |

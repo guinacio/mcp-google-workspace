@@ -194,7 +194,7 @@ _NAMESPACE_TAGS = {
 }
 
 _READ_ONLY_TOOLS = {
-    "digest",
+    "get_mail_digest",
     "tasks_digest",
     "upcoming_calendar_digest",
 }

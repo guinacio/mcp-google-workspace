@@ -184,10 +184,9 @@ Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience,
 Gmail (namespaced as `gmail_*` in composed server):
 
 - `send_email`
-- `read_email`
-- `search_emails`
-- `list_emails`
-- `get_emails`, `digest`, `check_new` (compact mailbox triage and incremental heartbeat)
+- `search_emails` (compact metadata-first inbox listing and Gmail query surface)
+- `read_emails` (consistent one-to-100 message hydration with selectable detail level)
+- `get_mail_digest`, `check_mail_updates` (curated triage and cursor-based incremental heartbeat)
 - `list_labels`, `create_label`, `update_label`, `delete_label`, `apply_labels`
 - `list_attachments`, `download_attachment`
 - `mark_as_read`, `mark_as_unread`, `move_email`, `delete_email`
@@ -196,10 +195,8 @@ Gmail (namespaced as `gmail_*` in composed server):
 - `list_filters`, `create_filter`, `delete_filter`
 - Drafts: `list_drafts`, `get_draft`, `create_draft`, `update_draft`, `delete_draft`, `send_draft`
 - Threads: `list_threads`, `get_thread` (clean latest message by default), `modify_thread`, `trash_thread`, `untrash_thread`, `delete_thread`
-- `list_history`
 - Forwarding addresses: `list_forwarding_addresses`, `get_forwarding_address`, `create_forwarding_address`, `delete_forwarding_address`
 - Vacation settings: `get_vacation_settings`, `update_vacation_settings`
-- `summarize_email` (sampling-powered)
 
 Calendar (namespaced as `calendar_*`):
 
@@ -473,11 +470,10 @@ Tools that emit progress:
 
 ### Sampling
 
-Several tools use MCP sampling (`ctx.sample()`) to generate LLM-powered summaries within the tool response, using the host client's configured model for inference.
+Optional tools use MCP sampling (`ctx.sample()`) to generate LLM-powered summaries within the tool response, using the host client's configured model for inference.
 
 Sampling-powered tools:
 
-- `gmail_summarize_email` — summarizes an email body in up to 5 bullets
 - `keep_summarize_note` — summarizes a Keep note
 - `chat_summarize_space_messages` — summarizes recent messages in a Chat space
 

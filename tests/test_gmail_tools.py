@@ -18,6 +18,7 @@ from mcp_google_workspace.gmail.presentation import (
 from mcp_google_workspace.gmail.schemas import SendEmailRequest
 from mcp_google_workspace.gmail.server import gmail_mcp
 import mcp_google_workspace.gmail.tools.history as gmail_history
+import mcp_google_workspace.gmail.tools.messages as gmail_messages
 
 
 def test_subject_supports_international_chars():
@@ -198,7 +199,7 @@ class _HistoryService:
         return _HistoryUsers()
 
 
-def test_check_new_skips_deleted_history_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_mail_updates_skips_deleted_history_messages(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_timezone() -> str:
         return "UTC"
 
@@ -236,7 +237,7 @@ def test_check_new_skips_deleted_history_messages(monkeypatch: pytest.MonkeyPatc
     async def scenario() -> dict:
         async with Client(gmail_mcp) as client:
             result = await client.call_tool(
-                "check_new",
+                "check_mail_updates",
                 {"since_history_id": "100", "max_results": 50},
             )
             return result.structured_content or result.data
@@ -248,3 +249,52 @@ def test_check_new_skips_deleted_history_messages(monkeypatch: pytest.MonkeyPatc
     assert result["skipped_deleted_count"] == 1
     assert result["skipped_deleted_message_ids"] == ["deleted"]
     assert result["highlights"][0]["id"] == "available"
+
+
+def test_read_emails_has_one_consistent_batch_shape_and_isolates_missing_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _HistoryRequest) -> dict:
+        if request.message_id == "deleted":
+            raise HttpError(Response({"status": "404"}), b'{"error":{"message":"Not found"}}')
+        return {
+            "id": request.message_id,
+            "threadId": "thread-1",
+            "historyId": "200",
+            "labelIds": ["INBOX"],
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "Sender <sender@example.com>"},
+                    {"name": "To", "value": "me@example.com"},
+                    {"name": "Subject", "value": "Still available"},
+                ]
+            },
+        }
+
+    monkeypatch.setattr(gmail_messages, "gmail_service", _HistoryService)
+    monkeypatch.setattr(gmail_messages, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(gmail_messages, "execute_google_request", fake_execute)
+
+    async def scenario() -> dict:
+        async with Client(gmail_mcp) as client:
+            result = await client.call_tool(
+                "read_emails",
+                {
+                    "message_ids": ["available", "deleted"],
+                    "format": "metadata",
+                },
+            )
+            return result.structured_content or result.data
+
+    result = asyncio.run(scenario())
+
+    assert result["format"] == "metadata"
+    assert result["missing_count"] == 1
+    assert result["missing_message_ids"] == ["deleted"]
+    assert len(result["messages"]) == 1
+    assert result["messages"][0]["id"] == "available"
+    assert result["messages"][0]["to"] == "me@example.com"
+    assert result["messages"][0]["bodies_omitted"] is True

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
-from typing import Any, Literal
+from typing import Any
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
@@ -13,14 +13,13 @@ from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import envelope
-from ..schemas import ListHistoryRequest
 
 LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
-    @server.tool(name="check_new")
-    async def check_new(
+    @server.tool(name="check_mail_updates")
+    async def check_mail_updates(
         since_history_id: str | None = None,
         timestamp: str | None = None,
         max_results: int = 100,
@@ -109,47 +108,4 @@ def register(server: FastMCP) -> None:
             "continue_from_history_id": since_history_id if next_page_token and since_history_id else None,
             "continue_from_timestamp": timestamp if next_page_token and not since_history_id else None,
             "account_timezone": account_timezone,
-        }
-
-    @server.tool(name="list_history")
-    async def list_history(
-        start_history_id: str,
-        history_types: list[
-            Literal["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"]
-        ] | None = None,
-        label_id: str | None = None,
-        max_results: int = 100,
-        page_token: str | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """List mailbox history events starting at a given history ID."""
-        request = ListHistoryRequest(
-            start_history_id=start_history_id,
-            history_types=history_types or [],
-            label_id=label_id,
-            max_results=max_results,
-            page_token=page_token,
-        )
-        service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Listing Gmail history from {request.start_history_id}.")
-        result = await execute_google_request(
-            service.users()
-            .history()
-            .list(
-                userId="me",
-                startHistoryId=request.start_history_id,
-                historyTypes=request.history_types or None,
-                labelId=request.label_id,
-                maxResults=request.max_results,
-                pageToken=request.page_token,
-            )
-        )
-        history = result.get("history", [])
-        if ctx is not None:
-            await ctx.report_progress(len(history), request.max_results, "History page loaded")
-        return {
-            "history": history,
-            "history_id": result.get("historyId"),
-            "next_page_token": result.get("nextPageToken"),
         }

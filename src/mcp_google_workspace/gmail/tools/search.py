@@ -19,7 +19,7 @@ from ..presentation import (
     header_map,
     requires_response,
 )
-from ..schemas import DigestRequest, ListEmailsRequest, SearchEmailRequest
+from ..schemas import DigestRequest, SearchEmailRequest
 
 
 def _build_search_query(request: SearchEmailRequest) -> str | None:
@@ -45,8 +45,8 @@ def _build_search_query(request: SearchEmailRequest) -> str | None:
 
 
 def register(server: FastMCP) -> None:
-    @server.tool(name="digest")
-    async def digest(
+    @server.tool(name="get_mail_digest")
+    async def get_mail_digest(
         window: str = "3d",
         unread_only: bool = False,
         max_items: int = 25,
@@ -151,7 +151,18 @@ def register(server: FastMCP) -> None:
         envelopes = [
             envelope(
                 await execute_google_request(
-                    service.users().messages().get(userId="me", id=item["id"], format="full")
+                    service.users().messages().get(
+                        userId="me",
+                        id=item["id"],
+                        format="full",
+                        fields=(
+                            "id,threadId,labelIds,snippet,internalDate,"
+                            "payload(mimeType,filename,headers,"
+                            "body(attachmentId,size),"
+                            "parts(mimeType,filename,headers,body(attachmentId,size),"
+                            "parts(mimeType,filename,body(attachmentId,size))))"
+                        ),
+                    )
                 ),
                 account_timezone=account_timezone,
             )
@@ -164,58 +175,5 @@ def register(server: FastMCP) -> None:
             "result_size_estimate": result.get("resultSizeEstimate", 0),
             "next_page_token": result.get("nextPageToken"),
             "effective_query": query_str,
-            "account_timezone": account_timezone,
-        }
-
-    @server.tool(name="list_emails")
-    async def list_emails(
-        label_id: str = "INBOX",
-        max_results: int = 5,
-        unread_only: bool = False,
-        page_token: str | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """List messages from a label with optional unread-only filtering."""
-        request = ListEmailsRequest(
-            label_id=label_id,
-            max_results=max_results,
-            unread_only=unread_only,
-            page_token=page_token,
-        )
-        service = gmail_service()
-        account_timezone = await resolve_user_timezone()
-        label_ids = [request.label_id] if request.label_id else []
-        if request.unread_only and "UNREAD" not in label_ids:
-            label_ids.append("UNREAD")
-        if ctx is not None:
-            await ctx.info(
-                f"Listing emails from labels {label_ids or ['INBOX']} (max_results={request.max_results})."
-            )
-        result = await execute_google_request(
-            service.users()
-            .messages()
-            .list(
-                userId="me",
-                labelIds=label_ids or ["INBOX"],
-                maxResults=request.max_results,
-                pageToken=request.page_token,
-            )
-        )
-        messages = result.get("messages", [])
-        envelopes = [
-            envelope(
-                await execute_google_request(
-                    service.users().messages().get(userId="me", id=item["id"], format="full")
-                ),
-                account_timezone=account_timezone,
-            )
-            for item in messages
-        ]
-        if ctx is not None:
-            await ctx.report_progress(len(messages), request.max_results, "Messages listed")
-        return {
-            "messages": envelopes,
-            "next_page_token": result.get("nextPageToken"),
-            "result_size_estimate": result.get("resultSizeEstimate", 0),
             "account_timezone": account_timezone,
         }

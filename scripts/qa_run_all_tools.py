@@ -81,14 +81,13 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
 
     # ---- Gmail (read-only first) ----
     tools.append(("gmail_list_labels", {}))
-    tools.append(("gmail_list_emails", {"label_id": "INBOX", "max_results": 5}))
+    tools.append(("gmail_search_emails", {"label_ids": ["INBOX"], "max_results": 5}))
     tools.append(("gmail_search_emails", {"query": "unsubscribe", "max_results": 5}))
 
-    # Gmail read one (after we have message_ids from list or search)
-    # gmail_read_email: needs one_message_id (set after list_emails)
+    # Gmail read one or more (after we have message_ids from search)
     # gmail_send_email: optional; use confirm_send=False
     # send_email omitted to avoid sending real email (would need recipients.to)
-    tools.append(("gmail_read_email", None))  # filled from state
+    tools.append(("gmail_read_emails", None))  # filled from state
     tools.append(("gmail_create_label", {"name": "QA-test-label"}))
     tools.append(("gmail_list_filters", {}))
     tools.append(("gmail_create_filter", None))  # requires existing/created label id
@@ -105,7 +104,6 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
     tools.append(("gmail_modify_thread", None))  # thread_id + labels
     tools.append(("gmail_trash_thread", None))  # thread_id
     tools.append(("gmail_untrash_thread", None))  # thread_id
-    tools.append(("gmail_list_history", None))  # start_history_id
     tools.append(("gmail_list_forwarding_addresses", {}))
     tools.append(("gmail_get_vacation_settings", {}))
     if ENABLE_VACATION_UPDATE:
@@ -127,7 +125,6 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
     tools.append(("gmail_apply_labels", None))  # message_id + label_id (before delete_label)
     tools.append(("gmail_update_label", None))  # label_id from state, name
     tools.append(("gmail_delete_label", None))  # label_id
-    tools.append(("gmail_summarize_email", None))  # message_id (sampling - may need handler)
 
     # ---- Calendar ----
     tools.append(("calendar_list_calendars", {}))
@@ -201,7 +198,7 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
             continue
         # Tools with (request: PydanticModel, ctx) need args under "request"; others take flat args
         flat_tools = {
-            "gmail_mark_as_read", "gmail_mark_as_unread", "gmail_summarize_email",
+            "gmail_mark_as_read", "gmail_mark_as_unread",
             "gmail_list_forwarding_addresses", "gmail_get_vacation_settings",
         }
         payload = args if (name in flat_tools or not args) else {"request": args}
@@ -214,8 +211,8 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
 
 
 def _tool_args(name: str, state: dict) -> dict | None:
-    if name == "gmail_read_email" and state.get("one_message_id"):
-        return {"message_id": state["one_message_id"]}
+    if name == "gmail_read_emails" and state.get("one_message_id"):
+        return {"message_ids": [state["one_message_id"]], "format": "clean"}
     if name == "gmail_mark_as_read" and state.get("one_message_id"):
         return {"message_id": state["one_message_id"]}
     if name == "gmail_mark_as_unread" and state.get("one_message_id"):
@@ -249,8 +246,6 @@ def _tool_args(name: str, state: dict) -> dict | None:
         return {"label_id": state["label_id"]}
     if name == "gmail_apply_labels" and state.get("one_message_id") and state.get("label_id"):
         return {"message_id": state["one_message_id"], "add_label_ids": [state["label_id"]], "remove_label_ids": []}
-    if name == "gmail_summarize_email" and state.get("one_message_id"):
-        return {"message_id": state["one_message_id"]}
     if name == "gmail_create_filter":
         label_id = state.get("label_id") or state.get("existing_label_id")
         if label_id:
@@ -291,8 +286,6 @@ def _tool_args(name: str, state: dict) -> dict | None:
         return {"thread_id": state["thread_id"]}
     if name == "gmail_untrash_thread" and state.get("thread_id"):
         return {"thread_id": state["thread_id"]}
-    if name == "gmail_list_history" and state.get("history_id"):
-        return {"start_history_id": state["history_id"], "max_results": 10}
     if name == "gmail_update_vacation_settings":
         vac = state.get("vacation_settings") or {}
         return {
@@ -432,13 +425,13 @@ def _update_state(name: str, args: dict, out: object, state: dict) -> None:
         data = _get_data(out)
         if not data:
             return
-        if name == "gmail_list_emails" and "messages" in data and data["messages"]:
+        if name == "gmail_search_emails" and "messages" in data and data["messages"]:
             state["message_ids"] = [m["id"] for m in data["messages"]]
             state["one_message_id"] = state["message_ids"][0]
             # Reuse first known thread id for thread tool coverage.
             first = data["messages"][0]
             if isinstance(first, dict):
-                state["thread_id"] = first.get("threadId") or state["thread_id"]
+                state["thread_id"] = first.get("thread_id") or state["thread_id"]
         if name == "gmail_list_labels" and "labels" in data:
             labels = data.get("labels") or []
             existing_user_labels = [
@@ -449,9 +442,11 @@ def _update_state(name: str, args: dict, out: object, state: dict) -> None:
                 state["existing_label_id"] = existing_user_labels[0]["id"]
         if name == "gmail_search_emails" and "messages" in data:
             state["search_message_ids"] = [m["id"] for m in data["messages"]]
-        if name == "gmail_read_email":
-            state["thread_id"] = data.get("thread_id") or state.get("thread_id")
-            state["history_id"] = data.get("history_id") or state.get("history_id")
+        if name == "gmail_read_emails":
+            messages = data.get("messages") or []
+            first = messages[0] if messages and isinstance(messages[0], dict) else {}
+            state["thread_id"] = first.get("thread_id") or state.get("thread_id")
+            state["history_id"] = first.get("history_id") or state.get("history_id")
         if name == "gmail_create_label" and "label" in data:
             lab = data["label"]
             state["label_id"] = lab.get("id") if isinstance(lab, dict) else getattr(lab, "id", None)
