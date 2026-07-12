@@ -80,6 +80,43 @@ def test_detail_tool_output_schemas_accept_complete_ui_payloads() -> None:
     )
 
 
+def test_weekly_tool_output_schema_accepts_complete_ui_payload() -> None:
+    apply_default_tool_annotations(apps_mcp)
+
+    async def schemas():
+        tools = await apps_mcp.list_tools(run_middleware=False)
+        return {tool.name: tool.output_schema for tool in tools}
+
+    published = anyio.run(schemas)
+    payload = {
+        "state": {
+            "session_id": "session-1",
+            "view": "week",
+            "anchor_date": "2026-07-06",
+            "timezone": "America/Sao_Paulo",
+            "include_weekend": True,
+            "selected_calendars": [],
+            "selected_email_labels": ["INBOX"],
+        },
+        "week_start": "2026-07-06",
+        "week_end": "2026-07-12",
+        "timezone": "America/Sao_Paulo",
+        "total_events": 1,
+        "days": [
+            {
+                "date": "2026-07-06",
+                "label": "Mon 6",
+                "is_today": False,
+                "events": [],
+            }
+        ],
+        "fallback_text": "1 event from July 6 through July 12.",
+    }
+
+    assert published["get_weekly_calendar_view"]["properties"]["total_events"]["type"] == "integer"
+    validate(payload, published["get_weekly_calendar_view"])
+
+
 async def _client_session_state_scenario() -> tuple[dict, dict, dict, dict]:
     async with Client(apps_mcp) as client:
         await client.call_tool(
@@ -140,7 +177,24 @@ async def fake_weekly_payload_with_progress(
         weekly_state = weekly_state.model_copy(update={"anchor_date": date_override})
     if include_weekend_override is not None:
         weekly_state = weekly_state.model_copy(update={"include_weekend": include_weekend_override})
-    return {"state": weekly_state.model_dump(mode="json")}
+    visible_days = 7 if weekly_state.include_weekend else 5
+    return {
+        "state": weekly_state.model_dump(mode="json"),
+        "week_start": "2026-03-02",
+        "week_end": "2026-03-08",
+        "timezone": weekly_state.timezone,
+        "total_events": 0,
+        "days": [
+            {
+                "date": f"2026-03-{day:02d}",
+                "label": f"Day {day}",
+                "is_today": False,
+                "events": [],
+            }
+            for day in range(2, 2 + visible_days)
+        ],
+        "fallback_text": "No events this week.",
+    }
 
 
 def fake_dashboard_payload(state: DashboardState) -> dict:
@@ -175,6 +229,65 @@ def test_apps_tools_use_client_session_for_reads(monkeypatch: pytest.MonkeyPatch
     assert weekly_payload["state"]["include_weekend"] is False
     assert final_state["anchor_date"] == "2026-03-05"
     assert final_state["include_weekend"] is True
+
+
+async def _calendar_controls_scenario() -> tuple[dict, dict, dict, dict, dict]:
+    async with Client(apps_mcp) as client:
+        await client.call_tool(
+            "set_state",
+            {
+                "session_id": "ui-controls",
+                "view": "week",
+                "anchor_date": "2026-03-05",
+                "include_weekend": True,
+            },
+        )
+        next_state = await client.call_tool("next_range", {"session_id": "ui-controls"})
+        next_view = await client.call_tool(
+            "get_weekly_calendar_view",
+            {"session_id": "ui-controls"},
+        )
+        previous_state = await client.call_tool("prev_range", {"session_id": "ui-controls"})
+        weekend_state = await client.call_tool(
+            "patch_state",
+            {"session_id": "ui-controls", "include_weekend": False},
+        )
+        weekday_view = await client.call_tool(
+            "get_weekly_calendar_view",
+            {"session_id": "ui-controls"},
+        )
+
+        def as_dict(result) -> dict:
+            if result.structured_content is not None:
+                return result.structured_content
+            data = result.data
+            return data.model_dump(mode="json") if hasattr(data, "model_dump") else data
+
+        return tuple(
+            as_dict(result)
+            for result in (next_state, next_view, previous_state, weekend_state, weekday_view)
+        )
+
+
+def test_calendar_controls_persist_and_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        apps_tools,
+        "build_weekly_calendar_payload_with_progress",
+        fake_weekly_payload_with_progress,
+    )
+
+    next_state, next_view, previous_state, weekend_state, weekday_view = anyio.run(
+        _calendar_controls_scenario
+    )
+
+    assert next_state["anchor_date"] == "2026-03-12"
+    assert next_view["state"]["anchor_date"] == "2026-03-12"
+    assert next_view["total_events"] == 0
+    assert len(next_view["days"]) == 7
+    assert previous_state["anchor_date"] == "2026-03-05"
+    assert weekend_state["include_weekend"] is False
+    assert weekday_view["state"]["include_weekend"] is False
+    assert len(weekday_view["days"]) == 5
 
 
 def test_apps_resources_are_pure_reads(monkeypatch: pytest.MonkeyPatch) -> None:

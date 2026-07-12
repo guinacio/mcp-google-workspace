@@ -95,7 +95,11 @@ def _field_description(name: str) -> str:
 def _named_field_schema(name: str) -> dict[str, Any]:
     schema: dict[str, Any] = {"description": _field_description(name)}
     lowered = name.lower()
-    if lowered in {"count", "total", "totalitems", "totalpeople", "updatedrows", "updatedcolumns", "updatedcells", "width", "height", "bytes_written"} or lowered.endswith("_count"):
+    if (
+        lowered in {"count", "total", "totalitems", "totalpeople", "updatedrows", "updatedcolumns", "updatedcells", "width", "height", "bytes_written"}
+        or lowered.startswith("total_")
+        or lowered.endswith("_count")
+    ):
         schema["type"] = "integer"
     elif lowered.startswith(("has_", "is_")) or lowered in {"connected", "retryable", "truncated", "success"}:
         schema["type"] = "boolean"
