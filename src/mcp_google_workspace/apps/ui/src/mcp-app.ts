@@ -16,8 +16,6 @@ type ToolOperation =
   | "getEmailDetail"
   | "getEmailAttachment"
   | "respondToEvent"
-  | "rescheduleMeeting"
-  | "cancelMeeting"
   | "patchState"
   | "nextRange"
   | "prevRange"
@@ -50,21 +48,14 @@ const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
   getEventDetail: ["apps_get_event_detail", "get_event_detail"],
   getEmailDetail: ["apps_get_email_detail", "get_email_detail"],
   getEmailAttachment: ["apps_get_email_attachment", "get_email_attachment"],
-  respondToEvent: ["apps_respond_to_event", "respond_to_event"],
-  rescheduleMeeting: ["apps_reschedule_meeting", "reschedule_meeting"],
-  cancelMeeting: ["apps_cancel_meeting", "cancel_meeting"],
+  respondToEvent: ["calendar_respond_to_event", "respond_to_event"],
   patchState: ["apps_patch_state", "patch_state"],
   nextRange: ["apps_next_range", "next_range"],
   prevRange: ["apps_prev_range", "prev_range"],
   today: ["apps_today", "today"],
   listCalendars: ["calendar_list_calendars", "list_calendars"],
-  createEvent: [
-    "calendar_create_event",
-    "create_event",
-    "apps_create_meeting_from_slot",
-    "create_meeting_from_slot",
-  ],
-  updateEvent: ["calendar_update_event", "update_event", "apps_reschedule_meeting", "reschedule_meeting"],
+  createEvent: ["calendar_create_event", "create_event"],
+  updateEvent: ["calendar_update_event", "update_event"],
   deleteEvent: ["calendar_delete_event", "delete_event"],
   markEmailRead: ["gmail_mark_as_read", "mark_as_read"],
   markEmailUnread: ["gmail_mark_as_unread", "mark_as_unread"],
@@ -464,47 +455,29 @@ async function initMcpMode() {
           throw new Error("Create event tool is unavailable.");
         }
         const idempotencyKey = makeIdempotencyKey("create");
-        if (createTool.includes("apps_create_meeting_from_slot")) {
-          await app.callServerTool({
-            name: createTool,
-            arguments: {
-              session_id: uiSessionId,
-              calendar_id: draft.calendar_id,
-              title: draft.summary,
-              start: startIso,
-              end: endIso,
-              timezone: draft.timezone,
-              description: draft.description || undefined,
-              attendees,
-              create_conference: draft.create_conference,
-              idempotency_key: idempotencyKey,
-            },
-          });
-        } else {
-          await app.callServerTool({
-            name: createTool,
-            arguments: {
-              calendar_id: draft.calendar_id,
-              summary: draft.summary,
-              start_datetime: startIso,
-              end_datetime: endIso,
-              timezone: draft.timezone,
-              description: draft.description || undefined,
-              location: draft.location || undefined,
-              attendees: attendees.map((email) => ({ email })),
-              conference_data: draft.create_conference
-                ? {
-                    createRequest: {
-                      requestId: idempotencyKey,
-                      conferenceSolutionKey: { type: "hangoutsMeet" },
-                    },
-                  }
-                : undefined,
-              send_updates: "all",
-              on_conflict: "suggest_next_slot",
-            },
-          });
-        }
+        await app.callServerTool({
+          name: createTool,
+          arguments: {
+            calendar_id: draft.calendar_id,
+            summary: draft.summary,
+            start_datetime: startIso,
+            end_datetime: endIso,
+            timezone: draft.timezone,
+            description: draft.description || undefined,
+            location: draft.location || undefined,
+            attendees: attendees.map((email) => ({ email })),
+            conference_data: draft.create_conference
+              ? {
+                  createRequest: {
+                    requestId: idempotencyKey,
+                    conferenceSolutionKey: { type: "hangoutsMeet" },
+                  },
+                }
+              : undefined,
+            send_updates: "all",
+            on_conflict: "suggest_next_slot",
+          },
+        });
         currentData = { ...currentData, event_editor: undefined };
         setUiMessage("Event created.", "notice");
         await refreshWeekly();
@@ -948,7 +921,6 @@ async function initMcpMode() {
           renderCurrent();
           return;
         }
-        const idempotencyKey = makeIdempotencyKey(`rsvp-${action.eventId}-${action.responseStatus}`);
         currentData = optimisticSetRsvp(
           currentData,
           action.calendarId,
@@ -960,11 +932,10 @@ async function initMcpMode() {
           await app.callServerTool({
             name: toolName,
             arguments: {
-              session_id: uiSessionId,
               calendar_id: action.calendarId,
               event_id: action.eventId,
               response_status: action.responseStatus,
-              idempotency_key: idempotencyKey,
+              send_updates: "all",
             },
           });
           await refreshWeekly();
@@ -976,16 +947,14 @@ async function initMcpMode() {
       }
 
       if (action.type === "calendar_reschedule") {
-        const rescheduleTool = resolveTool(toolRegistry, "rescheduleMeeting");
         const updateTool = resolveTool(toolRegistry, "updateEvent");
-        if (!rescheduleTool && !updateTool) {
+        if (!updateTool) {
           setUiMessage("Reschedule tool is unavailable.", "error");
           renderCurrent();
           return;
         }
         const nextStart = shiftIsoMinutes(action.start, action.shiftMinutes);
         const nextEnd = shiftIsoMinutes(action.end, action.shiftMinutes);
-        const idempotencyKey = makeIdempotencyKey(`reschedule-${action.eventId}`);
         currentData = optimisticRescheduleEvent(
           currentData,
           action.calendarId,
@@ -995,33 +964,18 @@ async function initMcpMode() {
         );
         renderCurrent();
         void withUiPending(async () => {
-          if (rescheduleTool) {
-            await app.callServerTool({
-              name: rescheduleTool,
-              arguments: {
-                session_id: uiSessionId,
-                calendar_id: action.calendarId,
-                event_id: action.eventId,
-                start: nextStart,
-                end: nextEnd,
-                timezone: action.timezone,
-                idempotency_key: idempotencyKey,
-              },
-            });
-          } else if (updateTool) {
-            await app.callServerTool({
-              name: updateTool,
-              arguments: {
-                event_id: action.eventId,
-                calendar_id: action.calendarId,
-                start_datetime: nextStart,
-                end_datetime: nextEnd,
-                timezone: action.timezone,
-                send_updates: "all",
-                on_conflict: "suggest_next_slot",
-              },
-            });
-          }
+          await app.callServerTool({
+            name: updateTool,
+            arguments: {
+              event_id: action.eventId,
+              calendar_id: action.calendarId,
+              start_datetime: nextStart,
+              end_datetime: nextEnd,
+              timezone: action.timezone,
+              send_updates: "all",
+              on_conflict: "suggest_next_slot",
+            },
+          });
           await refreshWeekly();
         }).catch((err) => {
           setUiMessage(`Failed to reschedule event: ${String(err)}`, "error");
@@ -1031,39 +985,24 @@ async function initMcpMode() {
       }
 
       if (action.type === "calendar_cancel") {
-        const cancelTool = resolveTool(toolRegistry, "cancelMeeting");
         const deleteTool = resolveTool(toolRegistry, "deleteEvent");
-        if (!cancelTool && !deleteTool) {
+        if (!deleteTool) {
           setUiMessage("Cancel/delete tool is unavailable.", "error");
           renderCurrent();
           return;
         }
-        const idempotencyKey = makeIdempotencyKey(`cancel-${action.eventId}`);
         currentData = optimisticCancelEvent(currentData, action.calendarId, action.eventId);
         renderCurrent();
         void withUiPending(async () => {
-          if (cancelTool) {
-            await app.callServerTool({
-              name: cancelTool,
-              arguments: {
-                session_id: uiSessionId,
-                calendar_id: action.calendarId,
-                event_id: action.eventId,
-                confirm: true,
-                idempotency_key: idempotencyKey,
-              },
-            });
-          } else if (deleteTool) {
-            await app.callServerTool({
-              name: deleteTool,
-              arguments: {
-                calendar_id: action.calendarId,
-                event_id: action.eventId,
-                force: true,
-                send_updates: "all",
-              },
-            });
-          }
+          await app.callServerTool({
+            name: deleteTool,
+            arguments: {
+              calendar_id: action.calendarId,
+              event_id: action.eventId,
+              force: true,
+              send_updates: "all",
+            },
+          });
           await refreshWeekly();
         }).catch((err) => {
           setUiMessage(`Failed to cancel event: ${String(err)}`, "error");
@@ -1708,9 +1647,9 @@ function computeToolCapabilities(registry: ToolRegistry): UiToolCapabilities {
   return {
     can_create_event: has("createEvent"),
     can_edit_event: has("updateEvent"),
-    can_delete_event: has("cancelMeeting") || has("deleteEvent"),
+    can_delete_event: has("deleteEvent"),
     can_rsvp: has("respondToEvent"),
-    can_reschedule_event: has("rescheduleMeeting") || has("updateEvent"),
+    can_reschedule_event: has("updateEvent"),
     can_toggle_weekend: has("patchState"),
     can_select_calendars: has("patchState") && has("listCalendars"),
     can_mark_email_read: has("markEmailRead"),

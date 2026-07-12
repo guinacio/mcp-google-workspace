@@ -200,10 +200,10 @@ Gmail (namespaced as `gmail_*` in composed server):
 
 Calendar (namespaced as `calendar_*`):
 
-- `get_events`, `get_event`, `list_calendars`, `get_timezone_info`, `get_current_date`
-- `check_availability`, `create_event`, `update_event`, `delete_event`
+- `search_events`, `read_events`, `get_calendar_digest`, `list_calendars`, `get_calendar_context`
+- `check_time_availability`, `create_event`, `update_event`, `respond_to_event`, `delete_event`
 - Smart scheduling: `find_common_free_slots`
-- Event attachments: `list_event_attachments`, `add_event_attachment`, `remove_event_attachment`, `download_event_attachment`
+- Event attachments: metadata is included by `read_events`; mutations use `add_event_attachment`, `remove_event_attachment`, `download_event_attachment`
 - Event styling + conferencing fields on create/update: `color_id`, `visibility`, `transparency`, `conference_data`
 - Conflict prevention: create/update run a FreeBusy overlap check and return `status: "CONFLICT"` when slot is not available
 
@@ -282,7 +282,7 @@ Apps (namespaced as `apps_*`, mounted when `ENABLE_APPS_DASHBOARD=true`):
 - Dashboard: `get_dashboard`
 - Weekly calendar layout: `get_weekly_calendar_view` (Google Calendar-like week columns)
 - Detail views: `get_event_detail`, `get_email_detail`, `get_email_attachment`
-- Scheduling actions: `find_meeting_slots`, `create_meeting_from_slot`, `reschedule_meeting`, `cancel_meeting`, `respond_to_event`
+- Calendar mutations are provided only by the core `calendar_*` tools; the App namespace contains view/state tools only.
 
 Keep (namespaced as `keep_*`):
 

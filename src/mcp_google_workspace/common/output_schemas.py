@@ -26,7 +26,7 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
         "attachments", "labels", "is_unread",
     ),
     "list_calendars": ("kind", "etag", "nextPageToken", "nextSyncToken", "items"),
-    "check_availability": ("kind", "timeMin", "timeMax", "groups", "calendars"),
+    "check_time_availability": ("kind", "timeMin", "timeMax", "groups", "calendars"),
     "get_spreadsheet": ("spreadsheetId", "properties", "sheets", "namedRanges", "spreadsheetUrl", "developerMetadata", "dataSources", "dataSourceSchedules"),
     "create_spreadsheet": ("spreadsheetId", "properties", "sheets", "namedRanges", "spreadsheetUrl", "developerMetadata", "dataSources", "dataSourceSchedules"),
     "get_sheet_values": ("range", "majorDimension", "values"),

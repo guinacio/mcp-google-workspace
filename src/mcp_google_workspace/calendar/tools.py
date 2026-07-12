@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 import pytz
 from fastmcp import Context, FastMCP
+from googleapiclient.errors import HttpError
 
 from ..auth import build_calendar_service, build_drive_service
 from ..common.async_ops import (
@@ -30,8 +31,8 @@ from .schemas import (
     CalendarIdInput,
     FindCommonFreeSlotsRequest,
     FreeBusyRequest,
-    GetEventRequest,
-    ListEventAttachmentsRequest,
+    ReadEventsRequest,
+    RespondToEventRequest,
     ListEventsRequest,
     RemoveEventAttachmentRequest,
     UpdateEventRequest,
@@ -81,8 +82,35 @@ def _check_time_slot_conflicts(
     calendar_id: str,
     start_time: str,
     end_time: str,
+    *,
+    exclude_event_id: str | None = None,
 ) -> dict[str, Any]:
     try:
+        if exclude_event_id is not None:
+            result = service.events().list(
+                calendarId=calendar_id,
+                timeMin=start_time,
+                timeMax=end_time,
+                singleEvents=True,
+            ).execute()
+            conflicts = [
+                {
+                    "id": event.get("id"),
+                    "summary": event.get("summary"),
+                    "start": event.get("start"),
+                    "end": event.get("end"),
+                }
+                for event in result.get("items", [])
+                if event.get("id") != exclude_event_id
+                and event.get("recurringEventId") != exclude_event_id
+                and event.get("status") != "cancelled"
+                and event.get("transparency") != "transparent"
+            ]
+            return {
+                "has_conflicts": bool(conflicts),
+                "conflicts": conflicts,
+                "error": None,
+            }
         result = service.freebusy().query(
             body={
                 "timeMin": start_time,
@@ -274,8 +302,8 @@ def _apply_working_hours(
 
 
 def register_tools(server: FastMCP) -> None:
-    @server.tool(name="get_events")
-    async def get_events(
+    @server.tool(name="search_events")
+    async def search_events(
         calendar_id: str = "primary",
         time_min: str | None = None,
         time_max: str | None = None,
@@ -332,38 +360,64 @@ def register_tools(server: FastMCP) -> None:
             "effective_time_max": effective_time_max,
         }
 
-    @server.tool(name="get_event")
-    async def get_event(
-        event_id: str,
+    @server.tool(name="read_events")
+    async def read_events(
+        event_ids: list[str],
         calendar_id: str = "primary",
         time_zone: str | None = None,
         max_attendees: int | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Fetch a single event by ID for deterministic state verification."""
-        request = GetEventRequest(
+        """Read one to 100 events with full scheduling and attachment details."""
+        request = ReadEventsRequest(
             calendar_id=calendar_id,
-            event_id=event_id,
+            event_ids=event_ids,
             time_zone=time_zone,
             max_attendees=max_attendees,
         )
         service = build_calendar_service()
-        if ctx is not None:
-            await ctx.info(f"Reading event {request.event_id}.")
         effective_time_zone = request.time_zone or await resolve_user_timezone()
-        event = await execute_google_request(
-            service.events()
-            .get(
-                calendarId=request.calendar_id,
-                eventId=request.event_id,
-                timeZone=effective_time_zone,
-                maxAttendees=request.max_attendees,
+        events: list[dict[str, Any]] = []
+        missing_event_ids: list[str] = []
+        for index, event_id in enumerate(request.event_ids, start=1):
+            try:
+                event = await execute_google_request(
+                    service.events().get(
+                        calendarId=request.calendar_id,
+                        eventId=event_id,
+                        timeZone=effective_time_zone,
+                        maxAttendees=request.max_attendees,
+                    )
+                )
+            except HttpError as exc:
+                if getattr(exc.resp, "status", None) != 404:
+                    raise
+                missing_event_ids.append(event_id)
+                continue
+            detail = event_envelope(event, account_timezone=effective_time_zone)
+            detail.update(
+                {
+                    "description": event.get("description"),
+                    "attendees": event.get("attendees", []),
+                    "attachments": event.get("attachments", []),
+                    "recurrence": event.get("recurrence", []),
+                    "visibility": event.get("visibility"),
+                    "transparency": event.get("transparency"),
+                }
             )
-        )
-        return {"event": event_envelope(event, account_timezone=effective_time_zone)}
+            events.append(detail)
+            if ctx is not None:
+                await ctx.report_progress(index, len(request.event_ids), "Events loaded")
+        return {
+            "events": events,
+            "missing_count": len(missing_event_ids),
+            "missing_event_ids": missing_event_ids,
+            "calendar_id": request.calendar_id,
+            "account_timezone": effective_time_zone,
+        }
 
-    @server.tool(name="upcoming_calendar_digest")
-    async def upcoming_calendar_digest(days: int = 7, max_results: int = 50) -> dict[str, Any]:
+    @server.tool(name="get_calendar_digest")
+    async def get_calendar_digest(days: int = 7, max_results: int = 50) -> dict[str, Any]:
         """Return upcoming events and those needing the user's RSVP in one call."""
         service = build_calendar_service()
         user_timezone = await resolve_user_timezone()
@@ -396,23 +450,9 @@ def register_tools(server: FastMCP) -> None:
         service = build_calendar_service()
         return await execute_google_request(service.calendarList().list())
 
-    @server.tool(name="get_timezone_info")
-    async def get_timezone_info() -> dict[str, Any]:
-        """Return user's calendar timezone and current localized time details."""
-        user_tz = await resolve_user_timezone()
-        now_local = user_now(user_tz)
-        now_utc = now_local.astimezone(pytz.UTC)
-        return {
-            "timezone": user_tz,
-            "current_utc_time": now_utc.isoformat(),
-            "current_local_time": now_local.isoformat(),
-            "utc_offset": now_local.strftime("%z"),
-            "timezone_name": now_local.tzname(),
-        }
-
-    @server.tool(name="get_current_date")
-    async def get_current_date() -> dict[str, Any]:
-        """Return current date/time using the account's calendar timezone."""
+    @server.tool(name="get_calendar_context")
+    async def get_calendar_context() -> dict[str, Any]:
+        """Return the account timezone and current local/UTC calendar context."""
         user_tz = await resolve_user_timezone()
         now_local = user_now(user_tz)
         now_utc = now_local.astimezone(pytz.UTC)
@@ -421,17 +461,21 @@ def register_tools(server: FastMCP) -> None:
             "current_time": now_local.strftime("%H:%M:%S"),
             "timezone": user_tz,
             "day_of_week": now_local.strftime("%A"),
+            "current_local_time": now_local.isoformat(),
+            "current_utc_time": now_utc.isoformat(),
             "utc_datetime": now_utc.isoformat(),
+            "utc_offset": now_local.strftime("%z"),
+            "timezone_name": now_local.tzname(),
         }
 
-    @server.tool(name="check_availability")
-    async def check_availability(
+    @server.tool(name="check_time_availability")
+    async def check_time_availability(
         time_min: str,
         time_max: str,
         items: list[CalendarIdInput],
         time_zone: str | None = None,
     ) -> dict[str, Any]:
-        """Run a FreeBusy query for one or more calendars."""
+        """Check whether known start/end times are free for the specified calendars."""
         request = FreeBusyRequest(
             timeMin=time_min,
             timeMax=time_max,
@@ -769,6 +813,7 @@ def register_tools(server: FastMCP) -> None:
                 request.calendar_id,
                 patch_data["start"]["dateTime"],
                 patch_data["end"]["dateTime"],
+                exclude_event_id=request.event_id,
             )
             if conflict_check["has_conflicts"]:
                 response: dict[str, Any] = {
@@ -801,26 +846,54 @@ def register_tools(server: FastMCP) -> None:
         )
         return {"success": True, "event": event}
 
-    @server.tool(name="list_event_attachments")
-    async def list_event_attachments(
+    @server.tool(name="respond_to_event")
+    async def respond_to_event(
         event_id: str,
+        response_status: Literal["accepted", "tentative", "declined"],
         calendar_id: str = "primary",
+        send_updates: Literal["all", "externalOnly", "none"] | None = "all",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List attachment metadata from a specific calendar event."""
-        request = ListEventAttachmentsRequest(
+        """Set the authenticated attendee's RSVP response for an event."""
+        request = RespondToEventRequest(
             calendar_id=calendar_id,
             event_id=event_id,
+            response_status=response_status,
+            send_updates=send_updates,
         )
         service = build_calendar_service()
-        if ctx is not None:
-            await ctx.info(f"Listing attachments for event {request.event_id}.")
         event = await execute_google_request(
-            service.events()
-            .get(calendarId=request.calendar_id, eventId=request.event_id)
+            service.events().get(
+                calendarId=request.calendar_id,
+                eventId=request.event_id,
+            )
         )
-        attachments = event.get("attachments", [])
-        return {"calendar_id": request.calendar_id, "event_id": request.event_id, "attachments": attachments}
+        attendees = list(event.get("attendees", []))
+        self_attendee = next(
+            (attendee for attendee in attendees if attendee.get("self")),
+            None,
+        )
+        if self_attendee is None:
+            raise ValueError(
+                "The authenticated account is not an attendee of this event and cannot RSVP."
+            )
+        self_attendee["responseStatus"] = request.response_status
+        updated = await execute_google_request(
+            service.events().patch(
+                calendarId=request.calendar_id,
+                eventId=request.event_id,
+                body={"attendees": attendees},
+                sendUpdates=request.send_updates,
+            )
+        )
+        if ctx is not None:
+            await ctx.info(f"RSVP updated to {request.response_status}.")
+        return {
+            "success": True,
+            "event_id": request.event_id,
+            "response_status": request.response_status,
+            "event": updated,
+        }
 
     @server.tool(name="add_event_attachment")
     async def add_event_attachment(
@@ -1028,13 +1101,14 @@ def register_tools(server: FastMCP) -> None:
             send_updates=send_updates,
             force=force,
         )
-        confirm_ctx = require_elicitation_context(ctx, "delete_event")
-        response = await confirm_ctx.elicit(
-            f"Delete event {request.event_id} from calendar {request.calendar_id}?",
-            response_type=bool,  # type: ignore[arg-type]
-        )
-        if response.action != "accept" or not bool(response.data):
-            return {"status": "cancelled"}
+        if not request.force:
+            confirm_ctx = require_elicitation_context(ctx, "delete_event")
+            response = await confirm_ctx.elicit(
+                f"Delete event {request.event_id} from calendar {request.calendar_id}?",
+                response_type=bool,  # type: ignore[arg-type]
+            )
+            if response.action != "accept" or not bool(response.data):
+                return {"status": "cancelled"}
         service = build_calendar_service()
         await execute_google_request(
             service.events().delete(

@@ -6,7 +6,7 @@ import datetime as dt
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from ..common.request_model import ToolRequestModel
 
@@ -164,95 +164,3 @@ class AppError(BaseModel):
     message: str
     retryable: bool = False
     details: dict[str, Any] = Field(default_factory=dict)
-
-
-class FindMeetingSlotsRequest(ToolRequestModel):
-    participants: list[str] = Field(default_factory=lambda: ["primary"], description="Calendar IDs/emails to include in availability intersection.")
-    time_min: str = Field(description="RFC3339 start datetime for search window.")
-    time_max: str = Field(description="RFC3339 end datetime for search window.")
-    slot_duration_minutes: int = Field(
-        default=30,
-        ge=5,
-        le=480,
-        description="Desired meeting slot duration in minutes.",
-    )
-    granularity_minutes: int = Field(default=15, ge=5, le=240, description="Step size between candidate slot starts in minutes.")
-    max_results: int = Field(default=10, ge=1, le=100, description="Maximum number of slot suggestions to return.")
-    time_zone: str | None = Field(default=None, description="IANA timezone for rendering/normalizing slots; defaults to the account timezone.")
-    working_hours_start: str = Field(default="08:00", description="Daily working-hours start in HH:MM 24h format.")
-    working_hours_end: str = Field(default="17:00", description="Daily working-hours end in HH:MM 24h format.")
-
-    @field_validator("working_hours_start", "working_hours_end")
-    @classmethod
-    def _validate_hhmm(cls, value: str) -> str:
-        if len(value) != 5 or value[2] != ":":
-            raise ValueError("must be HH:MM format")
-        hours, minutes = value.split(":")
-        if not (hours.isdigit() and minutes.isdigit()):
-            raise ValueError("must be HH:MM format")
-        hh = int(hours)
-        mm = int(minutes)
-        if hh < 0 or hh > 23 or mm < 0 or mm > 59:
-            raise ValueError("must be valid 24h time")
-        return value
-
-
-class GetEventDetailRequest(ToolRequestModel):
-    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
-    calendar_id: str = Field(default="primary", description="Calendar id containing the event.")
-    event_id: str = Field(description="Event identifier.")
-
-
-class GetEmailDetailRequest(ToolRequestModel):
-    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
-    message_id: str = Field(description="Gmail message id.")
-
-
-class CreateMeetingFromSlotRequest(ToolRequestModel):
-    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
-    calendar_id: str = Field(default="primary", description="Target calendar ID.")
-    title: str = Field(description="Meeting title/summary.")
-    start: str = Field(description="RFC3339 start datetime.")
-    end: str = Field(description="RFC3339 end datetime.")
-    timezone: str | None = Field(default=None, description="IANA timezone for start/end rendering; defaults to the account timezone.")
-    description: str | None = Field(default=None, description="Optional meeting description.")
-    attendees: list[str] = Field(default_factory=list, description="Attendee email list.")
-    create_conference: bool = Field(default=True, description="Whether to request conference data (e.g., Meet).")
-    idempotency_key: str = Field(description="Stable key to prevent duplicate creates on retry.")
-
-
-class RescheduleMeetingRequest(ToolRequestModel):
-    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
-    calendar_id: str = Field(default="primary", description="Target calendar ID.")
-    event_id: str = Field(description="Existing calendar event ID to reschedule.")
-    start: str = Field(description="New RFC3339 start datetime.")
-    end: str = Field(description="New RFC3339 end datetime.")
-    timezone: str | None = Field(default=None, description="IANA timezone for start/end rendering; defaults to the account timezone.")
-    idempotency_key: str = Field(description="Stable key to prevent duplicate reschedules on retry.")
-
-
-class CancelMeetingRequest(ToolRequestModel):
-    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
-    calendar_id: str = Field(default="primary", description="Target calendar ID.")
-    event_id: str = Field(description="Existing calendar event ID to cancel.")
-    confirm: bool = Field(default=False, description="Interactive confirmation flag for destructive action.")
-    send_updates: str | None = Field(default=None, description="Guest update mode (all, externalOnly, none).")
-    idempotency_key: str = Field(description="Stable key to prevent duplicate cancels on retry.")
-
-
-class RespondToEventRequest(ToolRequestModel):
-    session_id: str | None = Field(default=None, description="Optional apps session ID for state continuity.")
-    calendar_id: str = Field(default="primary", description="Target calendar ID.")
-    event_id: str = Field(description="Existing calendar event ID to update RSVP for.")
-    response_status: Literal["accepted", "tentative", "declined"] = Field(
-        description="Your attendee response to set on the event."
-    )
-    send_updates: str | None = Field(default="all", description="Guest update mode (all, externalOnly, none).")
-    idempotency_key: str = Field(description="Stable key to prevent duplicate RSVP updates on retry.")
-
-
-class AppActionResult(BaseModel):
-    status: Literal["ok", "cancelled", "conflict", "error"]
-    message: str
-    event_id: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)

@@ -65,7 +65,7 @@ def test_workspace_startup_does_not_fetch_google_credentials(monkeypatch) -> Non
     tools = anyio.run(_list_workspace_tools_via_client)
 
     assert "gmail_send_email" in tools
-    assert "calendar_get_events" in tools
+    assert "calendar_search_events" in tools
     assert "drive_list_files" in tools
     assert "sheets_get_spreadsheet" in tools
     assert "docs_get_document" in tools
@@ -80,7 +80,7 @@ def test_workspace_tools_include_safety_annotations() -> None:
     assert tools["gmail_send_email"].annotations.readOnlyHint is False
     assert tools["gmail_send_email"].annotations.idempotentHint is False
     assert tools["drive_delete_file"].annotations.destructiveHint is True
-    assert tools["calendar_get_current_date"].annotations.openWorldHint is False
+    assert tools["calendar_get_calendar_context"].annotations.openWorldHint is False
     assert tools["sheets_get_spreadsheet"].annotations.readOnlyHint is True
     assert tools["tasks_delete_task"].annotations.destructiveHint is True
     assert tools["drive_list_files"].title == "Drive List Files"
@@ -234,5 +234,5 @@ def test_apps_tools_preserve_ui_metadata_and_local_hints() -> None:
     assert tools["get_dashboard"].annotations.readOnlyHint is True
     assert tools["set_state"].annotations.openWorldHint is False
     assert tools["set_state"].annotations.idempotentHint is True
-    assert tools["cancel_meeting"].annotations.destructiveHint is True
+    assert "respond_to_event" not in tools
     assert _meta(tools["get_dashboard"]) == {"ui": {"resourceUri": "ui://apps/dashboard-ui"}}

@@ -33,7 +33,17 @@ def test_composition_mounts_default_namespaces(monkeypatch):
     assert "gmail_get_emails" not in tool_names
     assert "gmail_summarize_email" not in tool_names
     assert "gmail_list_history" not in tool_names
-    assert "calendar_get_events" in tool_names
+    assert "calendar_search_events" in tool_names
+    assert "calendar_read_events" in tool_names
+    assert "calendar_get_calendar_digest" in tool_names
+    assert "calendar_get_calendar_context" in tool_names
+    assert "calendar_check_time_availability" in tool_names
+    assert "calendar_find_common_free_slots" in tool_names
+    assert "calendar_respond_to_event" in tool_names
+    assert "calendar_get_events" not in tool_names
+    assert "calendar_get_event" not in tool_names
+    assert "calendar_check_availability" not in tool_names
+    assert "calendar_list_event_attachments" not in tool_names
     assert "drive_list_files" in tool_names
     assert "sheets_get_spreadsheet" in tool_names
     assert "docs_get_document" in tool_names

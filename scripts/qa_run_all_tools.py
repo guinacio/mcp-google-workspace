@@ -128,13 +128,11 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
 
     # ---- Calendar ----
     tools.append(("calendar_list_calendars", {}))
-    tools.append(("calendar_get_events", {"calendar_id": "primary", "max_results": 10}))
-    tools.append(("calendar_get_event", None))  # event_id from state
-    tools.append(("calendar_list_event_attachments", None))  # event_id from state
-    tools.append(("calendar_get_timezone_info", {}))
-    tools.append(("calendar_get_current_date", {}))
-    # check_availability needs timeMin, timeMax, items
-    tools.append(("calendar_check_availability", {
+    tools.append(("calendar_search_events", {"calendar_id": "primary", "max_results": 10}))
+    tools.append(("calendar_read_events", None))  # event_id from state
+    tools.append(("calendar_get_calendar_context", {}))
+    # check_time_availability needs timeMin, timeMax, items
+    tools.append(("calendar_check_time_availability", {
         "timeMin": _now_iso(0),
         "timeMax": _now_iso(24),
         "items": [{"id": "primary"}],
@@ -306,10 +304,8 @@ def _tool_args(name: str, state: dict) -> dict | None:
         return {"forwarding_email": state["forwarding_email"]}
     if name == "calendar_update_event" and state.get("event_id"):
         return {"event_id": state["event_id"], "summary": "QA test event updated"}
-    if name == "calendar_get_event" and state.get("event_id"):
-        return {"event_id": state["event_id"]}
-    if name == "calendar_list_event_attachments" and state.get("event_id"):
-        return {"event_id": state["event_id"]}
+    if name == "calendar_read_events" and state.get("event_id"):
+        return {"event_ids": [state["event_id"]]}
     if name == "calendar_delete_event" and state.get("event_id"):
         return {"event_id": state["event_id"], "force": True}
     if name == "drive_upload_file":

@@ -42,9 +42,8 @@ _NAMESPACES = {
 }
 
 _LOCAL_ONLY_TOOLS = {
-    "get_current_date",
+    "get_calendar_context",
     "get_state",
-    "get_timezone_info",
     "next_range",
     "patch_state",
     "prev_range",
@@ -117,14 +116,12 @@ _DESTRUCTIVE_PREFIXES = (
 _DESTRUCTIVE_TOOLS = {
     "archive_note",
     "batch_delete",
-    "cancel_meeting",
     "end_active_conference",
 }
 
 _IDEMPOTENT_TOOLS = {
     "apply_labels",
     "archive_note",
-    "cancel_meeting",
     "complete_task",
     "hide_drive",
     "mark_as_not_spam",
@@ -135,7 +132,6 @@ _IDEMPOTENT_TOOLS = {
     "patch_state",
     "replace_document_text",
     "replace_text_in_presentation",
-    "reschedule_meeting",
     "respond_to_event",
     "set_form_publish_settings",
     "set_state",
@@ -196,7 +192,7 @@ _NAMESPACE_TAGS = {
 _READ_ONLY_TOOLS = {
     "get_mail_digest",
     "tasks_digest",
-    "upcoming_calendar_digest",
+    "get_calendar_digest",
 }
 
 _EXTRA_TOOL_TAGS = {
@@ -216,8 +212,7 @@ _ACTION_OBJECT_FALLBACKS = {
 }
 
 _SPECIAL_TOOL_DESCRIPTIONS = {
-    "get_current_date": "Get the current date and time in the user's configured calendar timezone.",
-    "get_timezone_info": "Get the user's calendar timezone and localized current time details.",
+    "get_calendar_context": "Get the user's calendar timezone and current local/UTC date-time context.",
     "mark_as_not_spam": "Mark the Gmail message as not spam and optionally return it to the inbox.",
     "mark_as_read": "Mark the Gmail message as read.",
     "mark_as_spam": "Mark the Gmail message as spam.",

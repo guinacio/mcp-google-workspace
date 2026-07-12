@@ -129,11 +129,6 @@ UPLOAD_BYTES = Gauge(
 UPLOAD_CLEANUPS = Counter(
     "mcp_workspace_upload_cleanup_total", "Expired upload objects cleaned", ("backend",)
 )
-IDEMPOTENCY_EVENTS = Counter(
-    "mcp_workspace_idempotency_events_total", "Idempotency claim events", ("event", "backend")
-)
-
-
 class _Window:
     def __init__(self) -> None:
         self.timestamps: deque[float] = deque()

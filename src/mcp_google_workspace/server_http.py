@@ -51,10 +51,11 @@ def configure_remote_tool_search() -> None:
                 "apps_get_event_detail",
                 "apps_get_email_detail",
                 "apps_get_email_attachment",
-                "apps_respond_to_event",
-                "apps_reschedule_meeting",
-                "apps_cancel_meeting",
-                "apps_create_meeting_from_slot",
+                "calendar_list_calendars",
+                "calendar_create_event",
+                "calendar_update_event",
+                "calendar_respond_to_event",
+                "calendar_delete_event",
             ]
         )
     workspace_mcp.add_transform(BM25SearchTransform(max_results=8, always_visible=always_visible))

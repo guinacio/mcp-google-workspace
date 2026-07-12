@@ -52,8 +52,8 @@ async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, s
         "apps_get_dashboard",
         "apps_get_weekly_calendar_view",
         "apps_get_morning_briefing",
-        "apps_find_meeting_slots",
-        "apps_respond_to_event",
+        "calendar_find_common_free_slots",
+        "calendar_respond_to_event",
     }
     missing = sorted(required_tools - tool_names)
     checks.append(("tools:required_apps_tools_present", not missing, "" if not missing else str(missing)))
@@ -94,22 +94,20 @@ async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, s
     end = start + timedelta(hours=8)
     slots = _extract_data(
         await client.call_tool(
-            "apps_find_meeting_slots",
+            "calendar_find_common_free_slots",
             {
-                "request": {
-                    "participants": ["primary"],
-                    "time_min": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "time_max": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "slot_duration_minutes": 30,
-                    "granularity_minutes": 15,
-                    "max_results": 3,
-                    "time_zone": "UTC",
-                }
+                "participants": ["primary"],
+                "time_min": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "time_max": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "slot_duration_minutes": 30,
+                "granularity_minutes": 15,
+                "max_results": 3,
+                "time_zone": "UTC",
             },
         )
     )
     ok, msg = _is_ok_response(slots, ["participants", "suggested_slots", "total_suggestions"])
-    checks.append(("tool:apps_find_meeting_slots", ok, msg))
+    checks.append(("tool:calendar_find_common_free_slots", ok, msg))
 
     today_ymd = date.today().isoformat()
     resources = [

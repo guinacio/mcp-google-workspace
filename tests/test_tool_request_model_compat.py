@@ -3,8 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from mcp_google_workspace.apps.schemas import FindMeetingSlotsRequest
-from mcp_google_workspace.calendar.schemas import ListEventsRequest
+from mcp_google_workspace.calendar.schemas import FindCommonFreeSlotsRequest, ListEventsRequest
 from mcp_google_workspace.drive.schemas import CreateFolderRequest
 from mcp_google_workspace.gmail.schemas import SearchEmailRequest
 
@@ -27,7 +26,7 @@ def test_collection_fields_reject_string_coercions() -> None:
 
 def test_unknown_legacy_aliases_are_forbidden() -> None:
     with pytest.raises(ValidationError):
-        FindMeetingSlotsRequest.model_validate({
+        FindCommonFreeSlotsRequest.model_validate({
             "participants": ["primary"],
             "time_min": "2026-03-02T12:00:00Z",
             "time_max": "2026-03-02T20:00:00Z",

@@ -21,7 +21,7 @@ Scope executed with live API calls and attendee invite target `guilherme.inacio@
 - [x] Mutation behavior
   - [x] partial update (single field)
   - [x] update with attendees/reminders/recurrence
-  - [x] verify persisted fields (validated in focused rerun with `calendar_get_event`)
+  - [x] verify persisted fields (validated in focused rerun with `calendar_read_events`)
 - [x] Error-path coverage
   - [x] invalid calendar ID (expected 404)
   - [x] malformed datetime (expected 400)
@@ -42,7 +42,7 @@ Failure detail:
 
 Follow-up note:
 - Additional check found Calendar API rejects `orderBy=startTime` when `singleEvents=false` (`invalid orderBy` for that query). If we need recurring-master verification, the tool should conditionally omit `orderBy` for `singleEvents=false`.
-- Focused mutation persistence rerun succeeded on 2026-03-01 using create -> update -> `calendar_get_event` verification (summary/description/attendees/reminders/recurrence all persisted).
+- Focused mutation persistence rerun succeeded on 2026-03-01 using create -> update -> `calendar_read_events` verification (summary/description/attendees/reminders/recurrence all persisted).
 
 ---
 
@@ -99,15 +99,13 @@ Follow-up note:
 | # | Tool | Test | Notes |
 |---|------|------|--------|
 | 22 | calendar_list_calendars | List calendars | Read-only |
-| 23 | calendar_get_events | List primary, next 7 days, max 10 | Read-only |
-| 23a | calendar_get_event | Get one event by event_id | Deterministic verification for mutation |
-| 23b | calendar_list_event_attachments | List attachments on one event | Read-only metadata |
+| 23 | calendar_search_events | List primary, next 7 days, max 10 | Read-only |
+| 23a | calendar_read_events | Read one or more events including attachments | Deterministic verification for mutation |
 | 23c | calendar_add_event_attachment | Add one attachment by fileUrl | Requires valid Drive-style file URL + supportsAttachments |
 | 23d | calendar_remove_event_attachment | Remove attachment by fileUrl/fileId | Cleanup |
 | 23e | calendar_download_event_attachment | Download/export attached file to local path | Uses Drive API; Google-native docs are exported (e.g. PDF) |
-| 24 | calendar_get_timezone_info | Get timezone info | Read-only |
-| 25 | calendar_get_current_date | Get current date | Read-only |
-| 26 | calendar_check_availability | FreeBusy for primary, 1-day window | Read-only |
+| 24 | calendar_get_calendar_context | Get timezone and local/UTC date-time context | Read-only |
+| 26 | calendar_check_time_availability | Fixed-slot FreeBusy check for primary | Read-only |
 | 27 | calendar_create_event | Create "QA test event" 1h from now | Then delete with force=True |
 | 28 | calendar_update_event | Update event summary/description | Use event from create |
 | 29 | calendar_delete_event | Delete QA test event, force=True | After create |
@@ -212,7 +210,7 @@ Follow-up note:
 ## Execution order (for script)
 
 1. Auth once (lifespan / get_credentials).
-2. Read-only tools first (list_*, get_*, search_*, check_availability).
+2. Read-only tools first (list_*, get_*, search_*, check_time_availability).
 3. Create resources (create_event, create_note, create_message, create_label, create_folder/upload_file if desired).
 4. Update tools (update_event, update_message, update_label, move_email, apply_labels, drive metadata/content updates).
 5. Resource reads (all URIs above).

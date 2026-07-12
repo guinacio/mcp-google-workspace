@@ -55,11 +55,27 @@ class ListEventsRequest(ToolRequestModel):
     }
 
 
-class GetEventRequest(ToolRequestModel):
+class ReadEventsRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
-    event_id: str = Field(description="Calendar event ID to fetch.")
+    event_ids: list[str] = Field(
+        min_length=1,
+        max_length=100,
+        description="One to 100 event IDs from the same calendar to read in detail.",
+    )
     time_zone: str | None = Field(default=None, description="Optional timezone for response rendering.")
     max_attendees: int | None = Field(default=None, ge=1, description="Optional attendee cap in response payload.")
+
+
+class RespondToEventRequest(ToolRequestModel):
+    calendar_id: str = Field(default="primary", description="Calendar containing the event.")
+    event_id: str = Field(description="Event whose attendee response should be updated.")
+    response_status: Literal["accepted", "tentative", "declined"] = Field(
+        description="Response to set for the authenticated attendee."
+    )
+    send_updates: Literal["all", "externalOnly", "none"] | None = Field(
+        default="all",
+        description="Guest notification mode.",
+    )
 
 
 class EventAttachmentInput(ToolRequestModel):
@@ -249,11 +265,6 @@ class FindCommonFreeSlotsRequest(ToolRequestModel):
         pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
         description="Daily working-hours end in HH:MM (24h). Default is 17:00.",
     )
-
-class ListEventAttachmentsRequest(ToolRequestModel):
-    calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
-    event_id: str = Field(description="Event ID whose attachments should be listed.")
-
 
 class AddEventAttachmentRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
