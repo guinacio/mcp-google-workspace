@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
+from googleapiclient.errors import HttpError
 
 from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import envelope
 from ..schemas import ListHistoryRequest
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
@@ -68,15 +72,27 @@ def register(server: FastMCP) -> None:
             ids = [item["id"] for item in listed.get("messages", [])]
             next_page_token = listed.get("nextPageToken")
             next_history_id = profile.get("historyId") if not next_page_token else None
-        messages = [
-            envelope(
-                await execute_google_request(
+        messages: list[dict[str, Any]] = []
+        skipped_deleted_message_ids: list[str] = []
+        for message_id in ids:
+            try:
+                message = await execute_google_request(
                     service.users().messages().get(userId="me", id=message_id, format="full")
-                ),
-                account_timezone=account_timezone,
-            )
-            for message_id in ids
-        ]
+                )
+            except HttpError as exc:
+                if getattr(exc.resp, "status", None) != 404:
+                    raise
+                skipped_deleted_message_ids.append(message_id)
+                LOGGER.info(
+                    "gmail_history_message_missing message_id=%s outcome=skipped",
+                    message_id,
+                )
+                if ctx is not None:
+                    await ctx.warning(
+                        f"Skipped deleted Gmail message {message_id} while reading mailbox history."
+                    )
+                continue
+            messages.append(envelope(message, account_timezone=account_timezone))
         counts: dict[str, int] = {}
         for item in messages:
             category = item["category"] or "uncategorized"
@@ -84,6 +100,8 @@ def register(server: FastMCP) -> None:
         highlights = [item for item in messages if not item["is_newsletter"] and not item["is_automated"]]
         return {
             "new_count": len(messages),
+            "skipped_deleted_count": len(skipped_deleted_message_ids),
+            "skipped_deleted_message_ids": skipped_deleted_message_ids,
             "counts_by_category": counts,
             "highlights": highlights,
             "next_history_id": next_history_id,

@@ -2,6 +2,9 @@ import asyncio
 import base64
 
 import pytest
+from fastmcp import Client
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
 from mcp_google_workspace.common.async_ops import execute_google_request
 from mcp_google_workspace.gmail.mime_utils import build_email_message, encode_subject, extract_message_bodies
@@ -13,6 +16,8 @@ from mcp_google_workspace.gmail.presentation import (
     requires_response,
 )
 from mcp_google_workspace.gmail.schemas import SendEmailRequest
+from mcp_google_workspace.gmail.server import gmail_mcp
+import mcp_google_workspace.gmail.tools.history as gmail_history
 
 
 def test_subject_supports_international_chars():
@@ -162,3 +167,84 @@ def test_github_notification_mail_is_automated_even_with_a_personal_display_name
 
     assert result["from"]["name"] == "Guilherme Inácio"
     assert result["is_automated"] is True
+
+
+class _HistoryRequest:
+    def __init__(self, kind: str, message_id: str | None = None) -> None:
+        self.kind = kind
+        self.message_id = message_id
+
+
+class _HistoryMessages:
+    def get(self, *, userId: str, id: str, format: str) -> _HistoryRequest:
+        return _HistoryRequest("message", id)
+
+
+class _HistoryList:
+    def list(self, **kwargs) -> _HistoryRequest:
+        return _HistoryRequest("history")
+
+
+class _HistoryUsers:
+    def history(self) -> _HistoryList:
+        return _HistoryList()
+
+    def messages(self) -> _HistoryMessages:
+        return _HistoryMessages()
+
+
+class _HistoryService:
+    def users(self) -> _HistoryUsers:
+        return _HistoryUsers()
+
+
+def test_check_new_skips_deleted_history_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _HistoryRequest) -> dict:
+        if request.kind == "history":
+            return {
+                "historyId": "200",
+                "history": [
+                    {
+                        "messagesAdded": [
+                            {"message": {"id": "deleted"}},
+                            {"message": {"id": "available"}},
+                        ]
+                    }
+                ],
+            }
+        if request.message_id == "deleted":
+            raise HttpError(Response({"status": "404"}), b'{"error":{"message":"Not found"}}')
+        return {
+            "id": "available",
+            "threadId": "thread-1",
+            "labelIds": ["INBOX"],
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "Sender <sender@example.com>"},
+                    {"name": "Subject", "value": "Still available"},
+                ]
+            },
+        }
+
+    monkeypatch.setattr(gmail_history, "gmail_service", _HistoryService)
+    monkeypatch.setattr(gmail_history, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(gmail_history, "execute_google_request", fake_execute)
+
+    async def scenario() -> dict:
+        async with Client(gmail_mcp) as client:
+            result = await client.call_tool(
+                "check_new",
+                {"since_history_id": "100", "max_results": 50},
+            )
+            return result.structured_content or result.data
+
+    result = asyncio.run(scenario())
+
+    assert result["new_count"] == 1
+    assert result["next_history_id"] == "200"
+    assert result["skipped_deleted_count"] == 1
+    assert result["skipped_deleted_message_ids"] == ["deleted"]
+    assert result["highlights"][0]["id"] == "available"
