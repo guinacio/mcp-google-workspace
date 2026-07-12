@@ -7,6 +7,9 @@ import time
 from pathlib import Path
 
 import pytest
+import anyio
+from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
 
 import mcp_google_workspace.auth.google_auth as google_auth
 import mcp_google_workspace.bundle_entry as bundle_entry
@@ -127,6 +130,39 @@ def test_bundle_entry_script_bootstrap_supports_file_execution() -> None:
 
     assert result.returncode == 2
     assert "Invalid MCP Google Workspace runtime configuration" in result.stderr
+
+
+async def _call_picker_over_bundle_stdio(tmp_path: Path):
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["UV_CACHE_DIR"] = str(tmp_path / "uv-cache")
+    transport = StdioTransport(
+        command="uv",
+        args=["run", "src/mcp_google_workspace/bundle_entry.py"],
+        cwd=str(ROOT),
+        env=env,
+        keep_alive=False,
+        log_file=tmp_path / "bundle-stderr.log",
+    )
+    async with Client(transport) as client:
+        tools = await client.list_tools()
+        names = {tool.name for tool in tools}
+        picker = next(tool for tool in tools if tool.name == "files_file_manager")
+        uri = picker.meta["ui"]["resourceUri"]
+        contents = await client.read_resource(uri)
+        result = await client.call_tool("files_file_manager", {})
+    return names, picker.meta, uri, contents, result
+
+
+def test_bundle_stdio_lists_and_calls_prefab_file_manager(tmp_path) -> None:
+    names, meta, uri, contents, result = anyio.run(
+        _call_picker_over_bundle_stdio, tmp_path
+    )
+
+    assert "files_file_manager" in names
+    assert meta["ui/resourceUri"] == uri
+    assert contents[0].mimeType == "text/html;profile=mcp-app"
+    assert result.is_error is False
 
 
 def test_google_service_builder_uses_runtime_timeout_and_retry(monkeypatch) -> None:

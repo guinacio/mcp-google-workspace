@@ -23,6 +23,7 @@ from cryptography.fernet import InvalidToken
 from fastmcp import Context
 from fastmcp.apps.file_upload import FileUpload
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.providers.addressing import hashed_resource_uri
 from mcp.types import ToolAnnotations
 
 from .auth.identity import current_principal
@@ -385,6 +386,11 @@ class WorkspaceFileUpload(FileUpload):
                 idempotentHint=component.name != "store_files",
                 openWorldHint=False,
             )
+            if component.name == "file_manager":
+                component.meta = {
+                    **(component.meta or {}),
+                    "ui/resourceUri": hashed_resource_uri(self.name, component.name),
+                }
             properties = component.parameters.get("properties", {})
             if "name" in properties:
                 properties["name"].setdefault(
@@ -394,6 +400,7 @@ class WorkspaceFileUpload(FileUpload):
             if component.name in {"list_files", "store_files"}:
                 component.output_schema = {
                     "type": "object",
+                    "x-fastmcp-wrap-result": True,
                     "properties": {
                         "result": {
                             "type": "array",
@@ -406,6 +413,10 @@ class WorkspaceFileUpload(FileUpload):
                                     "size": {"type": "integer"},
                                     "size_display": {"type": "string"},
                                     "uploaded_at": {"type": "string"},
+                                    "upload_id": {"type": "string"},
+                                    "display_name": {"type": "string"},
+                                    "checksum_sha256": {"type": "string"},
+                                    "expires_at": {"type": "integer"},
                                 },
                                 "required": ["name", "type", "size", "size_display", "uploaded_at"],
                                 "additionalProperties": False,

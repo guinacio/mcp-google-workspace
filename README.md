@@ -409,7 +409,7 @@ These features depend on active MCP client support and may be silently unavailab
 
 ### MCP Apps File Picker
 
-The composed server always exposes `files_file_manager`, a Prefab/FastMCP MCP App with drag-and-drop and native file selection. It is intended for hosted clients such as Claude where a server-local path is not useful and sending binary data through the model context is wasteful.
+The composed server exposes `files_file_manager`, built with FastMCP Prefab and delivered through the standard MCP Apps wire protocol. Its model-visible tool references a generated `ui://prefab/tool/.../renderer.html` resource served as `text/html;profile=mcp-app`; the rendered app provides drag-and-drop and native file selection. It is intended for hosted clients such as Claude where a server-local path is not useful and sending binary data through the model context is wasteful.
 
 Typical flow:
 

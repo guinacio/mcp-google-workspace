@@ -5,7 +5,10 @@ from email import policy
 from email.parser import BytesParser
 
 import pytest
+import anyio
 from cryptography.fernet import Fernet
+from fastmcp import Client
+from fastmcp.server.providers.addressing import hash_tool
 from pydantic import ValidationError
 
 from mcp_google_workspace.auth.identity import Principal
@@ -19,11 +22,60 @@ from mcp_google_workspace.common.errors import RecoverableToolError
 from mcp_google_workspace.gmail.mime_utils import build_email_message
 from mcp_google_workspace.gmail.schemas import AttachmentInput
 from mcp_google_workspace.gemini.schemas import AnalyzeAudioRequest
+from mcp_google_workspace.server import workspace_mcp
 
 
 class _Context:
     def __init__(self, session_id: str) -> None:
         self.session_id = session_id
+
+
+async def _file_picker_contract():
+    async with Client(workspace_mcp) as client:
+        tools = await client.list_tools()
+        picker = next(tool for tool in tools if tool.name == "files_file_manager")
+        assert picker.annotations is not None
+        uri = picker.meta["ui"]["resourceUri"]
+        resources = await client.list_resources()
+        contents = await client.read_resource(uri)
+        entry = await client.call_tool("files_file_manager", {})
+        backend = await client.call_tool(
+            f"{hash_tool('Workspace Files', 'store_files')}_store_files",
+            {"files": []},
+        )
+    return {tool.name: tool for tool in tools}, uri, resources, contents, entry, backend
+
+
+def test_file_picker_uses_the_standard_mcp_apps_contract() -> None:
+    tools, uri, resources, contents, entry, backend = anyio.run(_file_picker_contract)
+
+    picker = tools["files_file_manager"]
+    assert picker.annotations is not None
+    assert uri.startswith("ui://prefab/tool/")
+    assert uri.endswith("/renderer.html")
+    assert picker.meta["ui"]["visibility"] == ["model"]
+    assert picker.meta["ui/resourceUri"] == uri
+
+    resource = next(item for item in resources if str(item.uri) == uri)
+    assert resource.mimeType == "text/html;profile=mcp-app"
+    assert contents
+    assert "prefab" in contents[0].text.lower()
+    assert entry.is_error is False
+    assert backend.is_error is False
+
+    # Backend storage is callable from the app through its hashed address but
+    # remains hidden from the model-visible catalog.
+    assert "files_store_files" not in tools
+
+
+def test_file_tool_schema_describes_remote_upload_handles() -> None:
+    tools, _, _, _, _, _ = anyio.run(_file_picker_contract)
+    item_properties = tools["files_list_files"].outputSchema["properties"]["result"][
+        "items"
+    ]["properties"]
+    assert {"upload_id", "display_name", "checksum_sha256", "expires_at"} <= set(
+        item_properties
+    )
 
 
 def test_uploaded_files_are_isolated_by_principal_and_session(monkeypatch) -> None:
