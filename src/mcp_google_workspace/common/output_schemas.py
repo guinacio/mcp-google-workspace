@@ -14,6 +14,17 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
     "commit_workspace_action": ("status", "tool", "result"),
     "get_dashboard": ("title", "generated_at_utc", "state", "sections", "warnings", "section_errors", "weekly_calendar"),
     "get_weekly_calendar_view": ("state", "week_start", "week_end", "timezone", "total_events", "days", "fallback_text"),
+    "get_event_detail": (
+        "event_id", "calendar_id", "title", "start", "end", "timezone", "status",
+        "location", "description", "conference_link", "conference_provider",
+        "organizer_email", "organizer_name", "self_response_status", "attendees",
+        "attachments",
+    ),
+    "get_email_detail": (
+        "message_id", "thread_id", "subject", "from_value", "to", "cc", "bcc",
+        "date", "date_timezone", "source_date", "snippet", "text_body", "html_body",
+        "attachments", "labels", "is_unread",
+    ),
     "list_calendars": ("kind", "etag", "nextPageToken", "nextSyncToken", "items"),
     "check_availability": ("kind", "timeMin", "timeMax", "groups", "calendars"),
     "get_spreadsheet": ("spreadsheetId", "properties", "sheets", "namedRanges", "spreadsheetUrl", "developerMetadata", "dataSources", "dataSourceSchedules"),

@@ -6,12 +6,14 @@ from datetime import date
 import anyio
 import pytest
 from fastmcp import Client
+from jsonschema import validate
 
 import mcp_google_workspace.apps.resources as apps_resources
 import mcp_google_workspace.apps.tools as apps_tools
 from mcp_google_workspace.apps import state as apps_state
 from mcp_google_workspace.apps.schemas import DashboardState
 from mcp_google_workspace.apps.server import apps_mcp
+from mcp_google_workspace.common.component_annotations import apply_default_tool_annotations
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +26,58 @@ def clear_apps_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(apps_resources, "resolve_user_timezone", fake_resolve_user_timezone)
     yield
     apps_state._STATE_BY_SESSION.clear()
+
+
+def test_detail_tool_output_schemas_accept_complete_ui_payloads() -> None:
+    apply_default_tool_annotations(apps_mcp)
+
+    async def schemas():
+        tools = await apps_mcp.list_tools(run_middleware=False)
+        return {tool.name: tool.output_schema for tool in tools}
+
+    published = anyio.run(schemas)
+    validate(
+        {
+            "message_id": "message-1",
+            "thread_id": "thread-1",
+            "subject": "Subject",
+            "from_value": "Sender <sender@example.com>",
+            "to": "me@example.com",
+            "cc": None,
+            "bcc": None,
+            "date": "2026-07-11T20:00:00Z",
+            "date_timezone": "America/Sao_Paulo",
+            "source_date": "Fri, 11 Jul 2026 20:00:00 +0000",
+            "snippet": "Preview",
+            "text_body": "Complete body",
+            "html_body": None,
+            "attachments": [],
+            "labels": ["INBOX"],
+            "is_unread": False,
+        },
+        published["get_email_detail"],
+    )
+    validate(
+        {
+            "event_id": "event-1",
+            "calendar_id": "primary",
+            "title": "Planning",
+            "start": "2026-07-11T20:00:00Z",
+            "end": "2026-07-11T20:30:00Z",
+            "timezone": "America/Sao_Paulo",
+            "status": "confirmed",
+            "location": None,
+            "description": "Agenda",
+            "conference_link": None,
+            "conference_provider": None,
+            "organizer_email": "owner@example.com",
+            "organizer_name": "Owner",
+            "self_response_status": "accepted",
+            "attendees": [],
+            "attachments": [],
+        },
+        published["get_event_detail"],
+    )
 
 
 async def _client_session_state_scenario() -> tuple[dict, dict, dict, dict]:
