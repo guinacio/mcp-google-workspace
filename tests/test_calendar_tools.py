@@ -5,7 +5,11 @@ from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 import mcp_google_workspace.calendar.tools as calendar_tools
-from mcp_google_workspace.calendar.tools import _check_time_slot_conflicts, _validate_and_fix_datetime
+from mcp_google_workspace.calendar.tools import (
+    _check_time_slot_conflicts,
+    _idempotent_event_id,
+    _validate_and_fix_datetime,
+)
 from mcp_google_workspace.calendar.presentation import event_envelope
 from mcp_google_workspace.calendar.server import calendar_mcp
 
@@ -20,6 +24,15 @@ def test_validate_and_fix_datetime_date_only():
     result = _validate_and_fix_datetime("2026-02-28", "UTC")
     assert result is not None
     assert "T00:00:00" in result
+
+
+def test_idempotent_event_id_is_stable_and_google_calendar_safe() -> None:
+    first = _idempotent_event_id("create-123")
+
+    assert first == _idempotent_event_id("create-123")
+    assert first != _idempotent_event_id("create-456")
+    assert len(first) >= 5
+    assert set(first) <= set("0123456789abcdefghijklmnopqrstuv")
 
 
 def test_event_envelope_surfaces_rsvp_and_meeting_link():

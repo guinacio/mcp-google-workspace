@@ -279,6 +279,7 @@ async function initMcpMode() {
     const uiSessionId = getOrCreateSessionId();
     const makeIdempotencyKey = (prefix: string) =>
       `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let eventSaveInFlight = false;
 
     const shiftIsoMinutes = (iso: string, minutes: number): string => {
       const dt = new Date(iso);
@@ -459,6 +460,7 @@ async function initMcpMode() {
           name: createTool,
           arguments: {
             calendar_id: draft.calendar_id,
+            idempotency_key: idempotencyKey,
             summary: draft.summary,
             start_datetime: startIso,
             end_datetime: endIso,
@@ -696,12 +698,20 @@ async function initMcpMode() {
       }
 
       if (action.type === "save_event_editor") {
+        if (eventSaveInFlight) {
+          return;
+        }
+        eventSaveInFlight = true;
         void withUiPending(async () => {
           await saveEventEditor(action.draft);
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to save event: ${String(err)}`, "error");
-          renderCurrent();
-        });
+        })
+          .catch((err: unknown) => {
+            setUiMessage(`Failed to save event: ${String(err)}`, "error");
+            renderCurrent();
+          })
+          .finally(() => {
+            eventSaveInFlight = false;
+          });
         return;
       }
 

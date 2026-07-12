@@ -100,6 +100,12 @@ class EventAttachmentInput(ToolRequestModel):
 
 class CreateEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
+    idempotency_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        description="Stable key that makes retried event creation return the original event.",
+    )
     summary: str = Field(description="Event title/summary.")
     start_datetime: str = Field(description="Event start datetime in RFC3339 or ISO format.")
     end_datetime: str = Field(description="Event end datetime in RFC3339 or ISO format.")

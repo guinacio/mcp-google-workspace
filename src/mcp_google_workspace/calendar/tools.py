@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -75,6 +76,11 @@ def _extract_drive_file_id(file_url: str | None) -> str | None:
     if match:
         return match.group(1)
     return None
+
+
+def _idempotent_event_id(key: str) -> str:
+    """Build a valid deterministic Google Calendar event ID from an opaque key."""
+    return f"mcp{sha256(key.encode('utf-8')).hexdigest()}"
 
 
 def _check_time_slot_conflicts(
@@ -612,6 +618,7 @@ def register_tools(server: FastMCP) -> None:
         start_datetime: str,
         end_datetime: str,
         calendar_id: str = "primary",
+        idempotency_key: str | None = None,
         timezone: str | None = None,
         description: str | None = None,
         location: str | None = None,
@@ -631,6 +638,7 @@ def register_tools(server: FastMCP) -> None:
         """Create a calendar event with optional attendees, reminders, and recurrence."""
         request = CreateEventRequest(
             calendar_id=calendar_id,
+            idempotency_key=idempotency_key,
             summary=summary,
             start_datetime=start_datetime,
             end_datetime=end_datetime,
@@ -662,6 +670,27 @@ def register_tools(server: FastMCP) -> None:
             "start": {"dateTime": start, "timeZone": timezone_val},
             "end": {"dateTime": end, "timeZone": timezone_val},
         }
+        deterministic_event_id = (
+            _idempotent_event_id(request.idempotency_key)
+            if request.idempotency_key
+            else None
+        )
+        if deterministic_event_id is not None:
+            body["id"] = deterministic_event_id
+            body["extendedProperties"] = {
+                "private": {"mcpIdempotencyKey": request.idempotency_key}
+            }
+            try:
+                existing = await run_blocking(
+                    service.events().get(
+                        calendarId=request.calendar_id,
+                        eventId=deterministic_event_id,
+                    ).execute
+                )
+                return {"success": True, "event": existing, "deduplicated": True}
+            except HttpError as exc:
+                if getattr(exc.resp, "status", None) != 404:
+                    raise
         if request.description:
             body["description"] = request.description
         if request.location:
@@ -707,17 +736,28 @@ def register_tools(server: FastMCP) -> None:
             return response
         if ctx is not None:
             await ctx.info(f"Creating event '{request.summary}'.")
-        event = await execute_google_request(
-            service.events()
-            .insert(
-                calendarId=request.calendar_id,
-                body=body,
-                sendUpdates=request.send_updates,
-                supportsAttachments=request.supports_attachments,
-                conferenceDataVersion=1 if body.get("conferenceData") else 0,
+        try:
+            event = await execute_google_request(
+                service.events()
+                .insert(
+                    calendarId=request.calendar_id,
+                    body=body,
+                    sendUpdates=request.send_updates,
+                    supportsAttachments=request.supports_attachments,
+                    conferenceDataVersion=1 if body.get("conferenceData") else 0,
+                )
             )
-        )
-        return {"success": True, "event": event}
+            return {"success": True, "event": event, "deduplicated": False}
+        except HttpError as exc:
+            if deterministic_event_id is None or getattr(exc.resp, "status", None) != 409:
+                raise
+            existing = await execute_google_request(
+                service.events().get(
+                    calendarId=request.calendar_id,
+                    eventId=deterministic_event_id,
+                )
+            )
+            return {"success": True, "event": existing, "deduplicated": True}
 
     @server.tool(name="update_event")
     async def update_event(

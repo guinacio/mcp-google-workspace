@@ -206,6 +206,7 @@ Calendar (namespaced as `calendar_*`):
 - Event attachments: metadata is included by `read_events`; mutations use `add_event_attachment`, `remove_event_attachment`, `download_event_attachment`
 - Event styling + conferencing fields on create/update: `color_id`, `visibility`, `transparency`, `conference_data`
 - Conflict prevention: create/update run overlap checks and return `status: "CONFLICT"` when the slot is unavailable; updates exclude the event being moved
+- Retry safety: pass a stable `idempotency_key` to `create_event`; the App does this automatically and Google Calendar stores a deterministic event ID
 
 ### Calendar availability tools
 
