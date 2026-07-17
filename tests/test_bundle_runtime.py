@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import pytest
+from fastmcp.server.providers.addressing import hash_tool
+import anyio
+from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
 
 import mcp_google_workspace.auth.google_auth as google_auth
 import mcp_google_workspace.bundle_entry as bundle_entry
@@ -83,6 +88,7 @@ def test_bundle_entry_runs_workspace_over_stdio(monkeypatch) -> None:
         "run",
         lambda transport, **kwargs: calls.append(f"{transport}:{kwargs.get('show_banner')}"),
     )
+    monkeypatch.setattr(bundle_entry, "configure_tool_search", lambda _server: False)
 
     bundle_entry.main()
 
@@ -127,6 +133,47 @@ def test_bundle_entry_script_bootstrap_supports_file_execution() -> None:
 
     assert result.returncode == 2
     assert "Invalid MCP Google Workspace runtime configuration" in result.stderr
+
+
+async def _call_picker_over_bundle_stdio(tmp_path: Path):
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["UV_CACHE_DIR"] = str(tmp_path / "uv-cache")
+    transport = StdioTransport(
+        command="uv",
+        args=["run", "src/mcp_google_workspace/bundle_entry.py"],
+        cwd=str(ROOT),
+        env=env,
+        keep_alive=False,
+        log_file=tmp_path / "bundle-stderr.log",
+    )
+    async with Client(transport) as client:
+        tools = await client.list_tools()
+        names = {tool.name for tool in tools}
+        picker = next(tool for tool in tools if tool.name == "files_file_manager")
+        uri = picker.meta["ui"]["resourceUri"]
+        contents = await client.read_resource(uri)
+        result = await client.call_tool("files_file_manager", {})
+        action_tool = f"{hash_tool('Workspace Files', 'store_files')}_store_files"
+        backend = await client.call_tool(action_tool, {"files": []})
+        diagnostics = await client.call_tool("get_mcp_apps_diagnostics", {})
+    return names, picker.meta, uri, contents, result, action_tool, backend, diagnostics
+
+
+def test_bundle_stdio_lists_and_calls_prefab_file_manager(tmp_path) -> None:
+    names, meta, uri, contents, result, action_tool, backend, diagnostics = anyio.run(
+        _call_picker_over_bundle_stdio, tmp_path
+    )
+
+    assert "files_file_manager" in names
+    assert len(names) <= 16
+    assert {"search_tools", "call_tool"} <= names
+    assert meta["ui/resourceUri"] == uri
+    assert contents[0].mimeType == "text/html;profile=mcp-app"
+    assert result.is_error is False
+    assert action_tool in json.dumps(result.structured_content)
+    assert backend.is_error is False
+    assert diagnostics.structured_content["hidden_callbacks"]["store_files"] == action_tool
 
 
 def test_google_service_builder_uses_runtime_timeout_and_retry(monkeypatch) -> None:

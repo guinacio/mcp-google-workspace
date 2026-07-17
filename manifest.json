@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "mcp-google-workspace",
   "display_name": "Google Workspace MCP",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Production Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, Slides, and optional Apps, Chat, Keep, Meet, and Gemini integrations.",
   "long_description": "Google Workspace MCP server for Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, and Slides, with optional Google Chat, Google Keep, Google Meet, and Gemini media integrations. Authenticates via OAuth with your Google account and gives Claude Desktop full read/write access to your Workspace data through natural language.",
   "author": {
@@ -77,7 +77,9 @@
         "MCP_GOOGLE_LOG_LEVEL": "${user_config.log_level}",
         "MCP_GOOGLE_OAUTH_PORT": "${user_config.oauth_port}",
         "MCP_GOOGLE_OAUTH_OPEN_BROWSER": "${user_config.oauth_open_browser}",
-        "FASTMCP_CHECK_FOR_UPDATES": "off"
+        "FASTMCP_CHECK_FOR_UPDATES": "off",
+        "MCP_CLIENT_MODEL": "claude",
+        "PREFAB_BUNDLED_RENDERER": "1"
       }
     }
   },

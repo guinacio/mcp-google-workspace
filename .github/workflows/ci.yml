@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/mcp_google_workspace/apps/ui/package-lock.json
+      - name: Install locked Python environment
+        run: uv sync --frozen --all-groups
+      - name: Lint
+        run: uv run ruff check src tests scripts
+      - name: Type check
+        run: uv run mypy src/mcp_google_workspace
+      - name: Test
+        run: uv run pytest -q
+      - name: Audit locked production dependencies
+        run: |
+          uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file requirements-audit.txt
+          uvx pip-audit --disable-pip -r requirements-audit.txt
+      - name: Static security scan
+        run: uvx bandit -q -r src/mcp_google_workspace
+      - name: Install exact frontend lock
+        working-directory: src/mcp_google_workspace/apps/ui
+        run: npm ci
+      - name: Audit frontend dependencies
+        working-directory: src/mcp_google_workspace/apps/ui
+        run: npm audit --audit-level=moderate
+      - name: Build MCP Apps UI
+        working-directory: src/mcp_google_workspace/apps/ui
+        run: npm run build
+      - name: Verify generated UI is current
+        run: git diff --exit-code -- src/mcp_google_workspace/apps/ui/dist/index.html
+      - name: Build MCPB from clean locked dependencies
+        run: uv run python scripts/build_mcpb.py
+      - name: Upload MCPB smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-google-workspace-mcpb
+          path: dist/*.mcpb

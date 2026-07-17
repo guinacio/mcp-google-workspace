@@ -7,59 +7,18 @@ from urllib.parse import urlparse
 
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 import fastmcp
-from fastmcp.server.transforms.search import BM25SearchTransform
 from starlette.middleware import Middleware as ASGIMiddleware
 
-from .auth import is_apps_dashboard_enabled
 from .auth.google_oauth import register_oauth_callback_route
 from .common.production import RequestSizeLimitMiddleware
 from .runtime import configure_logging, get_remote_security_settings
 from .server import workspace_mcp
-
-_TOOL_SEARCH_CONFIGURED = False
+from .tool_discovery import configure_tool_search
 
 
 def configure_remote_tool_search() -> None:
-    """Collapse the remote catalog while retaining workflow and discovery entry points."""
-    global _TOOL_SEARCH_CONFIGURED
-    if _TOOL_SEARCH_CONFIGURED:
-        return
-    always_visible = [
-        "connect_google_workspace",
-        "get_google_connection_status",
-        "disconnect_google_workspace",
-        "refresh_workspace_catalog",
-        "get_workspace_capabilities",
-        "search_workspace",
-        "resolve_workspace_resource",
-        "prepare_workspace_action",
-        "commit_workspace_action",
-        "files_file_manager",
-        "files_list_files",
-    ]
-    if is_apps_dashboard_enabled():
-        always_visible.extend(
-            [
-                "apps_get_dashboard",
-                "apps_get_weekly_calendar_view",
-                "apps_get_state",
-                "apps_set_state",
-                "apps_patch_state",
-                "apps_next_range",
-                "apps_prev_range",
-                "apps_today",
-                "apps_get_event_detail",
-                "apps_get_email_detail",
-                "apps_get_email_attachment",
-                "calendar_list_calendars",
-                "calendar_create_event",
-                "calendar_update_event",
-                "calendar_respond_to_event",
-                "calendar_delete_event",
-            ]
-        )
-    workspace_mcp.add_transform(BM25SearchTransform(max_results=8, always_visible=always_visible))
-    _TOOL_SEARCH_CONFIGURED = True
+    """Backward-compatible entrypoint for HTTP progressive discovery."""
+    configure_tool_search(workspace_mcp)
 
 
 def build_http_auth() -> JWTVerifier:

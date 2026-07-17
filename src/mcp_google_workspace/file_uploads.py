@@ -16,14 +16,16 @@ import socket
 import sqlite3
 from threading import RLock
 import time
-from typing import Any, Protocol, cast
+from typing import Annotated, Any, Protocol, cast
 import zipfile
 
 from cryptography.fernet import InvalidToken
 from fastmcp import Context
 from fastmcp.apps.file_upload import FileUpload
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.providers.addressing import hashed_resource_uri
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel, ConfigDict, Field
 
 from .auth.identity import current_principal
 from .common.crypto import FernetKeyring
@@ -50,6 +52,31 @@ class UploadedFile:
         return len(self.data)
 
 
+class UploadedFileSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(description="Opaque upload handle or local filename.")
+    type: str = Field(description="Validated MIME type.")
+    size: int = Field(ge=0, description="Decoded file size in bytes.")
+    size_display: str = Field(description="Human-readable file size.")
+    uploaded_at: str = Field(description="UTC upload timestamp.")
+    upload_id: str | None = Field(default=None, description="Opaque remote upload ID.")
+    display_name: str | None = Field(default=None, description="Original uploaded filename.")
+    checksum_sha256: str | None = Field(default=None, description="SHA-256 content checksum.")
+    expires_at: int | None = Field(default=None, description="Remote handle expiry epoch.")
+    remaining_quota_bytes: int | None = Field(
+        default=None, ge=0, description="Remaining remote upload quota in bytes."
+    )
+
+
+class UploadedFilePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    files: list[UploadedFileSummary] = Field(description="Uploaded file summaries in this page.")
+    count: int = Field(ge=0, description="Number of files returned in this page.")
+    next_cursor: str | None = Field(
+        default=None, description="Cursor for the next page, or null at the end."
+    )
+
+
 class RemoteUploadStore(Protocol):
     """Storage contract shared by the single-node and distributed backends."""
 
@@ -57,7 +84,9 @@ class RemoteUploadStore(Protocol):
         self, scope: str, files: list[dict[str, Any]], max_file_size: int
     ) -> list[dict[str, Any]]: ...
 
-    def list(self, scope: str) -> list[dict[str, Any]]: ...
+    def list(
+        self, scope: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]: ...
 
     def get(self, scope: str, upload_id: str) -> UploadedFile: ...
 
@@ -84,6 +113,7 @@ class EncryptedUploadStore:
         )
         self.ttl_seconds = ttl_seconds
         self.quota_bytes = quota_bytes
+        self._last_reconcile = 0.0
 
     @classmethod
     def from_environment(cls) -> "EncryptedUploadStore":
@@ -128,15 +158,34 @@ class EncryptedUploadStore:
 
     def _cleanup(self, connection: sqlite3.Connection, now: int) -> int:
         expired = connection.execute(
-            "SELECT scope,upload_id FROM uploads_v2 WHERE expires_at < ?", (now,)
+            "SELECT scope,upload_id,size FROM uploads_v2 WHERE expires_at < ?", (now,)
         ).fetchall()
         connection.execute("DELETE FROM uploads_v2 WHERE expires_at < ?", (now,))
-        for scope, upload_id in expired:
+        for scope, upload_id, _ in expired:
             self._blob_path(str(scope), str(upload_id)).unlink(missing_ok=True)
         if expired:
-            from .common.production import UPLOAD_CLEANUPS
+            from .common.production import UPLOAD_CLEANUPS, UPLOAD_REMOVED_BYTES
 
             UPLOAD_CLEANUPS.labels("encrypted-filesystem").inc(len(expired))
+            UPLOAD_REMOVED_BYTES.labels("encrypted-filesystem").inc(
+                sum(int(size) for _, _, size in expired)
+            )
+        # Reconcile crash leftovers at most once every five minutes. Blob names
+        # are opaque server-generated handles, so no user path is traversed.
+        if time.monotonic() - self._last_reconcile >= 300:
+            referenced = {
+                self._blob_path(str(scope), str(upload_id)).resolve()
+                for scope, upload_id in connection.execute(
+                    "SELECT scope,upload_id FROM uploads_v2"
+                ).fetchall()
+            }
+            if self.blob_directory.exists():
+                for path in self.blob_directory.glob("*/*"):
+                    if path.is_file() and (
+                        path.suffix == ".tmp" or path.resolve() not in referenced
+                    ):
+                        path.unlink(missing_ok=True)
+            self._last_reconcile = time.monotonic()
         return len(expired)
 
     def store(self, scope: str, files: list[dict[str, Any]], max_file_size: int) -> list[dict[str, Any]]:
@@ -156,6 +205,7 @@ class EncryptedUploadStore:
             detected_type = _validate_upload_content(name, declared_type, data)
             _scan_malware(data)
             decoded.append((name, detected_type, data, sha256(data).hexdigest()))
+        created_blobs: list[Path] = []
         with self._connect() as connection:
             self._cleanup(connection, now)
             existing = connection.execute(
@@ -168,51 +218,69 @@ class EncryptedUploadStore:
                     f"Upload quota exceeded ({self.quota_bytes} bytes per principal).",
                     required_action={"tool": "files_list_files", "arguments": {}},
                 )
-            uploaded_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            uploaded_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
             for name, mime_type, data, checksum in decoded:
                 upload_id = "upl_" + secrets.token_urlsafe(24)
                 blob_path = self._blob_path(scope, upload_id)
                 blob_path.parent.mkdir(parents=True, exist_ok=True)
                 temporary = blob_path.with_suffix(".tmp")
-                temporary.write_bytes(self.keyring.encrypt(data))
-                temporary.replace(blob_path)
-                connection.execute(
-                    """
-                    INSERT INTO uploads_v2(
-                      scope,upload_id,original_name,mime_type,size,checksum_sha256,uploaded_at,expires_at
-                    ) VALUES(?,?,?,?,?,?,?,?)
-                    """,
-                    (
-                        scope,
-                        upload_id,
-                        name,
-                        mime_type,
-                        len(data),
-                        checksum,
-                        uploaded_at,
-                        now + self.ttl_seconds,
-                    ),
-                )
+                try:
+                    temporary.write_bytes(self.keyring.encrypt(data))
+                    temporary.replace(blob_path)
+                    created_blobs.append(blob_path)
+                    connection.execute(
+                        """
+                        INSERT INTO uploads_v2(
+                          scope,upload_id,original_name,mime_type,size,checksum_sha256,uploaded_at,expires_at
+                        ) VALUES(?,?,?,?,?,?,?,?)
+                        """,
+                        (
+                            scope,
+                            upload_id,
+                            name,
+                            mime_type,
+                            len(data),
+                            checksum,
+                            uploaded_at,
+                            now + self.ttl_seconds,
+                        ),
+                    )
+                except BaseException:
+                    temporary.unlink(missing_ok=True)
+                    for created_blob in created_blobs:
+                        created_blob.unlink(missing_ok=True)
+                    raise
                 AUDIT_LOGGER.info(
                     "upload_stored principal_hash=%s upload_id=%s size=%s mime_type=%s",
                     scope[:16], upload_id, len(data), mime_type,
                 )
+            from .common.production import UPLOAD_STORED_BYTES
+
+            UPLOAD_STORED_BYTES.labels("encrypted-filesystem").inc(
+                sum(len(data) for _, _, data, _ in decoded)
+            )
         return self.list(scope)
 
-    def list(self, scope: str) -> list[dict[str, Any]]:
+    def list(
+        self, scope: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("Upload pagination requires limit 1..100 and a non-negative offset.")
         now = int(time.time())
         with self._connect() as connection:
             self._cleanup(connection, now)
+            used_bytes = int(
+                connection.execute(
+                    "SELECT COALESCE(SUM(size),0) FROM uploads_v2 WHERE scope=?",
+                    (scope,),
+                ).fetchone()[0]
+            )
             rows = connection.execute(
                 "SELECT upload_id,original_name,mime_type,size,checksum_sha256,uploaded_at,expires_at "
-                "FROM uploads_v2 WHERE scope=? ORDER BY uploaded_at",
-                (scope,),
+                "FROM uploads_v2 WHERE scope=? ORDER BY uploaded_at DESC LIMIT ? OFFSET ?",
+                (scope, limit, offset),
             ).fetchall()
-        from .common.production import UPLOAD_BYTES
-
-        UPLOAD_BYTES.labels(scope[:16], "encrypted-filesystem").set(
-            sum(int(row[3]) for row in rows)
-        )
+        remaining_quota_bytes = max(0, self.quota_bytes - used_bytes)
         return [
             {
                 "name": upload_id,
@@ -224,7 +292,7 @@ class EncryptedUploadStore:
                 "checksum_sha256": checksum,
                 "uploaded_at": uploaded_at,
                 "expires_at": expires_at,
-                "remaining_quota_bytes": self.quota_bytes - sum(int(row[3]) for row in rows),
+                "remaining_quota_bytes": remaining_quota_bytes,
             }
             for upload_id, original_name, mime_type, size, checksum, uploaded_at, expires_at in rows
         ]
@@ -267,12 +335,23 @@ class EncryptedUploadStore:
 
     def delete(self, scope: str, name: str) -> bool:
         with self._connect() as connection:
+            row = connection.execute(
+                "SELECT size FROM uploads_v2 WHERE scope=? AND upload_id=?",
+                (scope, name),
+            ).fetchone()
             cursor = connection.execute(
                 "DELETE FROM uploads_v2 WHERE scope=? AND upload_id=?", (scope, name)
             )
             deleted = cursor.rowcount > 0
+            if deleted:
+                # Keep metadata rollback-capable if object deletion fails.
+                self._blob_path(scope, name).unlink(missing_ok=True)
         if deleted:
-            self._blob_path(scope, name).unlink(missing_ok=True)
+            from .common.production import UPLOAD_REMOVED_BYTES
+
+            UPLOAD_REMOVED_BYTES.labels("encrypted-filesystem").inc(
+                int(row[0]) if row else 0
+            )
             AUDIT_LOGGER.info("upload_deleted principal_hash=%s upload_id=%s", scope[:16], name)
         return deleted
 
@@ -374,6 +453,39 @@ class WorkspaceFileUpload(FileUpload):
                     deleted = self._store.get(scope, {}).pop(name, None) is not None
             return {"status": "deleted" if deleted else "not_found", "name": name}
 
+        @self.tool(model=True)
+        def list_files_page(
+            ctx: Context,
+            limit: Annotated[int, "Maximum number of uploaded files to return (1-100)."] = 50,
+            cursor: Annotated[
+                str | None,
+                "Opaque continuation cursor returned by the previous page.",
+            ] = None,
+        ) -> UploadedFilePage:
+            """Page through uploaded files without returning an unbounded catalog."""
+            if not 1 <= limit <= 100:
+                raise ValueError("limit must be between 1 and 100")
+            try:
+                offset = int(cursor or "0")
+            except ValueError as exc:
+                raise ValueError("cursor must be a non-negative integer string") from exc
+            if offset < 0:
+                raise ValueError("cursor must be a non-negative integer string")
+            if get_access_token() is not None:
+                files = self._remote_store().list(
+                    self._remote_scope(), limit=limit, offset=offset
+                )
+            else:
+                with self._upload_lock:
+                    all_files = super(WorkspaceFileUpload, self).on_list(ctx)
+                files = all_files[offset : offset + limit]
+            next_cursor = str(offset + len(files)) if len(files) == limit else None
+            return UploadedFilePage(
+                files=[UploadedFileSummary.model_validate(item) for item in files],
+                count=len(files),
+                next_cursor=next_cursor,
+            )
+
         for raw_component in self._local._components.values():
             component = cast(Any, raw_component)
             component.title = f"Files {component.name.replace('_', ' ').title()}"
@@ -385,7 +497,13 @@ class WorkspaceFileUpload(FileUpload):
                 idempotentHint=component.name != "store_files",
                 openWorldHint=False,
             )
+            if component.name == "file_manager":
+                component.meta = {
+                    **(component.meta or {}),
+                    "ui/resourceUri": hashed_resource_uri(self.name, component.name),
+                }
             properties = component.parameters.get("properties", {})
+            component.parameters.setdefault("required", [])
             if "name" in properties:
                 properties["name"].setdefault(
                     "description", "Uploaded filename in the current user session."
@@ -394,6 +512,7 @@ class WorkspaceFileUpload(FileUpload):
             if component.name in {"list_files", "store_files"}:
                 component.output_schema = {
                     "type": "object",
+                    "x-fastmcp-wrap-result": True,
                     "properties": {
                         "result": {
                             "type": "array",
@@ -406,6 +525,18 @@ class WorkspaceFileUpload(FileUpload):
                                     "size": {"type": "integer"},
                                     "size_display": {"type": "string"},
                                     "uploaded_at": {"type": "string"},
+                                    "upload_id": {"type": "string"},
+                                    "display_name": {"type": "string"},
+                                    "checksum_sha256": {"type": "string"},
+                                    "expires_at": {"type": "integer"},
+                                    "remaining_quota_bytes": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": (
+                                            "Bytes still available in the authenticated user's "
+                                            "remote upload quota. Present for remote uploads."
+                                        ),
+                                    },
                                 },
                                 "required": ["name", "type", "size", "size_display", "uploaded_at"],
                                 "additionalProperties": False,

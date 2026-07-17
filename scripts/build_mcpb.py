@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -11,6 +14,18 @@ from zipfile import ZIP_DEFLATED, ZipFile
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 IGNORE_FILE = ROOT / ".mcpbignore"
+UI_DIR = ROOT / "src" / "mcp_google_workspace" / "apps" / "ui"
+
+
+def build_apps_ui() -> None:
+    """Rebuild the tracked Apps artifact from the exact lock before packaging."""
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if npm is None:
+        raise RuntimeError("npm is required to build the MCP Apps dashboard UI.")
+    subprocess.run([npm, "ci"], cwd=UI_DIR, check=True)
+    subprocess.run([npm, "run", "build"], cwd=UI_DIR, check=True)
+    if not (UI_DIR / "dist" / "index.html").is_file():
+        raise RuntimeError("MCP Apps UI build did not produce dist/index.html.")
 
 
 def load_manifest_version() -> str:
@@ -47,17 +62,21 @@ def should_ignore(relative_path: str, patterns: list[str]) -> bool:
 
 
 def iter_bundle_files(patterns: list[str]):
-    for path in sorted(ROOT.rglob("*")):
-        if path == DIST:
-            continue
-        relative = path.relative_to(ROOT).as_posix()
-        if path.is_dir():
-            if should_ignore(f"{relative}/", patterns):
+    for current, directories, filenames in os.walk(ROOT, topdown=True):
+        current_path = Path(current)
+        kept_directories: list[str] = []
+        for directory in sorted(directories):
+            path = current_path / directory
+            relative = path.relative_to(ROOT).as_posix()
+            if path == DIST or should_ignore(f"{relative}/", patterns):
                 continue
-            continue
-        if should_ignore(relative, patterns):
-            continue
-        yield path, relative
+            kept_directories.append(directory)
+        directories[:] = kept_directories
+        for filename in sorted(filenames):
+            path = current_path / filename
+            relative = path.relative_to(ROOT).as_posix()
+            if not should_ignore(relative, patterns):
+                yield path, relative
 
 
 def build_archive() -> Path:
@@ -71,6 +90,7 @@ def build_archive() -> Path:
 
 
 def main() -> None:
+    build_apps_ui()
     output = build_archive()
     print(output)
 

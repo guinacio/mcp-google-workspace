@@ -85,7 +85,7 @@ def _field_description(name: str) -> str:
     special = {
         "status": "Machine-readable operation status.",
         "count": "Number of items in this response.",
-        "next_page_token": "Opaque token for retrieving the next page, or null when complete.",
+        "next_page_token": "Opaque token for retrieving the next page, or null when complete.",  # nosec B105 -- schema documentation, not a credential
         "has_more": "Whether another page of results is available.",
         "fetched_at": "RFC3339 timestamp when the response was fetched.",
     }

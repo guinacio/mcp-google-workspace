@@ -24,6 +24,8 @@ The entrypoint adds:
 - validated timeout and retry settings for Google API clients
 - OAuth port/browser configuration for local desktop consent flows
 - encrypted, per-principal Google OAuth token storage
+- a self-contained Prefab renderer with no runtime CDN dependency
+- the complete tool catalog for Claude Desktop's current MCP Apps router
 - clearer startup errors when bundle configuration is invalid
 
 ## User Configuration Mapped By The Manifest
@@ -53,6 +55,11 @@ The MCPB manifest exposes these settings through the host UI and passes them int
 - `oauth_port` -> `MCP_GOOGLE_OAUTH_PORT`
 - `oauth_open_browser` -> `MCP_GOOGLE_OAUTH_OPEN_BROWSER`
 
+The manifest also sets fixed host compatibility values:
+
+- `MCP_CLIENT_MODEL=claude`, which disables FastMCP progressive Tool Search in auto mode
+- `PREFAB_BUNDLED_RENDERER=1`, which serves the picker renderer as self-contained HTML
+
 ## Packaging
 
 Create a local bundle archive:
@@ -61,7 +68,9 @@ Create a local bundle archive:
 uv run python scripts/build_mcpb.py
 ```
 
-The command writes `dist/mcp-google-workspace-<version>.mcpb`.
+The command first runs `npm ci` and `npm run build` for the Apps UI, then writes
+`dist/mcp-google-workspace-<version>.mcpb`. Packaging fails when the locked UI
+cannot be rebuilt.
 
 ## Manual Validation
 
@@ -70,6 +79,7 @@ The command writes `dist/mcp-google-workspace-<version>.mcpb`.
 3. Inspect the archive and confirm it contains `manifest.json`, `pyproject.toml`, and `src/`, but not credentials or `node_modules`.
 4. Start the bundle entrypoint locally with `uv run python -m mcp_google_workspace.bundle_entry`.
 5. Install the resulting `.mcpb` in an MCPB-capable host and verify that the host reads the manifest settings and can list tools over stdio.
+6. Call `get_mcp_apps_diagnostics` with `run_self_test=true`, then open `files_file_manager` and upload a real file.
 
 ## Notes
 
