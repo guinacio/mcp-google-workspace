@@ -99,6 +99,9 @@ def _named_field_schema(name: str) -> dict[str, Any]:
         lowered in {"count", "total", "totalitems", "totalpeople", "updatedrows", "updatedcolumns", "updatedcells", "width", "height", "bytes_written"}
         or lowered.startswith("total_")
         or lowered.endswith("_count")
+        # Unit suffixes are scalar quantities even though they end in "s";
+        # without this, the plural rule below declared them arrays (issue #5).
+        or lowered.endswith(("_days", "_hours", "_minutes", "_seconds", "_ms", "_bytes", "_weeks", "_months", "_years"))
     ):
         schema["type"] = "integer"
     elif lowered.startswith(("has_", "is_")) or lowered in {"connected", "retryable", "truncated", "success"}:
@@ -117,7 +120,53 @@ def _named_field_schema(name: str) -> dict[str, Any]:
     return schema
 
 
-def _literal_schema(node: ast.expr) -> dict[str, Any]:
+_Resolver = Callable[[ast.expr], dict[str, Any]]
+
+_BUILTIN_CALL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "len": {"type": "integer"},
+    "int": {"type": "integer"},
+    "float": {"type": "number"},
+    "bool": {"type": "boolean"},
+    "str": {"type": "string"},
+    "list": {"type": "array", "items": {}},
+    "sorted": {"type": "array", "items": {}},
+    "dict": {"type": "object"},
+}
+
+
+def _annotation_schema(node: ast.expr | None) -> dict[str, Any]:
+    """Map a simple parameter annotation AST to a JSON schema type."""
+    if node is None:
+        return {}
+    if isinstance(node, ast.Name):
+        return dict(
+            {
+                "int": {"type": "integer"},
+                "float": {"type": "number"},
+                "bool": {"type": "boolean"},
+                "str": {"type": "string"},
+            }.get(node.id, {})
+        )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        # X | None keeps X's type but allows null.
+        if isinstance(node.right, ast.Constant) and node.right.value is None:
+            inner = _annotation_schema(node.left)
+            inner_type = inner.get("type")
+            if isinstance(inner_type, str):
+                return {**inner, "type": [inner_type, "null"]}
+        return {}
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        if node.value.id == "list":
+            return {"type": "array", "items": {}}
+        if node.value.id == "dict":
+            return {"type": "object"}
+        if node.value.id == "Annotated":
+            if isinstance(node.slice, ast.Tuple) and node.slice.elts:
+                return _annotation_schema(node.slice.elts[0])
+    return {}
+
+
+def _literal_schema(node: ast.expr, resolver: _Resolver | None = None) -> dict[str, Any]:
     if isinstance(node, ast.Constant):
         value = node.value
         if value is None:
@@ -133,16 +182,25 @@ def _literal_schema(node: ast.expr) -> dict[str, Any]:
     if isinstance(node, (ast.List, ast.ListComp)):
         return {"type": "array", "items": {}}
     if isinstance(node, ast.Dict):
-        shape = _dict_shape(node)
+        shape = _dict_shape(node, resolver)
         return _schema_for_shapes([shape]) if shape else {"type": "object"}
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        builtin = _BUILTIN_CALL_SCHEMAS.get(node.func.id)
+        if builtin is not None:
+            return dict(builtin)
+    if resolver is not None:
+        return resolver(node)
     return {}
 
 
-def _dict_shape(node: ast.Dict) -> dict[str, dict[str, Any]]:
+def _dict_shape(node: ast.Dict, resolver: _Resolver | None = None) -> dict[str, dict[str, Any]]:
     shape: dict[str, dict[str, Any]] = {}
     for key, value in zip(node.keys, node.values, strict=True):
         if isinstance(key, ast.Constant) and isinstance(key.value, str):
-            field_schema = _literal_schema(value)
+            # Evidence from the value expression always beats the name
+            # heuristic: a scalar must never be declared an array because
+            # its key happens to end in "s" (issue #5).
+            field_schema = _literal_schema(value, resolver)
             if not field_schema:
                 field_schema = _named_field_schema(key.value)
             field_schema.setdefault("description", _field_description(key.value))
@@ -249,10 +307,45 @@ def infer_tool_output_schema(
     visitor = _FunctionReturns(root)
     visitor.visit(root)
     shapes: list[dict[str, dict[str, Any]]] = []
+    parameter_schemas = {
+        arg.arg: schema
+        for arg in [*root.args.posonlyargs, *root.args.args, *root.args.kwonlyargs]
+        if (schema := _annotation_schema(arg.annotation))
+    }
+
+    def resolve(node: ast.expr) -> dict[str, Any]:
+        """Type a value expression from parameter annotations or assignments."""
+        if not isinstance(node, ast.Name):
+            return {}
+        annotated = parameter_schemas.get(node.id)
+        if annotated:
+            return dict(annotated)
+        assigned = [
+            _literal_schema(value) for value in visitor.assignments.get(node.id, [])
+        ]
+        if not assigned or not all(assigned):
+            # Any unresolvable assignment forfeits the claim: partial evidence
+            # must not narrow the schema (a None initializer plus an opaque
+            # reassignment would otherwise read as "always null").
+            return {}
+        kinds = {schema.get("type") for schema in assigned}
+        if not all(isinstance(kind, str) for kind in kinds):
+            return {}
+        if kinds == {"null"}:
+            # A lone None initializer proves nothing about the real value.
+            return {}
+        if len(kinds) == 1:
+            return dict(assigned[0])
+        if len(kinds) == 2 and "null" in kinds:
+            concrete = next(kind for kind in kinds if kind != "null")
+            if concrete == "array":
+                return {}
+            return {"type": [concrete, "null"]}
+        return {}
 
     def collect(node: ast.expr) -> None:
         if isinstance(node, ast.Dict):
-            shapes.append(_dict_shape(node))
+            shapes.append(_dict_shape(node, resolve))
             return
         if isinstance(node, ast.Name):
             for assigned in visitor.assignments.get(node.id, []):
