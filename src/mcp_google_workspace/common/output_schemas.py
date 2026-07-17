@@ -188,6 +188,12 @@ def _literal_schema(node: ast.expr, resolver: _Resolver | None = None) -> dict[s
         builtin = _BUILTIN_CALL_SCHEMAS.get(node.func.id)
         if builtin is not None:
             return dict(builtin)
+    if isinstance(node, ast.IfExp):
+        body = _literal_schema(node.body, resolver)
+        orelse = _literal_schema(node.orelse, resolver)
+        if body and orelse:
+            return _merge_property_schemas(body, orelse)
+        return {}
     if resolver is not None:
         return resolver(node)
     return {}
@@ -208,6 +214,37 @@ def _dict_shape(node: ast.Dict, resolver: _Resolver | None = None) -> dict[str, 
     return shape
 
 
+def _merge_property_schemas(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    """Union two observations of the same field across return paths.
+
+    Different return statements may type the same key differently (a literal
+    string on an error path, a nullable variable on the happy path). The
+    merged schema must accept every observed shape: conflicting types union,
+    and an untyped observation forfeits the type claim entirely (issue #9).
+    """
+    first_body = {key: value for key, value in first.items() if key != "description"}
+    second_body = {key: value for key, value in second.items() if key != "description"}
+    if first_body == second_body:
+        return dict(first)
+    merged: dict[str, Any] = {}
+    first_type, second_type = first_body.get("type"), second_body.get("type")
+    if first_type is not None and second_type is not None:
+        kinds: list[str] = []
+        for declared in (first_type, second_type):
+            for kind in [declared] if isinstance(declared, str) else list(declared):
+                if kind not in kinds:
+                    kinds.append(kind)
+        concrete = sorted(kind for kind in kinds if kind != "null")
+        ordered = concrete + (["null"] if "null" in kinds else [])
+        merged["type"] = ordered[0] if len(ordered) == 1 else ordered
+        if "array" in ordered:
+            merged["items"] = {}
+    description = first.get("description") or second.get("description")
+    if description:
+        merged["description"] = description
+    return merged
+
+
 def _schema_for_shapes(shapes: list[dict[str, dict[str, Any]]]) -> dict[str, Any]:
     nonempty = [shape for shape in shapes if shape]
     if not nonempty:
@@ -215,7 +252,12 @@ def _schema_for_shapes(shapes: list[dict[str, dict[str, Any]]]) -> dict[str, Any
     properties: dict[str, dict[str, Any]] = {}
     for shape in nonempty:
         for name, schema in shape.items():
-            properties.setdefault(name, schema)
+            existing = properties.get(name)
+            properties[name] = (
+                dict(schema)
+                if existing is None
+                else _merge_property_schemas(existing, schema)
+            )
     return {
         "type": "object",
         "properties": properties,
