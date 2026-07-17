@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
 
@@ -225,8 +225,12 @@ def register(server: FastMCP) -> None:
         mime_type: str | None = None,
         parent_ids: list[str] | None = None,
         description: str | None = None,
-        app_properties: dict[str, Any] | None = None,
-        properties: dict[str, Any] | None = None,
+        app_properties: Annotated[
+            dict[str, Any] | None, "Private appProperties key/value map, visible only to this app."
+        ] = None,
+        properties: Annotated[
+            dict[str, Any] | None, "Public custom properties key/value map, visible to other apps."
+        ] = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,parents,driveId,webViewLink",
         ctx: Context | None = None,
@@ -259,12 +263,17 @@ def register(server: FastMCP) -> None:
     @server.tool(name="upload_file", task=True)
     async def upload_file(
         local_path: str | None = None,
-        uploaded_file: str | None = None,
+        uploaded_file: Annotated[
+            str | None, "Filename returned by the Workspace Files MCP App picker."
+        ] = None,
         name: str | None = None,
         parent_ids: list[str] | None = None,
         mime_type: str | None = None,
         resumable: bool = True,
-        if_exists: Literal["rename", "overwrite", "skip"] = "rename",
+        if_exists: Annotated[
+            Literal["rename", "overwrite", "skip"],
+            "Behavior when a file with the same name already exists in the target parent scope.",
+        ] = "rename",
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,size,parents,driveId,webViewLink",
         ctx: Context | None = None,
@@ -377,10 +386,18 @@ def register(server: FastMCP) -> None:
         file_id: str,
         name: str | None = None,
         description: str | None = None,
-        app_properties: dict[str, Any] | None = None,
-        properties: dict[str, Any] | None = None,
-        remove_property_keys: list[str] | None = None,
-        remove_app_property_keys: list[str] | None = None,
+        app_properties: Annotated[
+            dict[str, Any] | None, "Private appProperties replacement/patch map, visible only to this app."
+        ] = None,
+        properties: Annotated[
+            dict[str, Any] | None, "Public custom properties replacement/patch map, visible to other apps."
+        ] = None,
+        remove_property_keys: Annotated[
+            list[str] | None, "Public property keys to clear."
+        ] = None,
+        remove_app_property_keys: Annotated[
+            list[str] | None, "Private appProperties keys to clear."
+        ] = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink",
         ctx: Context | None = None,
@@ -432,10 +449,14 @@ def register(server: FastMCP) -> None:
     async def update_file_content(
         file_id: str,
         local_path: str | None = None,
-        uploaded_file: str | None = None,
+        uploaded_file: Annotated[
+            str | None, "Filename returned by the Workspace Files MCP App picker."
+        ] = None,
         mime_type: str | None = None,
         resumable: bool = True,
-        keep_revision_forever: bool | None = None,
+        keep_revision_forever: Annotated[
+            bool | None, "Pin the new revision so it is never auto-purged, when the account supports it."
+        ] = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,mimeType,size,parents,driveId,webViewLink,modifiedTime",
         ctx: Context | None = None,
@@ -489,8 +510,8 @@ def register(server: FastMCP) -> None:
     @server.tool(name="move_file")
     async def move_file(
         file_id: str,
-        add_parent_ids: list[str] | None = None,
-        remove_parent_ids: list[str] | None = None,
+        add_parent_ids: Annotated[list[str] | None, "Parent folder IDs to add."] = None,
+        remove_parent_ids: Annotated[list[str] | None, "Parent folder IDs to remove."] = None,
         supports_all_drives: bool = True,
         fields: str = "id,name,parents,driveId,webViewLink",
         ctx: Context | None = None,
@@ -561,7 +582,10 @@ def register(server: FastMCP) -> None:
     @server.tool(name="delete_file")
     async def delete_file(
         file_id: str,
-        delete_mode: Literal["trash", "permanent"] = "trash",
+        delete_mode: Annotated[
+            Literal["trash", "permanent"],
+            "Safer delete mode: 'trash' moves to trash (reversible), 'permanent' irreversibly deletes.",
+        ] = "trash",
         confirm_permanent: bool = True,
         supports_all_drives: bool = True,
         ctx: Context | None = None,

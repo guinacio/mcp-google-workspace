@@ -6,7 +6,7 @@ import re
 from hashlib import sha256
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import pytz
 from fastmcp import Context, FastMCP
@@ -423,7 +423,10 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="get_calendar_digest")
-    async def get_calendar_digest(days: int = 7, max_results: int = 50) -> dict[str, Any]:
+    async def get_calendar_digest(
+        days: Annotated[int, "Number of days ahead from now to include upcoming events for."] = 7,
+        max_results: int = 50,
+    ) -> dict[str, Any]:
         """Return upcoming events and those needing the user's RSVP in one call."""
         service = build_calendar_service()
         user_timezone = await resolve_user_timezone()
@@ -478,7 +481,10 @@ def register_tools(server: FastMCP) -> None:
     async def check_time_availability(
         time_min: str,
         time_max: str,
-        items: list[CalendarIdInput],
+        items: Annotated[
+            list[CalendarIdInput],
+            "Calendars/attendees to check, as a list of {id: calendar ID or attendee email address}.",
+        ],
         time_zone: str | None = None,
     ) -> dict[str, Any]:
         """Check whether known start/end times are free for the specified calendars."""
@@ -498,15 +504,25 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="find_common_free_slots")
     async def find_common_free_slots(
-        participants: list[str],
+        participants: Annotated[
+            list[str], "Calendar IDs or attendee email addresses to find common availability for."
+        ],
         time_min: str,
         time_max: str,
-        slot_duration_minutes: int = 30,
-        granularity_minutes: int = 15,
+        slot_duration_minutes: Annotated[
+            int, "Desired duration for each suggested meeting slot, in minutes."
+        ] = 30,
+        granularity_minutes: Annotated[
+            int, "Step size in minutes used to generate candidate slots inside each free range."
+        ] = 15,
         max_results: int = 10,
         time_zone: str | None = None,
-        working_hours_start: str = "08:00",
-        working_hours_end: str = "17:00",
+        working_hours_start: Annotated[
+            str, "Daily working-hours start in HH:MM 24-hour format."
+        ] = "08:00",
+        working_hours_end: Annotated[
+            str, "Daily working-hours end in HH:MM 24-hour format."
+        ] = "17:00",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Suggest common available meeting slots for all participants in a time window.
@@ -614,25 +630,36 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="create_event")
     async def create_event(
-        summary: str,
-        start_datetime: str,
-        end_datetime: str,
+        summary: Annotated[str, "Event title/summary."],
+        start_datetime: Annotated[str, "Event start datetime in RFC3339 or ISO format."],
+        end_datetime: Annotated[str, "Event end datetime in RFC3339 or ISO format."],
         calendar_id: str = "primary",
         idempotency_key: str | None = None,
         timezone: str | None = None,
         description: str | None = None,
-        location: str | None = None,
+        location: Annotated[str | None, "Optional event location."] = None,
         color_id: str | None = None,
-        visibility: Literal["default", "public", "private", "confidential"] = "default",
-        transparency: Literal["opaque", "transparent"] = "opaque",
-        conference_data: dict[str, Any] | None = None,
-        attendees: list[EventAttendeeInput] | None = None,
+        visibility: Annotated[
+            Literal["default", "public", "private", "confidential"], "Event visibility mode."
+        ] = "default",
+        transparency: Annotated[
+            Literal["opaque", "transparent"], "Whether the event blocks time on the calendar."
+        ] = "opaque",
+        conference_data: Annotated[
+            dict[str, Any] | None, "Optional Google conference data payload (for Meet links)."
+        ] = None,
+        attendees: Annotated[list[EventAttendeeInput] | None, "Event attendees to invite."] = None,
         attachments: list[EventAttachmentInput] | None = None,
         supports_attachments: bool = True,
         send_updates: str | None = None,
-        reminders: dict[str, Any] | None = None,
-        recurrence: list[str] | None = None,
-        on_conflict: Literal["fail", "suggest_next_slot"] = "fail",
+        reminders: Annotated[
+            dict[str, Any] | None, "Reminder override configuration (Google Calendar reminders shape)."
+        ] = None,
+        recurrence: Annotated[list[str] | None, "Recurrence rules as RRULE strings."] = None,
+        on_conflict: Annotated[
+            Literal["fail", "suggest_next_slot"],
+            "Conflict strategy when the requested time overlaps existing events.",
+        ] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a calendar event with optional attendees, reminders, and recurrence."""
@@ -763,23 +790,34 @@ def register_tools(server: FastMCP) -> None:
     async def update_event(
         event_id: str,
         calendar_id: str = "primary",
-        summary: str | None = None,
-        start_datetime: str | None = None,
-        end_datetime: str | None = None,
+        summary: Annotated[str | None, "Updated title/summary."] = None,
+        start_datetime: Annotated[str | None, "Updated start datetime in RFC3339 or ISO format."] = None,
+        end_datetime: Annotated[str | None, "Updated end datetime in RFC3339 or ISO format."] = None,
         timezone: str | None = None,
         description: str | None = None,
-        location: str | None = None,
+        location: Annotated[str | None, "Updated event location."] = None,
         color_id: str | None = None,
-        visibility: Literal["default", "public", "private", "confidential"] | None = None,
-        transparency: Literal["opaque", "transparent"] | None = None,
-        conference_data: dict[str, Any] | None = None,
-        attendees: list[EventAttendeeInput] | None = None,
+        visibility: Annotated[
+            Literal["default", "public", "private", "confidential"] | None, "Updated event visibility mode."
+        ] = None,
+        transparency: Annotated[
+            Literal["opaque", "transparent"] | None, "Whether the event blocks time on the calendar."
+        ] = None,
+        conference_data: Annotated[
+            dict[str, Any] | None, "Optional Google conference data payload (for Meet links)."
+        ] = None,
+        attendees: Annotated[
+            list[EventAttendeeInput] | None, "Replacement attendee list for the event."
+        ] = None,
         attachments: list[EventAttachmentInput] | None = None,
         supports_attachments: bool = True,
-        reminders: dict[str, Any] | None = None,
-        recurrence: list[str] | None = None,
+        reminders: Annotated[dict[str, Any] | None, "Updated reminder configuration."] = None,
+        recurrence: Annotated[list[str] | None, "Updated recurrence rules as RRULE strings."] = None,
         send_updates: str | None = None,
-        on_conflict: Literal["fail", "suggest_next_slot"] = "fail",
+        on_conflict: Annotated[
+            Literal["fail", "suggest_next_slot"],
+            "Conflict strategy when the updated time overlaps existing events.",
+        ] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Patch an existing calendar event with the provided fields."""
@@ -938,7 +976,10 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="add_event_attachment")
     async def add_event_attachment(
         event_id: str,
-        attachment: EventAttachmentInput,
+        attachment: Annotated[
+            EventAttachmentInput,
+            "Attachment to add: file_url plus optional title, mime_type, icon_link, and Drive file_id.",
+        ],
         calendar_id: str = "primary",
         send_updates: str | None = None,
         ctx: Context | None = None,
@@ -1034,7 +1075,10 @@ def register_tools(server: FastMCP) -> None:
         calendar_id: str = "primary",
         file_url: str | None = None,
         file_id: str | None = None,
-        export_mime_type: str | None = None,
+        export_mime_type: Annotated[
+            str | None,
+            "Desired export MIME type for Google-native attachments (e.g. Docs/Sheets/Slides); ignored for binary files.",
+        ] = None,
         overwrite: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:

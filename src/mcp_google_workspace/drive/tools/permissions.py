@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -95,14 +95,16 @@ def register(server: FastMCP) -> None:
     @server.tool(name="create_permission")
     async def create_permission(
         file_id: str,
-        type: str,
+        type: Annotated[str, "Permission grantee type: user, group, domain, or anyone."],
         role: str,
-        email_address: str | None = None,
-        domain: str | None = None,
+        email_address: Annotated[str | None, "Email address for user/group permission types."] = None,
+        domain: Annotated[str | None, "Domain name for the domain permission type."] = None,
         allow_file_discovery: bool | None = None,
         expiration_time: str | None = None,
         send_notification_email: bool | None = None,
-        email_message: str | None = None,
+        email_message: Annotated[
+            str | None, "Custom message included in the sharing notification email."
+        ] = None,
         transfer_ownership: bool | None = None,
         use_domain_admin_access: bool = False,
         supports_all_drives: bool = True,

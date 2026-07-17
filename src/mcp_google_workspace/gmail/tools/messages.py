@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
@@ -126,7 +126,13 @@ def register(server: FastMCP) -> None:
     async def read_emails(
         message_ids: list[str],
         format: Literal["metadata", "preview", "clean", "full"] = "clean",
-        offset: int = 0,
+        offset: Annotated[
+            int,
+            (
+                "Character offset into the cleaned body text to resume from, for paginating through "
+                "'preview'/'clean' format bodies via the response's next_offset; not a message index."
+            ),
+        ] = 0,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Read one to 100 Gmail messages with a consistent, model-friendly detail level."""

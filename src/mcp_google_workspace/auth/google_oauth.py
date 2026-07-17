@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 import json
 import requests
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 from google_auth_oauthlib.flow import Flow
@@ -210,7 +210,13 @@ def register_connection_tools(server: FastMCP) -> None:
 
     @server.tool(name="connect_google_workspace")
     async def connect_google_workspace(
-        capabilities: list[str] | None = None,
+        capabilities: Annotated[
+            list[str] | None,
+            (
+                "Google Workspace capability names to request scopes for, e.g. "
+                f"{sorted(CAPABILITY_SCOPES)}; defaults to ['gmail'] when omitted."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Connect locally with loopback OAuth or return a remote incremental-consent URL."""
         if not is_remote_oauth_mode():
@@ -219,7 +225,13 @@ def register_connection_tools(server: FastMCP) -> None:
 
     @server.tool(name="get_google_connection_status")
     async def get_google_connection_status(
-        capability: str | None = None,
+        capability: Annotated[
+            str | None,
+            (
+                "Single capability name to check granted scopes for, e.g. 'gmail' or 'calendar'; "
+                "omit to report overall connection state without a per-capability scope check."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Report whether the authenticated MCP user has connected Google Workspace."""
         return google_connection_status(capability)

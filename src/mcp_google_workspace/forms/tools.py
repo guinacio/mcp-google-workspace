@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 
@@ -116,7 +116,13 @@ def register_tools(server: FastMCP) -> None:
         return get_form_payload(GetFormRequest(form_id=form_id))
 
     @server.tool(name="create_form")
-    def create_form(title: str, document_title: str | None = None, unpublished: bool = False) -> dict[str, Any]:
+    def create_form(
+        title: str,
+        document_title: Annotated[
+            str | None, "Name for the form's underlying Drive file; defaults to title when omitted."
+        ] = None,
+        unpublished: bool = False,
+    ) -> dict[str, Any]:
         return create_form_payload(
             CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
         )
@@ -139,8 +145,14 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="set_form_publish_settings")
     def set_form_publish_settings(
         form_id: str,
-        publish_settings: dict[str, Any],
-        update_mask: str = "*",
+        publish_settings: Annotated[
+            dict[str, Any],
+            "Forms API publishSettings payload (e.g. publishState.isPublished, isAcceptingResponses).",
+        ],
+        update_mask: Annotated[
+            str,
+            "Comma-separated field mask of publishSettings paths to update; default '*' updates all fields.",
+        ] = "*",
     ) -> dict[str, Any]:
         return set_form_publish_settings_payload(
             SetFormPublishSettingsRequest(
@@ -155,7 +167,10 @@ def register_tools(server: FastMCP) -> None:
         form_id: str,
         page_size: int = 50,
         page_token: str | None = None,
-        filter: str | None = None,
+        filter: Annotated[
+            str | None,
+            "Forms API response filter query, e.g. \"timestamp >= '2026-01-01T00:00:00Z'\".",
+        ] = None,
         enrich_questions: bool = True,
     ) -> dict[str, Any]:
         result = await run_blocking(

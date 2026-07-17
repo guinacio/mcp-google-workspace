@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
@@ -21,8 +21,20 @@ LOGGER = logging.getLogger(__name__)
 def register(server: FastMCP) -> None:
     @server.tool(name="check_mail_updates")
     async def check_mail_updates(
-        since_history_id: str | None = None,
-        timestamp: str | None = None,
+        since_history_id: Annotated[
+            str | None,
+            (
+                "Gmail historyId to resume from, taken from a prior response's "
+                "next_history_id/continue_from_history_id; omit for a cold start."
+            ),
+        ] = None,
+        timestamp: Annotated[
+            str | None,
+            (
+                "ISO-8601 datetime or epoch-seconds string used as a cold-start alternative to "
+                "since_history_id, returning mail newer than this time when no history cursor is available."
+            ),
+        ] = None,
         max_results: int = 100,
         page_token: str | None = None,
         ctx: Context | None = None,

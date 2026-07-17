@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -48,7 +48,10 @@ def _build_search_query(request: SearchEmailRequest) -> str | None:
 def register(server: FastMCP) -> None:
     @server.tool(name="get_mail_digest")
     async def get_mail_digest(
-        window: str = "3d",
+        window: Annotated[
+            str,
+            "Lookback window as '<int><unit>' where unit is d (days), h (hours), or w (weeks); default is '3d'.",
+        ] = "3d",
         unread_only: bool = False,
         max_items: int = 25,
         ctx: Context | None = None,
@@ -119,10 +122,14 @@ def register(server: FastMCP) -> None:
         include_spam_trash: bool = False,
         from_email: str | None = None,
         to_email: str | None = None,
-        subject_contains: str | None = None,
+        subject_contains: Annotated[
+            str | None, "Optional phrase that must appear in the subject line (helper filter, combined with query)."
+        ] = None,
         has_attachment: bool = False,
         is_unread: bool = False,
-        newer_than_days: int | None = None,
+        newer_than_days: Annotated[
+            int | None, "Optional recency filter in days, translated to Gmail's newer_than:{N}d query operator."
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Search Gmail messages using Gmail query syntax and optional label filters."""

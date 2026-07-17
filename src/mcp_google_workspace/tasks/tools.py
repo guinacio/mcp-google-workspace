@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -137,17 +137,27 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_tasks")
     async def list_tasks(
         tasklist_id: str,
-        completed_max: str | None = None,
-        completed_min: str | None = None,
-        due_max: str | None = None,
-        due_min: str | None = None,
+        completed_max: Annotated[
+            str | None, "Only return tasks completed on or before this RFC3339 timestamp or YYYY-MM-DD date."
+        ] = None,
+        completed_min: Annotated[
+            str | None, "Only return tasks completed on or after this RFC3339 timestamp or YYYY-MM-DD date."
+        ] = None,
+        due_max: Annotated[
+            str | None, "Only return tasks due on or before this RFC3339 timestamp or YYYY-MM-DD date."
+        ] = None,
+        due_min: Annotated[
+            str | None, "Only return tasks due on or after this RFC3339 timestamp or YYYY-MM-DD date."
+        ] = None,
         max_results: int = 100,
         page_token: str | None = None,
         show_assigned: bool = False,
         show_completed: bool = True,
         show_deleted: bool = False,
         show_hidden: bool = False,
-        updated_min: str | None = None,
+        updated_min: Annotated[
+            str | None, "Only return tasks last updated on or after this RFC3339 timestamp."
+        ] = None,
     ) -> dict[str, Any]:
         timezone_name = await resolve_user_timezone()
         now = user_now(timezone_name)
@@ -189,7 +199,13 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="tasks_digest")
-    async def tasks_digest_tool(tasklist_id: str, days: int = 7, max_results: int = 100) -> dict[str, Any]:
+    async def tasks_digest_tool(
+        tasklist_id: str,
+        days: Annotated[
+            int, "Number of days ahead of now that a due task is grouped into 'upcoming' rather than 'unscheduled'."
+        ] = 7,
+        max_results: int = 100,
+    ) -> dict[str, Any]:
         """Group incomplete tasks into overdue, upcoming, and unscheduled work."""
         timezone_name = await resolve_user_timezone()
         result = await run_blocking(
@@ -212,11 +228,18 @@ def register_tools(server: FastMCP) -> None:
     def create_task(
         tasklist_id: str,
         title: str,
-        notes: str | None = None,
-        due: str | None = None,
-        parent: str | None = None,
-        previous: str | None = None,
-        status: TaskStatus = "needsAction",
+        notes: Annotated[str | None, "Task notes/description text."] = None,
+        due: Annotated[
+            str | None,
+            "Task due date/time as YYYY-MM-DD or RFC3339; normalized to midnight UTC when only a date is given.",
+        ] = None,
+        parent: Annotated[
+            str | None, "Parent task ID to nest this as a subtask under; omit for a top-level task."
+        ] = None,
+        previous: Annotated[
+            str | None, "ID of the sibling task this task should be ordered immediately after; omit to place it first."
+        ] = None,
+        status: Annotated[TaskStatus, "Task status: needsAction or completed."] = "needsAction",
     ) -> dict[str, Any]:
         return create_task_payload(
             CreateTaskRequest(
@@ -235,12 +258,17 @@ def register_tools(server: FastMCP) -> None:
         tasklist_id: str,
         task_id: str,
         title: str | None = None,
-        notes: str | None = None,
-        due: str | None = None,
-        status: TaskStatus | None = None,
-        completed: str | None = None,
-        deleted: bool | None = None,
-        hidden: bool | None = None,
+        notes: Annotated[str | None, "Updated task notes/description text."] = None,
+        due: Annotated[
+            str | None,
+            "Updated due date/time as YYYY-MM-DD or RFC3339; normalized to midnight UTC when only a date is given.",
+        ] = None,
+        status: Annotated[TaskStatus | None, "Updated task status: needsAction or completed."] = None,
+        completed: Annotated[
+            str | None, "Completion RFC3339 timestamp to set; typically paired with status='completed'."
+        ] = None,
+        deleted: Annotated[bool | None, "Whether to mark the task as deleted."] = None,
+        hidden: Annotated[bool | None, "Whether to mark the task as hidden from the default task list view."] = None,
     ) -> dict[str, Any]:
         return update_task_payload(
             UpdateTaskRequest(
@@ -257,7 +285,13 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="complete_task")
-    async def complete_task(tasklist_id: str, task_id: str, completed_at: str | None = None) -> dict[str, Any]:
+    async def complete_task(
+        tasklist_id: str,
+        task_id: str,
+        completed_at: Annotated[
+            str | None, "Completion RFC3339 timestamp to record; defaults to the account's current local time."
+        ] = None,
+    ) -> dict[str, Any]:
         timezone_name = await resolve_user_timezone()
         return await run_blocking(
             complete_task_payload,
@@ -269,9 +303,15 @@ def register_tools(server: FastMCP) -> None:
     def move_task(
         tasklist_id: str,
         task_id: str,
-        parent: str | None = None,
-        previous: str | None = None,
-        destination_tasklist_id: str | None = None,
+        parent: Annotated[
+            str | None, "New parent task ID to nest this task under; omit to leave it at the top level."
+        ] = None,
+        previous: Annotated[
+            str | None, "ID of the sibling task this task should be ordered immediately after; omit to place it first."
+        ] = None,
+        destination_tasklist_id: Annotated[
+            str | None, "Target tasklist ID to move the task into; omit to reorder within the same tasklist."
+        ] = None,
     ) -> dict[str, Any]:
         return move_task_payload(
             MoveTaskRequest(
