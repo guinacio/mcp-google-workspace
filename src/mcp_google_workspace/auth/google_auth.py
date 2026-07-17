@@ -9,6 +9,7 @@ import os
 from threading import Lock, RLock
 from pathlib import Path
 from typing import Any
+from weakref import WeakValueDictionary
 
 import httplib2
 from google.auth.exceptions import RefreshError
@@ -22,7 +23,12 @@ from googleapiclient.http import HttpRequest
 from ..runtime import RuntimeSettings, get_runtime_settings
 from ..runtime import get_token_storage_settings
 from .identity import Principal, current_principal
-from .token_store import EncryptedTokenStore, TokenStoreError
+from .token_store import (
+    EncryptedTokenStore,
+    RedisEncryptedTokenStore,
+    TokenStore,
+    TokenStoreError,
+)
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
@@ -128,7 +134,7 @@ API_CAPABILITY = {
 
 LOGGER = logging.getLogger(__name__)
 _CREDENTIAL_LOCKS_GUARD = Lock()
-_CREDENTIAL_LOCKS: dict[str, RLock] = {}
+_CREDENTIAL_LOCKS: WeakValueDictionary[str, RLock] = WeakValueDictionary()
 
 
 def _credential_lock(storage_key: str) -> RLock:
@@ -255,8 +261,13 @@ def resolve_client_credentials_path() -> Path:
     return cwd / "src" / "credentials" / "credentials.json"
 
 
-def get_token_store() -> EncryptedTokenStore:
+def get_token_store() -> TokenStore:
     settings = get_token_storage_settings()
+    redis_url = os.getenv("MCP_TOKEN_REDIS_URL", "").strip()
+    if not redis_url and is_remote_oauth_mode():
+        redis_url = os.getenv("MCP_REDIS_URL", "").strip()
+    if redis_url:
+        return RedisEncryptedTokenStore(redis_url, settings.keyring)
     return EncryptedTokenStore(settings.user_token_dir, settings.keyring)
 
 
@@ -366,9 +377,10 @@ def _get_credentials_unlocked(required_scopes: list[str] | None = None) -> Crede
 
 
 def get_credentials(required_scopes: list[str] | None = None) -> Credentials:
-    """Load/refresh credentials under a per-principal critical section."""
+    """Load/refresh credentials under local and cross-replica critical sections."""
     principal = current_principal()
-    with _credential_lock(principal.storage_key):
+    store = get_token_store()
+    with _credential_lock(principal.storage_key), store.credential_lock(principal):
         return _get_credentials_unlocked(required_scopes)
 
 

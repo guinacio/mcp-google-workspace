@@ -6,6 +6,7 @@ import base64
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import logging
 import os
 import secrets
 import time
@@ -17,6 +18,8 @@ from redis.exceptions import WatchError
 
 from .errors import RecoverableToolError
 from ..runtime import get_token_storage_settings
+
+LOGGER = logging.getLogger("mcp_google_workspace.uploads.s3")
 
 
 class S3UploadStore:
@@ -41,16 +44,20 @@ class S3UploadStore:
         now = int(time.time())
         key = self._metadata_key(scope)
         expired: list[str] = []
+        expired_bytes = 0
         for raw_upload_id, raw in self.redis.hgetall(key).items():
             upload_id = str(raw_upload_id)
-            if int(json.loads(raw)["expires_at"]) < now:
+            item = json.loads(raw)
+            if int(item["expires_at"]) < now or item.get("status") == "deleting":
                 expired.append(upload_id)
+                expired_bytes += int(item.get("size", 0))
                 self.s3.delete_object(Bucket=self.bucket, Key=self._object_key(scope, upload_id))
         if expired:
             self.redis.hdel(key, *expired)
-            from .production import UPLOAD_CLEANUPS
+            from .production import UPLOAD_CLEANUPS, UPLOAD_REMOVED_BYTES
 
             UPLOAD_CLEANUPS.labels("s3").inc(len(expired))
+            UPLOAD_REMOVED_BYTES.labels("s3").inc(expired_bytes)
 
     def store(self, scope: str, files: list[dict[str, Any]], max_file_size: int) -> list[dict[str, Any]]:
         # Import after file_uploads is initialized to avoid a module cycle.
@@ -80,12 +87,16 @@ class S3UploadStore:
                 "size": len(data),
                 "size_display": _size_display(len(data)),
                 "checksum_sha256": sha256(data).hexdigest(),
-                "uploaded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "uploaded_at": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
                 "expires_at": now + self.ttl_seconds,
             }
             prepared.append((upload_id, metadata, self.keyring.encrypt(data)))
 
         key = self._metadata_key(scope)
+        upload_ids = [upload_id for upload_id, _, _ in prepared]
+        # Reserve quota and handles in Redis before creating any object. Staged
+        # records are invisible to clients and expire quickly, allowing the
+        # reconciler above to clean up after a process crash.
         while True:
             try:
                 with self.redis.pipeline() as pipe:
@@ -100,33 +111,88 @@ class S3UploadStore:
                             f"Upload quota exceeded ({self.quota_bytes} bytes per principal).",
                             required_action={"tool": "files_list_files", "arguments": {}},
                         )
-                    for upload_id, _, encrypted in prepared:
-                        self.s3.put_object(
-                            Bucket=self.bucket,
-                            Key=self._object_key(scope, upload_id),
-                            Body=encrypted,
-                            ContentType="application/octet-stream",
-                        )
                     pipe.multi()
                     for upload_id, metadata, _ in prepared:
-                        pipe.hset(key, upload_id, json.dumps(metadata, separators=(",", ":")))
+                        expires_at = metadata.get("expires_at")
+                        if not isinstance(expires_at, int):
+                            raise ValueError("Prepared upload metadata is missing expires_at.")
+                        staged = {
+                            **metadata,
+                            "status": "staging",
+                            "expires_at": min(expires_at, now + 300),
+                        }
+                        pipe.hset(key, upload_id, json.dumps(staged, separators=(",", ":")))
                     pipe.expire(key, self.ttl_seconds + 300)
                     pipe.execute()
                     break
             except WatchError:
                 continue
+        uploaded: list[str] = []
+        try:
+            for upload_id, _, encrypted in prepared:
+                self.s3.put_object(
+                    Bucket=self.bucket,
+                    Key=self._object_key(scope, upload_id),
+                    Body=encrypted,
+                    ContentType="application/octet-stream",
+                )
+                uploaded.append(upload_id)
+            with self.redis.pipeline(transaction=True) as pipe:
+                for upload_id, metadata, _ in prepared:
+                    ready = {**metadata, "status": "ready"}
+                    pipe.hset(key, upload_id, json.dumps(ready, separators=(",", ":")))
+                pipe.expire(key, self.ttl_seconds + 300)
+                pipe.execute()
+            from .production import UPLOAD_STORED_BYTES
+
+            UPLOAD_STORED_BYTES.labels("s3").inc(
+                sum(int(metadata["size"]) for _, metadata, _ in prepared)
+            )
+        except BaseException:
+            # Compensation is deliberately best-effort in both stores. Any
+            # surviving staged record is still bounded and reconciled on list.
+            for upload_id in uploaded:
+                try:
+                    self.s3.delete_object(
+                        Bucket=self.bucket,
+                        Key=self._object_key(scope, upload_id),
+                    )
+                except Exception as cleanup_error:
+                    LOGGER.warning(
+                        "Failed to compensate uploaded object %s: %s",
+                        upload_id,
+                        cleanup_error.__class__.__name__,
+                    )
+            try:
+                if upload_ids:
+                    self.redis.hdel(key, *upload_ids)
+            except Exception as cleanup_error:
+                LOGGER.warning(
+                    "Failed to remove staged upload metadata: %s",
+                    cleanup_error.__class__.__name__,
+                )
+            raise
         return self.list(scope)
 
-    def list(self, scope: str) -> list[dict[str, Any]]:
+    def list(
+        self, scope: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("Upload pagination requires limit 1..100 and a non-negative offset.")
         self._delete_expired(scope)
-        items = sorted(
-            (json.loads(raw) for raw in self.redis.hvals(self._metadata_key(scope))),
+        all_items = sorted(
+            (
+                item
+                for raw in self.redis.hvals(self._metadata_key(scope))
+                if (item := json.loads(raw)).get("status", "ready") == "ready"
+            ),
             key=lambda item: item["uploaded_at"],
+            reverse=True,
         )
-        remaining = self.quota_bytes - sum(int(item["size"]) for item in items)
-        from .production import UPLOAD_BYTES
-
-        UPLOAD_BYTES.labels(scope[:16], "s3").set(sum(int(item["size"]) for item in items))
+        remaining = max(
+            0, self.quota_bytes - sum(int(item["size"]) for item in all_items)
+        )
+        items = all_items[offset : offset + limit]
         return [{**item, "remaining_quota_bytes": remaining} for item in items]
 
     def get(self, scope: str, upload_id: str) -> Any:
@@ -140,6 +206,14 @@ class S3UploadStore:
                 required_action={"tool": "files_file_manager", "arguments": {}},
             )
         item = json.loads(raw)
+        if item.get("status", "ready") != "ready":
+            raise RecoverableToolError(
+                "upload_not_ready",
+                "The uploaded file is still being finalized or deleted.",
+                required_action={"action": "retry", "after_seconds": 1},
+                retryable=True,
+                retry_after=1,
+            )
         if int(item["expires_at"]) < int(time.time()):
             self.delete(scope, upload_id)
             raise RecoverableToolError(
@@ -169,7 +243,17 @@ class S3UploadStore:
         )
 
     def delete(self, scope: str, upload_id: str) -> bool:
-        deleted = bool(self.redis.hdel(self._metadata_key(scope), upload_id))
-        if deleted:
-            self.s3.delete_object(Bucket=self.bucket, Key=self._object_key(scope, upload_id))
-        return deleted
+        key = self._metadata_key(scope)
+        raw = self.redis.hget(key, upload_id)
+        if raw is None:
+            return False
+        item = json.loads(raw)
+        item["status"] = "deleting"
+        item["expires_at"] = min(int(item["expires_at"]), int(time.time()) + 300)
+        self.redis.hset(key, upload_id, json.dumps(item, separators=(",", ":")))
+        self.s3.delete_object(Bucket=self.bucket, Key=self._object_key(scope, upload_id))
+        self.redis.hdel(key, upload_id)
+        from .production import UPLOAD_REMOVED_BYTES
+
+        UPLOAD_REMOVED_BYTES.labels("s3").inc(int(item.get("size", 0)))
+        return True

@@ -9,7 +9,11 @@ from fastmcp.server.auth import AccessToken
 import pytest
 
 from mcp_google_workspace.auth.identity import Principal, current_principal
-from mcp_google_workspace.auth.token_store import EncryptedTokenStore, TokenStoreError
+from mcp_google_workspace.auth.token_store import (
+    EncryptedTokenStore,
+    RedisEncryptedTokenStore,
+    TokenStoreError,
+)
 from mcp_google_workspace.runtime import get_remote_security_settings
 from mcp_google_workspace.server_http import build_http_auth
 import mcp_google_workspace.server_http as remote_entry
@@ -198,6 +202,123 @@ def test_oauth_state_creation_is_bounded_per_principal(tmp_path) -> None:
         store.create_oauth_state(principal, "a" * 64)
     with pytest.raises(TokenStoreError, match="Too many outstanding"):
         store.create_oauth_state(principal, "b" * 64)
+
+
+class _FakeRedisLock:
+    def acquire(self, blocking=True):
+        return blocking
+
+    def release(self):
+        return None
+
+
+class _FakeRedisTokenBackend:
+    def __init__(self) -> None:
+        self.values: dict[str, bytes] = {}
+        self.zsets: dict[str, dict[str, int]] = {}
+
+    def set(self, key, value, **kwargs):
+        if kwargs.get("nx") and key in self.values:
+            return False
+        self.values[str(key)] = value
+        return True
+
+    def get(self, key):
+        return self.values.get(str(key))
+
+    def delete(self, key):
+        return int(self.values.pop(str(key), None) is not None)
+
+    def zrem(self, key, value):
+        return int(self.zsets.setdefault(str(key), {}).pop(str(value), None) is not None)
+
+    def eval(self, script, number_of_keys, *args):
+        assert number_of_keys in {1, 2}
+        if "ZREMRANGEBYSCORE" in script:
+            state_key, set_key, now, limit, payload, _ttl, expires_at, state = args
+            entries = self.zsets.setdefault(str(set_key), {})
+            for name, expiry in list(entries.items()):
+                if expiry <= int(now):
+                    entries.pop(name)
+            if len(entries) >= int(limit) or str(state_key) in self.values:
+                return 0
+            self.values[str(state_key)] = payload
+            entries[str(state)] = int(expires_at)
+            return 1
+        key = str(args[0])
+        return self.values.pop(key, None)
+
+    def lock(self, *args, **kwargs):
+        return _FakeRedisLock()
+
+    def ping(self):
+        return True
+
+    def pipeline(self):
+        backend = self
+
+        class Pipeline:
+            delete_key: str | None = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def watch(self, key):
+                return None
+
+            def get(self, key):
+                return backend.get(key)
+
+            def multi(self):
+                return None
+
+            def delete(self, key):
+                self.delete_key = str(key)
+
+            def execute(self):
+                if self.delete_key is not None:
+                    backend.delete(self.delete_key)
+                return [True]
+
+        return Pipeline()
+
+
+def test_redis_token_store_is_shared_atomic_and_principal_bounded(monkeypatch) -> None:
+    backend = _FakeRedisTokenBackend()
+    monkeypatch.setattr(
+        "mcp_google_workspace.auth.token_store.redis.Redis.from_url",
+        lambda *args, **kwargs: backend,
+    )
+    key = Fernet.generate_key().decode()
+    first = RedisEncryptedTokenStore("redis://example", key)
+    second = RedisEncryptedTokenStore("redis://example", key)
+    principal = Principal(issuer="https://issuer.example", subject="alice")
+
+    first.save_credentials_json(principal, '{"refresh_token":"secret"}')
+    assert second.load_credentials_json(principal) == '{"refresh_token":"secret"}'
+    stale_fingerprint = sha256(b'{"refresh_token":"secret"}').hexdigest()
+    second.save_credentials_json(principal, '{"refresh_token":"new"}')
+    assert not first.delete_credentials_if_fingerprint(principal, stale_fingerprint)
+    current_fingerprint = sha256(b'{"refresh_token":"new"}').hexdigest()
+    assert first.delete_credentials_if_fingerprint(principal, current_fingerprint)
+    second.save_credentials_json(principal, '{"refresh_token":"new"}')
+    with second.credential_lock(principal):
+        assert second.ping()
+
+    pending = [
+        first.create_oauth_state(principal, f"verifier-{index}")
+        for index in range(10)
+    ]
+    with pytest.raises(TokenStoreError, match="Too many outstanding"):
+        first.create_oauth_state(principal, "one-too-many")
+    consumed = second.consume_oauth_state(pending[0].state)
+    assert consumed is not None
+    assert consumed.principal == principal
+    assert second.consume_oauth_state(pending[0].state) is None
+    assert first.create_oauth_state(principal, "replacement")
 
 
 def test_principal_is_derived_from_verified_fastmcp_claims(monkeypatch) -> None:

@@ -9,6 +9,7 @@
 .ruff_cache/
 .uv-cache/
 .uv-cache-*/
+.review-*/
 .codex-uv-cache/
 .pnpm-store/
 .venv/
@@ -22,6 +23,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.mcpb
+CODE_REVIEW_*.md
 credentials.json
 token.json
 src/credentials/credentials.json

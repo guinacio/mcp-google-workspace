@@ -290,7 +290,8 @@ def register(server: FastMCP) -> None:
             )
         else:
             require_local_filesystem("Drive upload")
-            assert request.local_path is not None
+            if request.local_path is None:  # pragma: no cover - schema invariant
+                raise ValueError("local_path is required for a local Drive upload.")
             src = Path(request.local_path)
             if not await run_blocking(src.exists):
                 raise FileNotFoundError(f"Local file not found: {src}")
@@ -458,7 +459,8 @@ def register(server: FastMCP) -> None:
             )
         else:
             require_local_filesystem("Drive content update")
-            assert request.local_path is not None
+            if request.local_path is None:  # pragma: no cover - schema invariant
+                raise ValueError("local_path is required for a local Drive content update.")
             media = media_file_upload(request.local_path, request.mime_type, request.resumable)
         if ctx is not None:
             await ctx.info(f"Uploading replacement content for file {request.file_id}.")

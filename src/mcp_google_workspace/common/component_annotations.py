@@ -361,7 +361,7 @@ def _tool_subject(base_name: str) -> str:
 _COMMON_PARAMETER_DESCRIPTIONS = {
     "query": "Search or filter expression used to narrow the results.",
     "page_size": "Maximum number of items to return in this page of results.",
-    "page_token": "Pagination token from a previous response used to fetch the next page.",
+    "page_token": "Pagination token from a previous response used to fetch the next page.",  # nosec B105 -- schema documentation, not a credential
     "max_results": "Maximum number of results to return.",
     "fields": "Partial-response field selector controlling which fields are returned.",
     "order_by": "Sort order to apply to the returned results.",
@@ -428,7 +428,7 @@ def _infer_tool_description(name: str, namespace_hint: str | None = None) -> str
     if base_name.startswith("patch_"):
         return f"Apply a partial update to {subject} in {namespace_display}."
     if base_name.startswith("delete_"):
-        return f"Delete {subject} from {namespace_display}."
+        return f"Delete {subject} from {namespace_display}."  # nosec B608 -- prose, not SQL
     if base_name.startswith("batch_delete"):
         return f"Delete multiple {default_object}s in {namespace_display}."
     if base_name.startswith("batch_modify"):

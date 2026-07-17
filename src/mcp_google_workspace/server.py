@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import anyio
+import base64
+import os
+import secrets
 from fastmcp import FastMCP
+from fastmcp.server.providers.addressing import hash_tool, hashed_resource_uri
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import BaseModel, ConfigDict, Field
 
 from .apps import apps_mcp
 from .common.component_annotations import apply_default_tool_annotations
@@ -115,6 +120,118 @@ if is_meet_enabled():
 register_connection_tools(workspace_mcp)
 
 
+class McpAppsCallbacks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    store_files: str = Field(description="Hidden app-callable upload tool address.")
+    delete_file: str = Field(description="Hidden app-callable delete tool address.")
+
+
+class McpAppsSelfTest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(description="Self-test execution status.")
+    stored_handle: str | None = Field(
+        default=None, description="Temporary handle created by a successful self-test."
+    )
+    delete_result: dict[str, object] | None = Field(
+        default=None, description="Result returned by the hidden delete callback."
+    )
+
+
+class McpAppsDiagnostics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str = Field(description="Machine-readable diagnostic status.")
+    apps_enabled: bool = Field(description="Whether the file-picker Apps provider is mounted.")
+    picker_tool: str = Field(description="Model-visible tool that opens the file picker.")
+    resource_uri: str = Field(description="MCP Apps UI resource URI advertised by the picker.")
+    resource_mime_type: str = Field(description="MIME type served for the UI resource.")
+    renderer_mode: str = Field(description="Prefab renderer delivery mode.")
+    hidden_callbacks: McpAppsCallbacks = Field(
+        description="App-callable backend tool addresses hidden from the model catalog."
+    )
+    max_file_bytes: int = Field(
+        ge=1, description="Maximum decoded size accepted for one picker upload."
+    )
+    self_test: McpAppsSelfTest = Field(
+        description="Optional store/delete callback self-test result."
+    )
+
+
+@workspace_mcp.tool(name="get_mcp_apps_diagnostics")
+async def get_mcp_apps_diagnostics(
+    run_self_test: bool = False,
+) -> McpAppsDiagnostics:
+    """Describe the file-picker MCP Apps contract and optionally verify callbacks."""
+    picker_name = "files_file_manager"
+    store_address = f"{hash_tool('Workspace Files', 'store_files')}_store_files"
+    delete_address = f"{hash_tool('Workspace Files', 'delete_file')}_delete_file"
+    resource_uri = str(hashed_resource_uri("Workspace Files", "file_manager"))
+    renderer_mode = (
+        "bundled"
+        if os.getenv("PREFAB_BUNDLED_RENDERER", "").strip()
+        else "external" if os.getenv("PREFAB_RENDERER_URL", "").strip() else "cdn"
+    )
+    result: dict[str, object] = {
+        "status": "ok",
+        "apps_enabled": True,
+        "picker_tool": picker_name,
+        "resource_uri": resource_uri,
+        "resource_mime_type": "text/html;profile=mcp-app",
+        "renderer_mode": renderer_mode,
+        "hidden_callbacks": {
+            "store_files": store_address,
+            "delete_file": delete_address,
+        },
+        "max_file_bytes": 25 * 1024 * 1024,
+        "self_test": {"status": "not_run"},
+    }
+    if not run_self_test:
+        return McpAppsDiagnostics.model_validate(result)
+
+    filename = f"mcp-app-self-test-{secrets.token_hex(8)}.txt"
+    stored = await workspace_mcp.call_tool(
+        store_address,
+        {
+            "files": [
+                {
+                    "name": filename,
+                    "size": 0,
+                    "type": "text/plain",
+                    "data": base64.b64encode(b"").decode("ascii"),
+                }
+            ]
+        },
+    )
+    payload = stored.structured_content or {}
+    entries = payload.get("result", payload) if isinstance(payload, dict) else payload
+    if not isinstance(entries, list) or not entries:
+        raise RuntimeError("The MCP Apps storage callback returned an invalid result.")
+    self_test_entry = next(
+        (
+            entry
+            for entry in entries
+            if isinstance(entry, dict)
+            and (entry.get("display_name") == filename or entry.get("name") == filename)
+        ),
+        None,
+    )
+    if self_test_entry is None:
+        raise RuntimeError(
+            "The MCP Apps storage callback did not return the temporary self-test file."
+        )
+    handle = str(
+        self_test_entry.get("name") or self_test_entry.get("upload_id") or ""
+    )
+    if not handle:
+        raise RuntimeError("The MCP Apps storage callback returned no file handle.")
+    deleted = await workspace_mcp.call_tool(delete_address, {"name": handle})
+    result["self_test"] = {
+        "status": "passed",
+        "stored_handle": handle,
+        "delete_result": deleted.structured_content,
+    }
+    return McpAppsDiagnostics.model_validate(result)
+
+
 @workspace_mcp.tool(name="get_workspace_capabilities")
 def get_workspace_capabilities() -> dict[str, object]:
     """Describe available namespaces, consent capabilities, and file-transfer choices."""
@@ -147,7 +264,11 @@ def get_workspace_capabilities() -> dict[str, object]:
             "local": "Trusted stdio clients may pass local filesystem paths.",
             "drive": "Gemini media tools also accept drive_file_id.",
         },
-        "discovery": "Remote HTTP uses capability-aware progressive tool discovery.",
+        "discovery": (
+            "FastMCP BM25 Tool Search is enabled by default for HTTP and stdio. "
+            "Set MCP_CLIENT_MODEL=claude to disable it automatically in auto mode, "
+            "or use MCP_TOOL_SEARCH=on|off explicitly."
+        ),
     }
 
 
@@ -335,7 +456,11 @@ async def commit_workspace_action(commit_token: str) -> dict[str, object]:
     tool_name, arguments = APPROVAL_STORE.consume(commit_token)
     active_token = COMMIT_ACTIVE.set(True)
     try:
-        result = await workspace_mcp.call_tool(tool_name, arguments, run_middleware=False)
+        # Re-enter the complete middleware chain so revocation, admission,
+        # deadlines, input limits, handle resolution, telemetry, and structured
+        # errors still apply at commit time. COMMIT_ACTIVE bypasses only the
+        # consequential-action gate for this exact bound invocation.
+        result = await workspace_mcp.call_tool(tool_name, arguments)
     finally:
         COMMIT_ACTIVE.reset(active_token)
     return {

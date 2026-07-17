@@ -1,6 +1,6 @@
 # mcp-google-workspace
 
-Production-ready Google Workspace MCP package with:
+Production-oriented Google Workspace MCP package with:
 
 - Gmail MCP: send/read/search emails, attachment handling, label management, batch operations.
 - Google Calendar MCP: events, availability, create/update/delete operations.
@@ -155,6 +155,10 @@ Build a local `.mcpb` archive only if you are developing or testing bundle chang
 ```powershell
 uv run python scripts/build_mcpb.py
 ```
+
+The packaging command runs `npm ci` and rebuilds the Apps UI from the exact
+frontend lock before creating the archive. It fails instead of packaging a
+stale generated UI.
 
 Note: Claude Desktop currently rejects extra `server` metadata keys such as `package_manager`, `python_version`, and `working_dir`, so this bundle keeps the `uv` server block to the manifest fields Claude accepts.
 
@@ -390,6 +394,8 @@ Admission control is principal- and tool-cost-aware:
 | `MCP_RATE_LIMIT_PER_MINUTE` | `120` | Per-principal request rate |
 | `MCP_GLOBAL_CONCURRENCY` | `64` | Server-wide active tool calls |
 | `MCP_PRINCIPAL_CONCURRENCY` | `8` | Active calls per principal |
+| `MCP_PRINCIPAL_STATE_LIMIT` | `10000` | Maximum retained admission-state identities |
+| `MCP_PRINCIPAL_STATE_TTL_SECONDS` | `900` | Idle admission-state retention |
 | `MCP_EXPENSIVE_CONCURRENCY` | `4` | Gemini/download/export/batch calls |
 | `MCP_TOOL_DEADLINE_SECONDS` | `120` | Standard end-to-end deadline |
 | `MCP_EXPENSIVE_DEADLINE_SECONDS` | `600` | Expensive-tool deadline |
@@ -397,7 +403,7 @@ Admission control is principal- and tool-cost-aware:
 
 Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, or recipient lists.
 
-For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Readiness fails when this distributed contract is incomplete. The HTTP entrypoint uses `MCP_REDIS_URL` as `FASTMCP_DOCKET_URL` when the latter is not set. FastMCP native task-enabled tools use the standard MCP task protocol for operation IDs, progress polling, cancellation, expiry, and partial/error results. Additional workers can run with `uv run fastmcp tasks worker src/mcp_google_workspace/server.py:workspace_mcp` using the same `FASTMCP_DOCKET_URL` and queue name.
+For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, approval tokens, and upload metadata. Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. The HTTP entrypoint uses `MCP_REDIS_URL` as `FASTMCP_DOCKET_URL` when the latter is not set. FastMCP native task-enabled tools use the standard MCP task protocol for operation IDs, progress polling, cancellation, expiry, and partial/error results. Additional workers can run with `uv run fastmcp tasks worker src/mcp_google_workspace/server.py:workspace_mcp` using the same `FASTMCP_DOCKET_URL` and queue name.
 
 High-impact reversible writes use `prepare_workspace_action` and `commit_workspace_action`. The encrypted one-time token is principal-bound, argument-bound, expires after five minutes, and returns an impact preview before commit. Stable `resource` handles (`gdrive:///...`, `gmail-message:///...`, and related schemes) are included where applicable and can be refreshed through `resolve_workspace_resource`.
 
@@ -426,12 +432,26 @@ Typical flow:
 Local/stdio uploads are session-scoped in memory. A single remote instance can use encrypted filesystem objects plus SQLite metadata through `MCP_UPLOAD_DB`. Multi-worker production uses Redis metadata and S3-compatible encrypted object storage by configuring `MCP_REDIS_URL` and `MCP_UPLOAD_S3_BUCKET` (plus optional `MCP_UPLOAD_S3_ENDPOINT` and `MCP_UPLOAD_S3_PREFIX`). Remote files use opaque handles, expire after one hour, and have a 250 MiB per-principal aggregate quota by default. Configure `MCP_UPLOAD_TTL_SECONDS` and `MCP_UPLOAD_QUOTA_BYTES` as needed. Uploads are MIME-sniffed, archive expansion is bounded, checksums are verified, and `MCP_REQUIRE_MALWARE_SCAN=true` enforces ClamAV through `MCP_CLAMAV_HOST`/`MCP_CLAMAV_PORT`. Raw host paths are absent from the remote catalog and rejected at runtime.
 
 Use `files_delete_file` to remove an upload before its TTL expires.
+Use `files_list_files_page` with `limit` and `cursor` when a principal has many uploads.
+`get_mcp_apps_diagnostics` reports the UI resource, renderer mode, generated hidden callback addresses, and can run a temporary store/delete self-test with `run_self_test=true`.
+
+The MCPB manifest forces Prefab's self-contained bundled renderer, avoiding a
+runtime CDN dependency inside the host iframe.
 
 **Requires:** an MCP client with MCP Apps/iframe rendering support. Clients without Apps support can still use Google Drive file IDs or trusted local/stdio paths.
 
-### Progressive Remote Tool Discovery
+### Progressive Tool Discovery
 
-The authenticated Streamable HTTP entrypoint reduces the model-visible catalog to workflow/discovery entry points, hides namespaces whose OAuth capability is not granted, and removes host-filesystem-only tools and parameters. Use `search_tools` to discover a capability and `call_tool` to invoke the selected tool. `refresh_workspace_catalog` sends `tools/list_changed` after incremental consent.
+Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to workflow/discovery entry points plus `search_tools` and `call_tool`; hidden tools remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. `refresh_workspace_catalog` sends `tools/list_changed` after incremental consent.
+
+Configuration:
+
+- `MCP_TOOL_SEARCH=auto` (default): enable progressive discovery unless `MCP_CLIENT_MODEL` contains `claude`.
+- `MCP_TOOL_SEARCH=on`: always enable progressive discovery.
+- `MCP_TOOL_SEARCH=off`: expose the complete catalog.
+- `MCP_CLIENT_MODEL=claude`: disable progressive discovery in auto mode for Claude's current tool/App routing behavior.
+
+The official MCPB manifest declares `MCP_CLIENT_MODEL=claude`, so Claude Desktop receives the complete catalog. For a manual Claude Desktop stdio configuration, add the same environment variable explicitly.
 
 `get_workspace_capabilities` reports enabled namespaces, OAuth capability names, and supported file-input strategies. `search_workspace` searches Drive files, contacts, and Gmail message IDs concurrently and returns normalized references.
 

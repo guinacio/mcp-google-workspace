@@ -10,6 +10,7 @@ from cryptography.fernet import Fernet
 from fastmcp import Client
 from fastmcp.server.providers.addressing import hash_tool
 from pydantic import ValidationError
+from jsonschema import Draft202012Validator
 
 from mcp_google_workspace.auth.identity import Principal
 from mcp_google_workspace.drive.schemas import UploadFileRequest
@@ -68,14 +69,32 @@ def test_file_picker_uses_the_standard_mcp_apps_contract() -> None:
     assert "files_store_files" not in tools
 
 
+async def _run_apps_self_test():
+    async with Client(workspace_mcp) as client:
+        return await client.call_tool(
+            "get_mcp_apps_diagnostics", {"run_self_test": True}
+        )
+
+
+def test_file_picker_diagnostics_exercise_hidden_store_and_delete_callbacks() -> None:
+    result = anyio.run(_run_apps_self_test)
+    assert result.is_error is False
+    assert result.structured_content["self_test"]["status"] == "passed"
+    assert result.structured_content["self_test"]["delete_result"]["status"] == "deleted"
+
+
 def test_file_tool_schema_describes_remote_upload_handles() -> None:
     tools, _, _, _, _, _ = anyio.run(_file_picker_contract)
     item_properties = tools["files_list_files"].outputSchema["properties"]["result"][
         "items"
     ]["properties"]
-    assert {"upload_id", "display_name", "checksum_sha256", "expires_at"} <= set(
-        item_properties
-    )
+    assert {
+        "upload_id",
+        "display_name",
+        "checksum_sha256",
+        "expires_at",
+        "remaining_quota_bytes",
+    } <= set(item_properties)
 
 
 def test_uploaded_files_are_isolated_by_principal_and_session(monkeypatch) -> None:
@@ -148,6 +167,40 @@ def test_remote_upload_store_is_encrypted_shared_and_principal_scoped(tmp_path) 
             [{"name": "b.txt", "type": "text/plain", "data": base64.b64encode(b"12345").decode()}],
             10,
         )
+
+
+def test_remote_upload_listing_is_paginated_with_account_level_quota(tmp_path) -> None:
+    store = EncryptedUploadStore(
+        tmp_path / "uploads.sqlite3",
+        Fernet.generate_key().decode(),
+        quota_bytes=100,
+    )
+    store.store(
+        "alice",
+        [
+            {
+                "name": f"{index}.txt",
+                "type": "text/plain",
+                "data": base64.b64encode(str(index).encode()).decode(),
+            }
+            for index in range(3)
+        ],
+        10,
+    )
+    all_stored = store.list("alice")
+    list_tool = anyio.run(lambda: workspace_mcp.get_tool("files_list_files"))
+    assert list_tool is not None
+    assert not list(
+        Draft202012Validator(list_tool.output_schema).iter_errors({"result": all_stored})
+    )
+
+    first = store.list("alice", limit=1, offset=0)
+    second = store.list("alice", limit=1, offset=1)
+
+    assert len(first) == len(second) == 1
+    assert first[0]["upload_id"] != second[0]["upload_id"]
+    assert first[0]["remaining_quota_bytes"] == 97
+    assert second[0]["remaining_quota_bytes"] == 97
 
 
 def test_file_source_schemas_require_exactly_one_source() -> None:

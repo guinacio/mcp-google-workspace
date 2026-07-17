@@ -123,8 +123,15 @@ GOOGLE_HTTP_ATTEMPTS = Counter(
 OAUTH_REFRESHES = Counter(
     "mcp_workspace_oauth_refresh_total", "Google OAuth refresh outcomes", ("outcome",)
 )
-UPLOAD_BYTES = Gauge(
-    "mcp_workspace_upload_bytes", "Live uploaded bytes", ("principal_hash", "backend")
+UPLOAD_STORED_BYTES = Counter(
+    "mcp_workspace_upload_stored_bytes_total",
+    "Encrypted upload bytes accepted by the backend",
+    ("backend",),
+)
+UPLOAD_REMOVED_BYTES = Counter(
+    "mcp_workspace_upload_removed_bytes_total",
+    "Encrypted upload bytes removed or expired",
+    ("backend",),
 )
 UPLOAD_CLEANUPS = Counter(
     "mcp_workspace_upload_cleanup_total", "Expired upload objects cleaned", ("backend",)
@@ -144,6 +151,13 @@ class _Window:
                 return max(0.05, seconds - (now - self.timestamps[0]))
             self.timestamps.append(now)
         return None
+
+
+@dataclass(slots=True)
+class _PrincipalAdmission:
+    window: _Window
+    semaphore: anyio.Semaphore
+    last_seen: float
 
 
 def _integer_env(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -242,8 +256,14 @@ class ProductionControlMiddleware(Middleware):
         self.expensive_limit = anyio.Semaphore(_integer_env("MCP_EXPENSIVE_CONCURRENCY", 4, 1, 1_000))
         self.standard_deadline = _integer_env("MCP_TOOL_DEADLINE_SECONDS", 120, 1, 3_600)
         self.expensive_deadline = _integer_env("MCP_EXPENSIVE_DEADLINE_SECONDS", 600, 1, 7_200)
-        self._windows: dict[str, _Window] = defaultdict(_Window)
-        self._principal_semaphores: dict[str, anyio.Semaphore] = {}
+        self.principal_state_limit = _integer_env(
+            "MCP_PRINCIPAL_STATE_LIMIT", 10_000, 100, 1_000_000
+        )
+        self.principal_state_ttl = _integer_env(
+            "MCP_PRINCIPAL_STATE_TTL_SECONDS", 900, 60, 86_400
+        )
+        self._principal_states: dict[str, _PrincipalAdmission] = {}
+        self._last_state_eviction = 0.0
         self._tracer = trace.get_tracer("mcp_google_workspace")
 
     def _principal(self) -> str:
@@ -252,12 +272,52 @@ class ProductionControlMiddleware(Middleware):
         except Exception:
             return "unavailable"
 
-    def _semaphore(self, principal: str) -> anyio.Semaphore:
-        semaphore = self._principal_semaphores.get(principal)
-        if semaphore is None:
-            semaphore = anyio.Semaphore(self.principal_limit)
-            self._principal_semaphores[principal] = semaphore
-        return semaphore
+    def _admission_state(self, principal: str) -> _PrincipalAdmission:
+        now = time.monotonic()
+        state = self._principal_states.get(principal)
+        if state is None:
+            state = _PrincipalAdmission(
+                window=_Window(),
+                semaphore=anyio.Semaphore(self.principal_limit),
+                last_seen=now,
+            )
+            self._principal_states[principal] = state
+        else:
+            state.last_seen = now
+        if (
+            len(self._principal_states) > self.principal_state_limit
+            or now - self._last_state_eviction >= 60
+        ):
+            self._evict_principal_states(now, preserve=principal)
+        return state
+
+    def _evict_principal_states(self, now: float, *, preserve: str) -> None:
+        idle = [
+            (key, state)
+            for key, state in self._principal_states.items()
+            if key != preserve
+            and state.semaphore.value == self.principal_limit
+            and state.semaphore.statistics().tasks_waiting == 0
+            and (
+                now - state.last_seen >= self.principal_state_ttl
+                or len(self._principal_states) > self.principal_state_limit
+            )
+        ]
+        idle.sort(key=lambda item: item[1].last_seen)
+        target = min(
+            len(idle),
+            max(
+                len(self._principal_states) - self.principal_state_limit,
+                sum(
+                    1
+                    for _, state in idle
+                    if now - state.last_seen >= self.principal_state_ttl
+                ),
+            ),
+        )
+        for key, _ in idle[:target]:
+            self._principal_states.pop(key, None)
+        self._last_state_eviction = now
 
     async def on_call_tool(
         self,
@@ -279,7 +339,8 @@ class ProductionControlMiddleware(Middleware):
         principal_hash = sha256(principal.encode()).hexdigest()[:16]
         cost = _tool_cost(tool)
         deadline = self.expensive_deadline if cost == "expensive" else self.standard_deadline
-        retry_after = await self._windows[principal].consume(self.rate_limit, 60.0)
+        admission = self._admission_state(principal)
+        retry_after = await admission.window.consume(self.rate_limit, 60.0)
         if retry_after is not None:
             METRICS.rejections["rate_limited"] += 1
             ADMISSION_REJECTIONS.labels("rate_limited").inc()
@@ -299,7 +360,7 @@ class ProductionControlMiddleware(Middleware):
                 span.set_attribute("mcp.tool.name", tool)
                 span.set_attribute("mcp.principal.hash", principal_hash)
                 span.set_attribute("mcp.correlation_id", correlation_id)
-                async with self.global_limit, self._semaphore(principal):
+                async with self.global_limit, admission.semaphore:
                     expensive = self.expensive_limit if cost == "expensive" else _NullSemaphore()
                     async with expensive:
                         queue_ms = (time.perf_counter() - queue_started) * 1_000
@@ -354,6 +415,7 @@ class CapabilityCatalogMiddleware(Middleware):
         "disconnect_google_workspace",
         "refresh_workspace_catalog",
         "get_workspace_capabilities",
+        "get_mcp_apps_diagnostics",
         "search_workspace",
         "resolve_workspace_resource",
         "search_tools",
@@ -467,11 +529,15 @@ def readiness_report() -> tuple[bool, dict[str, Any]]:
     checks: dict[str, dict[str, Any]] = {}
     try:
         from ..runtime import get_token_storage_settings
+        from ..auth.google_auth import get_token_store
 
         storage = get_token_storage_settings()
-        storage.user_token_dir.mkdir(parents=True, exist_ok=True)
         checks["encryption"] = {"ok": bool(storage.keyring.active_key_id)}
-        checks["token_storage"] = {"ok": os.access(storage.user_token_dir, os.W_OK)}
+        token_store = get_token_store()
+        checks["token_storage"] = {
+            "ok": token_store.ping(),
+            "backend": token_store.backend_name,
+        }
     except Exception as exc:
         checks["configuration"] = {"ok": False, "error": exc.__class__.__name__}
     redis_url = os.getenv("MCP_REDIS_URL", "").strip()
@@ -497,13 +563,17 @@ def readiness_report() -> tuple[bool, dict[str, Any]]:
         affinity = os.getenv("MCP_SESSION_AFFINITY", "").strip().lower() in {
             "1", "true", "yes", "on"
         }
-        distributed = bool(redis_url and bucket and affinity)
+        token_backend = checks.get("token_storage", {}).get("backend")
+        distributed = bool(
+            redis_url and bucket and affinity and token_backend == "redis"  # nosec B105 -- backend identifier
+        )
         checks["multi_worker_storage"] = {
             "ok": distributed,
             "workers": workers,
             "requirement": (
-                "MCP_REDIS_URL, MCP_UPLOAD_S3_BUCKET, and load-balancer "
-                "Mcp-Session-Id affinity confirmed by MCP_SESSION_AFFINITY=true"
+                "Redis-backed OAuth credentials/state, MCP_UPLOAD_S3_BUCKET, and "
+                "load-balancer Mcp-Session-Id affinity confirmed by "
+                "MCP_SESSION_AFFINITY=true"
             ),
         }
     ready = RUNTIME_STATE.ready() and all(bool(check.get("ok")) for check in checks.values())

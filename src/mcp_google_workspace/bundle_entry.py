@@ -21,9 +21,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(src_dir))
     from mcp_google_workspace.runtime import configure_logging
     from mcp_google_workspace.server import workspace_mcp
+    from mcp_google_workspace.tool_discovery import configure_tool_search
 else:
     from .runtime import configure_logging
     from .server import workspace_mcp
+    from .tool_discovery import configure_tool_search
 
 
 LOGGER = logging.getLogger("mcp_google_workspace.bundle")
@@ -43,6 +45,11 @@ def main() -> None:
         "Starting google-workspace-mcp over stdio (timeout=%ss, retries=%s).",
         settings.http_timeout_seconds,
         settings.http_retries,
+    )
+    enabled = configure_tool_search(workspace_mcp)
+    LOGGER.info(
+        "Progressive tool discovery %s for this client.",
+        "enabled" if enabled else "disabled",
     )
 
     try:

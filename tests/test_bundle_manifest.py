@@ -43,6 +43,8 @@ def test_manifest_maps_bundle_user_config_to_runtime_env() -> None:
         env["MCP_GOOGLE_HTTP_TIMEOUT_SECONDS"] == "${user_config.http_timeout_seconds}"
     )
     assert env["MCP_GOOGLE_LOG_LEVEL"] == "${user_config.log_level}"
+    assert env["MCP_CLIENT_MODEL"] == "claude"
+    assert env["PREFAB_BUNDLED_RENDERER"] == "1"
 
 
 def test_manifest_declares_gemini_bundle_config() -> None:
@@ -61,5 +63,7 @@ def test_mcpbignore_excludes_secrets_and_build_noise() -> None:
     assert "src/credentials/credentials.json" in ignore_text
     assert "src/credentials/token.json" in ignore_text
     assert "src/mcp_google_workspace/apps/ui/node_modules/" in ignore_text
+    assert ".review-*/" in ignore_text
+    assert "CODE_REVIEW_*.md" in ignore_text
 
 
