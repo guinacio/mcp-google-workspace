@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 
@@ -81,7 +81,13 @@ def register_tools(server: FastMCP) -> None:
     def get_document(
         document_id: str,
         include_tabs_content: bool = False,
-        suggestions_view_mode: str | None = None,
+        suggestions_view_mode: Annotated[
+            str | None,
+            (
+                "Docs API suggestions view: SUGGESTIONS_INLINE (default), "
+                "PREVIEW_SUGGESTIONS_ACCEPTED, or PREVIEW_WITHOUT_SUGGESTIONS."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         return get_document_payload(
             GetDocumentRequest(
@@ -96,7 +102,10 @@ def register_tools(server: FastMCP) -> None:
         return create_document_payload(CreateDocumentRequest(title=title))
 
     @server.tool(name="append_document_text")
-    def append_document_text(document_id: str, text: str) -> dict[str, Any]:
+    def append_document_text(
+        document_id: str,
+        text: Annotated[str, "Text appended to the end of the document."],
+    ) -> dict[str, Any]:
         return append_document_text_payload(AppendDocumentTextRequest(document_id=document_id, text=text))
 
     @server.tool(name="replace_document_text")
@@ -119,7 +128,10 @@ def register_tools(server: FastMCP) -> None:
     async def batch_update_document(
         document_id: str,
         requests: list[dict[str, Any]],
-        write_control: dict[str, Any] | None = None,
+        write_control: Annotated[
+            dict[str, Any] | None,
+            "Optional Docs writeControl object (e.g. requiredRevisionId) guarding against concurrent edits.",
+        ] = None,
     ) -> dict[str, Any]:
         return await run_blocking(
             batch_update_document_payload,

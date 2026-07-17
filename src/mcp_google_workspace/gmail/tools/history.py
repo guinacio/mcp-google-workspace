@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
@@ -12,6 +12,7 @@ from googleapiclient.errors import HttpError
 from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
+from ..helpers import gather_in_order
 from ..presentation import envelope
 
 LOGGER = logging.getLogger(__name__)
@@ -20,8 +21,20 @@ LOGGER = logging.getLogger(__name__)
 def register(server: FastMCP) -> None:
     @server.tool(name="check_mail_updates")
     async def check_mail_updates(
-        since_history_id: str | None = None,
-        timestamp: str | None = None,
+        since_history_id: Annotated[
+            str | None,
+            (
+                "Gmail historyId to resume from, taken from a prior response's "
+                "next_history_id/continue_from_history_id; omit for a cold start."
+            ),
+        ] = None,
+        timestamp: Annotated[
+            str | None,
+            (
+                "ISO-8601 datetime or epoch-seconds string used as a cold-start alternative to "
+                "since_history_id, returning mail newer than this time when no history cursor is available."
+            ),
+        ] = None,
         max_results: int = 100,
         page_token: str | None = None,
         ctx: Context | None = None,
@@ -60,9 +73,9 @@ def register(server: FastMCP) -> None:
                     )
                 except ValueError:
                     after = timestamp
-                query = f"after:{after}"
+                query = f"after:{after} -in:draft"
             else:
-                query = "newer_than:1d"
+                query = "newer_than:1d -in:draft"
             listed = await execute_google_request(
                 service.users().messages().list(
                     userId="me", q=query, maxResults=max_results, pageToken=page_token
@@ -71,16 +84,25 @@ def register(server: FastMCP) -> None:
             ids = [item["id"] for item in listed.get("messages", [])]
             next_page_token = listed.get("nextPageToken")
             next_history_id = profile.get("historyId") if not next_page_token else None
-        messages: list[dict[str, Any]] = []
-        skipped_deleted_message_ids: list[str] = []
-        for message_id in ids:
+        # A deleted message surfaced by history returns 404 on fetch; capture the
+        # sentinel per-slot so ordering is preserved under concurrent fetching.
+        _MISSING = object()
+
+        async def fetch(message_id: str) -> Any:
             try:
-                message = await execute_google_request(
+                return await execute_google_request(
                     service.users().messages().get(userId="me", id=message_id, format="full")
                 )
             except HttpError as exc:
                 if getattr(exc.resp, "status", None) != 404:
                     raise
+                return _MISSING
+
+        fetched = await gather_in_order(ids, fetch)
+        messages: list[dict[str, Any]] = []
+        skipped_deleted_message_ids: list[str] = []
+        for message_id, message in zip(ids, fetched, strict=True):
+            if message is _MISSING:
                 skipped_deleted_message_ids.append(message_id)
                 LOGGER.info(
                     "gmail_history_message_missing message_id=%s outcome=skipped",
@@ -96,7 +118,13 @@ def register(server: FastMCP) -> None:
         for item in messages:
             category = item["category"] or "uncategorized"
             counts[category] = counts.get(category, 0) + 1
-        highlights = [item for item in messages if not item["is_newsletter"] and not item["is_automated"]]
+        # Drafts can surface through history responses; keep them out of the
+        # direct-mail highlights so an unsent draft is never reported as real mail.
+        highlights = [
+            item
+            for item in messages
+            if not item["is_newsletter"] and not item["is_automated"] and not item["is_draft"]
+        ]
         return {
             "new_count": len(messages),
             "skipped_deleted_count": len(skipped_deleted_message_ids),

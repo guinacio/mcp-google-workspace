@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -94,13 +94,19 @@ def register(server: FastMCP) -> None:
     @server.tool(name="update_vacation_settings")
     async def update_vacation_settings(
         enable_auto_reply: bool = False,
-        response_subject: str | None = None,
-        response_body_plain_text: str | None = None,
-        response_body_html: str | None = None,
+        response_subject: Annotated[str | None, "Subject line used on the vacation auto-reply."] = None,
+        response_body_plain_text: Annotated[
+            str | None, "Plain-text body of the vacation auto-reply."
+        ] = None,
+        response_body_html: Annotated[str | None, "HTML body of the vacation auto-reply."] = None,
         restrict_to_contacts: bool = False,
         restrict_to_domain: bool = False,
-        start_time: int | None = None,
-        end_time: int | None = None,
+        start_time: Annotated[
+            int | None, "Auto-reply start time as epoch milliseconds; omit for immediate/no start bound."
+        ] = None,
+        end_time: Annotated[
+            int | None, "Auto-reply end time as epoch milliseconds; omit for no end bound."
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Update vacation responder settings and scheduling options."""

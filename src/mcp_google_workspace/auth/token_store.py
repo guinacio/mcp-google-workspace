@@ -10,8 +10,9 @@ from hashlib import sha256
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
 from typing import Any, ContextManager, Iterator, Protocol
+from weakref import WeakValueDictionary
 
 from cryptography.fernet import InvalidToken
 import redis
@@ -21,6 +22,26 @@ from ..common.crypto import FernetKeyring
 from .identity import Principal
 
 _LOCK = RLock()
+_PRINCIPAL_LOCKS_GUARD = Lock()
+_PRINCIPAL_LOCKS: WeakValueDictionary[str, RLock] = WeakValueDictionary()
+_REDIS_CLIENTS_GUARD = Lock()
+_REDIS_CLIENTS: dict[str, redis.Redis] = {}
+
+
+def _principal_credential_lock(storage_key: str) -> RLock:
+    """Per-principal refresh lock so one slow refresh cannot stall the others."""
+    with _PRINCIPAL_LOCKS_GUARD:
+        return _PRINCIPAL_LOCKS.setdefault(storage_key, RLock())
+
+
+def _shared_redis_client(url: str) -> redis.Redis:
+    """Reuse one connection pool per Redis URL for the process lifetime."""
+    with _REDIS_CLIENTS_GUARD:
+        client = _REDIS_CLIENTS.get(url)
+        if client is None:
+            client = redis.Redis.from_url(url, decode_responses=False)
+            _REDIS_CLIENTS[url] = client
+        return client
 
 
 class TokenStoreError(RuntimeError):
@@ -268,9 +289,12 @@ class EncryptedTokenStore:
 
     @contextmanager
     def credential_lock(self, principal: Principal) -> Iterator[None]:
-        """Serialize local credential refresh and replacement operations."""
-        del principal
-        with _LOCK:
+        """Serialize credential refresh and replacement per principal.
+
+        The lock must be per principal: a refresh holds it across a Google
+        network round trip, and one slow principal must not block the rest.
+        """
+        with _principal_credential_lock(principal.storage_key):
             yield
 
     def ping(self) -> bool:
@@ -311,7 +335,7 @@ class RedisEncryptedTokenStore:
             )
         except (ValueError, TypeError) as exc:
             raise TokenStoreError("OAuth token encryption keyring is invalid.") from exc
-        self._redis = redis.Redis.from_url(url, decode_responses=False)
+        self._redis = _shared_redis_client(url)
         self._prefix = prefix.rstrip(":")
 
     def _credential_key(self, principal: Principal) -> str:

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
+from ..helpers import gather_in_order
 from ..presentation import (
     cleaned_message_body,
     detect_deadline,
@@ -47,7 +48,10 @@ def _build_search_query(request: SearchEmailRequest) -> str | None:
 def register(server: FastMCP) -> None:
     @server.tool(name="get_mail_digest")
     async def get_mail_digest(
-        window: str = "3d",
+        window: Annotated[
+            str,
+            "Lookback window as '<int><unit>' where unit is d (days), h (hours), or w (weeks); default is '3d'.",
+        ] = "3d",
         unread_only: bool = False,
         max_items: int = 25,
         ctx: Context | None = None,
@@ -60,20 +64,28 @@ def register(server: FastMCP) -> None:
         amount, unit = window_match.groups()
         seconds = int(amount) * {"d": 86_400, "h": 3_600, "w": 604_800}[unit]
         after = int((datetime.now(UTC) - timedelta(seconds=seconds)).timestamp())
-        query = f"after:{after}" + (" is:unread" if request.unread_only else "")
+        # Exclude drafts at the source so an unsent draft never reaches the digest.
+        query = f"after:{after} -in:draft" + (" is:unread" if request.unread_only else "")
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         result = await execute_google_request(
             service.users().messages().list(userId="me", q=query, maxResults=request.max_items)
         )
+        messages = await gather_in_order(
+            [ref["id"] for ref in result.get("messages", [])],
+            lambda message_id: execute_google_request(
+                service.users().messages().get(userId="me", id=message_id, format="full")
+            ),
+        )
         seen_threads: set[str] = set()
         people: list[dict[str, Any]] = []
         automated: list[dict[str, Any]] = []
-        for ref in result.get("messages", []):
-            message = await execute_google_request(
-                service.users().messages().get(userId="me", id=ref["id"], format="full")
-            )
+        for message in messages:
             item = envelope(message, account_timezone=account_timezone)
+            # Defense in depth: even if a draft slips past the query filter, it
+            # must not be reported alongside genuinely received mail.
+            if item["is_draft"]:
+                continue
             thread_id = str(item.get("thread_id") or item.get("id"))
             if thread_id in seen_threads:
                 continue
@@ -110,10 +122,14 @@ def register(server: FastMCP) -> None:
         include_spam_trash: bool = False,
         from_email: str | None = None,
         to_email: str | None = None,
-        subject_contains: str | None = None,
+        subject_contains: Annotated[
+            str | None, "Optional phrase that must appear in the subject line (helper filter, combined with query)."
+        ] = None,
         has_attachment: bool = False,
         is_unread: bool = False,
-        newer_than_days: int | None = None,
+        newer_than_days: Annotated[
+            int | None, "Optional recency filter in days, translated to Gmail's newer_than:{N}d query operator."
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Search Gmail messages using Gmail query syntax and optional label filters."""

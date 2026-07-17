@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sqlite3
+import time
 
 import pytest
 from cryptography.fernet import Fernet
@@ -205,3 +207,35 @@ def test_local_upload_compensates_every_blob_when_metadata_batch_fails(tmp_path)
     assert not list(store.blob_directory.glob("*/*"))
     with store._connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM uploads_v2").fetchone()[0] == 0
+
+
+def test_local_reconcile_removes_only_aged_orphan_blobs(tmp_path) -> None:
+    store = EncryptedUploadStore(
+        tmp_path / "uploads.sqlite3",
+        Fernet.generate_key().decode(),
+        quota_bytes=1_000,
+    )
+    referenced_id = store.store("alice", _files(1), 100)[0]["upload_id"]
+    referenced_blob = store._blob_path("alice", referenced_id)
+    scope_dir = store.blob_directory / "alice"
+    fresh_orphan = scope_dir / "upl_fresh_orphan.blob"
+    fresh_orphan.write_bytes(b"in-flight store in another thread")
+    fresh_tmp = scope_dir / "upl_in_progress.tmp"
+    fresh_tmp.write_bytes(b"partial write in another thread")
+    old_orphan = scope_dir / "upl_crash_leftover.blob"
+    old_orphan.write_bytes(b"crash leftover")
+    old_tmp = scope_dir / "upl_crash_partial.tmp"
+    old_tmp.write_bytes(b"crash partial")
+    aged = time.time() - 3_600
+    os.utime(old_orphan, (aged, aged))
+    os.utime(old_tmp, (aged, aged))
+    os.utime(referenced_blob, (aged, aged))
+
+    store._last_reconcile = 0.0
+    store.list("alice")
+
+    assert not old_orphan.exists(), "aged orphan blob must be reconciled"
+    assert not old_tmp.exists(), "aged temporary file must be reconciled"
+    assert fresh_orphan.exists(), "recent unreferenced blob may be an in-flight store"
+    assert fresh_tmp.exists(), "recent temporary file may be an in-flight write"
+    assert referenced_blob.exists(), "referenced blobs survive regardless of age"

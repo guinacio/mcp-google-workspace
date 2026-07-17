@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -23,8 +23,14 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="create_filter")
     async def create_filter(
-        criteria: FilterCriteriaInput,
-        action: FilterActionInput,
+        criteria: Annotated[
+            FilterCriteriaInput,
+            "Match criteria block (from/to/subject/query/size/etc); at least one field must be set.",
+        ],
+        action: Annotated[
+            FilterActionInput,
+            "Action block applied to matching messages: add/remove labels and/or forward.",
+        ],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a Gmail filter from criteria and action blocks."""

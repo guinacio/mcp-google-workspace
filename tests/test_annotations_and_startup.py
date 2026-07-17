@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import anyio
 from fastmcp import Client
 from jsonschema import Draft202012Validator
@@ -7,6 +9,13 @@ from jsonschema import Draft202012Validator
 import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.apps.server import apps_mcp
 from mcp_google_workspace.server import workspace_mcp
+
+_PLACEHOLDER_PATTERNS = [
+    re.compile(r"^Value for .+ used by the .+ operation\.$"),
+    re.compile(r"^Numeric value for .+\.$"),
+    re.compile(r"^Identifier for the target .+\.$"),
+    re.compile(r"^Identifiers for the target .+\.$"),
+]
 
 
 async def _list_workspace_tools_via_client():
@@ -225,6 +234,54 @@ def test_workspace_input_schemas_are_recursively_bounded_documented_and_reviewed
 
     assert found_open == reviewed_open_objects
     assert failures == []
+
+
+def test_no_tool_parameter_descriptions_match_auto_generated_placeholders() -> None:
+    """Regression test for GitHub issue #4: fallback descriptions like 'Value for X used
+    by the Y operation.' restate the parameter name instead of documenting semantics."""
+    tools = anyio.run(_list_server_tools, workspace_mcp)
+
+    hits: list[str] = []
+    for tool in tools.values():
+        properties = (tool.parameters or {}).get("properties") or {}
+        for param_name, schema in properties.items():
+            if not isinstance(schema, dict):
+                continue
+            description = (schema.get("description") or "").strip()
+            if any(pattern.match(description) for pattern in _PLACEHOLDER_PATTERNS):
+                hits.append(f"{tool.name}.{param_name} -> {description!r}")
+
+    assert hits == []
+
+
+def test_headline_parameter_descriptions_document_real_semantics() -> None:
+    """Pins the specific parameters called out in GitHub issue #4: each must avoid the
+    placeholder fallback shape and mention the concrete fact that makes it useful."""
+    tools = anyio.run(_list_server_tools, workspace_mcp)
+
+    checks = [
+        ("gmail_check_mail_updates", "timestamp", ["cold-start", "since_history_id"]),
+        ("gmail_check_mail_updates", "since_history_id", ["next_history_id"]),
+        ("gmail_get_mail_digest", "window", ["3d"]),
+        ("search_workspace", "services", ["drive", "people", "gmail"]),
+        ("prepare_workspace_action", "tool_name", ["gmail_send_email"]),
+        ("commit_workspace_action", "commit_token", ["one-time", "5 minutes"]),
+        ("gmail_read_emails", "offset", ["character offset"]),
+        ("calendar_check_time_availability", "items", ["calendar"]),
+    ]
+
+    for tool_name, param_name, required_substrings in checks:
+        schema = tools[tool_name].parameters["properties"][param_name]
+        description = (schema.get("description") or "").strip()
+        assert description, f"{tool_name}.{param_name} has no description"
+        assert not any(pattern.match(description) for pattern in _PLACEHOLDER_PATTERNS), (
+            f"{tool_name}.{param_name} still matches a placeholder pattern: {description!r}"
+        )
+        lowered = description.lower()
+        for substring in required_substrings:
+            assert substring.lower() in lowered, (
+                f"{tool_name}.{param_name} description missing {substring!r}: {description!r}"
+            )
 
 
 def test_apps_tools_preserve_ui_metadata_and_local_hints() -> None:

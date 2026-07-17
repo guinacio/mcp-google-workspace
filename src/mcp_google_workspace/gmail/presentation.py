@@ -292,6 +292,8 @@ def envelope(message: dict[str, Any], *, account_timezone: str) -> dict[str, Any
         "has_attachments": bool(message_attachments(payload)),
         "is_newsletter": "list-unsubscribe" in headers,
         "is_automated": automated,
+        "is_draft": "DRAFT" in labels,
+        "is_sent": "SENT" in labels,
     }
 
 

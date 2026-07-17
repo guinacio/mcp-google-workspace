@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 
@@ -108,7 +108,12 @@ def register_tools(server: FastMCP) -> None:
         )
 
     @server.tool(name="create_spreadsheet")
-    def create_spreadsheet(title: str, sheet_titles: list[str] | None = None) -> dict[str, Any]:
+    def create_spreadsheet(
+        title: str,
+        sheet_titles: Annotated[
+            list[str] | None, "Optional titles for initial sheets/tabs to create in the spreadsheet."
+        ] = None,
+    ) -> dict[str, Any]:
         return create_spreadsheet_payload(
             CreateSpreadsheetRequest(title=title, sheet_titles=sheet_titles or [])
         )
@@ -153,9 +158,12 @@ def register_tools(server: FastMCP) -> None:
     def append_sheet_values(
         spreadsheet_id: str,
         range_a1: str,
-        values: list[list[Any]],
+        values: Annotated[list[list[Any]], "Tabular row-major values to append after the range's last row."],
         value_input_option: Literal["RAW", "USER_ENTERED"] = "RAW",
-        insert_data_option: Literal["OVERWRITE", "INSERT_ROWS"] = "INSERT_ROWS",
+        insert_data_option: Annotated[
+            Literal["OVERWRITE", "INSERT_ROWS"],
+            "How appended data interacts with existing rows: OVERWRITE existing cells or INSERT_ROWS to shift them down.",
+        ] = "INSERT_ROWS",
         include_values_in_response: bool = False,
     ) -> dict[str, Any]:
         return append_sheet_values_payload(
@@ -173,7 +181,7 @@ def register_tools(server: FastMCP) -> None:
     def update_sheet_values(
         spreadsheet_id: str,
         range_a1: str,
-        values: list[list[Any]],
+        values: Annotated[list[list[Any]], "Replacement tabular row-major values for the given range."],
         value_input_option: Literal["RAW", "USER_ENTERED"] = "RAW",
         include_values_in_response: bool = False,
     ) -> dict[str, Any]:

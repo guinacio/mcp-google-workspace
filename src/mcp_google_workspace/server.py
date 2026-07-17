@@ -6,6 +6,7 @@ import anyio
 import base64
 import os
 import secrets
+from typing import Annotated
 from fastmcp import FastMCP
 from fastmcp.server.providers.addressing import hash_tool, hashed_resource_uri
 from starlette.requests import Request
@@ -41,7 +42,7 @@ from .auth.google_auth import (
 )
 from .common.async_ops import execute_google_request
 from .common.resources import ResourceHandleMiddleware, parse_resource_uri, resource_handle
-from .common.approvals import APPROVAL_STORE, COMMIT_ACTIVE
+from .common.approvals import APPROVAL_STORE, COMMIT_ACTIVE, CONSEQUENTIAL_TOOLS
 from .calendar import calendar_mcp
 from .chat import chat_mcp
 from .docs import docs_mcp
@@ -275,7 +276,13 @@ def get_workspace_capabilities() -> dict[str, object]:
 @workspace_mcp.tool(name="search_workspace")
 async def search_workspace(
     query: str,
-    services: list[str] | None = None,
+    services: Annotated[
+        list[str] | None,
+        (
+            "Subset of services to search: any of 'drive', 'people', 'gmail'; "
+            "omit to search all three."
+        ),
+    ] = None,
     max_results_per_service: int = 5,
 ) -> dict[str, object]:
     """Search Drive files, contacts, and Gmail IDs through one normalized entry point."""
@@ -402,7 +409,12 @@ async def search_workspace(
 
 
 @workspace_mcp.tool(name="resolve_workspace_resource")
-async def resolve_workspace_resource(uri: str) -> dict[str, object]:
+async def resolve_workspace_resource(
+    uri: Annotated[
+        str,
+        "Stable Workspace resource URI previously returned in a tool response's 'resource' field.",
+    ],
+) -> dict[str, object]:
     """Resolve a stable Workspace URI to fresh compact metadata."""
     kind, resource_id = parse_resource_uri(uri)
     if kind == "drive_file":
@@ -443,15 +455,32 @@ async def resolve_workspace_resource(uri: str) -> dict[str, object]:
 
 @workspace_mcp.tool(name="prepare_workspace_action")
 def prepare_workspace_action(
-    tool_name: str,
-    arguments: dict[str, object],
+    tool_name: Annotated[
+        str,
+        (
+            "Full name of the consequential tool to prepare; must be one of "
+            f"{sorted(CONSEQUENTIAL_TOOLS)}. Other tools do not use the prepare/commit protocol."
+        ),
+    ],
+    arguments: Annotated[
+        dict[str, object],
+        "Exact keyword arguments to bind and later execute unchanged for tool_name.",
+    ],
 ) -> dict[str, object]:
     """Preview and bind one consequential action to a short-lived one-time commit token."""
     return APPROVAL_STORE.prepare(tool_name, arguments)
 
 
 @workspace_mcp.tool(name="commit_workspace_action")
-async def commit_workspace_action(commit_token: str) -> dict[str, object]:
+async def commit_workspace_action(
+    commit_token: Annotated[
+        str,
+        (
+            "One-time, principal-bound token from prepare_workspace_action's response; "
+            "expires 5 minutes after issuance and is consumed on first use."
+        ),
+    ],
+) -> dict[str, object]:
     """Atomically consume a prepared action token and execute its exact bound arguments."""
     tool_name, arguments = APPROVAL_STORE.consume(commit_token)
     active_token = COMMIT_ACTIVE.set(True)

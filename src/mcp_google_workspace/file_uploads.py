@@ -179,12 +179,21 @@ class EncryptedUploadStore:
                     "SELECT scope,upload_id FROM uploads_v2"
                 ).fetchall()
             }
+            # A concurrent store() writes its blob before committing the row,
+            # so only files older than this grace window are true orphans.
+            orphan_cutoff = time.time() - 600
             if self.blob_directory.exists():
                 for path in self.blob_directory.glob("*/*"):
-                    if path.is_file() and (
-                        path.suffix == ".tmp" or path.resolve() not in referenced
-                    ):
-                        path.unlink(missing_ok=True)
+                    if not path.is_file():
+                        continue
+                    if path.suffix != ".tmp" and path.resolve() in referenced:
+                        continue
+                    try:
+                        if path.stat().st_mtime > orphan_cutoff:
+                            continue
+                    except OSError:
+                        continue
+                    path.unlink(missing_ok=True)
             self._last_reconcile = time.monotonic()
         return len(expired)
 
