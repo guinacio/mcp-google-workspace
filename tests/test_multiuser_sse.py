@@ -288,6 +288,7 @@ class _FakeRedisTokenBackend:
 
 def test_redis_token_store_is_shared_atomic_and_principal_bounded(monkeypatch) -> None:
     backend = _FakeRedisTokenBackend()
+    monkeypatch.setattr("mcp_google_workspace.auth.token_store._REDIS_CLIENTS", {})
     monkeypatch.setattr(
         "mcp_google_workspace.auth.token_store.redis.Redis.from_url",
         lambda *args, **kwargs: backend,
@@ -319,6 +320,49 @@ def test_redis_token_store_is_shared_atomic_and_principal_bounded(monkeypatch) -
     assert consumed.principal == principal
     assert second.consume_oauth_state(pending[0].state) is None
     assert first.create_oauth_state(principal, "replacement")
+
+
+def test_redis_token_stores_reuse_one_client_per_url(monkeypatch) -> None:
+    created: list[str] = []
+
+    def fake_from_url(url, **kwargs):
+        created.append(str(url))
+        return _FakeRedisTokenBackend()
+
+    monkeypatch.setattr("mcp_google_workspace.auth.token_store._REDIS_CLIENTS", {})
+    monkeypatch.setattr(
+        "mcp_google_workspace.auth.token_store.redis.Redis.from_url", fake_from_url
+    )
+    key = Fernet.generate_key().decode()
+    first = RedisEncryptedTokenStore("redis://example", key)
+    second = RedisEncryptedTokenStore("redis://example", key)
+    other = RedisEncryptedTokenStore("redis://other.example", key)
+
+    assert created == ["redis://example", "redis://other.example"]
+    assert first._redis is second._redis
+    assert first._redis is not other._redis
+
+
+def test_filesystem_credential_lock_is_per_principal(tmp_path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from mcp_google_workspace.auth.token_store import _principal_credential_lock
+
+    store = EncryptedTokenStore(tmp_path, Fernet.generate_key().decode())
+    alice = Principal(issuer="https://issuer.example", subject="alice")
+    bob = Principal(issuer="https://issuer.example", subject="bob")
+
+    def try_acquire(storage_key: str) -> bool:
+        lock = _principal_credential_lock(storage_key)
+        acquired = lock.acquire(timeout=0.5)
+        if acquired:
+            lock.release()
+        return acquired
+
+    with store.credential_lock(alice), ThreadPoolExecutor(max_workers=1) as pool:
+        # Another principal refreshes concurrently; the same principal waits.
+        assert pool.submit(try_acquire, bob.storage_key).result()
+        assert not pool.submit(try_acquire, alice.storage_key).result()
 
 
 def test_principal_is_derived_from_verified_fastmcp_claims(monkeypatch) -> None:
