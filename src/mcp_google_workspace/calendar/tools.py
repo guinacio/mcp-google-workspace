@@ -443,7 +443,7 @@ def register_tools(server: FastMCP) -> None:
             for event in result.get("items", [])
         ]
         return {
-            "window_days": days,
+            "window_day_count": days,
             "events": events,
             "requires_response": [event for event in events if event["requires_response"]],
             "count": len(events),

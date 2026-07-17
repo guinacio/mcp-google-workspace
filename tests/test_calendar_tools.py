@@ -1,8 +1,10 @@
 import asyncio
+from typing import Any
 
 from fastmcp import Client
 from googleapiclient.errors import HttpError
 from httplib2 import Response
+from jsonschema import Draft202012Validator
 
 import mcp_google_workspace.calendar.tools as calendar_tools
 from mcp_google_workspace.calendar.tools import (
@@ -12,6 +14,7 @@ from mcp_google_workspace.calendar.tools import (
 )
 from mcp_google_workspace.calendar.presentation import event_envelope
 from mcp_google_workspace.calendar.server import calendar_mcp
+from mcp_google_workspace.server import workspace_mcp
 
 
 def test_validate_and_fix_datetime_adds_timezone():
@@ -186,3 +189,56 @@ def test_update_conflict_check_excludes_the_event_being_rescheduled() -> None:
 
     assert result["has_conflicts"] is True
     assert [item["id"] for item in result["conflicts"]] == ["event-2"]
+
+
+class _DigestEvents:
+    def list(self, **kwargs) -> _CalendarRequest:
+        return _CalendarRequest("list")
+
+
+class _DigestService:
+    def events(self) -> _DigestEvents:
+        return _DigestEvents()
+
+
+def test_get_calendar_digest_payload_matches_declared_output_schema(monkeypatch) -> None:
+    """Regression for issue #5: the scalar window value must satisfy the tool schema."""
+    raw_event = {
+        "id": "event-1",
+        "summary": "Planning",
+        "start": {"dateTime": "2026-07-18T10:00:00Z"},
+        "end": {"dateTime": "2026-07-18T11:00:00Z"},
+        "attendees": [
+            {"email": "me@example.com", "self": True, "responseStatus": "needsAction"}
+        ],
+    }
+
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _CalendarRequest) -> dict:
+        return {"items": [raw_event]}
+
+    monkeypatch.setattr(calendar_tools, "build_calendar_service", _DigestService)
+    monkeypatch.setattr(calendar_tools, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(calendar_tools, "execute_google_request", fake_execute)
+
+    async def scenario() -> tuple[dict[str, Any], dict[str, Any]]:
+        digest_tool = await workspace_mcp.get_tool("calendar_get_calendar_digest")
+        assert digest_tool is not None
+        schema = digest_tool.output_schema
+        assert schema is not None
+        async with Client(workspace_mcp) as client:
+            # An output-schema violation surfaces here as a tool/output error.
+            call = await client.call_tool(
+                "calendar_get_calendar_digest",
+                {"days": 3, "max_results": 10},
+            )
+        return schema, (call.structured_content or call.data)
+
+    schema, payload = asyncio.run(scenario())
+
+    assert payload["window_day_count"] == 3
+    assert payload["count"] == 1
+    assert payload["requires_response"][0]["id"] == "event-1"
+    assert not list(Draft202012Validator(schema).iter_errors(payload))
