@@ -11,6 +11,7 @@ from fastmcp import Context, FastMCP
 from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
+from ..helpers import gather_in_order
 from ..presentation import (
     cleaned_message_body,
     detect_deadline,
@@ -60,20 +61,28 @@ def register(server: FastMCP) -> None:
         amount, unit = window_match.groups()
         seconds = int(amount) * {"d": 86_400, "h": 3_600, "w": 604_800}[unit]
         after = int((datetime.now(UTC) - timedelta(seconds=seconds)).timestamp())
-        query = f"after:{after}" + (" is:unread" if request.unread_only else "")
+        # Exclude drafts at the source so an unsent draft never reaches the digest.
+        query = f"after:{after} -in:draft" + (" is:unread" if request.unread_only else "")
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         result = await execute_google_request(
             service.users().messages().list(userId="me", q=query, maxResults=request.max_items)
         )
+        messages = await gather_in_order(
+            [ref["id"] for ref in result.get("messages", [])],
+            lambda message_id: execute_google_request(
+                service.users().messages().get(userId="me", id=message_id, format="full")
+            ),
+        )
         seen_threads: set[str] = set()
         people: list[dict[str, Any]] = []
         automated: list[dict[str, Any]] = []
-        for ref in result.get("messages", []):
-            message = await execute_google_request(
-                service.users().messages().get(userId="me", id=ref["id"], format="full")
-            )
+        for message in messages:
             item = envelope(message, account_timezone=account_timezone)
+            # Defense in depth: even if a draft slips past the query filter, it
+            # must not be reported alongside genuinely received mail.
+            if item["is_draft"]:
+                continue
             thread_id = str(item.get("thread_id") or item.get("id"))
             if thread_id in seen_threads:
                 continue

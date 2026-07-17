@@ -1,12 +1,14 @@
 import asyncio
 import base64
 
+import anyio
 import pytest
 from fastmcp import Client
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 from mcp_google_workspace.common.async_ops import execute_google_request
+from mcp_google_workspace.gmail.helpers import gather_in_order
 from mcp_google_workspace.gmail.mime_utils import build_email_message, encode_subject, extract_message_bodies
 from mcp_google_workspace.gmail.presentation import (
     clean_message_content,
@@ -19,6 +21,7 @@ from mcp_google_workspace.gmail.schemas import SendEmailRequest
 from mcp_google_workspace.gmail.server import gmail_mcp
 import mcp_google_workspace.gmail.tools.history as gmail_history
 import mcp_google_workspace.gmail.tools.messages as gmail_messages
+import mcp_google_workspace.gmail.tools.search as gmail_search
 
 
 def test_subject_supports_international_chars():
@@ -298,3 +301,171 @@ def test_read_emails_has_one_consistent_batch_shape_and_isolates_missing_ids(
     assert result["messages"][0]["id"] == "available"
     assert result["messages"][0]["to"] == "me@example.com"
     assert result["messages"][0]["bodies_omitted"] is True
+
+
+def _labelled_message(message_id: str, labels: list[str], sender: str, subject: str) -> dict:
+    return {
+        "id": message_id,
+        "threadId": f"thread-{message_id}",
+        "labelIds": labels,
+        "payload": {
+            "headers": [
+                {"name": "From", "value": sender},
+                {"name": "Subject", "value": subject},
+            ],
+            "parts": [{"mimeType": "text/plain", "body": {"data": "SGVsbG8gd29ybGQ="}}],
+        },
+    }
+
+
+def test_envelope_flags_drafts_and_sent_messages():
+    draft = _labelled_message("d1", ["DRAFT"], "Me <me@example.com>", "Work in progress")
+    sent = _labelled_message("s1", ["SENT"], "Me <me@example.com>", "Delivered")
+    received = _labelled_message("r1", ["INBOX", "UNREAD"], "Alice <alice@example.com>", "Hello")
+
+    draft_env = envelope(draft, account_timezone="UTC")
+    sent_env = envelope(sent, account_timezone="UTC")
+    received_env = envelope(received, account_timezone="UTC")
+
+    assert draft_env["is_draft"] is True
+    assert draft_env["is_sent"] is False
+    assert sent_env["is_sent"] is True
+    assert sent_env["is_draft"] is False
+    assert received_env["is_draft"] is False
+    assert received_env["is_sent"] is False
+
+
+def test_check_mail_updates_excludes_drafts_from_highlights(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _HistoryRequest) -> dict:
+        if request.kind == "history":
+            return {
+                "historyId": "300",
+                "history": [
+                    {
+                        "messagesAdded": [
+                            {"message": {"id": "draft-1"}},
+                            {"message": {"id": "real-1"}},
+                        ]
+                    }
+                ],
+            }
+        if request.message_id == "draft-1":
+            return _labelled_message("draft-1", ["DRAFT"], "Me <me@example.com>", "Unsent draft")
+        return _labelled_message("real-1", ["INBOX"], "Alice <alice@example.com>", "Actual mail")
+
+    monkeypatch.setattr(gmail_history, "gmail_service", _HistoryService)
+    monkeypatch.setattr(gmail_history, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(gmail_history, "execute_google_request", fake_execute)
+
+    async def scenario() -> dict:
+        async with Client(gmail_mcp) as client:
+            result = await client.call_tool(
+                "check_mail_updates",
+                {"since_history_id": "100", "max_results": 50},
+            )
+            return result.structured_content or result.data
+
+    result = asyncio.run(scenario())
+
+    assert result["new_count"] == 2
+    highlight_ids = [item["id"] for item in result["highlights"]]
+    assert highlight_ids == ["real-1"]
+    assert all(item["is_draft"] is False for item in result["highlights"])
+
+
+class _SearchRequest:
+    def __init__(self, kind: str, message_id: str | None = None, query: str | None = None) -> None:
+        self.kind = kind
+        self.message_id = message_id
+        self.query = query
+
+
+class _SearchMessages:
+    def list(self, **kwargs) -> _SearchRequest:
+        return _SearchRequest("list", query=kwargs.get("q"))
+
+    def get(self, *, userId: str, id: str, format: str) -> _SearchRequest:
+        return _SearchRequest("message", id)
+
+
+class _SearchUsers:
+    def messages(self) -> _SearchMessages:
+        return _SearchMessages()
+
+
+class _SearchService:
+    def users(self) -> _SearchUsers:
+        return _SearchUsers()
+
+
+def test_get_mail_digest_excludes_drafts_and_queries_without_them(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen_queries: list[str | None] = []
+
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _SearchRequest) -> dict:
+        if request.kind == "list":
+            seen_queries.append(request.query)
+            return {"messages": [{"id": "draft-1"}, {"id": "person-1"}]}
+        if request.message_id == "draft-1":
+            return _labelled_message("draft-1", ["DRAFT"], "Me <me@example.com>", "Unsent draft")
+        return _labelled_message("person-1", ["INBOX", "UNREAD"], "Alice <alice@example.com>", "Can you reply?")
+
+    monkeypatch.setattr(gmail_search, "gmail_service", _SearchService)
+    monkeypatch.setattr(gmail_search, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(gmail_search, "execute_google_request", fake_execute)
+
+    async def scenario() -> dict:
+        async with Client(gmail_mcp) as client:
+            result = await client.call_tool("get_mail_digest", {"window": "3d"})
+            return result.structured_content or result.data
+
+    result = asyncio.run(scenario())
+
+    people_ids = [item["id"] for item in result["people"]]
+    automated_ids = [item["id"] for item in result["automated"]]
+    assert people_ids == ["person-1"]
+    assert "draft-1" not in people_ids
+    assert "draft-1" not in automated_ids
+    assert seen_queries and "-in:draft" in (seen_queries[0] or "")
+
+
+def test_gather_in_order_preserves_order_and_bounds_concurrency() -> None:
+    concurrent = 0
+    peak = 0
+
+    async def worker(n: int) -> int:
+        nonlocal concurrent, peak
+        concurrent += 1
+        peak = max(peak, concurrent)
+        # Later items finish sooner, so completion order is the reverse of input.
+        await anyio.sleep((12 - n) * 0.001)
+        concurrent -= 1
+        return n * 10
+
+    async def scenario() -> list[int]:
+        return await gather_in_order(list(range(12)), worker, limit=3)
+
+    result = asyncio.run(scenario())
+
+    assert result == [n * 10 for n in range(12)]
+    assert peak <= 3
+
+
+def test_gather_in_order_surfaces_the_original_worker_error() -> None:
+    async def worker(n: int) -> int:
+        if n == 2:
+            raise ValueError("boom")
+        return n
+
+    async def scenario() -> list[int]:
+        return await gather_in_order([1, 2, 3], worker)
+
+    # The lone failure must not arrive wrapped in an ExceptionGroup, or the
+    # error middleware would lose the exception type it maps to envelopes.
+    with pytest.raises(ValueError, match="boom"):
+        asyncio.run(scenario())
