@@ -209,10 +209,12 @@ def test_local_upload_compensates_every_blob_when_metadata_batch_fails(tmp_path)
         assert connection.execute("SELECT COUNT(*) FROM uploads_v2").fetchone()[0] == 0
 
 
-def test_local_reconcile_removes_only_aged_orphan_blobs(tmp_path) -> None:
+def test_local_reconcile_removes_only_aged_orphan_blobs(tmp_path, monkeypatch) -> None:
+    database = tmp_path / "uploads.sqlite3"
+    key = Fernet.generate_key().decode()
     store = EncryptedUploadStore(
-        tmp_path / "uploads.sqlite3",
-        Fernet.generate_key().decode(),
+        database,
+        key,
         quota_bytes=1_000,
     )
     referenced_id = store.store("alice", _files(1), 100)[0]["upload_id"]
@@ -231,7 +233,10 @@ def test_local_reconcile_removes_only_aged_orphan_blobs(tmp_path) -> None:
     os.utime(old_tmp, (aged, aged))
     os.utime(referenced_blob, (aged, aged))
 
-    store._last_reconcile = 0.0
+    # A fresh store must reconcile on its first cleanup even when the
+    # monotonic clock's unspecified origin is less than the throttle interval.
+    store = EncryptedUploadStore(database, key, quota_bytes=1_000)
+    monkeypatch.setattr(time, "monotonic", lambda: 1.0)
     store.list("alice")
 
     assert not old_orphan.exists(), "aged orphan blob must be reconciled"

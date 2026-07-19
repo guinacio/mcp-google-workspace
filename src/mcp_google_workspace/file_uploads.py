@@ -113,7 +113,7 @@ class EncryptedUploadStore:
         )
         self.ttl_seconds = ttl_seconds
         self.quota_bytes = quota_bytes
-        self._last_reconcile = 0.0
+        self._last_reconcile: float | None = None
 
     @classmethod
     def from_environment(cls) -> "EncryptedUploadStore":
@@ -172,7 +172,7 @@ class EncryptedUploadStore:
             )
         # Reconcile crash leftovers at most once every five minutes. Blob names
         # are opaque server-generated handles, so no user path is traversed.
-        if time.monotonic() - self._last_reconcile >= 300:
+        if self._last_reconcile is None or time.monotonic() - self._last_reconcile >= 300:
             referenced = {
                 self._blob_path(str(scope), str(upload_id)).resolve()
                 for scope, upload_id in connection.execute(
