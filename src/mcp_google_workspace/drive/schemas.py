@@ -188,8 +188,12 @@ class GetPermissionRequest(ToolRequestModel):
 
 class CreatePermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
-    type: str = Field(description="Permission grantee type (user, group, domain, anyone).")
-    role: str = Field(description="Permission role (reader, commenter, writer, fileOrganizer, organizer, owner).")
+    type: Literal["user", "group", "domain", "anyone"] = Field(
+        description="Permission grantee type (user, group, domain, anyone)."
+    )
+    role: Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"] = Field(
+        description="Permission role (reader, commenter, writer, fileOrganizer, organizer, owner)."
+    )
     email_address: str | None = Field(default=None, description="Email for user/group permissions.")
     domain: str | None = Field(default=None, description="Domain for domain permission type.")
     allow_file_discovery: bool | None = Field(default=None, description="Discoverability for anyone/domain links.")
