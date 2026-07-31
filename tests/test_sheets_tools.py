@@ -1,5 +1,8 @@
 import anyio
 import pytest
+from fastmcp import Client
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
 from mcp_google_workspace.sheets.schemas import GetSheetValuesRequest
 from mcp_google_workspace.sheets.server import sheets_mcp
@@ -151,3 +154,45 @@ def test_sheets_tool_annotations():
     assert get_tool.annotations.idempotentHint is True
     assert update_tool.annotations.readOnlyHint is False
     assert update_tool.annotations.idempotentHint is True
+
+
+def test_a1_range_accepts_whole_column_and_row_ranges():
+    for value in ("A1", "Sheet1!A1:B10", "A:A", "Sheet1!A:C", "1:5", "My Sheet!2:2"):
+        request = GetSheetValuesRequest(spreadsheet_id="sheet-1", range_a1=value)
+        assert request.range_a1 == value
+    for invalid in ("A:", ":B", "Sheet1!", "A1:B:C"):
+        with pytest.raises(ValueError):
+            GetSheetValuesRequest(spreadsheet_id="sheet-1", range_a1=invalid)
+
+
+class _FailingExec:
+    def execute(self):
+        raise HttpError(Response({"status": "400"}), b'{"error":{"message":"Bad range"}}')
+
+
+class _FailingSheetsService:
+    def spreadsheets(self):
+        return self
+
+    def values(self):
+        return self
+
+    def get(self, **kwargs):
+        return _FailingExec()
+
+
+def test_get_sheet_values_tool_returns_structured_error(monkeypatch):
+    monkeypatch.setattr("mcp_google_workspace.sheets.tools.sheets_service", _FailingSheetsService)
+
+    async def scenario():
+        async with Client(sheets_mcp) as client:
+            result = await client.call_tool(
+                "get_sheet_values", {"spreadsheet_id": "sheet-1", "range_a1": "A:C"}
+            )
+            return result.structured_content or result.data
+
+    result = anyio.run(scenario)
+    assert "400" in result["error"]
+    assert result["provider_status"] == 400
+    assert result["context"]["spreadsheet_id"] == "sheet-1"
+    assert result["context"]["range_a1"] == "A:C"
