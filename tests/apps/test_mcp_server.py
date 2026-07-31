@@ -311,3 +311,38 @@ def test_apps_resources_are_pure_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     assert week_payload["state"]["anchor_date"] == "2026-03-09"
     assert persisted.view == "month"
     assert persisted.anchor_date == date(2026, 1, 1)
+
+
+def test_detail_tools_return_structured_app_error_when_fetch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*args: object, **kwargs: object) -> dict:
+        raise RuntimeError("provider exploded")
+
+    monkeypatch.setattr(apps_tools, "_fetch_event_detail", boom)
+    monkeypatch.setattr(apps_tools, "_fetch_email_detail", boom)
+    monkeypatch.setattr(apps_tools, "_fetch_email_attachment", boom)
+
+    async def scenario() -> list[dict]:
+        async with Client(apps_mcp) as client:
+            event = await client.call_tool("get_event_detail", {"event_id": "evt-1"})
+            email = await client.call_tool("get_email_detail", {"message_id": "msg-1"})
+            attachment = await client.call_tool(
+                "get_email_attachment",
+                {"message_id": "msg-1", "attachment_id": "att-1"},
+            )
+            return [
+                result.structured_content or result.data
+                for result in (event, email, attachment)
+            ]
+
+    results = anyio.run(scenario)
+
+    for payload in results:
+        error = payload["error"]
+        assert error["code"] == "PROVIDER_ERROR"
+        assert error["retryable"] is False
+        assert "provider exploded" in error["message"]
+    assert results[0]["error"]["details"] == {"event_id": "evt-1", "calendar_id": "primary"}
+    assert results[1]["error"]["details"] == {"message_id": "msg-1"}
+    assert results[2]["error"]["details"] == {"message_id": "msg-1", "attachment_id": "att-1"}

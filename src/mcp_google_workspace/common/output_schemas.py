@@ -18,12 +18,12 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
         "event_id", "calendar_id", "title", "start", "end", "timezone", "status",
         "location", "description", "conference_link", "conference_provider",
         "organizer_email", "organizer_name", "self_response_status", "attendees",
-        "attachments",
+        "attachments", "error",
     ),
     "get_email_detail": (
         "message_id", "thread_id", "subject", "from_value", "to", "cc", "bcc",
         "date", "date_timezone", "source_date", "snippet", "text_body", "html_body",
-        "attachments", "labels", "is_unread",
+        "attachments", "labels", "is_unread", "error",
     ),
     "list_calendars": ("kind", "etag", "nextPageToken", "nextSyncToken", "items"),
     "check_time_availability": ("kind", "timeMin", "timeMax", "groups", "calendars"),
@@ -109,7 +109,7 @@ def _named_field_schema(name: str) -> dict[str, Any]:
     elif lowered.endswith(("token", "id", "uri", "url", "time", "date", "status")) or lowered in {"kind", "etag", "title", "message", "mode", "action", "range", "majordimension"}:
         schema["type"] = ["string", "null"]
     elif lowered in {
-        "calendars", "errors", "groups", "headers", "footers", "footnotes", "lists", "namedranges", "section_errors",
+        "calendars", "error", "errors", "groups", "headers", "footers", "footnotes", "lists", "namedranges", "section_errors",
         "state", "properties", "settings", "metadata", "body", "form", "file", "event", "thread", "updates", "writecontrol", "publishsettings", "optional_namespaces", "file_inputs", "impact", "next_action", "result",
     }:
         schema["type"] = "object"

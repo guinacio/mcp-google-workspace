@@ -4,6 +4,7 @@ import base64
 import anyio
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
@@ -468,4 +469,22 @@ def test_gather_in_order_surfaces_the_original_worker_error() -> None:
     # The lone failure must not arrive wrapped in an ExceptionGroup, or the
     # error middleware would lose the exception type it maps to envelopes.
     with pytest.raises(ValueError, match="boom"):
+        asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("apply_labels", {"message_id": "m1"}),
+        ("move_email", {"message_id": "m1"}),
+        ("batch_modify", {"message_ids": ["m1"]}),
+    ],
+)
+def test_label_modify_tools_reject_empty_label_id_lists(tool_name: str, arguments: dict) -> None:
+    # Matches modify_thread: empty add/remove lists must raise, not silently no-op.
+    async def scenario() -> None:
+        async with Client(gmail_mcp) as client:
+            await client.call_tool(tool_name, arguments)
+
+    with pytest.raises(ToolError, match="At least one of add_label_ids/remove_label_ids"):
         asyncio.run(scenario())

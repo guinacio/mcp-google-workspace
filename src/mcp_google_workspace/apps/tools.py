@@ -18,6 +18,7 @@ from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from ..gmail.presentation import envelope as gmail_envelope
 from .schemas import (
+    AppError,
     DashboardState,
     DashboardStatePatch,
 )
@@ -276,6 +277,17 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
         "size": size,
         "blob_base64": blob_base64,
     }
+
+
+def _fetch_error_payload(exc: Exception, **details: str) -> dict[str, Any]:
+    """Wrap a detail-fetch failure in the AppError structured-error contract."""
+    error = AppError(
+        code="PROVIDER_ERROR",
+        message=str(exc) or exc.__class__.__name__,
+        retryable=False,
+        details=dict(details),
+    )
+    return {"error": error.model_dump()}
 
 
 def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
@@ -594,12 +606,15 @@ def register_tools(server: FastMCP) -> None:
         account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading event details")
-        payload = await run_blocking(
-            _fetch_event_detail,
-            calendar_id,
-            event_id,
-            account_timezone,
-        )
+        try:
+            payload = await run_blocking(
+                _fetch_event_detail,
+                calendar_id,
+                event_id,
+                account_timezone,
+            )
+        except Exception as exc:
+            return _fetch_error_payload(exc, event_id=event_id, calendar_id=calendar_id)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Event details ready")
         return payload
@@ -614,7 +629,10 @@ def register_tools(server: FastMCP) -> None:
         account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading email details")
-        payload = await run_blocking(_fetch_email_detail, message_id, account_timezone)
+        try:
+            payload = await run_blocking(_fetch_email_detail, message_id, account_timezone)
+        except Exception as exc:
+            return _fetch_error_payload(exc, message_id=message_id)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Email details ready")
         return payload
@@ -632,7 +650,10 @@ def register_tools(server: FastMCP) -> None:
         """Return attachment content (base64) for one Gmail message attachment."""
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading attachment data")
-        payload = await run_blocking(_fetch_email_attachment, message_id, attachment_id)
+        try:
+            payload = await run_blocking(_fetch_email_attachment, message_id, attachment_id)
+        except Exception as exc:
+            return _fetch_error_payload(exc, message_id=message_id, attachment_id=attachment_id)
         if ctx is not None:
             await ctx.report_progress(100, 100, "Attachment ready")
         return payload
