@@ -25,6 +25,8 @@ def register(server: FastMCP) -> None:
             add_label_ids=add_label_ids or [],
             remove_label_ids=remove_label_ids or [],
         )
+        if not request.add_label_ids and not request.remove_label_ids:
+            raise ValueError("At least one of add_label_ids/remove_label_ids must be provided.")
         service = gmail_service()
         total = max(len(request.message_ids), 1)
         if ctx is not None:
