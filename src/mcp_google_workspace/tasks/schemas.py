@@ -120,6 +120,16 @@ class MoveTaskRequest(ToolRequestModel):
     previous: str | None = Field(default=None)
     destination_tasklist_id: str | None = Field(default=None)
 
+    @model_validator(mode="after")
+    def _ensure_valid_combination(self) -> "MoveTaskRequest":
+        # The Tasks API rejects cross-list moves that also reposition the task.
+        if self.destination_tasklist_id is not None and (self.parent or self.previous):
+            raise ValueError(
+                "parent/previous cannot be combined with destination_tasklist_id; "
+                "move the task to the destination tasklist first, then reorder it"
+            )
+        return self
+
 
 class DeleteTaskRequest(ToolRequestModel):
     tasklist_id: str = Field(description="Tasklist ID.")

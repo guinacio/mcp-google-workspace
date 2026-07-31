@@ -9,12 +9,21 @@ from pydantic import Field, field_validator
 
 from ..common.request_model import ToolRequestModel
 
-_A1_RANGE_RE = re.compile(r"^(?:[^!]+!)?[A-Za-z]+[0-9]+(?::[A-Za-z]+[0-9]+)?$")
+# Accepts cell ranges (A1, A1:B10), whole-column ranges (A:A, Sheet1!A:C),
+# and whole-row ranges (1:5), with an optional sheet-name prefix.
+_A1_RANGE_RE = re.compile(
+    r"^(?:[^!]+!)?"
+    r"(?:[A-Za-z]+[0-9]+(?::[A-Za-z]+[0-9]+)?"
+    r"|[A-Za-z]+:[A-Za-z]+"
+    r"|[0-9]+:[0-9]+)$"
+)
 
 
 def _validate_a1_range(value: str) -> str:
     if not _A1_RANGE_RE.match(value):
-        raise ValueError("range_a1 must use basic A1 notation, for example Sheet1!A1:B10")
+        raise ValueError(
+            "range_a1 must use basic A1 notation, for example Sheet1!A1:B10, A:C, or 1:5"
+        )
     return value
 
 
@@ -34,12 +43,16 @@ class CreateSpreadsheetRequest(ToolRequestModel):
     sheet_titles: list[str] = Field(default_factory=list, description="Optional initial sheet titles.")
 
 
+ValueRenderOption = Literal["FORMATTED_VALUE", "UNFORMATTED_VALUE", "FORMULA"]
+DateTimeRenderOption = Literal["SERIAL_NUMBER", "FORMATTED_STRING"]
+
+
 class GetSheetValuesRequest(ToolRequestModel):
     spreadsheet_id: str = Field(description="Spreadsheet file ID.")
     range_a1: str = Field(description="A1 notation range, for example Sheet1!A1:C10.")
     major_dimension: Literal["ROWS", "COLUMNS"] = Field(default="ROWS")
-    value_render_option: str | None = Field(default=None)
-    date_time_render_option: str | None = Field(default=None)
+    value_render_option: ValueRenderOption | None = Field(default=None)
+    date_time_render_option: DateTimeRenderOption | None = Field(default=None)
 
     @field_validator("range_a1")
     @classmethod
@@ -51,8 +64,8 @@ class BatchGetSheetValuesRequest(ToolRequestModel):
     spreadsheet_id: str = Field(description="Spreadsheet file ID.")
     ranges: list[str] = Field(description="A1 notation ranges to fetch.")
     major_dimension: Literal["ROWS", "COLUMNS"] = Field(default="ROWS")
-    value_render_option: str | None = Field(default=None)
-    date_time_render_option: str | None = Field(default=None)
+    value_render_option: ValueRenderOption | None = Field(default=None)
+    date_time_render_option: DateTimeRenderOption | None = Field(default=None)
 
     @field_validator("ranges")
     @classmethod

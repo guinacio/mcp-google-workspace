@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastmcp import Context, FastMCP
+from googleapiclient.errors import HttpError
 
 from ..common.async_ops import confirm_destructive_action, run_blocking
+from ..common.errors import tool_error_payload
 from .client import normalize_contact_group_name, normalize_person_name, people_service
 from .schemas import (
     CreateContactGroupRequest,
@@ -16,7 +18,9 @@ from .schemas import (
     ListContactGroupsRequest,
     ListContactsRequest,
     ModifyContactGroupMembersRequest,
+    ReadSourceType,
     SearchContactsRequest,
+    SortOrder,
     UpdateContactRequest,
 )
 
@@ -73,6 +77,10 @@ def list_contacts_payload(request: ListContactsRequest) -> dict[str, Any]:
 
 def search_contacts_payload(request: SearchContactsRequest) -> dict[str, Any]:
     service = people_service()
+    # People API quirk: searchContacts reads from a lazily-populated server-side
+    # cache, and Google's docs instruct clients to send an empty-query warmup
+    # request first so the real search sees fresh results.
+    # https://developers.google.com/people/v1/contacts#search_the_users_contacts
     service.people().searchContacts(query="", readMask=request.read_mask, pageSize=1, sources=request.sources).execute()
     return service.people().searchContacts(
         query=request.query,
@@ -164,48 +172,77 @@ def register_tools(server: FastMCP) -> None:
         page_size: int = 100,
         page_token: str | None = None,
         person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
-        sort_order: str | None = None,
-        sources: list[str] | None = None,
+        sort_order: SortOrder | None = None,
+        sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
-        return list_contacts_payload(
-            ListContactsRequest(
-                page_size=page_size,
-                page_token=page_token,
-                person_fields=person_fields,
-                sort_order=sort_order,
-                sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+        """Page through the account's saved contacts.
+
+        person_fields is a comma-separated People API field mask controlling
+        which contact fields are returned; page_token continues a previous page.
+        Returns the raw People connections.list payload ('connections' list plus
+        'nextPageToken'), or {"error": ...} on API failure.
+        """
+        try:
+            return list_contacts_payload(
+                ListContactsRequest(
+                    page_size=page_size,
+                    page_token=page_token,
+                    person_fields=person_fields,
+                    sort_order=sort_order,
+                    sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc)
 
     @server.tool(name="search_contacts")
     def search_contacts(
         query: str,
         page_size: int = 20,
         read_mask: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
-        sources: list[str] | None = None,
+        sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
-        return search_contacts_payload(
-            SearchContactsRequest(
-                query=query,
-                page_size=page_size,
-                read_mask=read_mask,
-                sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+        """Search saved contacts by name, email, phone, or organization text.
+
+        query matches prefixes of those fields; read_mask is a comma-separated
+        People API field mask for the returned contact data. Returns the raw
+        searchContacts payload ('results' list of {person} matches), or
+        {"error": ...} on API failure.
+        """
+        try:
+            return search_contacts_payload(
+                SearchContactsRequest(
+                    query=query,
+                    page_size=page_size,
+                    read_mask=read_mask,
+                    sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, query=query)
 
     @server.tool(name="get_contact")
     def get_contact(
         person_name: str,
         person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
-        sources: list[str] | None = None,
+        sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
-        return get_contact_payload(
-            GetContactRequest(
-                person_name=person_name,
-                person_fields=person_fields,
-                sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+        """Fetch one contact by resource name (e.g. 'people/c123'; bare IDs are normalized).
+
+        person_fields is a comma-separated People API field mask for the
+        returned data. Returns the Person resource, or {"error": ...} on API
+        failure (including unknown person_name).
+        """
+        try:
+            return get_contact_payload(
+                GetContactRequest(
+                    person_name=person_name,
+                    person_fields=person_fields,
+                    sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, person_name=person_name)
 
     @server.tool(name="create_contact")
     def create_contact(
@@ -218,18 +255,27 @@ def register_tools(server: FastMCP) -> None:
         biography: str | None = None,
         person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
     ) -> dict[str, Any]:
-        return create_contact_payload(
-            CreateContactRequest(
-                given_name=given_name,
-                family_name=family_name,
-                display_name=display_name,
-                email_addresses=email_addresses or [],
-                phone_numbers=phone_numbers or [],
-                organization=organization,
-                biography=biography,
-                person_fields=person_fields,
+        """Create a new contact from the provided name/email/phone/organization fields.
+
+        At least one field must be supplied. Returns the created Person
+        resource (including its 'resourceName' for later get/update/delete),
+        or {"error": ...} on API failure.
+        """
+        try:
+            return create_contact_payload(
+                CreateContactRequest(
+                    given_name=given_name,
+                    family_name=family_name,
+                    display_name=display_name,
+                    email_addresses=email_addresses or [],
+                    phone_numbers=phone_numbers or [],
+                    organization=organization,
+                    biography=biography,
+                    person_fields=person_fields,
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc)
 
     @server.tool(name="update_contact")
     def update_contact(
@@ -243,35 +289,55 @@ def register_tools(server: FastMCP) -> None:
         organization: str | None = None,
         biography: str | None = None,
         person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
-        sources: list[str] | None = None,
+        sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
-        return update_contact_payload(
-            UpdateContactRequest(
-                person_name=person_name,
-                etag=etag,
-                given_name=given_name,
-                family_name=family_name,
-                display_name=display_name,
-                email_addresses=email_addresses,
-                phone_numbers=phone_numbers,
-                organization=organization,
-                biography=biography,
-                person_fields=person_fields,
-                sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+        """Update fields on an existing contact identified by person_name.
+
+        Only the supplied fields are patched (at least one is required); list
+        fields like email_addresses replace the stored list wholesale. Pass the
+        contact's current etag to guard against concurrent edits. Returns the
+        updated Person resource, or {"error": ...} on API failure (e.g. a stale
+        etag).
+        """
+        try:
+            return update_contact_payload(
+                UpdateContactRequest(
+                    person_name=person_name,
+                    etag=etag,
+                    given_name=given_name,
+                    family_name=family_name,
+                    display_name=display_name,
+                    email_addresses=email_addresses,
+                    phone_numbers=phone_numbers,
+                    organization=organization,
+                    biography=biography,
+                    person_fields=person_fields,
+                    sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, person_name=person_name)
 
     @server.tool(name="delete_contact")
     async def delete_contact(
         person_name: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
+        """Permanently delete a contact after interactive host confirmation.
+
+        person_name is the contact resource name (e.g. 'people/c123'). Returns
+        {"status": "deleted"} on success, {"status": "cancelled"} if the user
+        declines, or {"error": ...} on API failure.
+        """
         request = DeleteContactRequest(person_name=person_name)
         if not await confirm_destructive_action(
             ctx, "delete_contact", f"Permanently delete contact {request.person_name}?"
         ):
             return {"status": "cancelled", "person_name": request.person_name}
-        return await run_blocking(delete_contact_payload, request)
+        try:
+            return await run_blocking(delete_contact_payload, request)
+        except HttpError as exc:
+            return tool_error_payload(exc, person_name=person_name)
 
     @server.tool(name="list_contact_groups")
     def list_contact_groups(
@@ -279,13 +345,30 @@ def register_tools(server: FastMCP) -> None:
         page_token: str | None = None,
         group_fields: str = "name,groupType,memberCount,metadata",
     ) -> dict[str, Any]:
-        return list_contact_groups_payload(
-            ListContactGroupsRequest(page_size=page_size, page_token=page_token, group_fields=group_fields)
-        )
+        """Page through the account's contact groups (labels).
+
+        group_fields is a comma-separated People API field mask for group data.
+        Returns the raw contactGroups.list payload ('contactGroups' list plus
+        'nextPageToken'), or {"error": ...} on API failure.
+        """
+        try:
+            return list_contact_groups_payload(
+                ListContactGroupsRequest(page_size=page_size, page_token=page_token, group_fields=group_fields)
+            )
+        except HttpError as exc:
+            return tool_error_payload(exc)
 
     @server.tool(name="create_contact_group")
     def create_contact_group(name: str) -> dict[str, Any]:
-        return create_contact_group_payload(CreateContactGroupRequest(name=name))
+        """Create a new contact group (label) with the given display name.
+
+        Returns the created ContactGroup resource (including its
+        'resourceName'), or {"error": ...} on API failure.
+        """
+        try:
+            return create_contact_group_payload(CreateContactGroupRequest(name=name))
+        except HttpError as exc:
+            return tool_error_payload(exc, name=name)
 
     @server.tool(name="modify_contact_group_members")
     def modify_contact_group_members(
@@ -293,10 +376,20 @@ def register_tools(server: FastMCP) -> None:
         resource_names_to_add: list[str] | None = None,
         resource_names_to_remove: list[str] | None = None,
     ) -> dict[str, Any]:
-        return modify_contact_group_members_payload(
-            ModifyContactGroupMembersRequest(
-                group_name=group_name,
-                resource_names_to_add=resource_names_to_add or [],
-                resource_names_to_remove=resource_names_to_remove or [],
+        """Add and/or remove contacts from a contact group.
+
+        group_name is the group resource name (e.g. 'contactGroups/abc'; bare
+        IDs are normalized), and the two lists hold contact resource names.
+        At least one addition or removal is required. Returns the raw
+        members.modify payload, or {"error": ...} on API failure.
+        """
+        try:
+            return modify_contact_group_members_payload(
+                ModifyContactGroupMembersRequest(
+                    group_name=group_name,
+                    resource_names_to_add=resource_names_to_add or [],
+                    resource_names_to_remove=resource_names_to_remove or [],
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, group_name=group_name)

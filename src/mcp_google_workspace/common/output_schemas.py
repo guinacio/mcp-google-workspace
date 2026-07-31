@@ -65,17 +65,36 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Every tool may return the shared in-tool error envelope instead of its
+# documented payload (see common.errors.tool_error_payload); "error" also
+# accepts an object for tools that embed structured error details.
+_ERROR_ENVELOPE_PROPERTIES: dict[str, dict[str, Any]] = {
+    "error": {
+        "type": ["object", "string"],
+        "description": "Error message or structured error details when the call failed.",
+    },
+    "provider_status": {
+        "type": "integer",
+        "description": "HTTP status code returned by the Google API for a failed call.",
+    },
+    "context": {
+        "type": "object",
+        "description": "Identifying request arguments echoed back with an error.",
+    },
+}
+
+
 def _registered_schema(tool_name: str) -> dict[str, Any] | None:
     fields = _OUTPUT_FIELDS.get(tool_name)
     if fields is None:
         return None
+    properties = {name: _named_field_schema(name) for name in fields}
+    properties.update(_ERROR_ENVELOPE_PROPERTIES)
     return {
         "type": "object",
         "title": f"{tool_name.replace('_', ' ').title()} response",
         "description": "Documented structured response returned by this MCP tool.",
-        "properties": {
-            name: _named_field_schema(name) for name in fields
-        },
+        "properties": properties,
         "required": [],
         "additionalProperties": False,
     }

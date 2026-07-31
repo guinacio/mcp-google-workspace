@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import EmailStr, Field, model_validator
 
 from ..common.request_model import ToolRequestModel
@@ -9,26 +11,44 @@ from ..common.request_model import ToolRequestModel
 _DEFAULT_PERSON_FIELDS = "names,emailAddresses,phoneNumbers,organizations,biographies"
 _DEFAULT_GROUP_FIELDS = "name,groupType,memberCount,metadata"
 
+SortOrder = Literal[
+    "LAST_MODIFIED_ASCENDING",
+    "LAST_MODIFIED_DESCENDING",
+    "FIRST_NAME_ASCENDING",
+    "LAST_NAME_ASCENDING",
+]
+ReadSourceType = Literal[
+    "READ_SOURCE_TYPE_CONTACT",
+    "READ_SOURCE_TYPE_PROFILE",
+    "READ_SOURCE_TYPE_DOMAIN_CONTACT",
+]
+
+
+def _default_sources() -> list[ReadSourceType]:
+    return ["READ_SOURCE_TYPE_CONTACT"]
+
 
 class ListContactsRequest(ToolRequestModel):
     page_size: int = Field(default=100, ge=1, le=1000)
     page_token: str | None = Field(default=None)
     person_fields: str = Field(default=_DEFAULT_PERSON_FIELDS)
-    sort_order: str | None = Field(default=None)
-    sources: list[str] = Field(default_factory=lambda: ["READ_SOURCE_TYPE_CONTACT"])
+    sort_order: SortOrder | None = Field(
+        default=None, description="Connection ordering; defaults to the People API's own ordering."
+    )
+    sources: list[ReadSourceType] = Field(default_factory=_default_sources)
 
 
 class SearchContactsRequest(ToolRequestModel):
     query: str = Field(min_length=1)
     page_size: int = Field(default=20, ge=1, le=100)
     read_mask: str = Field(default=_DEFAULT_PERSON_FIELDS)
-    sources: list[str] = Field(default_factory=lambda: ["READ_SOURCE_TYPE_CONTACT"])
+    sources: list[ReadSourceType] = Field(default_factory=_default_sources)
 
 
 class GetContactRequest(ToolRequestModel):
     person_name: str = Field(description="Contact resource name, e.g. people/c123.")
     person_fields: str = Field(default=_DEFAULT_PERSON_FIELDS)
-    sources: list[str] = Field(default_factory=lambda: ["READ_SOURCE_TYPE_CONTACT"])
+    sources: list[ReadSourceType] = Field(default_factory=_default_sources)
 
 
 class CreateContactRequest(ToolRequestModel):
@@ -67,7 +87,7 @@ class UpdateContactRequest(ToolRequestModel):
     organization: str | None = Field(default=None)
     biography: str | None = Field(default=None)
     person_fields: str = Field(default=_DEFAULT_PERSON_FIELDS)
-    sources: list[str] = Field(default_factory=lambda: ["READ_SOURCE_TYPE_CONTACT"])
+    sources: list[ReadSourceType] = Field(default_factory=_default_sources)
 
     @model_validator(mode="after")
     def _ensure_updates(self) -> "UpdateContactRequest":
