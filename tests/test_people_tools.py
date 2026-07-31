@@ -1,5 +1,8 @@
 import anyio
 import pytest
+from fastmcp import Client
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
 from mcp_google_workspace.people.client import normalize_contact_group_name, normalize_person_name
 from mcp_google_workspace.people.schemas import CreateContactRequest, ModifyContactGroupMembersRequest, UpdateContactRequest
@@ -183,3 +186,30 @@ def test_people_tool_annotations():
     assert list_tool.annotations.readOnlyHint is True
     assert update_tool.annotations.idempotentHint is True
     assert delete_tool.annotations.destructiveHint is True
+
+
+class _FailingExec:
+    def execute(self):
+        raise HttpError(Response({"status": "403"}), b'{"error":{"message":"Denied"}}')
+
+
+class _FailingPeopleService:
+    def people(self):
+        return self
+
+    def searchContacts(self, **kwargs):
+        return _FailingExec()
+
+
+def test_search_contacts_tool_returns_structured_error(monkeypatch):
+    monkeypatch.setattr("mcp_google_workspace.people.tools.people_service", _FailingPeopleService)
+
+    async def scenario():
+        async with Client(people_mcp) as client:
+            result = await client.call_tool("search_contacts", {"query": "Ada"})
+            return result.structured_content or result.data
+
+    result = anyio.run(scenario)
+    assert "403" in result["error"]
+    assert result["provider_status"] == 403
+    assert result["context"]["query"] == "Ada"

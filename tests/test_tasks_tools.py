@@ -2,6 +2,9 @@ from datetime import UTC, datetime
 
 import anyio
 import pytest
+from fastmcp import Client
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
 from mcp_google_workspace.tasks.schemas import CreateTaskRequest, UpdateTaskRequest
 from mcp_google_workspace.tasks.server import tasks_mcp
@@ -177,3 +180,43 @@ def test_task_envelope_and_digest_surface_actionable_state():
     assert envelope["notes_snippet"] == "Send a concise update."
     assert digest["overdue"][0]["id"] == "task-1"
     assert digest["unscheduled"][0]["id"] == "task-2"
+
+
+def test_move_task_rejects_reposition_combined_with_destination():
+    with pytest.raises(ValueError):
+        MoveTaskRequest(
+            tasklist_id="list-1", task_id="task-1", parent="task-0", destination_tasklist_id="list-2"
+        )
+    with pytest.raises(ValueError):
+        MoveTaskRequest(
+            tasklist_id="list-1", task_id="task-1", previous="task-0", destination_tasklist_id="list-2"
+        )
+    moved = MoveTaskRequest(tasklist_id="list-1", task_id="task-1", destination_tasklist_id="list-2")
+    assert moved.destination_tasklist_id == "list-2"
+
+
+class _FailingExec:
+    def execute(self):
+        raise HttpError(Response({"status": "404"}), b'{"error":{"message":"Not found"}}')
+
+
+class _FailingTasksService:
+    def tasklists(self):
+        return self
+
+    def get(self, **kwargs):
+        return _FailingExec()
+
+
+def test_get_tasklist_tool_returns_structured_error(monkeypatch):
+    monkeypatch.setattr("mcp_google_workspace.tasks.tools.tasks_service", _FailingTasksService)
+
+    async def scenario():
+        async with Client(tasks_mcp) as client:
+            result = await client.call_tool("get_tasklist", {"tasklist_id": "list-1"})
+            return result.structured_content or result.data
+
+    result = anyio.run(scenario)
+    assert "404" in result["error"]
+    assert result["provider_status"] == 404
+    assert result["context"]["tasklist_id"] == "list-1"

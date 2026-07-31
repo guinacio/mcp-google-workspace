@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
+from googleapiclient.errors import HttpError
 
 from ..common.async_ops import confirm_destructive_action, run_blocking
+from ..common.errors import tool_error_payload
 from ..common.timezone import resolve_user_timezone, user_now
 from .client import tasks_service
 from .schemas import (
@@ -122,17 +124,40 @@ def delete_task_payload(request: DeleteTaskRequest) -> dict[str, Any]:
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_tasklists")
     def list_tasklists(max_results: int = 100, page_token: str | None = None) -> dict[str, Any]:
-        result = list_tasklists_payload(ListTasklistsRequest(max_results=max_results, page_token=page_token))
+        """List the account's tasklists (each tasklist's 'id' feeds the other tasks tools).
+
+        Returns {"tasklists": [...], "next_page_token", "count"}, or
+        {"error": ...} on API failure.
+        """
+        try:
+            result = list_tasklists_payload(ListTasklistsRequest(max_results=max_results, page_token=page_token))
+        except HttpError as exc:
+            return tool_error_payload(exc)
         items = result.get("items", [])
         return {"tasklists": [tasklist_envelope(item) for item in items], "next_page_token": result.get("nextPageToken"), "count": len(items)}
 
     @server.tool(name="get_tasklist")
     def get_tasklist(tasklist_id: str) -> dict[str, Any]:
-        return tasklist_envelope(get_tasklist_payload(GetTasklistRequest(tasklist_id=tasklist_id)))
+        """Fetch one tasklist's metadata (title, updated time) by its ID.
+
+        Returns the tasklist envelope, or {"error": ...} on API failure.
+        """
+        try:
+            return tasklist_envelope(get_tasklist_payload(GetTasklistRequest(tasklist_id=tasklist_id)))
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id)
 
     @server.tool(name="create_tasklist")
     def create_tasklist(title: str) -> dict[str, Any]:
-        return create_tasklist_payload(CreateTasklistRequest(title=title))
+        """Create a new tasklist with the given title.
+
+        Returns the created tasklist resource (including its 'id'), or
+        {"error": ...} on API failure.
+        """
+        try:
+            return create_tasklist_payload(CreateTasklistRequest(title=title))
+        except HttpError as exc:
+            return tool_error_payload(exc, title=title)
 
     @server.tool(name="list_tasks")
     async def list_tasks(
@@ -159,25 +184,35 @@ def register_tools(server: FastMCP) -> None:
             str | None, "Only return tasks last updated on or after this RFC3339 timestamp."
         ] = None,
     ) -> dict[str, Any]:
+        """List tasks in a tasklist, with optional due/completed/updated time filters.
+
+        Timestamp filters accept RFC3339 or bare YYYY-MM-DD dates. Returns
+        {"tasks": [...], "next_page_token", "count", "account_timezone"} with
+        each task annotated with overdue/due-state info, or {"error": ...} on
+        API failure.
+        """
         timezone_name = await resolve_user_timezone()
         now = user_now(timezone_name)
-        result = await run_blocking(
-            list_tasks_payload,
-            ListTasksRequest(
-                tasklist_id=tasklist_id,
-                completed_max=completed_max,
-                completed_min=completed_min,
-                due_max=due_max,
-                due_min=due_min,
-                max_results=max_results,
-                page_token=page_token,
-                show_assigned=show_assigned,
-                show_completed=show_completed,
-                show_deleted=show_deleted,
-                show_hidden=show_hidden,
-                updated_min=updated_min,
+        try:
+            result = await run_blocking(
+                list_tasks_payload,
+                ListTasksRequest(
+                    tasklist_id=tasklist_id,
+                    completed_max=completed_max,
+                    completed_min=completed_min,
+                    due_max=due_max,
+                    due_min=due_min,
+                    max_results=max_results,
+                    page_token=page_token,
+                    show_assigned=show_assigned,
+                    show_completed=show_completed,
+                    show_deleted=show_deleted,
+                    show_hidden=show_hidden,
+                    updated_min=updated_min,
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id)
         items = result.get("items", [])
         return {
             "tasklist_id": tasklist_id,
@@ -189,14 +224,22 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="get_task")
     async def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
+        """Fetch one task by tasklist ID and task ID.
+
+        Returns the task envelope (title, notes, due, status, overdue state),
+        or {"error": ...} on API failure.
+        """
         timezone_name = await resolve_user_timezone()
-        return task_envelope(
-            await run_blocking(
-                get_task_payload,
-                GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id),
-            ),
-            now=user_now(timezone_name),
-        )
+        try:
+            return task_envelope(
+                await run_blocking(
+                    get_task_payload,
+                    GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id),
+                ),
+                now=user_now(timezone_name),
+            )
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
 
     @server.tool(name="tasks_digest")
     async def tasks_digest_tool(
@@ -206,12 +249,19 @@ def register_tools(server: FastMCP) -> None:
         ] = 7,
         max_results: int = 100,
     ) -> dict[str, Any]:
-        """Group incomplete tasks into overdue, upcoming, and unscheduled work."""
+        """Group incomplete tasks into overdue, upcoming, and unscheduled work.
+
+        Returns the grouped digest plus tasklist/window metadata, or
+        {"error": ...} on API failure.
+        """
         timezone_name = await resolve_user_timezone()
-        result = await run_blocking(
-            list_tasks_payload,
-            ListTasksRequest(tasklist_id=tasklist_id, max_results=max_results, show_completed=False)
-        )
+        try:
+            result = await run_blocking(
+                list_tasks_payload,
+                ListTasksRequest(tasklist_id=tasklist_id, max_results=max_results, show_completed=False)
+            )
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id)
         digest = tasks_digest(
             result.get("items", []), now=user_now(timezone_name), days=days
         )
@@ -241,17 +291,27 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         status: Annotated[TaskStatus, "Task status: needsAction or completed."] = "needsAction",
     ) -> dict[str, Any]:
-        return create_task_payload(
-            CreateTaskRequest(
-                tasklist_id=tasklist_id,
-                title=title,
-                notes=notes,
-                due=due,
-                parent=parent,
-                previous=previous,
-                status=status,
+        """Create a task in a tasklist, optionally nested (parent) or positioned (previous).
+
+        parent nests the new task as a subtask; previous places it after a
+        sibling task; both refer to task IDs in the same tasklist. Returns the
+        created task resource (including its 'id'), or {"error": ...} on API
+        failure.
+        """
+        try:
+            return create_task_payload(
+                CreateTaskRequest(
+                    tasklist_id=tasklist_id,
+                    title=title,
+                    notes=notes,
+                    due=due,
+                    parent=parent,
+                    previous=previous,
+                    status=status,
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id)
 
     @server.tool(name="update_task")
     def update_task(
@@ -270,19 +330,27 @@ def register_tools(server: FastMCP) -> None:
         deleted: Annotated[bool | None, "Whether to mark the task as deleted."] = None,
         hidden: Annotated[bool | None, "Whether to mark the task as hidden from the default task list view."] = None,
     ) -> dict[str, Any]:
-        return update_task_payload(
-            UpdateTaskRequest(
-                tasklist_id=tasklist_id,
-                task_id=task_id,
-                title=title,
-                notes=notes,
-                due=due,
-                status=status,
-                completed=completed,
-                deleted=deleted,
-                hidden=hidden,
+        """Patch fields on an existing task; only the supplied fields change.
+
+        At least one mutable field must be provided. Returns the updated task
+        resource, or {"error": ...} on API failure.
+        """
+        try:
+            return update_task_payload(
+                UpdateTaskRequest(
+                    tasklist_id=tasklist_id,
+                    task_id=task_id,
+                    title=title,
+                    notes=notes,
+                    due=due,
+                    status=status,
+                    completed=completed,
+                    deleted=deleted,
+                    hidden=hidden,
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
 
     @server.tool(name="complete_task")
     async def complete_task(
@@ -292,12 +360,19 @@ def register_tools(server: FastMCP) -> None:
             str | None, "Completion RFC3339 timestamp to record; defaults to the account's current local time."
         ] = None,
     ) -> dict[str, Any]:
+        """Mark a task as completed, recording the completion timestamp.
+
+        Returns the updated task resource, or {"error": ...} on API failure.
+        """
         timezone_name = await resolve_user_timezone()
-        return await run_blocking(
-            complete_task_payload,
-            CompleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id, completed_at=completed_at),
-            default_completed_at=_completed_now(timezone_name),
-        )
+        try:
+            return await run_blocking(
+                complete_task_payload,
+                CompleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id, completed_at=completed_at),
+                default_completed_at=_completed_now(timezone_name),
+            )
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
 
     @server.tool(name="move_task")
     def move_task(
@@ -313,15 +388,26 @@ def register_tools(server: FastMCP) -> None:
             str | None, "Target tasklist ID to move the task into; omit to reorder within the same tasklist."
         ] = None,
     ) -> dict[str, Any]:
-        return move_task_payload(
-            MoveTaskRequest(
-                tasklist_id=tasklist_id,
-                task_id=task_id,
-                parent=parent,
-                previous=previous,
-                destination_tasklist_id=destination_tasklist_id,
+        """Reorder a task within its tasklist, or move it to another tasklist.
+
+        Use parent/previous (task IDs in the same tasklist) to reposition, OR
+        destination_tasklist_id to move across tasklists — the Tasks API
+        rejects combining the two, so cross-list moves land at the destination's
+        default position (reorder with a second call). Returns the moved task
+        resource, or {"error": ...} on API failure.
+        """
+        try:
+            return move_task_payload(
+                MoveTaskRequest(
+                    tasklist_id=tasklist_id,
+                    task_id=task_id,
+                    parent=parent,
+                    previous=previous,
+                    destination_tasklist_id=destination_tasklist_id,
+                )
             )
-        )
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
 
     @server.tool(name="delete_task")
     async def delete_task(
@@ -329,6 +415,11 @@ def register_tools(server: FastMCP) -> None:
         task_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
+        """Permanently delete a task after interactive host confirmation.
+
+        Returns {"status": "deleted"} on success, {"status": "cancelled"} if
+        the user declines, or {"error": ...} on API failure.
+        """
         request = DeleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id)
         if not await confirm_destructive_action(
             ctx, "delete_task", f"Permanently delete task {request.task_id}?"
@@ -338,4 +429,7 @@ def register_tools(server: FastMCP) -> None:
                 "task_id": request.task_id,
                 "tasklist_id": request.tasklist_id,
             }
-        return await run_blocking(delete_task_payload, request)
+        try:
+            return await run_blocking(delete_task_payload, request)
+        except HttpError as exc:
+            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)

@@ -12,6 +12,24 @@ from fastmcp.tools.base import ToolResult
 from mcp.types import ErrorData
 
 
+def tool_error_payload(exc: Exception, **context: Any) -> dict[str, Any]:
+    """Structured in-tool error return for a failed Google API call.
+
+    Mirrors the calendar namespace's ``{"error": ...}`` convention so LLM
+    callers receive a readable failure payload (plus the identifying context
+    they passed in) instead of a raw traceback or an opaque protocol error.
+    Context kwargs are nested under ``context`` so the payload always matches
+    the closed error-envelope shape declared in the tool output schemas.
+    """
+    payload: dict[str, Any] = {"error": str(exc)}
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    if status is not None:
+        payload["provider_status"] = int(status)
+    if context:
+        payload["context"] = dict(context)
+    return payload
+
+
 class RecoverableToolError(RuntimeError):
     """Tool failure with an explicit model-executable recovery step."""
 
