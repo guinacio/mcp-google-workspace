@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib.metadata import version
 import json
 
 import anyio
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 from fastmcp.server.middleware import MiddlewareContext
 from fastmcp.tools.base import ToolResult
 
+import mcp_google_workspace
 from mcp_google_workspace.common.approvals import (
     COMMIT_ACTIVE,
     impact_preview,
@@ -160,6 +162,10 @@ def test_version_payload_advertises_streamable_http_and_current_protocol() -> No
     payload = build_version_payload()
     assert payload["protocol_transport"] == "streamable-http"
     assert payload["mcp_protocol_version"] == "2025-11-25"
+
+
+def test_exported_package_version_matches_installed_metadata() -> None:
+    assert mcp_google_workspace.__version__ == version("mcp-google-workspace")
 
 
 def test_structural_admission_limits_are_enforced() -> None:

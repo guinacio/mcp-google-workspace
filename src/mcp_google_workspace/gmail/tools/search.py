@@ -23,17 +23,22 @@ from ..presentation import (
 from ..schemas import DigestRequest, SearchEmailRequest
 
 
+def _quote_search_value(value: str) -> str:
+    """Quote one Gmail search helper value without changing its meaning."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def _build_search_query(request: SearchEmailRequest) -> str | None:
     terms: list[str] = []
     if request.query:
         terms.append(f"({request.query})")
     if request.from_email:
-        terms.append(f"from:{request.from_email}")
+        terms.append(f"from:{_quote_search_value(request.from_email)}")
     if request.to_email:
-        terms.append(f"to:{request.to_email}")
+        terms.append(f"to:{_quote_search_value(request.to_email)}")
     if request.subject_contains:
-        escaped = request.subject_contains.replace('"', '\\"')
-        terms.append(f'subject:"{escaped}"')
+        terms.append(f"subject:{_quote_search_value(request.subject_contains)}")
     if request.has_attachment:
         terms.append("has:attachment")
     if request.is_unread:

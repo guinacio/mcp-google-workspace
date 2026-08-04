@@ -1,4 +1,7 @@
 import anyio
+from fastmcp import Client
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
 from mcp_google_workspace.meet.client import normalize_conference_record_name, normalize_space_name
 from mcp_google_workspace.meet.presentation import participant_envelope
@@ -28,6 +31,10 @@ from mcp_google_workspace.meet.tools import (
 async def _list_tool_names(server):
     tools = await server.list_tools(run_middleware=False)
     return [tool.name for tool in tools]
+
+
+async def _list_tools(server):
+    return await server.list_tools(run_middleware=False)
 
 
 async def _get_tool(server, name):
@@ -141,6 +148,13 @@ def test_meet_server_registers_expected_tools():
     assert "list_conference_transcripts" in tool_names
 
 
+def test_meet_tools_all_have_descriptions():
+    tools = anyio.run(_list_tools, meet_mcp)
+
+    assert len(tools) == 9
+    assert all(tool.description for tool in tools)
+
+
 def test_meet_name_normalization():
     assert normalize_space_name("abc") == "spaces/abc"
     assert normalize_space_name("spaces/abc") == "spaces/abc"
@@ -194,3 +208,34 @@ def test_participant_envelope_uses_human_identity():
     )
     assert result["name"] == "Ada"
     assert result["identity_type"] == "signed_in"
+
+
+class _FailingExec:
+    def execute(self):
+        raise HttpError(Response({"status": "403"}), b'{"error":{"message":"Denied"}}')
+
+
+class _FailingSpacesApi:
+    def get(self, **_kwargs):
+        return _FailingExec()
+
+
+class _FailingMeetService:
+    def spaces(self):
+        return _FailingSpacesApi()
+
+
+def test_meet_tool_returns_structured_provider_error(monkeypatch):
+    monkeypatch.setattr(
+        "mcp_google_workspace.meet.tools.meet_service",
+        _FailingMeetService,
+    )
+
+    async def scenario():
+        async with Client(meet_mcp) as client:
+            result = await client.call_tool("get_space", {"space_name": "denied"})
+            return result.structured_content or result.data
+
+    result = anyio.run(scenario)
+    assert result["provider_status"] == 403
+    assert result["context"]["space_name"] == "spaces/denied"

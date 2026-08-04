@@ -18,7 +18,7 @@ from mcp_google_workspace.gmail.presentation import (
     first_meaningful_sentence,
     requires_response,
 )
-from mcp_google_workspace.gmail.schemas import SendEmailRequest
+from mcp_google_workspace.gmail.schemas import SearchEmailRequest, SendEmailRequest
 from mcp_google_workspace.gmail.server import gmail_mcp
 import mcp_google_workspace.gmail.tools.history as gmail_history
 import mcp_google_workspace.gmail.tools.messages as gmail_messages
@@ -252,6 +252,7 @@ def test_check_mail_updates_skips_deleted_history_messages(monkeypatch: pytest.M
     assert result["next_history_id"] == "200"
     assert result["skipped_deleted_count"] == 1
     assert result["skipped_deleted_message_ids"] == ["deleted"]
+    assert [item["id"] for item in result["all_new_messages"]] == ["available"]
     assert result["highlights"][0]["id"] == "available"
 
 
@@ -372,9 +373,26 @@ def test_check_mail_updates_excludes_drafts_from_highlights(monkeypatch: pytest.
     result = asyncio.run(scenario())
 
     assert result["new_count"] == 2
+    assert [item["id"] for item in result["all_new_messages"]] == ["draft-1", "real-1"]
     highlight_ids = [item["id"] for item in result["highlights"]]
     assert highlight_ids == ["real-1"]
     assert all(item["is_draft"] is False for item in result["highlights"])
+
+
+def test_search_helper_filters_quote_and_escape_address_values() -> None:
+    request = SearchEmailRequest(
+        from_email='Jane "JJ" Doe <jane@example.com>',
+        to_email="Support Team <support@example.com>",
+        subject_contains='Quarterly "Review"',
+    )
+
+    query = gmail_search._build_search_query(request)
+
+    assert query == (
+        'from:"Jane \\"JJ\\" Doe <jane@example.com>" '
+        'to:"Support Team <support@example.com>" '
+        'subject:"Quarterly \\"Review\\""'
+    )
 
 
 class _SearchRequest:
