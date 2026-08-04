@@ -39,7 +39,12 @@ def register(server: FastMCP) -> None:
         page_token: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Return a compact incremental mailbox heartbeat, with direct-mail highlights."""
+        """Return incremental mailbox updates with ground-truth messages and filtered highlights.
+
+        ``all_new_messages`` contains every fetched message, including automated,
+        newsletter, and draft mail, so callers can apply their own prioritization.
+        ``highlights`` is a convenience view that excludes those three categories.
+        """
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         if since_history_id:
@@ -130,6 +135,7 @@ def register(server: FastMCP) -> None:
             "skipped_deleted_count": len(skipped_deleted_message_ids),
             "skipped_deleted_message_ids": skipped_deleted_message_ids,
             "counts_by_category": counts,
+            "all_new_messages": messages,
             "highlights": highlights,
             "next_history_id": next_history_id,
             "next_page_token": next_page_token,
