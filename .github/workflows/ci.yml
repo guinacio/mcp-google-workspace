@@ -46,6 +46,8 @@ jobs:
         run: npm run build
       - name: Verify generated UI is current
         run: git diff --exit-code -- src/mcp_google_workspace/apps/ui/dist/index.html
+      - name: Build production container
+        run: docker build --tag mcp-google-workspace-ci .
       - name: Build MCPB from clean locked dependencies
         run: uv run python scripts/build_mcpb.py
       - name: Upload MCPB smoke artifact
