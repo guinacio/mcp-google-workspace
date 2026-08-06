@@ -6,7 +6,8 @@ import ast
 from collections.abc import Callable
 import inspect
 import textwrap
-from typing import Any
+from types import UnionType
+from typing import Annotated, Any, Union, get_args, get_origin
 
 
 _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
@@ -183,6 +184,52 @@ def _annotation_schema(node: ast.expr | None) -> dict[str, Any]:
             if isinstance(node.slice, ast.Tuple) and node.slice.elts:
                 return _annotation_schema(node.slice.elts[0])
     return {}
+
+
+def _runtime_annotation_schema(annotation: Any) -> dict[str, Any]:
+    """Map an evaluated Python return annotation to a JSON schema type."""
+    if annotation is inspect.Signature.empty:
+        return {}
+    if annotation is type(None):
+        return {"type": "null"}
+    scalar = {
+        int: {"type": "integer"},
+        float: {"type": "number"},
+        bool: {"type": "boolean"},
+        str: {"type": "string"},
+    }.get(annotation)
+    if scalar is not None:
+        return dict(scalar)
+
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        arguments = get_args(annotation)
+        return _runtime_annotation_schema(arguments[0]) if arguments else {}
+    if origin is list:
+        return {"type": "array", "items": {}}
+    if origin is dict:
+        return {"type": "object"}
+    if origin in {Union, UnionType}:
+        branches = [_runtime_annotation_schema(argument) for argument in get_args(annotation)]
+        if not branches or not all(branches):
+            return {}
+        merged = branches[0]
+        for branch in branches[1:]:
+            merged = _merge_property_schemas(merged, branch)
+        return merged
+    return {}
+
+
+def _call_return_schema(call: ast.Call, fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a local helper call from its evaluated return annotation."""
+    target = _call_target(call, fn)
+    if target is None:
+        return {}
+    try:
+        annotation = inspect.signature(target, eval_str=True).return_annotation
+    except (NameError, TypeError, ValueError):
+        return {}
+    return _runtime_annotation_schema(annotation)
 
 
 def _literal_schema(node: ast.expr, resolver: _Resolver | None = None) -> dict[str, Any]:
@@ -373,25 +420,37 @@ def infer_tool_output_schema(
         for arg in [*root.args.posonlyargs, *root.args.args, *root.args.kwonlyargs]
         if (schema := _annotation_schema(arg.annotation))
     }
+    resolving_names: set[str] = set()
 
     def resolve(node: ast.expr) -> dict[str, Any]:
-        """Type a value expression from parameter annotations or assignments."""
+        """Type a value expression from annotations or assignments."""
+        call = _unwrap_call(node)
+        if call is not None:
+            return _call_return_schema(call, fn)
         if not isinstance(node, ast.Name):
             return {}
         annotated = parameter_schemas.get(node.id)
         if annotated:
             return dict(annotated)
-        assigned = [
-            _literal_schema(value) for value in visitor.assignments.get(node.id, [])
-        ]
+        if node.id in resolving_names:
+            return {}
+        resolving_names.add(node.id)
+        try:
+            assigned = [
+                _literal_schema(value, resolve)
+                for value in visitor.assignments.get(node.id, [])
+            ]
+        finally:
+            resolving_names.remove(node.id)
         if not assigned or not all(assigned):
             # Any unresolvable assignment forfeits the claim: partial evidence
             # must not narrow the schema (a None initializer plus an opaque
             # reassignment would otherwise read as "always null").
             return {}
-        kinds = {schema.get("type") for schema in assigned}
-        if not all(isinstance(kind, str) for kind in kinds):
+        observed_kinds = [schema.get("type") for schema in assigned]
+        if not all(isinstance(kind, str) for kind in observed_kinds):
             return {}
+        kinds = set(observed_kinds)
         if kinds == {"null"}:
             # A lone None initializer proves nothing about the real value.
             return {}
