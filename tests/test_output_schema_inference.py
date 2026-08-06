@@ -8,6 +8,10 @@ from mcp_google_workspace.common.output_schemas import infer_tool_output_schema
 from mcp_google_workspace.server import workspace_mcp
 
 
+def _optional_namespace_enabled() -> bool:
+    return True
+
+
 def _properties(fn: Any) -> dict[str, Any]:
     schema = infer_tool_output_schema(fn)
     assert schema is not None
@@ -62,6 +66,19 @@ def test_assigned_literals_and_builtin_calls_type_scalars() -> None:
     assert properties["totals"]["type"] == "integer"
     assert properties["labels"]["type"] == "array"
     assert properties["size"]["type"] == "integer"
+
+
+def test_local_helper_return_annotations_type_nested_assigned_dicts() -> None:
+    """Regression for issue #29: ``apps`` must not hit the plural-name heuristic."""
+
+    def tool() -> dict[str, Any]:
+        optional = {"apps": _optional_namespace_enabled()}
+        return {"optional_namespaces": optional}
+
+    properties = _properties(tool)
+    optional = properties["optional_namespaces"]
+    assert optional["type"] == "object"
+    assert optional["properties"]["apps"]["type"] == "boolean"
 
 
 def test_conflicting_assignments_fall_back_to_the_name_heuristic() -> None:
@@ -131,6 +148,25 @@ def test_connection_status_schema_accepts_the_connected_state() -> None:
     assert properties["action"]["type"] == ["string", "null"]
     assert properties["checked_capability"]["type"] == ["string", "null"]
     assert "type" not in properties.get("expires_at", {})
+
+
+def test_workspace_capabilities_schema_and_call_accept_boolean_apps() -> None:
+    """End-to-end repro for issue #29: capability introspection must be callable."""
+    from fastmcp import Client
+
+    async def inspect_and_call() -> tuple[dict[str, Any], Any]:
+        tool = await workspace_mcp.get_tool("get_workspace_capabilities")
+        assert tool is not None
+        assert tool.output_schema is not None
+        async with Client(workspace_mcp) as client:
+            result = await client.call_tool("get_workspace_capabilities", {})
+        return tool.output_schema, result
+
+    schema, result = anyio.run(inspect_and_call)
+    optional_schema = schema["properties"]["optional_namespaces"]
+    assert optional_schema["properties"]["apps"]["type"] == "boolean"
+    assert result.is_error is False
+    assert isinstance(result.structured_content["optional_namespaces"]["apps"], bool)
 
 
 def test_get_google_connection_status_validates_when_connected(monkeypatch) -> None:
