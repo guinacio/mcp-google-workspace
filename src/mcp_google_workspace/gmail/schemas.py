@@ -91,7 +91,7 @@ class ReadEmailsRequest(ToolRequestModel):
 class DigestRequest(ToolRequestModel):
     window: str = Field(default="3d", pattern=r"^\d+[dhw]$", description="Lookback window such as 3d, 24h, or 1w.")
     unread_only: bool = Field(default=False, description="Include only unread messages.")
-    max_items: int = Field(default=25, ge=1, le=100, description="Maximum latest messages to inspect.")
+    max_items: int = Field(default=25, ge=1, le=100, description="Maximum latest received or sent messages to return.")
 
 
 class SearchEmailRequest(ToolRequestModel):

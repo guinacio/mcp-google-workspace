@@ -190,7 +190,7 @@ Gmail (namespaced as `gmail_*` in composed server):
 - `send_email`
 - `search_emails` (compact metadata-first inbox listing and Gmail query surface)
 - `read_emails` (consistent one-to-100 message hydration with selectable detail level)
-- `get_mail_digest`, `check_mail_updates` (curated triage and cursor-based incremental heartbeat)
+- `get_mail_digest`, `check_mail_updates` (unbiased received/sent feeds, including routed and automated mail)
 - `list_labels`, `create_label`, `update_label`, `delete_label`, `apply_labels`
 - `list_attachments`, `download_attachment`
 - `mark_as_read`, `mark_as_unread`, `move_email`, `delete_email`

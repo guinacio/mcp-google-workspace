@@ -13,7 +13,7 @@ from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..helpers import gather_in_order
-from ..presentation import envelope
+from ..presentation import mail_feed_envelope
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,12 +39,7 @@ def register(server: FastMCP) -> None:
         page_token: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Return incremental mailbox updates with ground-truth messages and filtered highlights.
-
-        ``all_new_messages`` contains every fetched message, including automated,
-        newsletter, and draft mail, so callers can apply their own prioritization.
-        ``highlights`` is a convenience view that excludes those three categories.
-        """
+        """Return every new received or sent message without triage or prioritization."""
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         if since_history_id:
@@ -118,25 +113,14 @@ def register(server: FastMCP) -> None:
                         f"Skipped deleted Gmail message {message_id} while reading mailbox history."
                     )
                 continue
-            messages.append(envelope(message, account_timezone=account_timezone))
-        counts: dict[str, int] = {}
-        for item in messages:
-            category = item["category"] or "uncategorized"
-            counts[category] = counts.get(category, 0) + 1
-        # Drafts can surface through history responses; keep them out of the
-        # direct-mail highlights so an unsent draft is never reported as real mail.
-        highlights = [
-            item
-            for item in messages
-            if not item["is_newsletter"] and not item["is_automated"] and not item["is_draft"]
-        ]
+            item = mail_feed_envelope(message, account_timezone=account_timezone)
+            if item is not None:
+                messages.append(item)
         return {
             "new_count": len(messages),
             "skipped_deleted_count": len(skipped_deleted_message_ids),
             "skipped_deleted_message_ids": skipped_deleted_message_ids,
-            "counts_by_category": counts,
-            "all_new_messages": messages,
-            "highlights": highlights,
+            "messages": messages,
             "next_history_id": next_history_id,
             "next_page_token": next_page_token,
             "continue_from_history_id": since_history_id if next_page_token and since_history_id else None,
