@@ -13,10 +13,7 @@ from mcp_google_workspace.gmail.helpers import gather_in_order
 from mcp_google_workspace.gmail.mime_utils import build_email_message, encode_subject, extract_message_bodies
 from mcp_google_workspace.gmail.presentation import (
     clean_message_content,
-    detect_deadline,
     envelope,
-    first_meaningful_sentence,
-    requires_response,
 )
 from mcp_google_workspace.gmail.schemas import SearchEmailRequest, SendEmailRequest
 from mcp_google_workspace.gmail.server import gmail_mcp
@@ -117,18 +114,6 @@ def test_invalid_grant_from_unknown_request_preserves_token_and_has_actionable_e
     assert "OAuth consent" in str(error.value)
 
 
-def test_deadline_detection_requires_a_real_date_or_time_and_supports_portuguese():
-    text = "Aguardo sua devolutiva até segunda-feira, dia 13/07, às 18h."
-
-    assert detect_deadline(text, date_header="Thu, 9 Jul 2026 10:00:00 -0300") == "2026-07-13T18:00-03:00"
-    assert detect_deadline(
-        text,
-        date_header="Thu, 9 Jul 2026 10:00:00 +0000",
-        account_timezone="America/Sao_Paulo",
-    ) == "2026-07-13T18:00-03:00"
-    assert detect_deadline("Built by Docker and maintained by LangChain.") is None
-
-
 def test_html_placeholder_falls_back_to_html_and_snippet_hygiene():
     html = "<p>Hello ____ https://example.com?track=1</p>"
     message = {
@@ -143,17 +128,6 @@ def test_html_placeholder_falls_back_to_html_and_snippet_hygiene():
     assert "HTML content" not in envelope(message, account_timezone="America/Sao_Paulo")["snippet"]
     assert "?track" not in envelope(message, account_timezone="America/Sao_Paulo")["snippet"]
     assert "____" not in envelope(message, account_timezone="America/Sao_Paulo")["snippet"]
-
-
-def test_response_detection_excludes_newsletters_and_automated_messages():
-    assert requires_response("What do you do now?", is_automated=True, is_newsletter=False) is False
-    assert requires_response("Can you reply today?", is_automated=False, is_newsletter=False) is True
-
-
-def test_gist_skips_a_salutation_for_the_first_substantive_sentence():
-    text = "Olá, Guilherme!\n\nA proposta atualizada está pronta para sua revisão antes de sexta-feira."
-
-    assert first_meaningful_sentence(text) == "A proposta atualizada está pronta para sua revisão antes de sexta-feira."
 
 
 def test_github_notification_mail_is_automated_even_with_a_personal_display_name():
@@ -252,8 +226,11 @@ def test_check_mail_updates_skips_deleted_history_messages(monkeypatch: pytest.M
     assert result["next_history_id"] == "200"
     assert result["skipped_deleted_count"] == 1
     assert result["skipped_deleted_message_ids"] == ["deleted"]
-    assert [item["id"] for item in result["all_new_messages"]] == ["available"]
-    assert result["highlights"][0]["id"] == "available"
+    assert [item["id"] for item in result["messages"]] == ["available"]
+    assert result["messages"][0]["direction"] == "received"
+    assert "all_new_messages" not in result
+    assert "highlights" not in result
+    assert "counts_by_category" not in result
 
 
 def test_read_emails_has_one_consistent_batch_shape_and_isolates_missing_ids(
@@ -337,7 +314,9 @@ def test_envelope_flags_drafts_and_sent_messages():
     assert received_env["is_sent"] is False
 
 
-def test_check_mail_updates_excludes_drafts_from_highlights(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_mail_updates_returns_received_and_sent_messages_without_triage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fake_timezone() -> str:
         return "UTC"
 
@@ -349,14 +328,32 @@ def test_check_mail_updates_excludes_drafts_from_highlights(monkeypatch: pytest.
                     {
                         "messagesAdded": [
                             {"message": {"id": "draft-1"}},
-                            {"message": {"id": "real-1"}},
+                            {"message": {"id": "sent-1"}},
+                            {"message": {"id": "linkedin-1"}},
+                            {"message": {"id": "direct-1"}},
                         ]
                     }
                 ],
             }
         if request.message_id == "draft-1":
             return _labelled_message("draft-1", ["DRAFT"], "Me <me@example.com>", "Unsent draft")
-        return _labelled_message("real-1", ["INBOX"], "Alice <alice@example.com>", "Actual mail")
+        if request.message_id == "sent-1":
+            return _labelled_message("sent-1", ["SENT"], "Me <me@example.com>", "Sent message")
+        if request.message_id == "linkedin-1":
+            message = _labelled_message(
+                "linkedin-1",
+                ["CATEGORY_SOCIAL", "Label_routed"],
+                "LinkedIn <messages-noreply@linkedin.com>",
+                "A recruiter sent you a message",
+            )
+            message["payload"]["headers"].extend(
+                [
+                    {"name": "Precedence", "value": "bulk"},
+                    {"name": "List-Unsubscribe", "value": "<https://linkedin.com/unsubscribe>"},
+                ]
+            )
+            return message
+        return _labelled_message("direct-1", ["INBOX"], "Alice <alice@example.com>", "Actual mail")
 
     monkeypatch.setattr(gmail_history, "gmail_service", _HistoryService)
     monkeypatch.setattr(gmail_history, "resolve_user_timezone", fake_timezone)
@@ -372,11 +369,26 @@ def test_check_mail_updates_excludes_drafts_from_highlights(monkeypatch: pytest.
 
     result = asyncio.run(scenario())
 
-    assert result["new_count"] == 2
-    assert [item["id"] for item in result["all_new_messages"]] == ["draft-1", "real-1"]
-    highlight_ids = [item["id"] for item in result["highlights"]]
-    assert highlight_ids == ["real-1"]
-    assert all(item["is_draft"] is False for item in result["highlights"])
+    assert result["new_count"] == 3
+    assert [item["id"] for item in result["messages"]] == ["sent-1", "linkedin-1", "direct-1"]
+    assert {item["id"]: item["direction"] for item in result["messages"]} == {
+        "sent-1": "sent",
+        "linkedin-1": "received",
+        "direct-1": "received",
+    }
+    assert "all_new_messages" not in result
+    assert "highlights" not in result
+    assert "counts_by_category" not in result
+    for message in result["messages"]:
+        assert not {
+            "category",
+            "is_newsletter",
+            "is_automated",
+            "is_draft",
+            "is_sent",
+            "requires_response",
+            "deadline_detected",
+        } & message.keys()
 
 
 def test_search_helper_filters_quote_and_escape_address_values() -> None:
@@ -420,8 +432,30 @@ class _SearchService:
         return _SearchUsers()
 
 
-def test_get_mail_digest_excludes_drafts_and_queries_without_them(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_mail_digest_returns_received_and_sent_without_triage_or_thread_deduplication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     seen_queries: list[str | None] = []
+    messages = {
+        "draft-1": _labelled_message("draft-1", ["DRAFT"], "Me <me@example.com>", "Unsent draft"),
+        "sent-1": _labelled_message("sent-1", ["SENT"], "Me <me@example.com>", "Sent message"),
+        "linkedin-1": _labelled_message(
+            "linkedin-1",
+            ["CATEGORY_SOCIAL", "Label_routed"],
+            "LinkedIn <messages-noreply@linkedin.com>",
+            "A recruiter sent you a message",
+        ),
+        "person-1": _labelled_message("person-1", ["INBOX", "UNREAD"], "Alice <alice@example.com>", "First"),
+        "person-2": _labelled_message("person-2", ["INBOX"], "Alice <alice@example.com>", "Follow-up"),
+    }
+    messages["linkedin-1"]["payload"]["headers"].extend(
+        [
+            {"name": "Precedence", "value": "bulk"},
+            {"name": "List-Unsubscribe", "value": "<https://linkedin.com/unsubscribe>"},
+        ]
+    )
+    messages["person-1"]["threadId"] = "shared-thread"
+    messages["person-2"]["threadId"] = "shared-thread"
 
     async def fake_timezone() -> str:
         return "UTC"
@@ -429,10 +463,9 @@ def test_get_mail_digest_excludes_drafts_and_queries_without_them(monkeypatch: p
     async def fake_execute(request: _SearchRequest) -> dict:
         if request.kind == "list":
             seen_queries.append(request.query)
-            return {"messages": [{"id": "draft-1"}, {"id": "person-1"}]}
-        if request.message_id == "draft-1":
-            return _labelled_message("draft-1", ["DRAFT"], "Me <me@example.com>", "Unsent draft")
-        return _labelled_message("person-1", ["INBOX", "UNREAD"], "Alice <alice@example.com>", "Can you reply?")
+            return {"messages": [{"id": message_id} for message_id in messages]}
+        assert request.message_id is not None
+        return messages[request.message_id]
 
     monkeypatch.setattr(gmail_search, "gmail_service", _SearchService)
     monkeypatch.setattr(gmail_search, "resolve_user_timezone", fake_timezone)
@@ -445,12 +478,28 @@ def test_get_mail_digest_excludes_drafts_and_queries_without_them(monkeypatch: p
 
     result = asyncio.run(scenario())
 
-    people_ids = [item["id"] for item in result["people"]]
-    automated_ids = [item["id"] for item in result["automated"]]
-    assert people_ids == ["person-1"]
-    assert "draft-1" not in people_ids
-    assert "draft-1" not in automated_ids
+    assert result["message_count"] == 4
+    assert [item["id"] for item in result["messages"]] == ["sent-1", "linkedin-1", "person-1", "person-2"]
+    assert {item["id"]: item["direction"] for item in result["messages"]} == {
+        "sent-1": "sent",
+        "linkedin-1": "received",
+        "person-1": "received",
+        "person-2": "received",
+    }
+    assert "people" not in result
+    assert "automated" not in result
+    for message in result["messages"]:
+        assert not {
+            "category",
+            "is_newsletter",
+            "is_automated",
+            "is_draft",
+            "is_sent",
+            "requires_response",
+            "deadline_detected",
+        } & message.keys()
     assert seen_queries and "-in:draft" in (seen_queries[0] or "")
+    assert "-in:sent" not in (seen_queries[0] or "")
 
 
 def test_gather_in_order_preserves_order_and_bounds_concurrency() -> None:

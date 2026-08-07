@@ -12,14 +12,7 @@ from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..helpers import gather_in_order
-from ..presentation import (
-    cleaned_message_body,
-    detect_deadline,
-    envelope,
-    first_meaningful_sentence,
-    header_map,
-    requires_response,
-)
+from ..presentation import envelope, mail_feed_envelope
 from ..schemas import DigestRequest, SearchEmailRequest
 
 
@@ -61,7 +54,7 @@ def register(server: FastMCP) -> None:
         max_items: int = 25,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Summarize recent mail into direct-person and automated groups, deduplicated by thread."""
+        """Return every recent received or sent message in one unbiased chronological feed."""
         request = DigestRequest(window=window, unread_only=unread_only, max_items=max_items)
         window_match = re.fullmatch(r"(\d+)([dhw])", request.window)
         if window_match is None:  # pragma: no cover - DigestRequest validates this shape
@@ -69,7 +62,8 @@ def register(server: FastMCP) -> None:
         amount, unit = window_match.groups()
         seconds = int(amount) * {"d": 86_400, "h": 3_600, "w": 604_800}[unit]
         after = int((datetime.now(UTC) - timedelta(seconds=seconds)).timestamp())
-        # Exclude drafts at the source so an unsent draft never reaches the digest.
+        # Do not filter by category, Inbox placement, sender type, direction, or
+        # inferred importance: routed and sent mail must remain available.
         query = f"after:{after} -in:draft" + (" is:unread" if request.unread_only else "")
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
@@ -82,39 +76,16 @@ def register(server: FastMCP) -> None:
                 service.users().messages().get(userId="me", id=message_id, format="full")
             ),
         )
-        seen_threads: set[str] = set()
-        people: list[dict[str, Any]] = []
-        automated: list[dict[str, Any]] = []
+        feed_messages: list[dict[str, Any]] = []
         for message in messages:
-            item = envelope(message, account_timezone=account_timezone)
-            # Defense in depth: even if a draft slips past the query filter, it
-            # must not be reported alongside genuinely received mail.
-            if item["is_draft"]:
-                continue
-            thread_id = str(item.get("thread_id") or item.get("id"))
-            if thread_id in seen_threads:
-                continue
-            seen_threads.add(thread_id)
-            text, _ = cleaned_message_body(message)
-            gist = first_meaningful_sentence(text)
-            if gist and gist != item["snippet"]:
-                item["gist"] = gist
-            item["requires_response"] = requires_response(
-                text,
-                is_automated=item["is_automated"],
-                is_newsletter=item["is_newsletter"],
-            )
-            item["deadline_detected"] = detect_deadline(
-                text,
-                date_header=header_map(message.get("payload", {})).get("date"),
-                account_timezone=account_timezone,
-            )
-            (automated if item["is_automated"] or item["is_newsletter"] else people).append(item)
+            item = mail_feed_envelope(message, account_timezone=account_timezone)
+            if item is not None:
+                feed_messages.append(item)
         return {
             "window": request.window,
             "account_timezone": account_timezone,
-            "people": people,
-            "automated": automated,
+            "message_count": len(feed_messages),
+            "messages": feed_messages,
             "next_history_id": None,
         }
 

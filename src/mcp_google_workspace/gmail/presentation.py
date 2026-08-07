@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, tzinfo
+from datetime import datetime
 from email.utils import parseaddr, parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
@@ -15,23 +15,6 @@ from .mime_utils import decode_rfc2047, extract_message_bodies, flatten_parts
 
 BODY_LIMIT_CHARS = 8_000  # approximately 2,000 tokens for ordinary email text
 _HTML_PLACEHOLDERS = {"this message contains html content.", "this email contains html content."}
-_DEADLINE_MARKERS = re.compile(
-    r"\b(?:deadline|due(?:\s+date)?|respond|reply|response|by|before|até|prazo|data\s+limite|devolutiva\s+até)\b",
-    re.IGNORECASE,
-)
-_DATE_TOKEN = re.compile(r"\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b")
-_TIME_TOKEN = re.compile(r"\b(?P<hour>[01]?\d|2[0-3])(?::(?P<minute>[0-5]\d))?\s*(?:h|hrs?|am|pm)\b", re.IGNORECASE)
-_RESPONSE_LANGUAGE = re.compile(
-    r"\?|\b(?:please|can you|could you|let me know|respond|reply|deadline|due|responda|retorne|devolutiva)\b",
-    re.IGNORECASE,
-)
-_GREETING_SENTENCE = re.compile(
-    r"^(?:ol[áa]|oi|hi|hello|dear|prezad[oa])"
-    r"(?:\s*,?\s*(?:[A-ZÀ-Ý][\wÀ-ÿ.'-]*)(?:\s+[A-ZÀ-Ý][\wÀ-ÿ.'-]*){0,2})?[!,.]*$",
-    re.IGNORECASE,
-)
-
-
 class _HTMLText(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -114,126 +97,6 @@ def cleaned_message_body(message: dict[str, Any]) -> tuple[str, int]:
     return clean_body(message_body(message))
 
 
-def first_meaningful_sentence(text: str, *, max_length: int = 240) -> str | None:
-    for sentence in re.split(r"(?<=[.!?])\s+", text):
-        candidate = sentence.strip()
-        if (
-            len(candidate) >= 12
-            and not candidate.startswith("[quoted:")
-            and not _GREETING_SENTENCE.fullmatch(candidate)
-        ):
-            return candidate[:max_length]
-    return None
-
-
-def _reference_datetime(date_header: str | None) -> datetime:
-    if date_header:
-        try:
-            parsed = parsedate_to_datetime(date_header)
-            if parsed.tzinfo is not None:
-                return parsed
-        except (TypeError, ValueError):
-            pass
-    return datetime.now().astimezone()
-
-
-def _deadline_timezone(account_timezone: str | None, reference: datetime) -> tzinfo:
-    if account_timezone:
-        try:
-            return pytz.timezone(account_timezone)
-        except pytz.UnknownTimeZoneError:
-            pass
-    if reference.tzinfo is not None:
-        return reference.tzinfo
-    local_timezone = datetime.now().astimezone().tzinfo
-    if local_timezone is None:  # pragma: no cover - datetime always provides one locally
-        return pytz.UTC
-    return local_timezone
-
-
-def _normalize_deadline(
-    value: str,
-    reference: datetime,
-    *,
-    account_timezone: str | None = None,
-) -> str | None:
-    date_match = _DATE_TOKEN.search(value)
-    time_match = _TIME_TOKEN.search(value)
-    if not date_match and not time_match:
-        return None
-
-    deadline_timezone = _deadline_timezone(account_timezone, reference)
-    reference = reference.astimezone(deadline_timezone)
-
-    if date_match:
-        token = date_match.group(0).replace("-", "/")
-        if re.fullmatch(r"\d{4}/\d{1,2}/\d{1,2}", token):
-            year, month, day = (int(part) for part in token.split("/"))
-        else:
-            parts = [int(part) for part in token.split("/")]
-            day, month = parts[:2]
-            year = parts[2] if len(parts) == 3 else reference.year
-            if year < 100:
-                year += 2000
-    else:
-        year, month, day = reference.year, reference.month, reference.day
-
-    hour = int(time_match.group("hour")) if time_match else 23
-    minute = int(time_match.group("minute") or 0) if time_match else 59
-    if time_match and time_match.group(0).casefold().endswith("pm") and hour < 12:
-        hour += 12
-    try:
-        deadline_naive = datetime(
-            year,
-            month,
-            day,
-            hour,
-            minute,
-        )
-        deadline = (
-            deadline_timezone.localize(deadline_naive)
-            if isinstance(deadline_timezone, pytz.BaseTzInfo)
-            else deadline_naive.replace(tzinfo=deadline_timezone)
-        )
-    except ValueError:
-        return None
-    if not date_match:
-        return deadline.isoformat(timespec="minutes")
-    if year == reference.year and deadline < reference and (reference - deadline).days > 180:
-        deadline = deadline.replace(year=year + 1)
-    return deadline.isoformat(timespec="minutes") if time_match else deadline.date().isoformat()
-
-
-def detect_deadline(
-    text: str,
-    *,
-    date_header: str | None = None,
-    account_timezone: str | None = None,
-) -> str | None:
-    """Return an ISO deadline only when a marker is paired with a real date/time token.
-
-    A deadline phrase without its own timezone is interpreted in the account's
-    Calendar timezone, not the message header's transport timezone.
-    """
-    reference = _reference_datetime(date_header)
-    for marker in _DEADLINE_MARKERS.finditer(text):
-        candidate = text[marker.end() : marker.end() + 120]
-        # Bare "by" is common in prose; only accept it when a date/time begins immediately after it.
-        if marker.group(0).casefold() == "by" and not re.match(r"\s*(?:on\s+)?(?:\d{1,4}|[01]?\d(?::\d{2})?\s*(?:am|pm|h))", candidate, re.I):
-            continue
-        if normalized := _normalize_deadline(
-            candidate,
-            reference,
-            account_timezone=account_timezone,
-        ):
-            return normalized
-    return None
-
-
-def requires_response(text: str, *, is_automated: bool, is_newsletter: bool) -> bool:
-    return not is_automated and not is_newsletter and bool(_RESPONSE_LANGUAGE.search(text))
-
-
 def _received_at_in_account_timezone(
     message: dict[str, Any], headers: dict[str, str], account_timezone: str
 ) -> str | None:
@@ -295,6 +158,21 @@ def envelope(message: dict[str, Any], *, account_timezone: str) -> dict[str, Any
         "is_draft": "DRAFT" in labels,
         "is_sent": "SENT" in labels,
     }
+
+
+def mail_feed_envelope(message: dict[str, Any], *, account_timezone: str) -> dict[str, Any] | None:
+    """Return an unbiased received/sent summary, or ``None`` for drafts.
+
+    Digest and update-feed callers should not receive inferred categories that
+    encourage them to deprioritize routed, newsletter, or automated messages.
+    """
+    item = envelope(message, account_timezone=account_timezone)
+    if item["is_draft"]:
+        return None
+    item["direction"] = "sent" if item["is_sent"] else "received"
+    for field in ("category", "is_newsletter", "is_automated", "is_draft", "is_sent"):
+        item.pop(field, None)
+    return item
 
 
 def clean_message_content(message: dict[str, Any], *, offset: int = 0, limit: int = BODY_LIMIT_CHARS) -> dict[str, Any]:
