@@ -3,6 +3,7 @@ name = "mcp-google-workspace"
 version = "0.3.10"
 description = "Production MCP server for Gmail, Google Calendar, Keep, Drive and Chat"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Guilherme Inácio", email = "gsilvainacio@gmail.com" }
 ]
