@@ -261,7 +261,16 @@ def test_headline_parameter_descriptions_document_real_semantics() -> None:
 
     checks = [
         ("gmail_check_mail_updates", "timestamp", ["cold-start", "since_history_id"]),
-        ("gmail_check_mail_updates", "since_history_id", ["next_history_id"]),
+        (
+            "gmail_check_mail_updates",
+            "since_history_id",
+            ["next_history_id", "null", "next_page_token", "do not overwrite"],
+        ),
+        (
+            "gmail_check_mail_updates",
+            "page_token",
+            ["next_page_token", "continue_from_history_id", "continue_from_timestamp"],
+        ),
         ("gmail_get_mail_digest", "window", ["3d"]),
         ("search_workspace", "services", ["drive", "people", "gmail"]),
         ("prepare_workspace_action", "tool_name", ["gmail_send_email"]),
