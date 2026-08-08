@@ -25,7 +25,11 @@ def register(server: FastMCP) -> None:
             str | None,
             (
                 "Gmail historyId to resume from, taken from a prior response's "
-                "next_history_id/continue_from_history_id; omit for a cold start."
+                "next_history_id/continue_from_history_id; omit for a cold start. "
+                "On paginated responses, next_history_id is null until the final page; "
+                "do not overwrite a saved checkpoint with null. Continue with "
+                "next_page_token as page_token and preserve the response's "
+                "continue_from_history_id or continue_from_timestamp."
             ),
         ] = None,
         timestamp: Annotated[
@@ -36,7 +40,15 @@ def register(server: FastMCP) -> None:
             ),
         ] = None,
         max_results: int = 100,
-        page_token: str | None = None,
+        page_token: Annotated[
+            str | None,
+            (
+                "Pagination token from a prior response's next_page_token. Resubmit the "
+                "matching continue_from_history_id as since_history_id, or "
+                "continue_from_timestamp as timestamp, until the final page returns a "
+                "non-null next_history_id."
+            ),
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Return every new received or sent message without triage or prioritization."""
