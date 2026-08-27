@@ -98,8 +98,9 @@ def test_delete_forwarding_address_cancellation_skips_google_api(
             {
                 "file_id": "file-1",
                 "type": "user",
-                "role": "writer",
+                "role": "owner",
                 "email_address": "writer@example.com",
+                "transfer_ownership": True,
             },
         ),
         (
@@ -107,7 +108,8 @@ def test_delete_forwarding_address_cancellation_skips_google_api(
             {
                 "file_id": "file-1",
                 "permission_id": "permission-1",
-                "role": "reader",
+                "role": "writer",
+                "allow_file_discovery": True,
             },
         ),
     ],
@@ -141,3 +143,9 @@ def test_permission_mutation_cancellation_skips_google_api(
     assert result["file_id"] == "file-1"
     assert confirmations[0][0] == tool_name
     assert "file-1" in confirmations[0][1]
+    if tool_name == "create_permission":
+        assert "role owner" in confirmations[0][1]
+        assert "transfer ownership" in confirmations[0][1]
+    else:
+        assert "set role to writer" in confirmations[0][1]
+        assert "set file discovery to True" in confirmations[0][1]
