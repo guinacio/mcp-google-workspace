@@ -133,6 +133,21 @@ def register(server: FastMCP) -> None:
             supports_all_drives=supports_all_drives,
             fields=fields,
         )
+        grantee = request.email_address or request.domain or request.type
+        if not await confirm_destructive_action(
+            ctx,
+            "create_permission",
+            (
+                f"Grant {request.role} access to {grantee} "
+                f"on Drive file {request.file_id}?"
+            ),
+        ):
+            return {
+                "status": "cancelled",
+                "file_id": request.file_id,
+                "grantee": grantee,
+                "role": request.role,
+            }
         service = drive_service()
         body: dict[str, Any] = {
             "type": request.type,
@@ -193,6 +208,19 @@ def register(server: FastMCP) -> None:
             supports_all_drives=supports_all_drives,
             fields=fields,
         )
+        if not await confirm_destructive_action(
+            ctx,
+            "update_permission",
+            (
+                f"Update permission {request.permission_id} "
+                f"on Drive file {request.file_id}?"
+            ),
+        ):
+            return {
+                "status": "cancelled",
+                "file_id": request.file_id,
+                "permission_id": request.permission_id,
+            }
         service = drive_service()
         body: dict[str, Any] = {}
         if request.role is not None:

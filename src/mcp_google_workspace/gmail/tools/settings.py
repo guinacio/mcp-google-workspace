@@ -30,12 +30,6 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Get forwarding address status/details for a specific email."""
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
-        if not await confirm_destructive_action(
-            ctx,
-            "delete_forwarding_address",
-            f"Delete Gmail forwarding address {request.forwarding_email}?",
-        ):
-            return {"status": "cancelled", "forwarding_email": str(request.forwarding_email)}
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Fetching forwarding address {request.forwarding_email}.")
@@ -72,6 +66,12 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Delete a forwarding address from Gmail settings."""
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
+        if not await confirm_destructive_action(
+            ctx,
+            "delete_forwarding_address",
+            f"Delete Gmail forwarding address {request.forwarding_email}?",
+        ):
+            return {"status": "cancelled", "forwarding_email": str(request.forwarding_email)}
         service = gmail_service()
         if ctx is not None:
             await ctx.info(f"Deleting forwarding address {request.forwarding_email}.")
