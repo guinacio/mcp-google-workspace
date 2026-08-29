@@ -24,6 +24,8 @@ def build_email_message(
     text_body: str | None,
     html_body: str | None,
     attachments: list[dict[str, Any]],
+    in_reply_to: str | None = None,
+    references: str | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     msg["Subject"] = encode_subject(subject)
@@ -33,6 +35,10 @@ def build_email_message(
         msg["Cc"] = ", ".join(cc)
     if bcc:
         msg["Bcc"] = ", ".join(bcc)
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+    if references:
+        msg["References"] = references
 
     if text_body and html_body:
         msg.set_content(text_body, charset="utf-8")
