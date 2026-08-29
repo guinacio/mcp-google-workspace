@@ -133,6 +133,30 @@ def register(server: FastMCP) -> None:
             supports_all_drives=supports_all_drives,
             fields=fields,
         )
+        grantee = request.email_address or request.domain or request.type
+        create_details = [f"role {request.role}"]
+        if request.allow_file_discovery is not None:
+            create_details.append(
+                f"file discovery {'enabled' if request.allow_file_discovery else 'disabled'}"
+            )
+        if request.expiration_time is not None:
+            create_details.append(f"expiration {request.expiration_time}")
+        if request.transfer_ownership:
+            create_details.append("transfer ownership")
+        if not await confirm_destructive_action(
+            ctx,
+            "create_permission",
+            (
+                f"Grant access to {grantee} on Drive file {request.file_id} "
+                f"with {', '.join(create_details)}?"
+            ),
+        ):
+            return {
+                "status": "cancelled",
+                "file_id": request.file_id,
+                "grantee": grantee,
+                "role": request.role,
+            }
         service = drive_service()
         body: dict[str, Any] = {
             "type": request.type,
@@ -193,6 +217,33 @@ def register(server: FastMCP) -> None:
             supports_all_drives=supports_all_drives,
             fields=fields,
         )
+        update_details: list[str] = []
+        if request.role is not None:
+            update_details.append(f"set role to {request.role}")
+        if request.allow_file_discovery is not None:
+            update_details.append(
+                f"set file discovery to {request.allow_file_discovery}"
+            )
+        if request.expiration_time is not None:
+            update_details.append(f"set expiration to {request.expiration_time}")
+        if request.remove_expiration:
+            update_details.append("remove expiration")
+        if request.transfer_ownership:
+            update_details.append("transfer ownership")
+        change_summary = ", ".join(update_details) or "apply the requested changes"
+        if not await confirm_destructive_action(
+            ctx,
+            "update_permission",
+            (
+                f"Update permission {request.permission_id} "
+                f"on Drive file {request.file_id}: {change_summary}?"
+            ),
+        ):
+            return {
+                "status": "cancelled",
+                "file_id": request.file_id,
+                "permission_id": request.permission_id,
+            }
         service = drive_service()
         body: dict[str, Any] = {}
         if request.role is not None:
