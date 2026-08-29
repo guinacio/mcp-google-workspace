@@ -187,7 +187,7 @@ Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience,
 
 Gmail (namespaced as `gmail_*` in composed server):
 
-- `send_email`
+- `send_email`, `reply_email`, `reply_all_email` (true Gmail-thread replies with RFC reply headers)
 - `search_emails` (compact metadata-first inbox listing and Gmail query surface)
 - `read_emails` (consistent one-to-100 message hydration with selectable detail level)
 - `get_mail_digest`, `check_mail_updates` (unbiased received/sent feeds, including routed and automated mail)

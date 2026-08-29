@@ -1,5 +1,9 @@
 import asyncio
 import base64
+from collections.abc import Callable
+from email import policy
+from email.parser import BytesParser
+from typing import Any
 
 import anyio
 import pytest
@@ -10,7 +14,11 @@ from httplib2 import Response
 
 from mcp_google_workspace.common.async_ops import execute_google_request
 from mcp_google_workspace.gmail.helpers import gather_in_order
-from mcp_google_workspace.gmail.mime_utils import build_email_message, encode_subject, extract_message_bodies
+from mcp_google_workspace.gmail.mime_utils import (
+    build_email_message,
+    encode_subject,
+    extract_message_bodies,
+)
 from mcp_google_workspace.gmail.presentation import (
     clean_message_content,
     envelope,
@@ -20,6 +28,78 @@ from mcp_google_workspace.gmail.server import gmail_mcp
 import mcp_google_workspace.gmail.tools.history as gmail_history
 import mcp_google_workspace.gmail.tools.messages as gmail_messages
 import mcp_google_workspace.gmail.tools.search as gmail_search
+
+
+class _ToolCapture:
+    def __init__(self) -> None:
+        self.tools: dict[str, Callable[..., Any]] = {}
+
+    def tool(self, *, name: str):
+        def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
+            self.tools[name] = function
+            return function
+
+        return decorator
+
+
+def _reply_api(source: dict[str, Any]):
+    sent_bodies: list[dict[str, Any]] = []
+
+    class Messages:
+        def get(self, **kwargs: Any) -> dict[str, Any]:
+            return {"operation": "get", "kwargs": kwargs}
+
+        def send(self, **kwargs: Any) -> dict[str, Any]:
+            return {"operation": "send", "kwargs": kwargs}
+
+    class SendAs:
+        def list(self, **kwargs: Any) -> dict[str, Any]:
+            return {"operation": "send_as", "kwargs": kwargs}
+
+    class Settings:
+        def sendAs(self) -> SendAs:
+            return SendAs()
+
+    class Users:
+        def messages(self) -> Messages:
+            return Messages()
+
+        def settings(self) -> Settings:
+            return Settings()
+
+        def getProfile(self, **kwargs: Any) -> dict[str, Any]:
+            return {"operation": "profile", "kwargs": kwargs}
+
+    class Service:
+        def users(self) -> Users:
+            return Users()
+
+    async def execute(request: dict[str, Any]) -> dict[str, Any]:
+        operation = request["operation"]
+        if operation == "get":
+            assert request["kwargs"]["format"] == "metadata"
+            return source
+        if operation == "profile":
+            return {"emailAddress": "me@example.com"}
+        if operation == "send_as":
+            return {"sendAs": [{"sendAsEmail": "alias@example.com"}]}
+        if operation == "send":
+            sent_bodies.append(request["kwargs"]["body"])
+            return {
+                "id": "sent-1",
+                "threadId": source["threadId"],
+                "labelIds": ["SENT"],
+            }
+        raise AssertionError(f"Unexpected operation: {operation}")
+
+    return Service(), execute, sent_bodies
+
+
+def _decode_raw_message(raw: str):
+    padding = "=" * (-len(raw) % 4)
+    return BytesParser(policy=policy.default).parsebytes(
+        base64.urlsafe_b64decode((raw + padding).encode())
+    )
 
 
 def test_subject_supports_international_chars():
@@ -63,6 +143,92 @@ def test_send_email_defaults_to_no_confirmation():
     )
 
     assert request.confirm_send is False
+
+
+def test_reply_email_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> None:
+    source = {
+        "id": "source-1",
+        "threadId": "thread-1",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Alice <alice@example.com>"},
+                {"name": "Reply-To", "value": "Team <team@example.com>"},
+                {"name": "To", "value": "Me <me@example.com>"},
+                {"name": "Subject", "value": "Project update"},
+                {"name": "Message-ID", "value": "<source-1@example.com>"},
+                {"name": "References", "value": "<root@example.com>"},
+            ]
+        },
+    }
+    service, execute, sent_bodies = _reply_api(source)
+    capture = _ToolCapture()
+    gmail_messages.register(capture)  # type: ignore[arg-type]
+    monkeypatch.setattr(gmail_messages, "gmail_service", lambda: service)
+    monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
+
+    async def call_tool() -> dict[str, Any]:
+        return await capture.tools["reply_email"](
+            "source-1", text_body="Thanks for the update."
+        )
+
+    result = anyio.run(call_tool)
+
+    assert result["mode"] == "reply"
+    assert result["to"] == ["team@example.com"]
+    assert result["cc"] == []
+    assert sent_bodies[0]["threadId"] == "thread-1"
+    message = _decode_raw_message(sent_bodies[0]["raw"])
+    assert str(message["Subject"]) == "Project update"
+    assert str(message["To"]) == "team@example.com"
+    assert message["Cc"] is None
+    assert str(message["In-Reply-To"]) == "<source-1@example.com>"
+    assert str(message["References"]) == "<root@example.com> <source-1@example.com>"
+
+
+def test_reply_all_email_includes_participants_once_and_excludes_self(
+    monkeypatch,
+) -> None:
+    source = {
+        "id": "source-2",
+        "threadId": "thread-2",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Alice <alice@example.com>"},
+                {
+                    "name": "To",
+                    "value": "Me <me@example.com>, Bob <bob@example.com>, Alias <alias@example.com>",
+                },
+                {
+                    "name": "Cc",
+                    "value": "Carol <carol@example.com>, Alice <alice@example.com>",
+                },
+                {"name": "Subject", "value": "Planning"},
+                {"name": "Message-ID", "value": "<source-2@example.com>"},
+            ]
+        },
+    }
+    service, execute, sent_bodies = _reply_api(source)
+    capture = _ToolCapture()
+    gmail_messages.register(capture)  # type: ignore[arg-type]
+    monkeypatch.setattr(gmail_messages, "gmail_service", lambda: service)
+    monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
+
+    async def call_tool() -> dict[str, Any]:
+        return await capture.tools["reply_all_email"](
+            "source-2", html_body="<p>Works for me.</p>"
+        )
+
+    result = anyio.run(call_tool)
+
+    assert result["mode"] == "reply_all"
+    assert result["to"] == ["alice@example.com"]
+    assert result["cc"] == ["bob@example.com", "carol@example.com"]
+    assert sent_bodies[0]["threadId"] == "thread-2"
+    message = _decode_raw_message(sent_bodies[0]["raw"])
+    assert str(message["To"]) == "alice@example.com"
+    assert str(message["Cc"]) == "bob@example.com, carol@example.com"
+    assert str(message["In-Reply-To"]) == "<source-2@example.com>"
+    assert str(message["References"]) == "<source-2@example.com>"
 
 
 def test_envelope_classifies_and_cleans_a_message():

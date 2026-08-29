@@ -88,6 +88,8 @@ def test_workspace_tools_include_safety_annotations() -> None:
     assert tools["gmail_read_emails"].annotations.readOnlyHint is True
     assert tools["gmail_send_email"].annotations.readOnlyHint is False
     assert tools["gmail_send_email"].annotations.idempotentHint is False
+    assert tools["gmail_reply_email"].annotations.readOnlyHint is False
+    assert tools["gmail_reply_all_email"].annotations.readOnlyHint is False
     assert tools["drive_delete_file"].annotations.destructiveHint is True
     assert tools["calendar_get_calendar_context"].annotations.openWorldHint is False
     assert tools["sheets_get_spreadsheet"].annotations.readOnlyHint is True
@@ -127,6 +129,8 @@ def test_gmail_attachment_inputs_publish_the_complete_closed_schema() -> None:
 
     for tool_name in (
         "gmail_send_email",
+        "gmail_reply_email",
+        "gmail_reply_all_email",
         "gmail_create_draft",
         "gmail_update_draft",
     ):

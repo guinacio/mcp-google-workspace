@@ -24,6 +24,8 @@ def test_composition_mounts_default_namespaces(monkeypatch):
     tool_names = anyio.run(_list_tool_names, workspace)
 
     assert "gmail_send_email" in tool_names
+    assert "gmail_reply_email" in tool_names
+    assert "gmail_reply_all_email" in tool_names
     assert "gmail_search_emails" in tool_names
     assert "gmail_read_emails" in tool_names
     assert "gmail_get_mail_digest" in tool_names
