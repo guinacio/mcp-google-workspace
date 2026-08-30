@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+import traceback
 from typing import Any
 
 import mcp.types as mt
+
+LOGGER = logging.getLogger("mcp_google_workspace.errors")
 from fastmcp.exceptions import McpError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import ToolResult
@@ -83,7 +87,7 @@ def _error_envelope(error: Exception) -> tuple[int, dict[str, Any]]:
         code, rpc_code, retryable = "reauth_required", -32001, False
     else:
         code, rpc_code, retryable = "internal_error", -32603, False
-        message = "The Workspace tool failed unexpectedly. Check server logs for details."
+        message = f"The Workspace tool failed unexpectedly ({type(error).__name__}). Check server logs for details."
     action: dict[str, Any] | None = getattr(error, "required_action", None)
     if code == "reauth_required":
         action = action or {"tool": "connect_google_workspace", "arguments": {}}
@@ -138,6 +142,13 @@ class StructuredToolErrorMiddleware(Middleware):
             raise
         except Exception as error:
             rpc_code, envelope = _error_envelope(error)
+            if envelope.get("code") == "internal_error":
+                LOGGER.error(
+                    "Unhandled tool exception (%s): %s\n%s",
+                    type(error).__name__,
+                    error,
+                    traceback.format_exc(),
+                )
             raise McpError(
                 ErrorData(
                     code=rpc_code,
