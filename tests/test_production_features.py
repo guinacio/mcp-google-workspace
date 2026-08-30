@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from importlib.metadata import version
 import json
+import logging
 
 import anyio
 from cryptography.fernet import Fernet
+from fastmcp.exceptions import McpError
 import mcp.types as mt
 import pytest
 from types import SimpleNamespace
@@ -19,7 +21,11 @@ from mcp_google_workspace.common.approvals import (
 )
 from mcp_google_workspace.common.crypto import FernetKeyring
 from mcp_google_workspace.common.resources import parse_resource_uri, resource_handle
-from mcp_google_workspace.common.errors import RecoverableToolError, _error_envelope
+from mcp_google_workspace.common.errors import (
+    RecoverableToolError,
+    StructuredToolErrorMiddleware,
+    _error_envelope,
+)
 from mcp_google_workspace.common.production import (
     CapabilityCatalogMiddleware,
     ProductionControlMiddleware,
@@ -198,6 +204,41 @@ def test_recoverable_errors_always_include_next_action() -> None:
         "action": "correct_arguments",
         "field_errors": [],
     }
+
+
+def test_internal_errors_are_generic_to_clients_and_logged(caplog) -> None:
+    _, envelope = _error_envelope(RuntimeError("private provider detail"))
+    assert envelope["code"] == "internal_error"
+    assert envelope["message"] == (
+        "The Workspace tool failed unexpectedly. Check server logs for details."
+    )
+    assert "RuntimeError" not in envelope["message"]
+    assert "private provider detail" not in envelope["message"]
+
+    async def exercise() -> None:
+        middleware = StructuredToolErrorMiddleware()
+        context = MiddlewareContext(
+            message=mt.CallToolRequestParams(
+                name="gmail_read_emails",
+                arguments={},
+            ),
+            method="tools/call",
+        )
+
+        async def call_next(_context):
+            raise RuntimeError("private provider detail")
+
+        with pytest.raises(McpError):
+            await middleware.on_call_tool(context, call_next)
+
+    with caplog.at_level(
+        logging.ERROR,
+        logger="mcp_google_workspace.errors",
+    ):
+        anyio.run(exercise)
+
+    assert "RuntimeError" in caplog.text
+    assert "private provider detail" in caplog.text
 
 
 def test_readiness_validates_secret_and_storage(tmp_path, monkeypatch) -> None:

@@ -3,6 +3,7 @@ import base64
 from collections.abc import Callable
 from email import policy
 from email.parser import BytesParser
+from types import SimpleNamespace
 from typing import Any
 
 import anyio
@@ -229,6 +230,50 @@ def test_reply_all_email_includes_participants_once_and_excludes_self(
     assert str(message["Cc"]) == "bob@example.com, carol@example.com"
     assert str(message["In-Reply-To"]) == "<source-2@example.com>"
     assert str(message["References"]) == "<source-2@example.com>"
+
+
+@pytest.mark.parametrize("tool_name", ["reply_email", "reply_all_email"])
+def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, tool_name) -> None:
+    source = {
+        "id": "source-cancelled",
+        "threadId": "thread-cancelled",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Alice <alice@example.com>"},
+                {"name": "To", "value": "Me <me@example.com>"},
+                {"name": "Subject", "value": "Project update"},
+                {"name": "Message-ID", "value": "<cancelled@example.com>"},
+            ]
+        },
+    }
+    service, execute, sent_bodies = _reply_api(source)
+    capture = _ToolCapture()
+    gmail_messages.register(capture)  # type: ignore[arg-type]
+    monkeypatch.setattr(gmail_messages, "gmail_service", lambda: service)
+    monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
+
+    class DecliningContext:
+        async def info(self, _message: str) -> None:
+            return None
+
+        async def elicit(self, *_args, **_kwargs):
+            return SimpleNamespace(action="decline", data=None)
+
+    async def call_tool() -> dict[str, Any]:
+        return await capture.tools[tool_name](
+            "source-cancelled",
+            text_body="Thanks for the update.",
+            confirm_send=True,
+            ctx=DecliningContext(),
+        )
+
+    result = anyio.run(call_tool)
+
+    assert result["status"] == "cancelled"
+    assert result["to"] == []
+    assert result["cc"] == []
+    assert result["label_ids"] == []
+    assert sent_bodies == []
 
 
 def test_envelope_classifies_and_cleans_a_message():
