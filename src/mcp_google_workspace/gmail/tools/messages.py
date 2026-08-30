@@ -370,10 +370,10 @@ def register(server: FastMCP) -> None:
             "replied_to_message_id": reply.get("replied_to_message_id"),
             "message_id": reply.get("message_id"),
             "thread_id": reply.get("thread_id"),
-            "to": reply.get("to"),
-            "cc": reply.get("cc"),
+            "to": reply.get("to") or [],
+            "cc": reply.get("cc") or [],
             "subject": reply.get("subject"),
-            "label_ids": reply.get("label_ids"),
+            "label_ids": reply.get("label_ids") or [],
             "message": reply.get("message"),
         }
 
@@ -402,10 +402,10 @@ def register(server: FastMCP) -> None:
             "replied_to_message_id": reply.get("replied_to_message_id"),
             "message_id": reply.get("message_id"),
             "thread_id": reply.get("thread_id"),
-            "to": reply.get("to"),
-            "cc": reply.get("cc"),
+            "to": reply.get("to") or [],
+            "cc": reply.get("cc") or [],
             "subject": reply.get("subject"),
-            "label_ids": reply.get("label_ids"),
+            "label_ids": reply.get("label_ids") or [],
             "message": reply.get("message"),
         }
 
