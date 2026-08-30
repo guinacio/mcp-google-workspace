@@ -183,6 +183,41 @@ uv run python -m mcp_google_workspace.server_http
 
 Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience, signature, and expiry; the verified `iss` + `sub` selects an isolated encrypted Google token. Each user calls `connect_google_workspace`, opens its returned URL, completes Google consent, and calls `refresh_workspace_catalog`. The callback is PKCE-protected and one-time; it cannot connect Google credentials to a different MCP principal.
 
+### Docker / GHCR
+
+Every GitHub release publishes a signed multi-architecture image for
+`linux/amd64` and `linux/arm64`:
+
+```bash
+docker pull ghcr.io/guinacio/mcp-google-workspace:latest
+docker pull ghcr.io/guinacio/mcp-google-workspace:0.3.12
+```
+
+The image runs the authenticated Streamable HTTP entrypoint on port 8000. It
+does not replace the local stdio/MCPB installation. To run it locally:
+
+```bash
+cp .env.example .env
+# Configure the OIDC, Google OAuth redirect, and encryption values in .env.
+# Place the Google OAuth client at ./credentials.json.
+docker compose up -d
+curl http://localhost:8000/health/live
+```
+
+The Compose service persists encrypted Google tokens and upload metadata in a
+named volume. For production, terminate TLS in front of the container, use a
+versioned image tag, mount a versioned `MCP_SECRET_FILE`, and configure the
+distributed Redis/S3 contract described under Production operations when
+running multiple replicas.
+
+Release images include signed GitHub build provenance. Verify a tag with:
+
+```bash
+gh attestation verify \
+  oci://ghcr.io/guinacio/mcp-google-workspace:0.3.12 \
+  -R guinacio/mcp-google-workspace
+```
+
 ## Notable MCP tools
 
 Gmail (namespaced as `gmail_*` in composed server):

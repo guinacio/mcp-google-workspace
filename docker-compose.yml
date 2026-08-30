@@ -1,12 +1,47 @@
-version: "3.9"
+# Published authenticated Streamable HTTP server.
+#
+# Setup:
+#   1. Copy .env.example to .env and configure the OIDC/OAuth values.
+#   2. Place the Google OAuth client file at ./credentials.json.
+#   3. Run: docker compose up -d
+#
+# Set MCP_GOOGLE_WORKSPACE_IMAGE_TAG to pin a release instead of using latest.
 
 services:
   google-workspace-mcp:
-    build: .
+    image: ghcr.io/guinacio/mcp-google-workspace:${MCP_GOOGLE_WORKSPACE_IMAGE_TAG:-latest}
+    # build: . # Uncomment for local source builds.
     container_name: google-workspace-mcp
+    env_file:
+      - ${MCP_GOOGLE_WORKSPACE_ENV_FILE:-.env}
     environment:
-      - MCP_HOST=0.0.0.0
-      - MCP_PORT=8000
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      MCP_CREDENTIALS_DIR: /run/secrets/google
+      MCP_USER_TOKEN_DIR: /data/tokens
+      MCP_UPLOAD_DB: /data/uploads.sqlite3
+    secrets:
+      - source: google-oauth-credentials
+        target: /run/secrets/google/credentials.json
+    volumes:
+      - google-workspace-data:/data
     ports:
       - "8000:8000"
-    command: ["python", "-m", "mcp_google_workspace.server_sse"]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  google-workspace-data:
+
+secrets:
+  google-oauth-credentials:
+    file: ./credentials.json
