@@ -139,9 +139,19 @@ async def _call_picker_over_bundle_stdio(tmp_path: Path):
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["UV_CACHE_DIR"] = str(tmp_path / "uv-cache")
+    # --no-sync/--frozen keep this subprocess from re-resolving or syncing the
+    # shared project .venv (uv otherwise performs a package-check/sync pass on
+    # every `uv run`, mutating the same environment the outer pytest process
+    # is running from). The environment is already synced by the test runner,
+    # so this only *runs* the bundle entrypoint without touching packages.
     transport = StdioTransport(
         command="uv",
-        args=["run", "src/mcp_google_workspace/bundle_entry.py"],
+        args=[
+            "run",
+            "--no-sync",
+            "--frozen",
+            "src/mcp_google_workspace/bundle_entry.py",
+        ],
         cwd=str(ROOT),
         env=env,
         keep_alive=False,
