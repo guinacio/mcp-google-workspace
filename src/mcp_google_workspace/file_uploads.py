@@ -56,17 +56,17 @@ class UploadedFile:
 
 class UploadedFileSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: str = Field(description="Opaque upload handle or local filename.")
+    name: str = Field(description="Opaque upload handle (same value as upload_id).")
     type: str = Field(description="Validated MIME type.")
     size: int = Field(ge=0, description="Decoded file size in bytes.")
     size_display: str = Field(description="Human-readable file size.")
     uploaded_at: str = Field(description="UTC upload timestamp.")
-    upload_id: str | None = Field(default=None, description="Opaque remote upload ID.")
+    upload_id: str | None = Field(default=None, description="Opaque upload ID (upl_...).")
     display_name: str | None = Field(default=None, description="Original uploaded filename.")
     checksum_sha256: str | None = Field(default=None, description="SHA-256 content checksum.")
-    expires_at: int | None = Field(default=None, description="Remote handle expiry epoch.")
+    expires_at: int | None = Field(default=None, description="Upload handle expiry epoch.")
     remaining_quota_bytes: int | None = Field(
-        default=None, ge=0, description="Remaining remote upload quota in bytes."
+        default=None, ge=0, description="Remaining upload quota of the current user in bytes."
     )
 
 
@@ -79,8 +79,16 @@ class UploadedFilePage(BaseModel):
     )
 
 
-class RemoteUploadStore(Protocol):
-    """Storage contract shared by the single-node and distributed backends."""
+class UploadStore(Protocol):
+    """Principal-scoped upload storage keyed by opaque ``upl_`` upload IDs.
+
+    ``scope`` is always the caller's principal storage key (never a transport
+    session), so uploads survive across independent MCP 2026-07-28 requests.
+    Implemented by :class:`LocalUploadStore` (trusted local stdio principal,
+    in memory), :class:`EncryptedUploadStore` (single remote node, SQLite +
+    encrypted blobs), and ``common.s3_uploads.S3UploadStore`` (replica-shared
+    Redis metadata + encrypted S3 objects).
+    """
 
     def store(
         self, scope: str, files: list[dict[str, Any]], max_file_size: int
@@ -126,12 +134,7 @@ class EncryptedUploadStore:
             if configured
             else settings.user_token_dir / "uploads.sqlite3"
         )
-        ttl = int(os.getenv("MCP_UPLOAD_TTL_SECONDS", "3600"))
-        quota = int(os.getenv("MCP_UPLOAD_QUOTA_BYTES", str(250 * 1024 * 1024)))
-        if not 60 <= ttl <= 7 * 24 * 60 * 60:
-            raise ValueError("MCP_UPLOAD_TTL_SECONDS must be between 60 and 604800.")
-        if not 1 <= quota <= 10 * 1024 * 1024 * 1024:
-            raise ValueError("MCP_UPLOAD_QUOTA_BYTES must be between 1 byte and 10 GiB.")
+        ttl, quota = _upload_limits_from_environment()
         return cls(path, settings.keyring, ttl_seconds=ttl, quota_bytes=quota)
 
     def _connect(self) -> sqlite3.Connection:
@@ -201,21 +204,7 @@ class EncryptedUploadStore:
 
     def store(self, scope: str, files: list[dict[str, Any]], max_file_size: int) -> list[dict[str, Any]]:
         now = int(time.time())
-        decoded: list[tuple[str, str, bytes, str]] = []
-        for item in files:
-            name = str(item.get("name") or "").strip()
-            if not name or len(name) > 255:
-                raise ValueError("Uploaded filenames must contain 1 to 255 characters.")
-            try:
-                data = base64.b64decode(item["data"], validate=True)
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(f"Uploaded file {name!r} has invalid encoded data.") from exc
-            if len(data) > max_file_size:
-                raise ValueError(f"Uploaded file {name!r} exceeds the per-file limit.")
-            declared_type = str(item.get("type") or "application/octet-stream")
-            detected_type = _validate_upload_content(name, declared_type, data)
-            _scan_malware(data)
-            decoded.append((name, detected_type, data, sha256(data).hexdigest()))
+        decoded = _decode_upload_items(files, max_file_size)
         created_blobs: list[Path] = []
         with self._connect() as connection:
             self._cleanup(connection, now)
@@ -367,6 +356,178 @@ class EncryptedUploadStore:
         return deleted
 
 
+def _upload_limits_from_environment() -> tuple[int, int]:
+    """Upload TTL and per-principal quota shared by every upload backend."""
+    ttl = int(os.getenv("MCP_UPLOAD_TTL_SECONDS", "3600"))
+    quota = int(os.getenv("MCP_UPLOAD_QUOTA_BYTES", str(250 * 1024 * 1024)))
+    if not 60 <= ttl <= 7 * 24 * 60 * 60:
+        raise ValueError("MCP_UPLOAD_TTL_SECONDS must be between 60 and 604800.")
+    if not 1 <= quota <= 10 * 1024 * 1024 * 1024:
+        raise ValueError("MCP_UPLOAD_QUOTA_BYTES must be between 1 byte and 10 GiB.")
+    return ttl, quota
+
+
+def _decode_upload_items(
+    files: list[dict[str, Any]], max_file_size: int
+) -> list[tuple[str, str, bytes, str]]:
+    """Validate picker items: name, base64, size, MIME sniffing, malware scan."""
+    decoded: list[tuple[str, str, bytes, str]] = []
+    for item in files:
+        name = str(item.get("name") or "").strip()
+        if not name or len(name) > 255:
+            raise ValueError("Uploaded filenames must contain 1 to 255 characters.")
+        try:
+            data = base64.b64decode(item["data"], validate=True)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Uploaded file {name!r} has invalid encoded data.") from exc
+        if len(data) > max_file_size:
+            raise ValueError(f"Uploaded file {name!r} exceeds the per-file limit.")
+        declared_type = str(item.get("type") or "application/octet-stream")
+        detected_type = _validate_upload_content(name, declared_type, data)
+        _scan_malware(data)
+        decoded.append((name, detected_type, data, sha256(data).hexdigest()))
+    return decoded
+
+
+def _missing_upload() -> RecoverableToolError:
+    return RecoverableToolError(
+        "upload_expired_or_missing",
+        "The uploaded file handle was not found or has expired.",
+        required_action={"tool": "files_file_manager", "arguments": {}},
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _LocalUpload:
+    upload_id: str
+    name: str
+    mime_type: str
+    data: bytes
+    checksum_sha256: str
+    uploaded_at: str
+    expires_at: int
+
+
+class LocalUploadStore:
+    """In-memory uploads for the trusted local (stdio) principal.
+
+    Local stdio has no transport session under MCP 2026-07-28, so uploads are
+    scoped to the one explicit trusted-local principal and addressed by opaque
+    ``upl_`` IDs, exactly like the remote stores. The same validation, TTL and
+    per-principal quota apply; bytes stay in process memory and disappear with
+    the process (no encryption at rest is needed because nothing is written).
+    """
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: int = 60 * 60,
+        quota_bytes: int = 250 * 1024 * 1024,
+        clock: Any = time.time,
+    ) -> None:
+        self.ttl_seconds = ttl_seconds
+        self.quota_bytes = quota_bytes
+        self._clock = clock
+        self._uploads: dict[str, dict[str, _LocalUpload]] = {}
+        self._lock = RLock()
+
+    @classmethod
+    def from_environment(cls) -> "LocalUploadStore":
+        ttl, quota = _upload_limits_from_environment()
+        return cls(ttl_seconds=ttl, quota_bytes=quota)
+
+    def _live_locked(self, scope: str) -> dict[str, _LocalUpload]:
+        now = int(self._clock())
+        uploads = self._uploads.get(scope, {})
+        for upload_id in [key for key, item in uploads.items() if item.expires_at < now]:
+            del uploads[upload_id]
+        if not uploads:
+            self._uploads.pop(scope, None)
+        return uploads
+
+    def store(self, scope: str, files: list[dict[str, Any]], max_file_size: int) -> list[dict[str, Any]]:
+        decoded = _decode_upload_items(files, max_file_size)
+        with self._lock:
+            uploads = self._live_locked(scope)
+            projected = sum(len(item.data) for item in uploads.values()) + sum(
+                len(data) for _, _, data, _ in decoded
+            )
+            if projected > self.quota_bytes:
+                raise RecoverableToolError(
+                    "upload_quota_exhausted",
+                    f"Upload quota exceeded ({self.quota_bytes} bytes per principal).",
+                    required_action={"tool": "files_list_files", "arguments": {}},
+                )
+            now = int(self._clock())
+            uploaded_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+            target = self._uploads.setdefault(scope, uploads)
+            for name, mime_type, data, checksum in decoded:
+                upload_id = "upl_" + secrets.token_urlsafe(24)
+                target[upload_id] = _LocalUpload(
+                    upload_id=upload_id,
+                    name=name,
+                    mime_type=mime_type,
+                    data=data,
+                    checksum_sha256=checksum,
+                    uploaded_at=uploaded_at,
+                    expires_at=now + self.ttl_seconds,
+                )
+                AUDIT_LOGGER.info(
+                    "upload_stored principal_hash=%s upload_id=%s size=%s mime_type=%s",
+                    scope[:16], upload_id, len(data), mime_type,
+                )
+        return self.list(scope)
+
+    def list(
+        self, scope: str, *, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("Upload pagination requires limit 1..100 and a non-negative offset.")
+        with self._lock:
+            uploads = list(self._live_locked(scope).values())
+        remaining_quota_bytes = max(0, self.quota_bytes - sum(len(item.data) for item in uploads))
+        uploads.sort(key=lambda item: (item.uploaded_at, item.upload_id), reverse=True)
+        return [
+            {
+                "name": item.upload_id,
+                "upload_id": item.upload_id,
+                "display_name": item.name,
+                "type": item.mime_type,
+                "size": len(item.data),
+                "size_display": _size_display(len(item.data)),
+                "checksum_sha256": item.checksum_sha256,
+                "uploaded_at": item.uploaded_at,
+                "expires_at": item.expires_at,
+                "remaining_quota_bytes": remaining_quota_bytes,
+            }
+            for item in uploads[offset : offset + limit]
+        ]
+
+    def get(self, scope: str, name: str) -> UploadedFile:
+        with self._lock:
+            item = self._live_locked(scope).get(name)
+        if item is None:
+            raise _missing_upload()
+        if sha256(item.data).hexdigest() != item.checksum_sha256:
+            raise ValueError("Uploaded file checksum verification failed.")
+        AUDIT_LOGGER.info("upload_consumed principal_hash=%s upload_id=%s", scope[:16], name)
+        return UploadedFile(
+            name=item.name,
+            mime_type=item.mime_type,
+            data=item.data,
+            upload_id=item.upload_id,
+            checksum_sha256=item.checksum_sha256,
+            expires_at=item.expires_at,
+        )
+
+    def delete(self, scope: str, name: str) -> bool:
+        with self._lock:
+            deleted = self._live_locked(scope).pop(name, None) is not None
+        if deleted:
+            AUDIT_LOGGER.info("upload_deleted principal_hash=%s upload_id=%s", scope[:16], name)
+        return deleted
+
+
 def _detected_mime(name: str, data: bytes) -> str:
     signatures = (
         (b"%PDF-", "application/pdf"),
@@ -437,9 +598,22 @@ def _size_display(size: int) -> str:
 
 
 class WorkspaceFileUpload(FileUpload):
-    """FileUpload scoped to both the authenticated principal and MCP session."""
+    """FileUpload scoped to the caller's principal, never to a transport session.
 
-    def __init__(self) -> None:
+    Every operation resolves ``(store, scope)`` per request: an authenticated
+    remote caller uses the shared remote store (SQLite/blob or Redis/S3) scoped
+    by its ``(issuer, subject)`` storage key; an unauthenticated local stdio
+    caller uses the in-memory :class:`LocalUploadStore` scoped by the one
+    explicit trusted-local principal. Uploads are addressed by opaque upload IDs
+    in both cases, so they survive independent MCP 2026-07-28 requests.
+    """
+
+    def __init__(
+        self,
+        *,
+        remote_store: UploadStore | None = None,
+        local_store: UploadStore | None = None,
+    ) -> None:
         super().__init__(
             name="Workspace Files",
             max_file_size=25 * 1024 * 1024,
@@ -451,17 +625,14 @@ class WorkspaceFileUpload(FileUpload):
             drop_label="Drop files here or choose files",
         )
         self._upload_lock = RLock()
-        self._encrypted_store: RemoteUploadStore | None = None
+        self._encrypted_store: UploadStore | None = remote_store
+        self._local_store: UploadStore | None = local_store
 
         @self.tool(model=True)
         def delete_file(name: str, ctx: Context) -> dict[str, Any]:
-            """Delete one uploaded file from the current scoped upload store."""
-            if get_access_token() is not None:
-                deleted = self._remote_store().delete(self._remote_scope(), name)
-            else:
-                scope = self._get_scope_key(ctx)
-                with self._upload_lock:
-                    deleted = self._store.get(scope, {}).pop(name, None) is not None
+            """Delete one uploaded file of the current user by its upload ID."""
+            store, scope = self._scoped_store()
+            deleted = store.delete(scope, name)
             return {"status": "deleted" if deleted else "not_found", "name": name}
 
         @self.tool(model=True)
@@ -482,14 +653,8 @@ class WorkspaceFileUpload(FileUpload):
                 raise ValueError("cursor must be a non-negative integer string") from exc
             if offset < 0:
                 raise ValueError("cursor must be a non-negative integer string")
-            if get_access_token() is not None:
-                files = self._remote_store().list(
-                    self._remote_scope(), limit=limit, offset=offset
-                )
-            else:
-                with self._upload_lock:
-                    all_files = super(WorkspaceFileUpload, self).on_list(ctx)
-                files = all_files[offset : offset + limit]
+            store, scope = self._scoped_store()
+            files = store.list(scope, limit=limit, offset=offset)
             next_cursor = str(offset + len(files)) if len(files) == limit else None
             return UploadedFilePage(
                 files=[UploadedFileSummary.model_validate(item) for item in files],
@@ -523,7 +688,8 @@ class WorkspaceFileUpload(FileUpload):
             component.parameters.setdefault("required", [])
             if "name" in properties:
                 properties["name"].setdefault(
-                    "description", "Uploaded filename in the current user session."
+                    "description",
+                    "Opaque upload ID (upl_...) returned by the picker or files_list_files.",
                 )
             apply_structural_input_limits(component.parameters)
             if component.name in {"list_files", "store_files"}:
@@ -533,7 +699,7 @@ class WorkspaceFileUpload(FileUpload):
                     "properties": {
                         "result": {
                             "type": "array",
-                            "description": "Files stored in the current user session.",
+                            "description": "Files currently stored for the calling user.",
                             "items": {
                                 "type": "object",
                                 "properties": {
@@ -550,8 +716,8 @@ class WorkspaceFileUpload(FileUpload):
                                         "type": "integer",
                                         "minimum": 0,
                                         "description": (
-                                            "Bytes still available in the authenticated user's "
-                                            "remote upload quota. Present for remote uploads."
+                                            "Bytes still available in the calling user's "
+                                            "upload quota."
                                         ),
                                     },
                                 },
@@ -564,8 +730,11 @@ class WorkspaceFileUpload(FileUpload):
                     "additionalProperties": False,
                 }
             elif component.name == "read_file":
+                # read_file returns a plain dict; the declared {"result": ...}
+                # envelope only matches the wire payload when FastMCP wraps it.
                 component.output_schema = {
                     "type": "object",
+                    "x-fastmcp-wrap-result": True,
                     "properties": {
                         "result": {
                             "type": "object",
@@ -599,7 +768,7 @@ class WorkspaceFileUpload(FileUpload):
                         },
                         "name": {
                             "type": "string",
-                            "description": "Uploaded filename requested for deletion.",
+                            "description": "Upload ID requested for deletion.",
                         },
                     },
                     "required": ["status", "name"],
@@ -607,12 +776,11 @@ class WorkspaceFileUpload(FileUpload):
                 }
 
     def _get_scope_key(self, ctx: Context) -> str:
-        session_id = getattr(ctx, "session_id", None)
-        if not session_id:
-            raise PermissionError("File uploads require an active MCP session.")
-        return f"{current_principal().storage_key}:{session_id}"
+        # The inherited in-memory helpers are never used; if they were, they
+        # must still partition by principal rather than by transport session.
+        return current_principal().storage_key
 
-    def _remote_store(self) -> RemoteUploadStore:
+    def _remote_store(self) -> UploadStore:
         with self._upload_lock:
             if self._encrypted_store is None:
                 if os.getenv("MCP_REDIS_URL", "").strip() and os.getenv(
@@ -625,84 +793,68 @@ class WorkspaceFileUpload(FileUpload):
                     self._encrypted_store = EncryptedUploadStore.from_environment()
             return self._encrypted_store
 
-    @staticmethod
-    def _remote_scope() -> str:
-        return current_principal().storage_key
+    def _trusted_local_store(self) -> UploadStore:
+        with self._upload_lock:
+            if self._local_store is None:
+                self._local_store = LocalUploadStore.from_environment()
+            return self._local_store
+
+    def _scoped_store(self) -> tuple[UploadStore, str]:
+        """Resolve the backend and principal scope for the current request."""
+        scope = current_principal().storage_key
+        if get_access_token() is not None:
+            return self._remote_store(), scope
+        return self._trusted_local_store(), scope
 
     def on_store(self, files: list[dict[str, Any]], ctx: Context) -> list[dict[str, Any]]:
-        if get_access_token() is not None:
-            return self._remote_store().store(
-                self._remote_scope(), files, self._max_file_size
-            )
-        with self._upload_lock:
-            return super().on_store(files, ctx)
+        store, scope = self._scoped_store()
+        return store.store(scope, files, self._max_file_size)
 
     def on_list(self, ctx: Context) -> list[dict[str, Any]]:
-        if get_access_token() is not None:
-            return self._remote_store().list(self._remote_scope())
-        with self._upload_lock:
-            return super().on_list(ctx)
+        store, scope = self._scoped_store()
+        return store.list(scope)
 
     def on_read(self, name: str, ctx: Context) -> dict[str, Any]:
-        if get_access_token() is not None:
-            uploaded = self._remote_store().get(self._remote_scope(), name)
-            if uploaded.mime_type.startswith("text/"):
-                return {
-                    "name": uploaded.name,
-                    "type": uploaded.mime_type,
-                    "size": uploaded.size,
-                    "content": uploaded.data.decode("utf-8", errors="replace"),
-                    "encoding": "utf-8",
-                    "truncated": False,
-                }
+        store, scope = self._scoped_store()
+        uploaded = store.get(scope, name)
+        if uploaded.mime_type.startswith("text/"):
             return {
                 "name": uploaded.name,
                 "type": uploaded.mime_type,
                 "size": uploaded.size,
-                "content_base64": base64.b64encode(uploaded.data[:150]).decode("ascii"),
-                "encoding": "base64-preview",
-                "truncated": uploaded.size > 150,
+                "content": uploaded.data.decode("utf-8", errors="replace"),
+                "encoding": "utf-8",
+                "truncated": False,
             }
-        with self._upload_lock:
-            return super().on_read(name, ctx)
+        return {
+            "name": uploaded.name,
+            "type": uploaded.mime_type,
+            "size": uploaded.size,
+            "content_base64": base64.b64encode(uploaded.data[:150]).decode("ascii"),
+            "encoding": "base64-preview",
+            "truncated": uploaded.size > 150,
+        }
 
     def get_file(
         self,
         name: str,
-        ctx: Context | None,
+        ctx: Context | None = None,
         *,
         allowed_mime_prefixes: tuple[str, ...] | None = None,
     ) -> UploadedFile:
-        """Return complete uploaded bytes for an integration tool."""
-        if ctx is None:
-            raise PermissionError("Using an uploaded file requires an active MCP session.")
-        if get_access_token() is not None:
-            uploaded = self._remote_store().get(self._remote_scope(), name)
-            _require_allowed_mime(uploaded, allowed_mime_prefixes)
-            return uploaded
-        scope = self._get_scope_key(ctx)
-        with self._upload_lock:
-            entry = self._store.get(scope, {}).get(name)
-            if entry is None:
-                raise FileNotFoundError(
-                    f"Uploaded file {name!r} was not found in this user session. "
-                    "Open the Workspace Files picker and upload it again."
-                )
-            try:
-                data = base64.b64decode(entry["data"], validate=True)
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError(f"Uploaded file {name!r} has invalid encoded data.") from exc
-            if len(data) > self._max_file_size:
-                raise ValueError(
-                    f"Uploaded file {name!r} exceeds the {self._max_file_size}-byte limit."
-                )
-            uploaded = UploadedFile(
-                name=str(entry.get("name") or name),
-                mime_type=str(entry.get("type") or "application/octet-stream"),
-                data=data,
+        """Return complete uploaded bytes for an integration tool.
+
+        ``ctx`` is accepted for call-site compatibility only: the upload is
+        resolved from the caller's principal and the opaque upload ID.
+        """
+        store, scope = self._scoped_store()
+        uploaded = store.get(scope, name)
+        if uploaded.size > self._max_file_size:
+            raise ValueError(
+                f"Uploaded file {name!r} exceeds the {self._max_file_size}-byte limit."
             )
-            _require_allowed_mime(uploaded, allowed_mime_prefixes)
-            return uploaded
+        _require_allowed_mime(uploaded, allowed_mime_prefixes)
+        return uploaded
 
 
 # Prefab wire envelope produced by ``FileUpload.file_manager`` under
