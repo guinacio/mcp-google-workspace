@@ -16,6 +16,7 @@ from fastmcp.tools import ToolResult
 import mcp_google_workspace
 from mcp_google_workspace.common.approvals import (
     COMMIT_ACTIVE,
+    ClaimedApproval,
     impact_preview,
     requires_prepare,
 )
@@ -102,6 +103,7 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
     monkeypatch,
 ) -> None:
     observed: dict[str, object] = {}
+    settled: list[tuple[str, str]] = []
 
     async def exercise() -> dict[str, object]:
         tool = await workspace_mcp.get_tool("commit_workspace_action")
@@ -117,8 +119,18 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
             return ToolResult(structured_content={"ok": True})
 
         monkeypatch.setattr(
-            "mcp_google_workspace.server.APPROVAL_STORE.consume",
-            lambda _token: ("gmail_batch_modify", {"message_ids": ["m"] * 10}),
+            "mcp_google_workspace.server.APPROVAL_STORE.claim",
+            lambda token: ClaimedApproval(
+                token, "gmail_batch_modify", {"message_ids": ["m"] * 10}
+            ),
+        )
+        monkeypatch.setattr(
+            "mcp_google_workspace.server.APPROVAL_STORE.complete",
+            lambda token: settled.append(("complete", token)),
+        )
+        monkeypatch.setattr(
+            "mcp_google_workspace.server.APPROVAL_STORE.release",
+            lambda token: settled.append(("release", token)),
         )
         monkeypatch.setattr(
             "mcp_google_workspace.server.workspace_mcp",
@@ -134,6 +146,7 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
         "commit_active": True,
     }
     assert result["status"] == "committed"
+    assert settled == [("complete", "cmt_test")]
     assert COMMIT_ACTIVE.get() is False
 
 

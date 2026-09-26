@@ -1,8 +1,20 @@
-"""Durable one-time prepare/commit records for consequential actions."""
+"""Durable one-time prepare/commit records for consequential actions.
+
+Commit lifecycle (W4a): a commit *claims* the prepared token, runs the bound
+call, and then either *completes* it (consumed) or *releases* it. Release only
+happens when the nested call provably did not execute the action: it asked a
+multi-round-trip confirmation question, or it was rejected before execution
+(see ``PRE_EXECUTION_ERROR_CODES``). Any other outcome consumes the token, so a
+lost response can never be retried into a duplicate Google mutation. W4b
+replaces this with durable operation records
+(``prepared -> awaiting_input -> executing -> succeeded | failed | outcome_unknown``)
+behind the same claim/release/complete seam.
+"""
 
 from __future__ import annotations
 
 from contextvars import ContextVar
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -10,7 +22,7 @@ import secrets
 import sqlite3
 import tempfile
 import time
-from typing import Any
+from typing import Any, Final
 
 import redis
 
@@ -18,6 +30,46 @@ from ..auth.identity import current_principal
 from ..runtime import get_token_storage_settings
 
 COMMIT_ACTIVE: ContextVar[bool] = ContextVar("mcp_commit_active", default=False)
+
+_INVALID_COMMIT = "Commit token is invalid, expired, already used, or belongs to another principal."
+_COMMIT_IN_PROGRESS = "Commit token is already being committed by another request; retry after it finishes."
+
+# Structured error codes that this server raises strictly *before* a Google
+# mutation is attempted: confirmation gates, admission control, revocation,
+# credential/scope checks, and provider rejections that execute nothing (401
+# reauth, 429). A commit whose nested call fails with one of these releases its
+# token for a later retry. Every other failure (timeouts, 5xx, unexpected
+# errors, invalid_input raised mid-body) leaves the outcome uncertain and
+# consumes the token.
+PRE_EXECUTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
+    {
+        "confirmation_required",
+        "confirmation_invalid",
+        "prepare_required",
+        "rate_limited",
+        "server_draining",
+        "principal_revoked",
+        "authorization_backend_unavailable",
+        "reauth_required",
+        "missing_capability",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimedApproval:
+    """A prepared action exclusively claimed by one commit attempt."""
+
+    token: str
+    tool: str
+    arguments: dict[str, Any]
+
+
+def _decode_payload(token: str, encrypted: bytes) -> ClaimedApproval:
+    payload = json.loads(get_token_storage_settings().keyring.decrypt(encrypted).plaintext)
+    if not isinstance(payload, dict) or not isinstance(payload.get("arguments"), dict):
+        raise ValueError("Commit token payload is invalid.")
+    return ClaimedApproval(token=token, tool=str(payload["tool"]), arguments=payload["arguments"])
 
 CONSEQUENTIAL_TOOLS = {
     "gmail_send_email",
@@ -82,8 +134,12 @@ class ApprovalStore:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute(
             "CREATE TABLE IF NOT EXISTS approvals ("
-            "token TEXT PRIMARY KEY, scope TEXT NOT NULL, payload BLOB NOT NULL, expires_at INTEGER NOT NULL)"
+            "token TEXT PRIMARY KEY, scope TEXT NOT NULL, payload BLOB NOT NULL, expires_at INTEGER NOT NULL, "
+            "claimed INTEGER NOT NULL DEFAULT 0)"
         )
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(approvals)")}
+        if "claimed" not in columns:
+            connection.execute("ALTER TABLE approvals ADD COLUMN claimed INTEGER NOT NULL DEFAULT 0")
         return connection
 
     def prepare(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -111,36 +167,59 @@ class ApprovalStore:
             },
         }
 
-    def consume(self, token: str) -> tuple[str, dict[str, Any]]:
+    def claim(self, token: str) -> ClaimedApproval:
+        """Exclusively claim a live token for one commit attempt."""
         scope = current_principal().storage_key
         now = int(time.time())
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT payload,expires_at FROM approvals WHERE token=? AND scope=?",
+                "SELECT payload,expires_at,claimed FROM approvals WHERE token=? AND scope=?",
                 (token, scope),
             ).fetchone()
+            if row is None or int(row[1]) < now:
+                connection.execute("COMMIT")
+                raise ValueError(_INVALID_COMMIT)
+            if int(row[2]):
+                connection.execute("COMMIT")
+                raise ValueError(_COMMIT_IN_PROGRESS)
+            connection.execute(
+                "UPDATE approvals SET claimed=1 WHERE token=? AND scope=?", (token, scope)
+            )
+            connection.execute("COMMIT")
+        return _decode_payload(token, row[0])
+
+    def release(self, token: str) -> None:
+        """Return a claimed token unused (the bound action did not execute)."""
+        scope = current_principal().storage_key
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE approvals SET claimed=0 WHERE token=? AND scope=?", (token, scope)
+            )
+
+    def complete(self, token: str) -> None:
+        """Consume a claimed token: the bound action ran (or may have run)."""
+        scope = current_principal().storage_key
+        with self._connect() as connection:
             connection.execute("DELETE FROM approvals WHERE token=? AND scope=?", (token, scope))
-        if row is None or int(row[1]) < now:
-            raise ValueError("Commit token is invalid, expired, already used, or belongs to another principal.")
-        payload = json.loads(get_token_storage_settings().keyring.decrypt(row[0]).plaintext)
-        if not isinstance(payload, dict) or not isinstance(payload.get("arguments"), dict):
-            raise ValueError("Commit token payload is invalid.")
-        return str(payload["tool"]), payload["arguments"]
+
+    def consume(self, token: str) -> tuple[str, dict[str, Any]]:
+        """Claim and immediately complete (single-shot use without a commit round)."""
+        claimed = self.claim(token)
+        self.complete(token)
+        return claimed.tool, claimed.arguments
 
 
 class RedisApprovalStore:
     """One-time principal-bound commit tokens shared across replicas."""
 
-    _CONSUME = """
-    local value = redis.call('GET', KEYS[1])
-    if value then redis.call('DEL', KEYS[1]) end
-    return value
-    """
-
     def __init__(self, url: str, *, ttl_seconds: int = 300) -> None:
         self.client = redis.Redis.from_url(url)
         self.ttl_seconds = ttl_seconds
+
+    @staticmethod
+    def _key(scope: str, token: str) -> str:
+        return f"mcp:approval:{scope}:{token}"
 
     def prepare(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if tool not in CONSEQUENTIAL_TOOLS:
@@ -151,7 +230,7 @@ class RedisApprovalStore:
         payload = get_token_storage_settings().keyring.encrypt(
             json.dumps({"tool": tool, "arguments": arguments}, separators=(",", ":")).encode()
         )
-        self.client.set(f"mcp:approval:{scope}:{token}", payload, ex=self.ttl_seconds, nx=True)
+        self.client.set(self._key(scope, token), payload, ex=self.ttl_seconds, nx=True)
         return {
             "status": "prepared",
             "commit_token": token,
@@ -160,15 +239,34 @@ class RedisApprovalStore:
             "next_action": {"tool": "commit_workspace_action", "arguments": {"commit_token": token}},
         }
 
+    def claim(self, token: str) -> ClaimedApproval:
+        """Exclusively claim a live token: ``SET NX`` a claim marker for its remaining TTL."""
+        key = self._key(current_principal().storage_key, token)
+        remaining_ms = int(self.client.pttl(key))
+        if remaining_ms <= 0:
+            raise ValueError(_INVALID_COMMIT)
+        if not self.client.set(key + ":claim", b"1", nx=True, px=remaining_ms):
+            raise ValueError(_COMMIT_IN_PROGRESS)
+        value = self.client.get(key)
+        if not isinstance(value, bytes):
+            self.client.delete(key + ":claim")
+            raise ValueError(_INVALID_COMMIT)
+        return _decode_payload(token, value)
+
+    def release(self, token: str) -> None:
+        """Return a claimed token unused (the bound action did not execute)."""
+        self.client.delete(self._key(current_principal().storage_key, token) + ":claim")
+
+    def complete(self, token: str) -> None:
+        """Consume a claimed token: the bound action ran (or may have run)."""
+        key = self._key(current_principal().storage_key, token)
+        self.client.delete(key, key + ":claim")
+
     def consume(self, token: str) -> tuple[str, dict[str, Any]]:
-        scope = current_principal().storage_key
-        value = self.client.eval(self._CONSUME, 1, f"mcp:approval:{scope}:{token}")
-        if value is None:
-            raise ValueError("Commit token is invalid, expired, already used, or belongs to another principal.")
-        payload = json.loads(get_token_storage_settings().keyring.decrypt(value).plaintext)
-        if not isinstance(payload, dict) or not isinstance(payload.get("arguments"), dict):
-            raise ValueError("Commit token payload is invalid.")
-        return str(payload["tool"]), payload["arguments"]
+        """Claim and immediately complete (single-shot use without a commit round)."""
+        claimed = self.claim(token)
+        self.complete(token)
+        return claimed.tool, claimed.arguments
 
 
 _REDIS_URL = os.getenv("MCP_REDIS_URL", "").strip()
