@@ -106,5 +106,5 @@ def test_docs_tool_annotations():
     get_tool = anyio.run(_get_tool, docs_mcp, "get_document")
     replace_tool = anyio.run(_get_tool, docs_mcp, "replace_document_text")
 
-    assert get_tool.annotations.readOnlyHint is True
-    assert replace_tool.annotations.idempotentHint is True
+    assert get_tool.annotations.read_only_hint is True
+    assert replace_tool.annotations.idempotent_hint is True

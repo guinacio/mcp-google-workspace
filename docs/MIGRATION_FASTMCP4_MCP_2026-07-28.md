@@ -410,3 +410,11 @@ These supersede conflicting guidance elsewhere in this plan.
 | **Remove everything the 2026-07-28 spec deprecates.** | No Sampling, client Logging (`ctx.info/debug/warning/...` to the client), Roots, or DCR dependencies. Server-side logging and progress remain. |
 | **No summarization provider.** | The Chat `summarize_space_messages` and Keep `summarize_note` tools are removed, not stubbed. Clients summarize from the read tools themselves. |
 | Apps `ui/initialize` handshake | Retained. It is part of the separate Apps protocol and is not deprecated. |
+
+### 9.2 Implementation record (W2, 2026-09-26)
+
+- **Summaries:** no server-side summarization provider. `chat_summarize_space_messages` and `keep_summarize_note` are removed (catalog 193 → 191 before the app-only listing change; see `docs/migration/W2_CATALOG_DIFF.md`).
+- **Deprecated features:** no dependency on Sampling, Roots, legacy HTTP+SSE, or client-facing Logging (`ctx.info`/`warning`/… now go to server logs at DEBUG; progress notifications remain).
+- **Legacy protocol:** legacy connectivity is kept. FastMCP 4.0.10 / SDK 2.2.0 still negotiate `initialize` for 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 alongside 2026-07-28; `/version` reports both sets plus the tested pair (2025-11-25, 2026-07-28).
+- **Confirmations:** all 24 sites use one gate (`common.async_ops.confirm_destructive_action`): legacy requests elicit; 2026-07-28 requests fail closed with a `confirmation_required` tool result and no mutation until W4 adds the MRTR branch.
+- **App aliases:** the flat `ui/resourceUri` alias and legacy dashboard URI stay until W6.

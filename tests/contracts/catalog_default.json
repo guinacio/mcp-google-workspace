@@ -3,7 +3,7 @@
     "prompts": 3,
     "resource_templates": 2,
     "resources": 7,
-    "tools": 139
+    "tools": 140
   },
   "discovery_view": [
     "call_tool",
@@ -26,12 +26,12 @@
     {
       "arguments": [
         {
-          "description": "Provide as a JSON string matching the following schema: {\"type\":\"string\"}",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"string\"}. Encode non-string values as JSON.",
           "name": "tone",
           "required": false
         },
         {
-          "description": "Provide as a JSON string matching the following schema: {\"type\":\"string\"}",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"string\"}. Encode non-string values as JSON.",
           "name": "topic",
           "required": true
         }
@@ -48,12 +48,12 @@
     {
       "arguments": [
         {
-          "description": "Provide as a JSON string matching the following schema: {\"type\":\"string\"}",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"string\"}. Encode non-string values as JSON.",
           "name": "intent",
           "required": true
         },
         {
-          "description": "Provide as a JSON string matching the following schema: {\"type\":\"string\"}",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"string\"}. Encode non-string values as JSON.",
           "name": "original_email",
           "required": true
         }
@@ -70,7 +70,7 @@
     {
       "arguments": [
         {
-          "description": "Provide as a JSON string matching the following schema: {\"type\":\"integer\"}",
+          "description": "Provide a value matching the following JSON schema: {\"type\":\"integer\"}. Encode non-string values as JSON.",
           "name": "count",
           "required": false
         }
@@ -8331,7 +8331,8 @@
             "files",
             "mcp-app",
             "upload"
-          ]
+          ],
+          "tool_hash": "2abf46aeadcd"
         },
         "ui": {
           "visibility": [
@@ -8383,7 +8384,8 @@
             "files",
             "mcp-app",
             "upload"
-          ]
+          ],
+          "tool_hash": "872d2c9e20b2"
         },
         "ui": {
           "resourceUri": "ui://prefab/tool/872d2c9e20b2/renderer.html",
@@ -8399,6 +8401,27 @@
         "properties": {
           "$prefab": {
             "description": "Prefab protocol metadata.",
+            "type": "object"
+          },
+          "_meta": {
+            "additionalProperties": false,
+            "description": "FastMCP renderer metadata for the Prefab payload.",
+            "properties": {
+              "fastmcp": {
+                "additionalProperties": false,
+                "description": "FastMCP-owned Prefab addressing metadata.",
+                "properties": {
+                  "toolNames": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Map from each backend tool name used in the UI tree to its stable <hash>_<name> address.",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
             "type": "object"
           },
           "state": {
@@ -8441,7 +8464,8 @@
             "files",
             "mcp-app",
             "upload"
-          ]
+          ],
+          "tool_hash": "d3f31c5fccd6"
         },
         "ui": {
           "visibility": [
@@ -8553,7 +8577,8 @@
             "files",
             "mcp-app",
             "upload"
-          ]
+          ],
+          "tool_hash": "4348a8983674"
         },
         "ui": {
           "visibility": [
@@ -8721,7 +8746,8 @@
             "files",
             "mcp-app",
             "upload"
-          ]
+          ],
+          "tool_hash": "64a2ef82fde1"
         },
         "ui": {
           "visibility": [
@@ -8777,6 +8803,143 @@
         "type": "object"
       },
       "title": "Files Read File"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Store uploaded files. Receives file objects with name, size, type, data (base64).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "maxProperties": 10000,
+        "properties": {
+          "files": {
+            "description": "Files selected in the Workspace Files picker, as produced by its drop zone. The total request is also bounded by the server's HTTP request-size limit.",
+            "items": {
+              "additionalProperties": false,
+              "description": "One selected file with base64-encoded content.",
+              "maxProperties": 10000,
+              "properties": {
+                "data": {
+                  "description": "Base64-encoded file content, at most 26214400 decoded bytes.",
+                  "maxLength": 34952536,
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Original filename reported by the browser.",
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "size": {
+                  "description": "Browser-reported size in bytes; the server recomputes it from the decoded data.",
+                  "maximum": 26214400,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": {
+                  "description": "Browser-reported MIME type; the server re-validates content.",
+                  "maxLength": 255,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "size",
+                "type",
+                "data"
+              ],
+              "type": "object"
+            },
+            "maxItems": 10000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "meta": {
+        "fastmcp": {
+          "app": "Workspace Files",
+          "tags": [
+            "files",
+            "mcp-app",
+            "upload"
+          ],
+          "tool_hash": "4a1eab56c80c"
+        },
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      },
+      "name": "files_store_files",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "result": {
+            "description": "Files stored in the current user session.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "checksum_sha256": {
+                  "type": "string"
+                },
+                "display_name": {
+                  "type": "string"
+                },
+                "expires_at": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "remaining_quota_bytes": {
+                  "description": "Bytes still available in the authenticated user's remote upload quota. Present for remote uploads.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "size": {
+                  "type": "integer"
+                },
+                "size_display": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "upload_id": {
+                  "type": "string"
+                },
+                "uploaded_at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "size",
+                "size_display",
+                "uploaded_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "title": "Files Store Files"
     },
     {
       "annotations": {

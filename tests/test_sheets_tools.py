@@ -150,10 +150,10 @@ def test_sheets_tool_annotations():
     get_tool = anyio.run(_get_tool, sheets_mcp, "get_spreadsheet")
     update_tool = anyio.run(_get_tool, sheets_mcp, "update_sheet_values")
 
-    assert get_tool.annotations.readOnlyHint is True
-    assert get_tool.annotations.idempotentHint is True
-    assert update_tool.annotations.readOnlyHint is False
-    assert update_tool.annotations.idempotentHint is True
+    assert get_tool.annotations.read_only_hint is True
+    assert get_tool.annotations.idempotent_hint is True
+    assert update_tool.annotations.read_only_hint is False
+    assert update_tool.annotations.idempotent_hint is True
 
 
 def test_a1_range_accepts_whole_column_and_row_ranges():

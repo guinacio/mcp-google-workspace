@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -9,6 +11,8 @@ from fastmcp import Context, FastMCP
 from ...common.async_ops import execute_google_request
 from ..client import drive_service
 from ..schemas import GetDriveRequest, HideDriveRequest, ListDrivesRequest, UnhideDriveRequest
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
@@ -30,8 +34,7 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
-        if ctx is not None:
-            await ctx.info("Listing Shared Drives.")
+        LOGGER.debug("Listing Shared Drives.")
         result = await execute_google_request(
             service.drives()
             .list(
@@ -65,8 +68,7 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
-        if ctx is not None:
-            await ctx.info(f"Fetching Shared Drive {request.drive_id}.")
+        LOGGER.debug(f"Fetching Shared Drive {request.drive_id}.")
         drive = await execute_google_request(
             service.drives()
             .get(
@@ -89,8 +91,7 @@ def register(server: FastMCP) -> None:
             use_domain_admin_access=use_domain_admin_access,
         )
         service = drive_service()
-        if ctx is not None:
-            await ctx.warning(f"Hiding Shared Drive {request.drive_id}.")
+        LOGGER.debug(f"Hiding Shared Drive {request.drive_id}.")
         drive = await execute_google_request(
             service.drives()
             .hide(
@@ -112,8 +113,7 @@ def register(server: FastMCP) -> None:
             use_domain_admin_access=use_domain_admin_access,
         )
         service = drive_service()
-        if ctx is not None:
-            await ctx.warning(f"Unhiding Shared Drive {request.drive_id}.")
+        LOGGER.debug(f"Unhiding Shared Drive {request.drive_id}.")
         drive = await execute_google_request(
             service.drives()
             .unhide(

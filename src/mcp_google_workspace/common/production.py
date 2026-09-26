@@ -15,15 +15,19 @@ import json
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, Final
 from uuid import uuid4
 
 import mcp.types as mt
+from mcp_types.version import (
+    HANDSHAKE_PROTOCOL_VERSIONS,
+    LATEST_MODERN_VERSION,
+    MODERN_PROTOCOL_VERSIONS,
+)
 import redis
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import Tool
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools import Tool, ToolResult
 from opentelemetry import trace
 from prometheus_client import Counter, Gauge, Histogram
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -510,6 +514,13 @@ class ConsequentialActionMiddleware(Middleware):
         return await call_next(context)
 
 
+# MCP protocol revisions this build's automated suite exercises end to end:
+# the stateless 2026-07-28 era plus the newest initialize-handshake era. This is
+# deliberately independent of the package version, and narrower than the full
+# set the SDK is able to negotiate.
+TESTED_MCP_PROTOCOL_VERSIONS: Final[tuple[str, ...]] = ("2025-11-25", "2026-07-28")
+
+
 def build_version_payload() -> dict[str, Any]:
     try:
         package_version = version("mcp-google-workspace")
@@ -520,7 +531,13 @@ def build_version_payload() -> dict[str, Any]:
         "version": package_version,
         "commit": os.getenv("MCP_BUILD_COMMIT", "unknown"),
         "protocol_transport": "streamable-http",
-        "mcp_protocol_version": mt.LATEST_PROTOCOL_VERSION,
+        "mcp_protocol_version": LATEST_MODERN_VERSION,
+        "mcp_protocol_versions": {
+            "preferred": LATEST_MODERN_VERSION,
+            "modern": list(MODERN_PROTOCOL_VERSIONS),
+            "legacy": list(HANDSHAKE_PROTOCOL_VERSIONS),
+            "tested": list(TESTED_MCP_PROTOCOL_VERSIONS),
+        },
     }
 
 

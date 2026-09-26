@@ -11,6 +11,10 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      # MCP SDK 2 renamed model fields to snake_case; fail on any remaining
+      # camelCase attribute read instead of relying on FastMCP's shim.
+      FASTMCP_MCP_CAMELCASE_COMPAT: "false"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1

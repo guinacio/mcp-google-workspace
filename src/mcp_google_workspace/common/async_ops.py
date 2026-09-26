@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from collections.abc import Callable
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 import time
@@ -11,6 +12,9 @@ from typing import Any, TypeVar
 
 import anyio
 from fastmcp import Context
+from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS
+
+from .errors import ConfirmationRequiredError
 
 T = TypeVar("T")
 LOGGER = logging.getLogger("mcp_google_workspace.google_api")
@@ -62,28 +66,53 @@ class _CircuitBreaker:
 _CIRCUITS = _CircuitBreaker()
 
 
-def require_elicitation_context(ctx: Context | None, action_name: str) -> Context:
-    """Validate that *ctx* is not ``None`` before an elicitation call.
+@dataclass
+class Confirmation:
+    """Legacy elicitation schema with an explicit ``confirm`` checkbox."""
 
-    Returns the narrowed ``Context`` so callers can use it directly.
+    confirm: bool
+
+
+def _is_legacy_request(ctx: Context) -> bool:
+    """Whether this request negotiated a handshake-era protocol that supports ``ctx.elicit``.
+
+    An allowlist, so an unknown or missing version (e.g. worker execution
+    without a live request) fails closed instead of attempting elicitation.
     """
-    if ctx is None:
-        raise RuntimeError(f"{action_name} requires MCP context for user confirmation.")
-    return ctx
+    request_context = getattr(ctx, "request_context", None)
+    version = getattr(request_context, "protocol_version", None)
+    return version in HANDSHAKE_PROTOCOL_VERSIONS
 
 
 async def confirm_destructive_action(
     ctx: Context | None,
     action_name: str,
     message: str,
+    *,
+    explicit_confirm_field: bool = False,
 ) -> bool:
-    """Require an explicit host-mediated confirmation for an irreversible action."""
-    confirm_ctx = require_elicitation_context(ctx, action_name)
-    response = await confirm_ctx.elicit(
-        message,
-        response_type=bool,  # type: ignore[arg-type]
-    )
-    return response.action == "accept" and bool(response.data)
+    """Gate an irreversible action on explicit user confirmation.
+
+    Returns ``True`` only for an accepted, affirmative answer; ``False`` means
+    the user declined or cancelled and the caller must not mutate anything.
+
+    W4: this is the single seam the confirmation adapter replaces.
+    * Legacy (handshake-era) requests keep imperative ``ctx.elicit``.
+    * MCP 2026-07-28 has no server-initiated requests, so ``ctx.elicit`` is
+      unavailable there. Until W4 adds the multi-round-trip
+      ``InputRequiredResult`` branch, a modern request fails closed: nothing is
+      mutated and the caller receives a ``confirmation_required`` tool result.
+      Unavailable confirmation is never treated as consent.
+    """
+    if ctx is None or not _is_legacy_request(ctx):
+        raise ConfirmationRequiredError(action_name, message)
+    if explicit_confirm_field:
+        response = await ctx.elicit(message, response_type=Confirmation)
+        return response.action == "accept" and bool(
+            getattr(response.data, "confirm", False)
+        )
+    answer = await ctx.elicit(message, response_type=bool)
+    return answer.action == "accept" and bool(getattr(answer, "data", False))
 
 
 async def run_blocking(

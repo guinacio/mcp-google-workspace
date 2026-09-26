@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
@@ -15,6 +17,8 @@ from ..schemas import (
     ListPermissionsRequest,
     UpdatePermissionRequest,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
@@ -38,8 +42,7 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
-        if ctx is not None:
-            await ctx.info(f"Listing permissions for file {request.file_id}.")
+        LOGGER.debug(f"Listing permissions for file {request.file_id}.")
         result = await execute_google_request(
             service.permissions()
             .list(
@@ -78,8 +81,7 @@ def register(server: FastMCP) -> None:
             fields=fields,
         )
         service = drive_service()
-        if ctx is not None:
-            await ctx.info(f"Fetching permission {request.permission_id} for file {request.file_id}.")
+        LOGGER.debug(f"Fetching permission {request.permission_id} for file {request.file_id}.")
         permission = await execute_google_request(
             service.permissions()
             .get(
@@ -171,10 +173,9 @@ def register(server: FastMCP) -> None:
         if request.expiration_time is not None:
             body["expirationTime"] = request.expiration_time
 
-        if ctx is not None:
-            await ctx.warning(
-                f"Creating permission {request.type}:{request.role} for file {request.file_id}."
-            )
+        LOGGER.debug(
+            f"Creating permission {request.type}:{request.role} for file {request.file_id}."
+        )
         created = await execute_google_request(
             service.permissions()
             .create(
@@ -255,10 +256,9 @@ def register(server: FastMCP) -> None:
         if request.remove_expiration:
             body["expirationTime"] = None
 
-        if ctx is not None:
-            await ctx.warning(
-                f"Updating permission {request.permission_id} for file {request.file_id}."
-            )
+        LOGGER.debug(
+            f"Updating permission {request.permission_id} for file {request.file_id}."
+        )
         updated = await execute_google_request(
             service.permissions()
             .update(
@@ -299,10 +299,9 @@ def register(server: FastMCP) -> None:
                 "permission_id": request.permission_id,
             }
         service = drive_service()
-        if ctx is not None:
-            await ctx.warning(
-                f"Deleting permission {request.permission_id} from file {request.file_id}."
-            )
+        LOGGER.debug(
+            f"Deleting permission {request.permission_id} from file {request.file_id}."
+        )
         await execute_google_request(
             service.permissions().delete(
                 fileId=request.file_id,

@@ -11,6 +11,7 @@ from typing import Any, Protocol, cast
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from .fastmcp_compat import local_tools
 from .output_schemas import infer_tool_output_schema
 
 
@@ -326,17 +327,27 @@ def _merge_annotations(existing: ToolAnnotations | Mapping[str, Any] | None, *, 
     idempotent = _is_idempotent(base_name, read_only=read_only)
     open_world = _open_world(base_name)
 
-    annotations = ToolAnnotations(
-        title=current.title if current is not None else None,
-        readOnlyHint=read_only if current is None or current.readOnlyHint is None else current.readOnlyHint,
-        destructiveHint=destructive if current is None or current.destructiveHint is None else current.destructiveHint,
-        idempotentHint=idempotent if current is None or current.idempotentHint is None else current.idempotentHint,
-        openWorldHint=open_world if current is None or current.openWorldHint is None else current.openWorldHint,
+    derived: dict[str, bool] = {
+        "read_only_hint": read_only,
+        "destructive_hint": destructive,
+        "idempotent_hint": idempotent,
+        "open_world_hint": open_world,
+    }
+    if current is None:
+        return ToolAnnotations(
+            read_only_hint=read_only,
+            destructive_hint=destructive,
+            idempotent_hint=idempotent,
+            open_world_hint=open_world,
+        )
+    # Explicit hints (and the title) win; only unset hints are derived.
+    return current.model_copy(
+        update={
+            field: value
+            for field, value in derived.items()
+            if getattr(current, field) is None
+        }
     )
-    existing_meta = getattr(current, "_meta", None) if current is not None else None
-    if existing_meta is not None:
-        setattr(annotations, "_meta", existing_meta)
-    return annotations
 
 
 def _namespace_display(namespace: str | None) -> str:
@@ -697,9 +708,7 @@ def _wrap_pagination(component: Any, base_name: str) -> None:
 
 def apply_default_tool_annotations(server: FastMCP) -> None:
     namespace_hint = _server_namespace(server)
-    for component_id, component in server._local_provider._components.items():
-        if not component_id.startswith("tool:"):
-            continue
+    for component in local_tools(server):
         tool_component = cast(_ToolComponent, component)
         derived_title = _humanize_tool_title(tool_component.name, namespace_hint=namespace_hint)
         base_title = _humanize_tool_title(_base_tool_name(tool_component.name), namespace_hint=None)

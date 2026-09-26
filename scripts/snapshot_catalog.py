@@ -22,8 +22,12 @@ catalog change.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Same SDK 2 field-access policy as the test suite and CI.
+os.environ.setdefault("FASTMCP_MCP_CAMELCASE_COMPAT", "false")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:

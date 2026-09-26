@@ -197,8 +197,8 @@ def test_meet_tool_annotations():
     get_tool = anyio.run(_get_tool, meet_mcp, "get_space")
     end_tool = anyio.run(_get_tool, meet_mcp, "end_active_conference")
 
-    assert get_tool.annotations.readOnlyHint is True
-    assert end_tool.annotations.destructiveHint is True
+    assert get_tool.annotations.read_only_hint is True
+    assert end_tool.annotations.destructive_hint is True
 
 
 def test_participant_envelope_uses_human_identity():

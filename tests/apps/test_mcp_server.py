@@ -137,7 +137,12 @@ def test_weekly_tool_output_schema_accepts_complete_ui_payload() -> None:
 
 
 async def _client_session_state_scenario() -> tuple[dict, dict, dict, dict]:
-    async with Client(apps_mcp) as client:
+    # W3: this scenario relies on the dashboard's implicit transport-session
+    # fallback, which only persists across requests on handshake-era (legacy)
+    # connections. Under MCP 2026-07-28 every request has its own session, so
+    # W3 replaces the fallback with explicit server-issued view handles. Until
+    # then this pins the legacy behavior explicitly.
+    async with Client(apps_mcp, mode="legacy") as client:
         await client.call_tool(
             "set_state",
             {

@@ -58,15 +58,48 @@ def test_file_picker_uses_the_standard_mcp_apps_contract() -> None:
     assert picker.meta["ui/resourceUri"] == uri
 
     resource = next(item for item in resources if str(item.uri) == uri)
-    assert resource.mimeType == "text/html;profile=mcp-app"
+    assert resource.mime_type == "text/html;profile=mcp-app"
     assert contents
     assert "prefab" in contents[0].text.lower()
     assert entry.is_error is False
     assert backend.is_error is False
 
-    # Backend storage is callable from the app through its hashed address but
-    # remains hidden from the model-visible catalog.
-    assert "files_store_files" not in tools
+    # Backend storage is callable from the app through its hashed address. FastMCP 4
+    # (per the MCP Apps spec, which puts visibility filtering on the host) now lists
+    # app-only tools in tools/list, so the catalog must mark it app-only rather than
+    # omit it. W2: previously asserted absence from tools/list.
+    store = tools["files_store_files"]
+    assert store.meta["ui"]["visibility"] == ["app"]
+    assert store.annotations is not None and store.annotations.read_only_hint is False
+
+    # The picker result carries the FastMCP 4 Prefab envelope, including
+    # _meta.fastmcp.toolNames, and validates against the declared closed schema.
+    Draft202012Validator.check_schema(picker.output_schema)
+    validator = Draft202012Validator(picker.output_schema)
+    payload = entry.structured_content
+    assert set(payload) == {"$prefab", "view", "state", "_meta"}
+    assert payload["_meta"]["fastmcp"]["toolNames"]
+    assert list(validator.iter_errors(payload)) == []
+    assert list(validator.iter_errors({**payload, "unexpected": {}}))
+    assert list(
+        validator.iter_errors({**payload, "_meta": {**payload["_meta"], "other": {}}})
+    )
+
+
+def test_store_files_callback_input_is_documented_and_bounded() -> None:
+    tools, _, _, _, _, _ = anyio.run(_file_picker_contract)
+    schema = tools["files_store_files"].input_schema
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+    item = schema["properties"]["files"]["items"]
+    assert item["additionalProperties"] is False
+    assert set(item["required"]) == {"name", "size", "type", "data"}
+    assert all(field.get("description") for field in item["properties"].values())
+    assert item["properties"]["size"]["maximum"] == 25 * 1024 * 1024
+    assert item["properties"]["data"]["maxLength"] >= 25 * 1024 * 1024 * 4 // 3
+    valid = {"files": [{"name": "a.txt", "size": 1, "type": "text/plain", "data": "YQ=="}]}
+    assert list(validator.iter_errors(valid)) == []
+    assert list(validator.iter_errors({"files": [{**valid["files"][0], "extra": 1}]}))
 
 
 async def _run_apps_self_test():
@@ -85,7 +118,7 @@ def test_file_picker_diagnostics_exercise_hidden_store_and_delete_callbacks() ->
 
 def test_file_tool_schema_describes_remote_upload_handles() -> None:
     tools, _, _, _, _, _ = anyio.run(_file_picker_contract)
-    item_properties = tools["files_list_files"].outputSchema["properties"]["result"][
+    item_properties = tools["files_list_files"].output_schema["properties"]["result"][
         "items"
     ]["properties"]
     assert {

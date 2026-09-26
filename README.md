@@ -13,7 +13,7 @@ Production-oriented Google Workspace MCP package with:
 - Google Slides MCP: presentations, slide pages, thumbnails, text replacement, and raw batch updates.
 - MCP Apps Dashboard: workspace dashboard app-layer tools/resources with interactive UI.
 - Optional Google Keep MCP, Google Chat MCP, Google Meet MCP, and Gemini media integrations behind feature flags.
-- FastMCP advanced features: Context logging, progress updates, user elicitation, sampling, resources, and prompts.
+- FastMCP advanced features: progress updates, background tasks, resources, and prompts on MCP 2026-07-28.
 - Composed server architecture: Gmail + Calendar + Drive + Sheets + Docs + Tasks + People + Forms + Slides mounted by default, with optional Apps/Keep/Chat/Meet/Gemini namespaces.
 
 ## Requirements
@@ -332,7 +332,6 @@ Keep (namespaced as `keep_*`):
 
 - `create_note`, `get_note`, `list_notes`, `delete_note`
 - `share_note`, `unshare_note`
-- `summarize_note` (sampling-powered)
 - compatibility stubs for unsupported Keep v1 operations:
   - `update_note`
   - `archive_note`, `unarchive_note`
@@ -346,7 +345,6 @@ Chat (namespaced as `chat_*`):
 - `list_spaces`, `get_space`
 - `list_messages`, `get_message`
 - `create_message`, `update_message`, `delete_message`
-- `summarize_space_messages` (sampling-powered)
 
 Note: Chat tools/resources are mounted only when `ENABLE_CHAT=true`.
 
@@ -438,7 +436,7 @@ Admission control is principal- and tool-cost-aware:
 
 Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, or recipient lists.
 
-For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, approval tokens, and upload metadata. Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. The HTTP entrypoint uses `MCP_REDIS_URL` as `FASTMCP_DOCKET_URL` when the latter is not set. FastMCP native task-enabled tools use the standard MCP task protocol for operation IDs, progress polling, cancellation, expiry, and partial/error results. Additional workers can run with `uv run fastmcp tasks worker src/mcp_google_workspace/server.py:workspace_mcp` using the same `FASTMCP_DOCKET_URL` and queue name.
+For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, approval tokens, and upload metadata. Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. Task-enabled tools run through the MCP Tasks extension (`io.modelcontextprotocol/tasks`), registered once on the root server by one shared factory for HTTP, stdio, and workers: the queue is `FASTMCP_DOCKET_URL` when set, otherwise `MCP_REDIS_URL` (except in the local stdio bundle), otherwise an in-process `memory://` queue; the queue name defaults to `mcp-google-workspace` (`FASTMCP_DOCKET_NAME` overrides it). Set the same `FASTMCP_TASKS_ENCRYPTION_KEY` on every server and worker so queued caller-credential snapshots are encrypted (tool arguments and results are not). Additional workers run with `uv run mcp-google-workspace-worker` against the same Redis queue.
 
 High-impact reversible writes use `prepare_workspace_action` and `commit_workspace_action`. The encrypted one-time token is principal-bound, argument-bound, expires after five minutes, and returns an impact preview before commit. Stable `resource` handles (`gdrive:///...`, `gmail-message:///...`, and related schemes) are included where applicable and can be refreshed through `resolve_workspace_resource`.
 
@@ -527,17 +525,6 @@ Tools that emit progress:
 | Chat | `list_spaces`, `list_messages` |
 
 **Requires:** MCP client that handles `notifications/progress`.
-
-### Sampling
-
-Optional tools use MCP sampling (`ctx.sample()`) to generate LLM-powered summaries within the tool response, using the host client's configured model for inference.
-
-Sampling-powered tools:
-
-- `keep_summarize_note` — summarizes a Keep note
-- `chat_summarize_space_messages` — summarizes recent messages in a Chat space
-
-**Requires:** MCP client with `sampling/createMessage` support (e.g. Claude Desktop). Without sampling support these tools will fail or return an empty summary.
 
 ## Tool Input Contract
 

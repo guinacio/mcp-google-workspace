@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request, require_elicitation_context
+from ...common.async_ops import confirm_destructive_action, execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import clean_message_content, envelope
 from ..schemas import GetThreadRequest, ListThreadsRequest, ModifyThreadRequest, ThreadIdRequest
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
@@ -33,8 +37,7 @@ def register(server: FastMCP) -> None:
         )
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
-        if ctx is not None:
-            await ctx.info("Listing Gmail threads.")
+        LOGGER.debug("Listing Gmail threads.")
         result = await execute_google_request(
             service.users()
             .threads()
@@ -85,8 +88,7 @@ def register(server: FastMCP) -> None:
         )
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
-        if ctx is not None:
-            await ctx.info(f"Reading thread {request.thread_id}.")
+        LOGGER.debug(f"Reading thread {request.thread_id}.")
         thread = await execute_google_request(
             service.users()
             .threads()
@@ -138,8 +140,7 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         if not request.add_label_ids and not request.remove_label_ids:
             raise ValueError("At least one of add_label_ids/remove_label_ids must be provided.")
-        if ctx is not None:
-            await ctx.info(f"Modifying thread {request.thread_id}.")
+        LOGGER.debug(f"Modifying thread {request.thread_id}.")
         result = await execute_google_request(
             service.users()
             .threads()
@@ -162,8 +163,7 @@ def register(server: FastMCP) -> None:
         """Move an entire thread to trash."""
         request = ThreadIdRequest(thread_id=thread_id)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Moving thread {request.thread_id} to trash.")
+        LOGGER.debug(f"Moving thread {request.thread_id} to trash.")
         trashed = await execute_google_request(
             service.users().threads().trash(userId="me", id=request.thread_id)
         )
@@ -177,8 +177,7 @@ def register(server: FastMCP) -> None:
         """Restore a trashed thread back to mailbox flow."""
         request = ThreadIdRequest(thread_id=thread_id)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Restoring thread {request.thread_id} from trash.")
+        LOGGER.debug(f"Restoring thread {request.thread_id} from trash.")
         restored = await execute_google_request(
             service.users().threads().untrash(userId="me", id=request.thread_id)
         )
@@ -192,15 +191,15 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Permanently delete a thread after mandatory interactive confirmation."""
         request = ThreadIdRequest(thread_id=thread_id)
-        confirm_ctx = require_elicitation_context(ctx, "delete_thread")
-        response = await confirm_ctx.elicit(
+        # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
+        # requests fail closed until the MRTR branch lands (common.async_ops).
+        if not await confirm_destructive_action(
+            ctx,
+            "delete_thread",
             f"Permanently delete thread {request.thread_id}? This cannot be undone.",
-            response_type=bool,  # type: ignore[arg-type]
-        )
-        if response.action != "accept" or not bool(response.data):
+        ):
             return {"status": "cancelled"}
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Permanently deleting thread {request.thread_id}.")
+        LOGGER.debug(f"Permanently deleting thread {request.thread_id}.")
         await execute_google_request(service.users().threads().delete(userId="me", id=request.thread_id))
         return {"status": "ok", "thread_id": request.thread_id}

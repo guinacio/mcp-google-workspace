@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
-from ..common.async_ops import execute_google_request
+from ..common.async_ops import confirm_destructive_action, execute_google_request
 from ..common.errors import tool_error_payload
 from ..common.timezone import resolve_user_timezone
 from .client import keep_service, normalize_note_name
@@ -23,6 +25,8 @@ from .schemas import (
     UnshareNoteRequest,
     UpdateNoteRequest,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _build_note_body(request: CreateNoteRequest | UpdateNoteRequest) -> dict[str, Any]:
@@ -92,20 +96,22 @@ def register_tools(server: FastMCP) -> None:
         """
         service = keep_service()
         if request.confirm_create:
-            response = await ctx.elicit(
+            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
+            # requests fail closed until the MRTR branch lands (common.async_ops).
+            if not await confirm_destructive_action(
+                ctx,
+                "create_note",
                 f"Create Keep note titled '{request.title or '(untitled)'}'?",
-                response_type=bool,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(response.data):
+            ):
                 return {"status": "cancelled"}
 
         note = _build_note_body(request)
-        await ctx.info("Creating Google Keep note.")
+        LOGGER.debug("Creating Google Keep note.")
         try:
             created = await execute_google_request(service.notes().create(body=note))
 
             if request.collaborator_emails:
-                await ctx.info("Applying collaborator permissions.")
+                LOGGER.debug("Applying collaborator permissions.")
                 parent = created.get("name")
                 create_requests = [
                     {
@@ -133,7 +139,7 @@ def register_tools(server: FastMCP) -> None:
         """
         service = keep_service()
         name = normalize_note_name(request.note_name)
-        await ctx.info(f"Fetching Keep note {name}.")
+        LOGGER.debug(f"Fetching Keep note {name}.")
         try:
             account_timezone = await resolve_user_timezone()
             return note_envelope(
@@ -152,7 +158,7 @@ def register_tools(server: FastMCP) -> None:
         token when more notes exist, or a structured provider error.
         """
         service = keep_service()
-        await ctx.info("Listing Keep notes.")
+        LOGGER.debug("Listing Keep notes.")
         try:
             account_timezone = await resolve_user_timezone()
             result = await execute_google_request(
@@ -184,11 +190,13 @@ def register_tools(server: FastMCP) -> None:
         service = keep_service()
         name = normalize_note_name(request.note_name)
         if request.confirm_delete:
-            response = await ctx.elicit(
+            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
+            # requests fail closed until the MRTR branch lands (common.async_ops).
+            if not await confirm_destructive_action(
+                ctx,
+                "delete_note",
                 f"Permanently delete Keep note {name}? This cannot be undone.",
-                response_type=bool,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(response.data):
+            ):
                 return {"status": "cancelled"}
         try:
             await execute_google_request(service.notes().delete(name=name))
@@ -204,7 +212,7 @@ def register_tools(server: FastMCP) -> None:
         ``unsupported`` response pointing callers to the create/delete workflow.
         """
         _ = request
-        await ctx.warning(
+        LOGGER.debug(
             "Google Keep API v1 currently exposes create/get/list/delete; update/patch is not available."
         )
         return {
@@ -220,7 +228,7 @@ def register_tools(server: FastMCP) -> None:
         Returns a stable ``unsupported`` response with the API limitation.
         """
         _ = note_name
-        await ctx.warning("Archive action is not exposed by Google Keep API v1.")
+        LOGGER.debug("Archive action is not exposed by Google Keep API v1.")
         return {
             "status": "unsupported",
             "reason": "Google Keep API v1 does not provide archive/unarchive endpoints.",
@@ -233,7 +241,7 @@ def register_tools(server: FastMCP) -> None:
         Returns a stable ``unsupported`` response with the API limitation.
         """
         _ = note_name
-        await ctx.warning("Unarchive action is not exposed by Google Keep API v1.")
+        LOGGER.debug("Unarchive action is not exposed by Google Keep API v1.")
         return {
             "status": "unsupported",
             "reason": "Google Keep API v1 does not provide archive/unarchive endpoints.",
@@ -245,7 +253,7 @@ def register_tools(server: FastMCP) -> None:
 
         Returns a stable ``unsupported`` response with the API limitation.
         """
-        await ctx.warning("Google Keep API v1 does not provide a labels resource.")
+        LOGGER.debug("Google Keep API v1 does not provide a labels resource.")
         return {
             "status": "unsupported",
             "reason": "Keep API v1 has no dedicated labels endpoints.",
@@ -258,7 +266,7 @@ def register_tools(server: FastMCP) -> None:
         Returns a stable ``unsupported`` response with the API limitation.
         """
         _ = label_name
-        await ctx.warning("Google Keep API v1 does not provide label creation endpoints.")
+        LOGGER.debug("Google Keep API v1 does not provide label creation endpoints.")
         return {
             "status": "unsupported",
             "reason": "Keep API v1 has no dedicated labels endpoints.",
@@ -271,7 +279,7 @@ def register_tools(server: FastMCP) -> None:
         Returns a stable ``unsupported`` response with the API limitation.
         """
         _ = label_name
-        await ctx.warning("Google Keep API v1 does not provide label deletion endpoints.")
+        LOGGER.debug("Google Keep API v1 does not provide label deletion endpoints.")
         return {
             "status": "unsupported",
             "reason": "Keep API v1 has no dedicated labels endpoints.",
@@ -285,7 +293,7 @@ def register_tools(server: FastMCP) -> None:
         ``patch_note_checklist`` as the supported preview/apply workflow.
         """
         _ = (note_name, text)
-        await ctx.warning("Checklist mutation requires update API, which Keep API v1 does not expose.")
+        LOGGER.debug("Checklist mutation requires update API, which Keep API v1 does not expose.")
         return {
             "status": "unsupported",
             "reason": "Keep API v1 does not support note patch/update.",
@@ -300,7 +308,7 @@ def register_tools(server: FastMCP) -> None:
         to ``patch_note_checklist`` as the supported preview/apply workflow.
         """
         _ = (note_name, index, checked)
-        await ctx.warning("Checklist mutation requires update API, which Keep API v1 does not expose.")
+        LOGGER.debug("Checklist mutation requires update API, which Keep API v1 does not expose.")
         return {
             "status": "unsupported",
             "reason": "Keep API v1 does not support note patch/update.",
@@ -315,7 +323,7 @@ def register_tools(server: FastMCP) -> None:
         ``patch_note_checklist`` as the supported preview/apply workflow.
         """
         _ = (note_name, index)
-        await ctx.warning("Checklist mutation requires update API, which Keep API v1 does not expose.")
+        LOGGER.debug("Checklist mutation requires update API, which Keep API v1 does not expose.")
         return {
             "status": "unsupported",
             "reason": "Keep API v1 does not support note patch/update.",
@@ -332,7 +340,7 @@ def register_tools(server: FastMCP) -> None:
         """
         service = keep_service()
         source_name = normalize_note_name(request.note_name)
-        await ctx.info(f"Preparing append operation for Keep note {source_name}.")
+        LOGGER.debug(f"Preparing append operation for Keep note {source_name}.")
         try:
             original = await execute_google_request(service.notes().get(name=source_name))
             existing_text = _extract_note_text(original)
@@ -366,7 +374,7 @@ def register_tools(server: FastMCP) -> None:
             if not request.apply_via_replacement:
                 return response
 
-            await ctx.warning("Applying replacement-note workflow (create new note).")
+            LOGGER.debug("Applying replacement-note workflow (create new note).")
             created = await execute_google_request(service.notes().create(body=replacement_note))
             response.update(
                 {
@@ -390,7 +398,7 @@ def register_tools(server: FastMCP) -> None:
         """
         service = keep_service()
         source_name = normalize_note_name(request.note_name)
-        await ctx.info(f"Preparing checklist patch for Keep note {source_name}.")
+        LOGGER.debug(f"Preparing checklist patch for Keep note {source_name}.")
         try:
             original = await execute_google_request(service.notes().get(name=source_name))
             title = original.get("title")
@@ -430,7 +438,7 @@ def register_tools(server: FastMCP) -> None:
             if not request.apply_via_replacement:
                 return response
 
-            await ctx.warning("Applying replacement-note checklist patch (create new note).")
+            LOGGER.debug("Applying replacement-note checklist patch (create new note).")
             created = await execute_google_request(service.notes().create(body=replacement_note))
             response.update(
                 {
@@ -454,7 +462,7 @@ def register_tools(server: FastMCP) -> None:
         """
         service = keep_service()
         note_name = normalize_note_name(request.note_name)
-        await ctx.info(f"Adding collaborators to {note_name}.")
+        LOGGER.debug(f"Adding collaborators to {note_name}.")
         create_requests = [
             {
                 "parent": note_name,
@@ -481,7 +489,7 @@ def register_tools(server: FastMCP) -> None:
         """
         service = keep_service()
         note_name = normalize_note_name(request.note_name)
-        await ctx.info(f"Removing collaborators from {note_name}.")
+        LOGGER.debug(f"Removing collaborators from {note_name}.")
         try:
             await execute_google_request(
                 service.notes().permissions().batchDelete(

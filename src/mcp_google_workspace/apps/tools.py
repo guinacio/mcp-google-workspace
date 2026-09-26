@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import base64
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
@@ -29,6 +31,8 @@ from .view_models import (
     build_event_detail_view_model,
     build_weekly_calendar_view_model,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 _ATTACHMENT_EXTENSION_BY_MIME: dict[str, str] = {
     "application/json": ".json",
@@ -473,8 +477,7 @@ def register_tools(server: FastMCP) -> None:
             fields["include_weekend"] = include_weekend
         request = DashboardState(**fields)
         updated = set_state(sid, request)
-        if ctx is not None:
-            await ctx.info(f"Dashboard state replaced for session {sid}.")
+        LOGGER.debug(f"Dashboard state replaced for session {sid}.")
         return updated.model_dump(mode="json")
 
     @server.tool(name="patch_state")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -30,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .auth.identity import current_principal
 from .common.crypto import FernetKeyring
 from .common.errors import RecoverableToolError
+from .common.fastmcp_compat import local_tools
 from .common.component_annotations import apply_structural_input_limits
 from .runtime import get_token_storage_settings
 
@@ -495,22 +497,28 @@ class WorkspaceFileUpload(FileUpload):
                 next_cursor=next_cursor,
             )
 
-        for raw_component in self._local._components.values():
+        for raw_component in local_tools(self):
             component = cast(Any, raw_component)
             component.title = f"Files {component.name.replace('_', ' ').title()}"
             component.tags.update({"files", "upload", "mcp-app"})
             read_only = component.name not in {"store_files", "delete_file"}
             component.annotations = ToolAnnotations(
-                readOnlyHint=read_only,
-                destructiveHint=False,
-                idempotentHint=component.name != "store_files",
-                openWorldHint=False,
+                read_only_hint=read_only,
+                destructive_hint=False,
+                idempotent_hint=component.name != "store_files",
+                open_world_hint=False,
             )
             if component.name == "file_manager":
                 component.meta = {
                     **(component.meta or {}),
                     "ui/resourceUri": hashed_resource_uri(self.name, component.name),
                 }
+            if component.name == "store_files":
+                # FastMCP 4 lists this app-only callback in tools/list (hosts
+                # filter by _meta.ui.visibility), so its input is now part of
+                # the published contract: document and bound the exact
+                # DropZone payload instead of an open list[dict].
+                component.parameters = _store_files_input_schema(self._max_file_size)
             properties = component.parameters.get("properties", {})
             component.parameters.setdefault("required", [])
             if "name" in properties:
@@ -580,16 +588,7 @@ class WorkspaceFileUpload(FileUpload):
                     "additionalProperties": False,
                 }
             elif component.name == "file_manager":
-                component.output_schema = {
-                    "type": "object",
-                    "properties": {
-                        "$prefab": {"type": "object", "description": "Prefab protocol metadata."},
-                        "view": {"type": "object", "description": "Declarative picker UI tree."},
-                        "state": {"type": "object", "description": "Initial picker UI state."},
-                    },
-                    "required": ["$prefab", "view", "state"],
-                    "additionalProperties": False,
-                }
+                component.output_schema = copy.deepcopy(_PICKER_OUTPUT_SCHEMA)
             elif component.name == "delete_file":
                 component.output_schema = {
                     "type": "object",
@@ -704,6 +703,104 @@ class WorkspaceFileUpload(FileUpload):
             )
             _require_allowed_mime(uploaded, allowed_mime_prefixes)
             return uploaded
+
+
+# Prefab wire envelope produced by ``FileUpload.file_manager`` under
+# fastmcp 4.0.10 / prefab-ui 0.20.2: ``PrefabApp(view=..., state=...)`` emits
+# ``$prefab``/``view``/``state``; FastMCP then records late-bound backend tool
+# names under ``_meta.fastmcp.toolNames`` (see
+# ``fastmcp.server.providers.prefab_payload``). Only that closed ``_meta`` shape
+# is accepted; any other top-level or ``_meta`` key still fails validation.
+_PICKER_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "$prefab": {"type": "object", "description": "Prefab protocol metadata."},
+        "view": {"type": "object", "description": "Declarative picker UI tree."},
+        "state": {"type": "object", "description": "Initial picker UI state."},
+        "_meta": {
+            "type": "object",
+            "description": "FastMCP renderer metadata for the Prefab payload.",
+            "properties": {
+                "fastmcp": {
+                    "type": "object",
+                    "description": "FastMCP-owned Prefab addressing metadata.",
+                    "properties": {
+                        "toolNames": {
+                            "type": "object",
+                            "description": (
+                                "Map from each backend tool name used in the UI tree to its "
+                                "stable <hash>_<name> address."
+                            ),
+                            "additionalProperties": {"type": "string"},
+                        }
+                    },
+                    "additionalProperties": False,
+                }
+            },
+            "additionalProperties": False,
+        },
+    },
+    "required": ["$prefab", "view", "state"],
+    "additionalProperties": False,
+}
+
+
+def _store_files_input_schema(max_file_size: int) -> dict[str, Any]:
+    """Closed, documented input schema for the picker's upload callback."""
+    max_base64_length = 4 * ((max_file_size + 2) // 3)
+    return {
+        "type": "object",
+        "properties": {
+            "files": {
+                "type": "array",
+                "description": (
+                    "Files selected in the Workspace Files picker, as produced by its "
+                    "drop zone. The total request is also bounded by the server's "
+                    "HTTP request-size limit."
+                ),
+                "items": {
+                    "type": "object",
+                    "description": "One selected file with base64-encoded content.",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1024,
+                            "description": "Original filename reported by the browser.",
+                        },
+                        "size": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": max_file_size,
+                            "description": (
+                                "Browser-reported size in bytes; the server recomputes it "
+                                "from the decoded data."
+                            ),
+                        },
+                        "type": {
+                            "type": "string",
+                            "maxLength": 255,
+                            "description": (
+                                "Browser-reported MIME type; the server re-validates content."
+                            ),
+                        },
+                        "data": {
+                            "type": "string",
+                            "maxLength": max_base64_length,
+                            "description": (
+                                f"Base64-encoded file content, at most {max_file_size} "
+                                "decoded bytes."
+                            ),
+                        },
+                    },
+                    "required": ["name", "size", "type", "data"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["files"],
+        "additionalProperties": False,
+    }
 
 
 def _require_allowed_mime(
