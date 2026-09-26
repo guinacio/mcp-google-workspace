@@ -10,12 +10,11 @@ import type {
   UiToolCapabilities,
   CalendarCatalogItem,
 } from "./types";
-
-function esc(text: string): string {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { sanitizeEmailHtml } from "./email-html";
+import { html, setHtml, textWithBreaks } from "./safe-html";
+import type { SafeHtml } from "./safe-html";
+import { isLinkKind, safeExternalUrl } from "./urls";
+import type { LinkKind } from "./urls";
 
 function fmtTime(iso: string): string {
   try {
@@ -86,255 +85,43 @@ function initials(fromValue: string): string {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-function sanitizeUrl(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("#")) return trimmed;
-  if (trimmed.startsWith("mailto:") || trimmed.startsWith("tel:")) {
-    return trimmed;
-  }
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("//")) {
-    return `https:${trimmed}`;
-  }
-  return null;
-}
-
-function sanitizeCssValue(value: string): string | null {
-  const normalized = value.trim();
-  if (!normalized) return null;
-  const lowered = normalized.toLowerCase();
-  if (
-    lowered.includes("url(") ||
-    lowered.includes("expression(") ||
-    lowered.includes("@import") ||
-    lowered.includes("javascript:")
-  ) {
-    return null;
-  }
-  return normalized;
-}
-
-function sanitizeInlineStyle(styleText: string | null | undefined): string {
-  if (!styleText) return "";
-  const probe = document.createElement("div");
-  probe.setAttribute("style", styleText);
-  // Sender-defined foreground and background colors can be unreadable in the
-  // host theme, so message text always inherits the app's contrast-safe palette.
-  const allowed = [
-    "borderBottomColor",
-    "borderBottomStyle",
-    "borderBottomWidth",
-    "borderCollapse",
-    "borderColor",
-    "borderLeftColor",
-    "borderLeftStyle",
-    "borderLeftWidth",
-    "borderRadius",
-    "borderRightColor",
-    "borderRightStyle",
-    "borderRightWidth",
-    "borderSpacing",
-    "borderTopColor",
-    "borderTopStyle",
-    "borderTopWidth",
-    "borderWidth",
-    "fontFamily",
-    "fontSize",
-    "fontStyle",
-    "fontWeight",
-    "lineHeight",
-    "margin",
-    "marginBottom",
-    "marginLeft",
-    "marginRight",
-    "marginTop",
-    "padding",
-    "paddingBottom",
-    "paddingLeft",
-    "paddingRight",
-    "paddingTop",
-    "textAlign",
-    "textDecoration",
-    "verticalAlign",
-    "whiteSpace",
-  ] as const;
-  const declarations: string[] = [];
-  for (const property of allowed) {
-    const value = probe.style[property];
-    const safeValue = sanitizeCssValue(value);
-    if (!safeValue) continue;
-    const cssProperty = property.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
-    declarations.push(`${cssProperty}:${safeValue}`);
-  }
-  return declarations.join("; ");
-}
-
-function renderPlainTextEmailBody(text: string): string {
+function renderPlainTextEmailBody(text: string): SafeHtml {
   const normalized = text.replace(/\r\n?/g, "\n").trim();
   if (!normalized) {
-    return `<p class="email-body-empty">No body content.</p>`;
+    return html`<p class="email-body-empty">No body content.</p>`;
   }
   const paragraphs = normalized.split(/\n{2,}/).filter(Boolean);
-  return paragraphs
-    .map((paragraph) => {
-      const lines = paragraph.split("\n");
-      if (lines.every((line) => line.trim().startsWith(">"))) {
-        const quoted = lines.map((line) => line.replace(/^\s*> ?/, "")).join("\n");
-        return `<blockquote>${esc(quoted).replace(/\n/g, "<br />")}</blockquote>`;
-      }
-      return `<p>${esc(lines.join("\n")).replace(/\n/g, "<br />")}</p>`;
-    })
-    .join("");
+  return html`${paragraphs.map((paragraph) => {
+    const lines = paragraph.split("\n");
+    if (lines.every((line) => line.trim().startsWith(">"))) {
+      const quoted = lines.map((line) => line.replace(/^\s*> ?/, "")).join("\n");
+      return html`<blockquote>${textWithBreaks(quoted)}</blockquote>`;
+    }
+    return html`<p>${textWithBreaks(lines.join("\n"))}</p>`;
+  })}`;
 }
 
-function sanitizeEmailHtml(html: string): string {
-  const parser = new DOMParser();
-  const parsed = parser.parseFromString(html, "text/html");
-  const blockedTags = new Set([
-    "script",
-    "style",
-    "iframe",
-    "object",
-    "embed",
-    "form",
-    "input",
-    "button",
-    "select",
-    "textarea",
-    "canvas",
-    "svg",
-    "math",
-    "meta",
-    "link",
-    "base",
-  ]);
-  const allowedTags = new Set([
-    "a",
-    "abbr",
-    "b",
-    "blockquote",
-    "br",
-    "code",
-    "del",
-    "div",
-    "em",
-    "figcaption",
-    "figure",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "hr",
-    "i",
-    "img",
-    "li",
-    "ol",
-    "p",
-    "pre",
-    "span",
-    "strong",
-    "sub",
-    "sup",
-    "table",
-    "tbody",
-    "td",
-    "th",
-    "thead",
-    "tr",
-    "u",
-    "ul",
-  ]);
-
-  const renderNode = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return esc(node.textContent || "");
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      return "";
-    }
-
-    const element = node as HTMLElement;
-    const tag = element.tagName.toLowerCase();
-    if (blockedTags.has(tag)) {
-      return "";
-    }
-    if (!allowedTags.has(tag)) {
-      return Array.from(element.childNodes).map(renderNode).join("");
-    }
-
-    if (tag === "img") {
-      const src = element.getAttribute("src")?.trim() || "";
-      if (src.toLowerCase().startsWith("data:image/")) {
-        const alt = esc(element.getAttribute("alt") || "");
-        const title = esc(element.getAttribute("title") || "");
-        return `<img class="email-html-image" src="${esc(src)}" alt="${alt}"${title ? ` title="${title}"` : ""} />`;
-      }
-      const remoteImageLabel = element.getAttribute("alt") || element.getAttribute("title");
-      if (!remoteImageLabel) return "";
-      const altText = esc(remoteImageLabel);
-      return `<div class="email-image-blocked">${altText}</div>`;
-    }
-
-    const attrs: string[] = [];
-    const safeStyle = sanitizeInlineStyle(element.getAttribute("style"));
-    if (safeStyle) {
-      attrs.push(`style="${esc(safeStyle)}"`);
-    }
-
-    if (tag === "table") {
-      const hasOwnHeaders = element.querySelector(
-        ":scope > thead th, :scope > tr > th, :scope > tbody > tr > th"
-      );
-      attrs.push(`class="${hasOwnHeaders ? "email-data-table" : "email-layout-table"}"`);
-    }
-
-    if (tag === "a") {
-      const href = sanitizeUrl(element.getAttribute("href"));
-      if (href) {
-        attrs.push(`href="${esc(href)}"`);
-        attrs.push(`data-open-link="1"`);
-        attrs.push(`data-link-url="${esc(href)}"`);
-        attrs.push(`rel="noopener noreferrer nofollow"`);
-        attrs.push(`target="_blank"`);
-      }
-    }
-
-    if (["td", "th"].includes(tag)) {
-      const colspan = element.getAttribute("colspan");
-      const rowspan = element.getAttribute("rowspan");
-      if (colspan && /^\d+$/.test(colspan)) attrs.push(`colspan="${colspan}"`);
-      if (rowspan && /^\d+$/.test(rowspan)) attrs.push(`rowspan="${rowspan}"`);
-    }
-
-    const content = Array.from(element.childNodes).map(renderNode).join("");
-    if (tag === "br" || tag === "hr") {
-      return `<${tag}${attrs.length ? ` ${attrs.join(" ")}` : ""} />`;
-    }
-    return `<${tag}${attrs.length ? ` ${attrs.join(" ")}` : ""}>${content}</${tag}>`;
-  };
-
-  const htmlContent = Array.from(parsed.body.childNodes).map(renderNode).join("").trim();
-  return htmlContent || `<p class="email-body-empty">No body content.</p>`;
-}
-
-function renderEmailBody(detail: EmailDetail): string {
+function renderEmailBody(detail: EmailDetail): SafeHtml {
   if (detail.html_body?.trim()) {
-    return `<div class="email-html">${sanitizeEmailHtml(detail.html_body)}</div>`;
+    // Filled with sanitized DOM nodes by mountEmailHtml() after the chrome is rendered.
+    return html`<div class="email-html" data-email-html-body="1"></div>`;
   }
   if (detail.text_body?.trim()) {
-    return `<div class="email-plain">${renderPlainTextEmailBody(detail.text_body)}</div>`;
+    return html`<div class="email-plain">${renderPlainTextEmailBody(detail.text_body)}</div>`;
   }
   if (detail.snippet?.trim()) {
-    return `<div class="email-plain">${renderPlainTextEmailBody(detail.snippet)}</div>`;
+    return html`<div class="email-plain">${renderPlainTextEmailBody(detail.snippet)}</div>`;
   }
-  return `<div class="email-plain"><p class="email-body-empty">No body content.</p></div>`;
+  return html`<div class="email-plain"><p class="email-body-empty">No body content.</p></div>`;
 }
+
+function mountEmailHtml(root: HTMLElement, detail: EmailDetail | undefined): void {
+  const htmlBody = detail?.html_body;
+  if (!htmlBody?.trim()) return;
+  const container = root.querySelector<HTMLElement>("[data-email-html-body]");
+  container?.replaceChildren(sanitizeEmailHtml(htmlBody));
+}
+
 function colorVar(event: WeeklyCalendarEvent): string {
   const palette = [
     "--event-blueberry",
@@ -417,6 +204,11 @@ export type UiAction =
       url: string;
     }
   | {
+      type: "open_link";
+      url: string;
+      kind: LinkKind;
+    }
+  | {
       type: "download_attachment";
       url: string;
       name: string;
@@ -477,13 +269,32 @@ function hideEventTooltipLayer() {
   }
 }
 
-function showEventTooltipLayer(anchor: HTMLElement, html: string) {
-  if (!html.trim()) {
+/**
+ * Anchors never navigate the App frame directly: every link activation is re-validated
+ * and handed to the host-mediated open-link adapter. Returns true when handled.
+ */
+function routeLinkActivation(event: MouseEvent): boolean {
+  const target = event.target as Element | null;
+  const link = target?.closest?.<HTMLAnchorElement>("a[href]");
+  if (!link) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  const kind = link.dataset.openLink;
+  if (isLinkKind(kind)) {
+    const url = safeExternalUrl(link.getAttribute("href"), kind);
+    if (url) _onAction({ type: "open_link", url, kind });
+  }
+  return true;
+}
+
+function showEventTooltipLayer(anchor: HTMLElement, source: HTMLElement) {
+  if (!source.textContent?.trim()) {
     hideEventTooltipLayer();
     return;
   }
   const layer = ensureEventTooltipLayer();
-  layer.innerHTML = html;
+  // Clone the already-rendered nodes instead of re-parsing serialized markup.
+  layer.replaceChildren(...Array.from(source.childNodes, (node) => node.cloneNode(true)));
   layer.style.display = "block";
   layer.style.visibility = "hidden";
   layer.style.left = "0px";
@@ -1945,7 +1756,7 @@ export const RENDER_CSS = `
 
 export function renderLoading(root: HTMLElement) {
   hideEventTooltipLayer();
-  root.innerHTML = `<div class="loading-state">Loading workspace dashboard...</div>`;
+  setHtml(root, html`<div class="loading-state">Loading workspace dashboard...</div>`);
 }
 
 type InboxMessage = {
@@ -2033,10 +1844,10 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
 
   hideEventTooltipLayer();
 
-  root.innerHTML = `
+  setHtml(root, html`
     <div class="dashboard">
-      ${data.ui_error ? `<div class="banner error">${esc(data.ui_error)}</div>` : ""}
-      ${data.ui_notice ? `<div class="banner">${esc(data.ui_notice)}</div>` : ""}
+      ${data.ui_error ? html`<div class="banner error">${data.ui_error}</div>` : ""}
+      ${data.ui_notice ? html`<div class="banner">${data.ui_notice}</div>` : ""}
       ${renderTopBar(eventsCount, hasDashboard ? inboxData.unreadCount : undefined)}
       <div class="main-grid${hasDashboard ? "" : " main-grid-full"}">
         ${renderCalendarArea(
@@ -2048,7 +1859,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
             tool_capabilities: options.tool_capabilities,
           }
         )}
-        ${hasDashboard ? `<div class="sidebar">${renderInboxPanel(inboxData.messages, inboxData.unreadCount)}</div>` : ""}
+        ${hasDashboard ? html`<div class="sidebar">${renderInboxPanel(inboxData.messages, inboxData.unreadCount)}</div>` : ""}
       </div>
       ${renderEventDetailPanel(data.event_detail, options.tool_capabilities)}
       ${renderEventEditorPanel(
@@ -2058,7 +1869,8 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       )}
       ${renderEmailDetailPanel(data.email_detail, options.tool_capabilities)}
     </div>
-  `;
+  `);
+  mountEmailHtml(root, data.email_detail);
 
   root.onmouseover = (event) => {
     const target = event.target as HTMLElement;
@@ -2066,7 +1878,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     if (!eventCard) return;
     const source = eventCard.querySelector<HTMLElement>(".event-hover");
     if (!source) return;
-    showEventTooltipLayer(eventCard, source.innerHTML);
+    showEventTooltipLayer(eventCard, source);
   };
 
   root.onmousemove = (event) => {
@@ -2075,7 +1887,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     if (!eventCard) return;
     const source = eventCard.querySelector<HTMLElement>(".event-hover");
     if (!source) return;
-    showEventTooltipLayer(eventCard, source.innerHTML);
+    showEventTooltipLayer(eventCard, source);
   };
 
   root.onmouseout = (event) => {
@@ -2090,6 +1902,12 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
 
   root.onmouseleave = () => {
     hideEventTooltipLayer();
+  };
+
+  root.onauxclick = (event) => {
+    if (event.button === 1) {
+      routeLinkActivation(event);
+    }
   };
 
   root.onkeydown = (event) => {
@@ -2119,6 +1937,10 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
   root.onclick = (event) => {
     hideEventTooltipLayer();
     const target = event.target as HTMLElement;
+
+    if (routeLinkActivation(event)) {
+      return;
+    }
 
     const chat = target.closest<HTMLElement>("[data-action-msg]");
     if (chat) {
@@ -2224,7 +2046,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     const openAttachment = target.closest<HTMLElement>("[data-open-attachment-url]");
     if (openAttachment) {
       event.preventDefault();
-      const url = openAttachment.dataset.openAttachmentUrl;
+      const url = safeExternalUrl(openAttachment.dataset.openAttachmentUrl, "attachment");
       if (url) {
         _onAction({ type: "open_attachment", url });
       }
@@ -2234,7 +2056,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     const downloadAttachment = target.closest<HTMLElement>("[data-download-attachment-url]");
     if (downloadAttachment) {
       event.preventDefault();
-      const url = downloadAttachment.dataset.downloadAttachmentUrl;
+      const url = safeExternalUrl(downloadAttachment.dataset.downloadAttachmentUrl, "attachment");
       const name = downloadAttachment.dataset.downloadAttachmentName || "attachment";
       const mimeType = downloadAttachment.dataset.downloadAttachmentMime || undefined;
       if (url) {
@@ -2262,15 +2084,6 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       return;
     }
 
-    const openBodyLink = target.closest<HTMLAnchorElement>("[data-open-link]");
-    if (openBodyLink) {
-      event.preventDefault();
-      const url = openBodyLink.dataset.linkUrl || openBodyLink.getAttribute("href");
-      if (url) {
-        _onAction({ type: "open_attachment", url });
-      }
-      return;
-    }
     if (target.closest("[data-close-event]")) {
       _onAction({ type: "close_event_detail" });
       return;
@@ -2353,16 +2166,16 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
   };
 }
 
-function renderTopBar(eventsCount: number, unreadCount?: number): string {
-  const unreadChip = unreadCount !== undefined ? `<span class="stat-chip stat-chip-mail"><span class="stat-dot"></span>${unreadCount} unread</span>` : "";
-  return `
+function renderTopBar(eventsCount: number, unreadCount?: number): SafeHtml {
+  const unreadChip = unreadCount !== undefined ? html`<span class="stat-chip stat-chip-mail"><span class="stat-dot"></span>${unreadCount} unread</span>` : "";
+  return html`
     <div class="top-bar surface">
       <div class="top-brand">
         <div class="workspace-mark" aria-hidden="true">W</div>
         <div>
           <div class="top-eyebrow">Google Workspace</div>
-          <h1>${esc(getGreeting())}</h1>
-          <div class="top-sub">${esc(fmtTopDate())}</div>
+          <h1>${getGreeting()}</h1>
+          <div class="top-sub">${fmtTopDate()}</div>
         </div>
       </div>
       <div class="quick-stats">
@@ -2381,24 +2194,24 @@ function renderCalendarArea(
     calendar_catalog: CalendarCatalogItem[];
     tool_capabilities?: UiToolCapabilities;
   }
-): string {
+): SafeHtml {
   if (!weekly) {
-    return `<section class="calendar-shell surface"><div class="section-subtitle">Calendar data unavailable.</div></section>`;
+    return html`<section class="calendar-shell surface"><div class="section-subtitle">Calendar data unavailable.</div></section>`;
   }
   const weekRange = fmtWeekRange(weekly.week_start, weekly.week_end);
   const canCreate = options.tool_capabilities?.can_create_event ?? false;
   const canToggleWeekend = options.tool_capabilities?.can_toggle_weekend ?? false;
   const canSelectCalendars = options.tool_capabilities?.can_select_calendars ?? false;
-  return `
+  return html`
     <section class="calendar-shell surface">
       <div class="calendar-header">
         <div class="calendar-heading">
           <div class="calendar-kicker">Google Calendar</div>
           <div class="calendar-title-line">
-            <h2>Week of ${esc(weekRange)}</h2>
+            <h2>Week of ${weekRange}</h2>
             <span class="calendar-count">${weekly.total_events} event${weekly.total_events === 1 ? "" : "s"}</span>
           </div>
-          <div class="section-subtitle">${esc(weekly.timezone)}</div>
+          <div class="section-subtitle">${weekly.timezone}</div>
         </div>
         <div class="calendar-actions">
           <div class="week-nav">
@@ -2406,38 +2219,37 @@ function renderCalendarArea(
             <button type="button" class="nav-btn nav-today" data-week-nav="today" title="Return to the current week">Today</button>
             <button type="button" class="nav-btn nav-icon" data-week-nav="next" aria-label="Next week" title="Next week">›</button>
           </div>
-          ${canToggleWeekend ? `
+          ${canToggleWeekend ? html`
             <label class="inline-toggle" title="Include Saturday and Sunday in the calendar">
               <input type="checkbox" data-toggle-weekend="1" ${options.include_weekend ? "checked" : ""} />
               Show weekend
             </label>
           ` : ""}
           ${canSelectCalendars ? renderCalendarSelector(options.calendar_catalog, options.selected_calendar_ids) : ""}
-          ${canCreate ? `<button type="button" class="action-btn create-event-btn" data-open-event-editor="create" title="Create a calendar event"><span aria-hidden="true">＋</span> Create</button>` : ""}
+          ${canCreate ? html`<button type="button" class="action-btn create-event-btn" data-open-event-editor="create" title="Create a calendar event"><span aria-hidden="true">＋</span> Create</button>` : ""}
         </div>
       </div>
-      <div class="week-grid" style="--day-count:${weekly.days.length}">${weekly.days.map((day) => renderDay(day, weekly.timezone, canCreate, options.tool_capabilities)).join("")}</div>
+      <div class="week-grid" style="--day-count:${Number(weekly.days.length) || 0}">${weekly.days.map((day) => renderDay(day, weekly.timezone, canCreate, options.tool_capabilities))}</div>
     </section>
   `;
 }
 
-function renderCalendarSelector(catalog: CalendarCatalogItem[], selectedIds: string[]): string {
+function renderCalendarSelector(catalog: CalendarCatalogItem[], selectedIds: string[]): SafeHtml {
   if (!catalog.length) {
-    return "";
+    return html``;
   }
   const options = catalog
     .map((item) => {
       const isChecked = selectedIds.includes(item.id);
-      const role = item.access_role ? `<small>${esc(item.access_role)}</small>` : "";
-      return `
+      const role = item.access_role ? html`<small>${item.access_role}</small>` : "";
+      return html`
         <label class="calendar-option">
-          <input type="checkbox" data-calendar-id="${esc(item.id)}" ${isChecked ? "checked" : ""} />
-          <span>${esc(item.summary)} ${item.primary ? "<small>(primary)</small>" : role}</span>
+          <input type="checkbox" data-calendar-id="${item.id}" ${isChecked ? "checked" : ""} />
+          <span>${item.summary} ${item.primary ? html`<small>(primary)</small>` : role}</span>
         </label>
       `;
-    })
-    .join("");
-  return `
+    });
+  return html`
     <details class="calendar-select">
       <summary class="chip-btn" title="Choose the calendars shown in this view">Calendars</summary>
       <div class="calendar-select-list">${options}</div>
@@ -2450,56 +2262,56 @@ function renderDay(
   timezone: string,
   canCreate: boolean,
   capabilities?: UiToolCapabilities
-): string {
-  const timed = day.timed_events.map((event) => renderEvent(event, timezone, capabilities)).join("");
-  const allDay = day.all_day_events
-    .map((event) => `<div class="all-day-chip" title="${esc(event.title)}">${esc(event.title)}</div>`)
-    .join("");
-  const empty = !timed && !allDay ? `<div class="day-empty">No events</div>` : "";
-  return `
+): SafeHtml {
+  const timed = day.timed_events.map((event) => renderEvent(event, timezone, capabilities));
+  const allDay = day.all_day_events.map(
+    (event) => html`<div class="all-day-chip" title="${event.title}">${event.title}</div>`
+  );
+  const empty = !timed.length && !allDay.length ? html`<div class="day-empty">No events</div>` : "";
+  return html`
     <div class="day-col ${day.is_today ? "today" : ""}">
       <div class="day-head">
         <div class="day-label">
-          <span class="day-label-name">${esc(day.day_label)}</span>
-          <span class="day-label-number">${esc(dayNumber(day.date))}</span>
+          <span class="day-label-name">${day.day_label}</span>
+          <span class="day-label-number">${dayNumber(day.date)}</span>
         </div>
-        ${canCreate ? `<button type="button" class="chip-btn" data-open-event-editor="create" data-seed-date="${esc(day.date)}" title="Create an event on ${esc(day.date)}">Add</button>` : ""}
+        ${canCreate ? html`<button type="button" class="chip-btn" data-open-event-editor="create" data-seed-date="${day.date}" title="Create an event on ${day.date}">Add</button>` : ""}
       </div>
-      ${allDay ? `<div class="day-all-day">${allDay}</div>` : ""}
-      <div class="day-events">${timed || empty}</div>
+      ${allDay.length ? html`<div class="day-all-day">${allDay}</div>` : ""}
+      <div class="day-events">${timed.length ? timed : empty}</div>
     </div>
   `;
 }
 
-function renderEvent(event: WeeklyCalendarEvent, timezone: string, capabilities?: UiToolCapabilities): string {
+function renderEvent(event: WeeklyCalendarEvent, timezone: string, capabilities?: UiToolCapabilities): SafeHtml {
   const eventColor = colorVar(event);
   const metaParts = [event.location || "", event.attendee_count ? `${event.attendee_count} attendees` : "", event.has_conference ? "Meet" : ""]
     .filter(Boolean)
     .join(" \u00b7 ");
 
   const tooltipDetails = [
-    `<span>◷ ${esc(fmtTime(event.start))} – ${esc(fmtTime(event.end))}</span>`,
-    event.location ? `<span>⌖ ${esc(event.location)}</span>` : "",
-    event.attendee_count ? `<span>♙ ${event.attendee_count} guest${event.attendee_count > 1 ? "s" : ""}</span>` : "",
-    event.has_conference ? "<span>↗ Google Meet</span>" : "",
-  ].filter(Boolean).join("");
-  const tooltip = `
+    html`<span>◷ ${fmtTime(event.start)} – ${fmtTime(event.end)}</span>`,
+    event.location ? html`<span>⌖ ${event.location}</span>` : "",
+    event.attendee_count ? html`<span>♙ ${event.attendee_count} guest${event.attendee_count > 1 ? "s" : ""}</span>` : "",
+    event.has_conference ? html`<span>↗ Google Meet</span>` : "",
+  ];
+  const tooltip = html`
     <div class="event-tooltip-head">
       <span class="event-tooltip-color" style="--tooltip-color:var(${eventColor})"></span>
-      <div class="event-tooltip-title">${esc(event.title)}</div>
+      <div class="event-tooltip-title">${event.title}</div>
     </div>
     <div class="event-tooltip-content">
       ${tooltipDetails}
-      ${event.description_snippet ? `<div class="event-tooltip-description">${esc(event.description_snippet)}</div>` : ""}
+      ${event.description_snippet ? html`<div class="event-tooltip-description">${event.description_snippet}</div>` : ""}
     </div>
     <div class="event-tooltip-foot">Click to open event</div>
   `;
 
-  return `
-    <article class="calendar-event" style="--event-color: var(${eventColor})" data-open-event="1" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" role="button" tabindex="0" aria-label="Open event: ${esc(event.title)}">
-      <div class="event-time">${esc(fmtTime(event.start))} - ${esc(fmtTime(event.end))}</div>
-      <div class="event-title">${esc(event.title)}</div>
-      ${metaParts ? `<div class="event-meta">${esc(metaParts)}</div>` : ""}
+  return html`
+    <article class="calendar-event" style="--event-color: var(${eventColor})" data-open-event="1" data-calendar-id="${event.calendar_id || ""}" data-event-id="${event.event_id || ""}" role="button" tabindex="0" aria-label="Open event: ${event.title}">
+      <div class="event-time">${fmtTime(event.start)} - ${fmtTime(event.end)}</div>
+      <div class="event-title">${event.title}</div>
+      ${metaParts ? html`<div class="event-meta">${metaParts}</div>` : ""}
       <div class="event-actions">${renderEventActionChips(event, timezone, capabilities)}</div>
       <div class="event-hover">${tooltip}</div>
     </article>
@@ -2510,53 +2322,52 @@ function renderEventActionChips(
   event: WeeklyCalendarEvent,
   timezone: string,
   capabilities?: UiToolCapabilities
-): string {
-  if (!event.event_id || !event.calendar_id) return "";
+): SafeHtml {
+  if (!event.event_id || !event.calendar_id) return html``;
   const current = event.attendee_response_status || "";
   const canRsvp = capabilities?.can_rsvp ?? false;
   const canReschedule = capabilities?.can_reschedule_event ?? false;
   const canDelete = capabilities?.can_delete_event ?? false;
-  const chip = (status: "accepted" | "tentative" | "declined", label: string) => `
+  const chip = (status: "accepted" | "tentative" | "declined", label: string) => html`
     <button
       type="button"
       class="rsvp-chip ${current === status ? "active" : ""}"
       data-rsvp-status="${status}"
-      data-calendar-id="${esc(event.calendar_id || "")}"
-      data-event-id="${esc(event.event_id || "")}">
+      data-calendar-id="${event.calendar_id || ""}"
+      data-event-id="${event.event_id || ""}">
       ${label}
     </button>
   `;
-  return `
+  return html`
     ${canRsvp ? chip("accepted", "Yes") : ""}
     ${canRsvp ? chip("tentative", "Maybe") : ""}
     ${canRsvp ? chip("declined", "No") : ""}
-    ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" data-event-start="${esc(event.start)}" data-event-end="${esc(event.end)}" data-event-timezone="${esc(timezone)}">+15m</button>` : ""}
-    ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" data-event-start="${esc(event.start)}" data-event-end="${esc(event.end)}" data-event-timezone="${esc(timezone)}">+30m</button>` : ""}
-    ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}" data-event-start="${esc(event.start)}" data-event-end="${esc(event.end)}" data-event-timezone="${esc(timezone)}">+1h</button>` : ""}
-    ${canDelete ? `<button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${esc(event.calendar_id || "")}" data-event-id="${esc(event.event_id || "")}">Cancel</button>` : ""}
+    ${canReschedule ? html`<button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${event.calendar_id || ""}" data-event-id="${event.event_id || ""}" data-event-start="${event.start}" data-event-end="${event.end}" data-event-timezone="${timezone}">+15m</button>` : ""}
+    ${canReschedule ? html`<button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${event.calendar_id || ""}" data-event-id="${event.event_id || ""}" data-event-start="${event.start}" data-event-end="${event.end}" data-event-timezone="${timezone}">+30m</button>` : ""}
+    ${canReschedule ? html`<button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${event.calendar_id || ""}" data-event-id="${event.event_id || ""}" data-event-start="${event.start}" data-event-end="${event.end}" data-event-timezone="${timezone}">+1h</button>` : ""}
+    ${canDelete ? html`<button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${event.calendar_id || ""}" data-event-id="${event.event_id || ""}">Cancel</button>` : ""}
   `;
 }
 
-function renderInboxPanel(messages: InboxMessage[], unreadCount: number): string {
+function renderInboxPanel(messages: InboxMessage[], unreadCount: number): SafeHtml {
   const rows = messages
     .map((msg) => {
       const labels = Array.isArray(msg.label_ids) ? msg.label_ids : [];
       const isUnread = !!msg.is_unread || labels.includes("UNREAD");
       const unreadClass = isUnread ? "unread" : "";
-      return `
-        <div class="inbox-row ${unreadClass}" data-open-email="1" data-message-id="${esc(msg.id || "")}">
-          <div class="avatar mail-avatar">${esc(initials(msg.from || ""))}</div>
+      return html`
+        <div class="inbox-row ${unreadClass}" data-open-email="1" data-message-id="${msg.id || ""}">
+          <div class="avatar mail-avatar">${initials(msg.from || "")}</div>
           <div class="mail-content">
-            <div class="mail-from">${esc((msg.from || "Unknown sender").replace(/<.*?>/g, "").trim())}</div>
-            <div class="mail-subject ${unreadClass}">${esc(msg.subject || "(No subject)")}${msg.snippet ? ` <span>— ${esc(msg.snippet)}</span>` : ""}</div>
+            <div class="mail-from">${(msg.from || "Unknown sender").replace(/<.*?>/g, "").trim()}</div>
+            <div class="mail-subject ${unreadClass}">${msg.subject || "(No subject)"}${msg.snippet ? html` <span>— ${msg.snippet}</span>` : ""}</div>
           </div>
-          <div class="mail-date">${esc(relDate(msg.date))}</div>
+          <div class="mail-date">${relDate(msg.date)}</div>
         </div>
       `;
-    })
-    .join("");
+    });
 
-  return `
+  return html`
     <section class="inbox-shell surface">
       <div class="section-head">
         <div>
@@ -2564,57 +2375,57 @@ function renderInboxPanel(messages: InboxMessage[], unreadCount: number): string
           <div class="section-subtitle">Recent messages</div>
         </div>
       </div>
-      <div class="inbox-list">${rows || `<div class="section-subtitle">No messages</div>`}</div>
+      <div class="inbox-list">${rows.length ? rows : html`<div class="section-subtitle">No messages</div>`}</div>
     </section>
   `;
 }
 
-function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: UiToolCapabilities): string {
-  if (!detail) return "";
+function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: UiToolCapabilities): SafeHtml {
+  if (!detail) return html``;
   const canEdit = capabilities?.can_edit_event ?? false;
   const canRsvp = capabilities?.can_rsvp ?? false;
   const canReschedule = capabilities?.can_reschedule_event ?? false;
   const canDelete = capabilities?.can_delete_event ?? false;
-  const attendees = detail.attendees
-    .map(
-      (attendee) => {
-        const name = attendee.display_name || attendee.email;
-        const role = attendee.organizer ? "Organizer" : attendee.self ? "You" : "Guest";
-        return `
-          <li class="event-attendee">
-            <span class="event-attendee-avatar">${esc(initials(name))}</span>
-            <span class="event-attendee-name">${esc(name)} <span class="event-attendee-status">${esc(role)}</span></span>
-            ${attendee.response_status ? `<span class="event-attendee-status">${esc(attendee.response_status)}</span>` : ""}
-          </li>
-        `;
-      }
-    )
-    .join("");
-  const attachments = (detail.attachments || [])
-    .map((attachment) => {
-      const label = attachment.mime_type ? `${attachment.title} (${attachment.mime_type})` : attachment.title;
-      if (attachment.file_url) {
-        return `
-          <div class="event-attachment">
-            <span class="event-attachment-label">${esc(label)}</span>
-            <button type="button" class="chip-btn" data-open-attachment-url="${esc(attachment.file_url)}">Open</button>
-            <button
-              type="button"
-              class="chip-btn"
-              data-download-attachment-url="${esc(attachment.file_url)}"
-              data-download-attachment-name="${esc(attachment.title)}"
-              data-download-attachment-mime="${esc(attachment.mime_type || "")}">
-              Download
-            </button>
-          </div>
-        `;
-      }
-      return `<div class="event-attachment"><span class="event-attachment-label">${esc(label)}</span></div>`;
-    })
-    .join("");
+  const attendees = detail.attendees.map((attendee) => {
+    const name = attendee.display_name || attendee.email;
+    const role = attendee.organizer ? "Organizer" : attendee.self ? "You" : "Guest";
+    return html`
+      <li class="event-attendee">
+        <span class="event-attendee-avatar">${initials(name)}</span>
+        <span class="event-attendee-name">${name} <span class="event-attendee-status">${role}</span></span>
+        ${attendee.response_status ? html`<span class="event-attendee-status">${attendee.response_status}</span>` : ""}
+      </li>
+    `;
+  });
+  const attachments = (detail.attachments || []).map((attachment) => {
+    const label = attachment.mime_type ? `${attachment.title} (${attachment.mime_type})` : attachment.title;
+    const fileUrl = safeExternalUrl(attachment.file_url, "attachment");
+    if (fileUrl) {
+      return html`
+        <div class="event-attachment">
+          <span class="event-attachment-label">${label}</span>
+          <button type="button" class="chip-btn" data-open-attachment-url="${fileUrl}">Open</button>
+          <button
+            type="button"
+            class="chip-btn"
+            data-download-attachment-url="${fileUrl}"
+            data-download-attachment-name="${attachment.title}"
+            data-download-attachment-mime="${attachment.mime_type || ""}">
+            Download
+          </button>
+        </div>
+      `;
+    }
+    return html`<div class="event-attachment"><span class="event-attachment-label">${label}</span></div>`;
+  });
   const currentResponse = detail.self_response_status || "";
   const description = detail.description?.trim() || "No description.";
-  return `
+  const conferenceLabel = detail.conference_provider || "Join Google Meet";
+  const conferenceUrl = safeExternalUrl(detail.conference_link, "conference");
+  const conference = conferenceUrl
+    ? html`<a href="${conferenceUrl}" data-open-link="conference" target="_blank" rel="noopener noreferrer">${conferenceLabel}</a>`
+    : html`${conferenceLabel}`;
+  return html`
     <div class="overlay" role="dialog" aria-modal="true">
       <section class="panel event-panel" aria-label="Event details">
         <div class="event-toolbar">
@@ -2626,27 +2437,27 @@ function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: 
           <div class="event-subject-line">
             <span class="event-color-dot" aria-hidden="true"></span>
             <div>
-              <h2>${esc(detail.title)}</h2>
-              <div class="event-when">${esc(fmtTime(detail.start))} – ${esc(fmtTime(detail.end))}${detail.timezone ? ` · ${esc(detail.timezone)}` : ""}</div>
+              <h2>${detail.title}</h2>
+              <div class="event-when">${fmtTime(detail.start)} – ${fmtTime(detail.end)}${detail.timezone ? ` · ${detail.timezone}` : ""}</div>
             </div>
           </div>
           <div class="event-command-bar">
-            ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "accepted" ? "active" : ""}" data-rsvp-status="accepted" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Accept</button>` : ""}
-            ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "tentative" ? "active" : ""}" data-rsvp-status="tentative" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Tentative</button>` : ""}
-            ${canRsvp ? `<button type="button" class="rsvp-chip ${currentResponse === "declined" ? "active" : ""}" data-rsvp-status="declined" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Decline</button>` : ""}
-            ${canEdit ? `<button type="button" class="chip-btn" data-open-event-editor="edit" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Edit</button>` : ""}
-            ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+15m</button>` : ""}
-            ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+30m</button>` : ""}
-            ${canReschedule ? `<button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}" data-event-start="${esc(detail.start)}" data-event-end="${esc(detail.end)}" data-event-timezone="${esc(detail.timezone || "UTC")}">+1h</button>` : ""}
-            ${canDelete ? `<button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${esc(detail.calendar_id)}" data-event-id="${esc(detail.event_id)}">Cancel event</button>` : ""}
+            ${canRsvp ? html`<button type="button" class="rsvp-chip ${currentResponse === "accepted" ? "active" : ""}" data-rsvp-status="accepted" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}">Accept</button>` : ""}
+            ${canRsvp ? html`<button type="button" class="rsvp-chip ${currentResponse === "tentative" ? "active" : ""}" data-rsvp-status="tentative" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}">Tentative</button>` : ""}
+            ${canRsvp ? html`<button type="button" class="rsvp-chip ${currentResponse === "declined" ? "active" : ""}" data-rsvp-status="declined" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}">Decline</button>` : ""}
+            ${canEdit ? html`<button type="button" class="chip-btn" data-open-event-editor="edit" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}">Edit</button>` : ""}
+            ${canReschedule ? html`<button type="button" class="chip-btn" data-reschedule-minutes="15" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}" data-event-start="${detail.start}" data-event-end="${detail.end}" data-event-timezone="${detail.timezone || "UTC"}">+15m</button>` : ""}
+            ${canReschedule ? html`<button type="button" class="chip-btn" data-reschedule-minutes="30" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}" data-event-start="${detail.start}" data-event-end="${detail.end}" data-event-timezone="${detail.timezone || "UTC"}">+30m</button>` : ""}
+            ${canReschedule ? html`<button type="button" class="chip-btn" data-reschedule-minutes="60" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}" data-event-start="${detail.start}" data-event-end="${detail.end}" data-event-timezone="${detail.timezone || "UTC"}">+1h</button>` : ""}
+            ${canDelete ? html`<button type="button" class="chip-btn" data-cancel-event="1" data-calendar-id="${detail.calendar_id}" data-event-id="${detail.event_id}">Cancel event</button>` : ""}
           </div>
           <div class="event-info-list">
-            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">◷</span><div><span class="event-info-label">When</span>${esc(fmtTime(detail.start))} – ${esc(fmtTime(detail.end))}</div></div>
-            ${detail.location ? `<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">⌖</span><div><span class="event-info-label">Location</span>${esc(detail.location)}</div></div>` : ""}
-            ${detail.conference_link ? `<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">↗</span><div><span class="event-info-label">Video call</span><a href="${esc(detail.conference_link)}" target="_blank" rel="noreferrer">${esc(detail.conference_provider || "Join Google Meet")}</a></div></div>` : ""}
-            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">≡</span><div><span class="event-info-label">Description</span><div class="event-description">${esc(description)}</div></div></div>
-            ${attachments ? `<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">⌕</span><div><span class="event-info-label">Attachments</span><div class="event-attachments">${attachments}</div></div></div>` : ""}
-            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">♙</span><div><span class="event-info-label">Guests</span><ul class="event-attendee-list">${attendees || "<li>No guests.</li>"}</ul></div></div>
+            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">◷</span><div><span class="event-info-label">When</span>${fmtTime(detail.start)} – ${fmtTime(detail.end)}</div></div>
+            ${detail.location ? html`<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">⌖</span><div><span class="event-info-label">Location</span>${detail.location}</div></div>` : ""}
+            ${detail.conference_link ? html`<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">↗</span><div><span class="event-info-label">Video call</span>${conference}</div></div>` : ""}
+            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">≡</span><div><span class="event-info-label">Description</span><div class="event-description">${description}</div></div></div>
+            ${attachments.length ? html`<div class="event-info-row"><span class="event-info-icon" aria-hidden="true">⌕</span><div><span class="event-info-label">Attachments</span><div class="event-attachments">${attachments}</div></div></div>` : ""}
+            <div class="event-info-row"><span class="event-info-icon" aria-hidden="true">♙</span><div><span class="event-info-label">Guests</span><ul class="event-attendee-list">${attendees.length ? attendees : html`<li>No guests.</li>`}</ul></div></div>
           </div>
         </div>
       </section>
@@ -2658,32 +2469,30 @@ function renderEventEditorPanel(
   draft: EventEditorDraft | undefined,
   calendars: CalendarCatalogItem[],
   fallbackTimezone: string
-): string {
-  if (!draft) return "";
+): SafeHtml {
+  if (!draft) return html``;
   const calendarOptions = calendars.length
-    ? calendars
-        .map(
-          (item) =>
-            `<option value="${esc(item.id)}" ${item.id === draft.calendar_id ? "selected" : ""}>${esc(item.summary)}</option>`
-        )
-        .join("")
-    : `<option value="${esc(draft.calendar_id)}">${esc(draft.calendar_id)}</option>`;
+    ? calendars.map(
+        (item) =>
+          html`<option value="${item.id}" ${item.id === draft.calendar_id ? "selected" : ""}>${item.summary}</option>`
+      )
+    : html`<option value="${draft.calendar_id}">${draft.calendar_id}</option>`;
   const title = draft.mode === "create" ? "Create event" : "Edit event";
 
-  return `
+  return html`
     <div class="overlay" role="dialog" aria-modal="true">
       <section class="panel">
         <div class="panel-head">
           <div>
-            <div class="panel-title">${esc(title)}</div>
+            <div class="panel-title">${title}</div>
             <div class="panel-sub">Self-service calendar action</div>
           </div>
           <button type="button" class="nav-btn" data-close-event-editor="1">Close</button>
         </div>
         <div class="panel-body">
           <form class="event-editor-form" data-event-editor-form="1">
-            <input type="hidden" name="mode" value="${esc(draft.mode)}" />
-            <input type="hidden" name="event_id" value="${esc(draft.event_id || "")}" />
+            <input type="hidden" name="mode" value="${draft.mode}" />
+            <input type="hidden" name="event_id" value="${draft.event_id || ""}" />
             <div class="editor-row">
               <label class="editor-field">
                 <span>Calendar</span>
@@ -2693,34 +2502,34 @@ function renderEventEditorPanel(
               </label>
               <label class="editor-field">
                 <span>Timezone</span>
-                <input name="timezone" value="${esc(draft.timezone || fallbackTimezone)}" />
+                <input name="timezone" value="${draft.timezone || fallbackTimezone}" />
               </label>
             </div>
             <label class="editor-field">
               <span>Title</span>
-              <input name="summary" value="${esc(draft.summary)}" required />
+              <input name="summary" value="${draft.summary}" required />
             </label>
             <div class="editor-row">
               <label class="editor-field">
                 <span>Start</span>
-                <input type="datetime-local" name="start_local" value="${esc(draft.start_local)}" required />
+                <input type="datetime-local" name="start_local" value="${draft.start_local}" required />
               </label>
               <label class="editor-field">
                 <span>End</span>
-                <input type="datetime-local" name="end_local" value="${esc(draft.end_local)}" required />
+                <input type="datetime-local" name="end_local" value="${draft.end_local}" required />
               </label>
             </div>
             <label class="editor-field">
               <span>Location</span>
-              <input name="location" value="${esc(draft.location || "")}" />
+              <input name="location" value="${draft.location || ""}" />
             </label>
             <label class="editor-field">
               <span>Attendees (comma-separated emails)</span>
-              <input name="attendees_csv" value="${esc(draft.attendees_csv || "")}" />
+              <input name="attendees_csv" value="${draft.attendees_csv || ""}" />
             </label>
             <label class="editor-field">
               <span>Description</span>
-              <textarea name="description">${esc(draft.description || "")}</textarea>
+              <textarea name="description">${draft.description || ""}</textarea>
             </label>
             <label class="inline-toggle">
               <input
@@ -2741,8 +2550,8 @@ function renderEventEditorPanel(
   `;
 }
 
-function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: UiToolCapabilities): string {
-  if (!detail) return "";
+function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: UiToolCapabilities): SafeHtml {
+  if (!detail) return html``;
   const bodyHtml = renderEmailBody(detail);
   const bodyMode = detail.html_body?.trim()
     ? "HTML"
@@ -2762,36 +2571,34 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
   const canSpam = capabilities?.can_mark_email_spam ?? false;
   const canNotSpam = capabilities?.can_mark_email_not_spam ?? false;
   const statusChips = [
-    isUnread ? `<span class="status-chip">Unread</span>` : `<span class="status-chip">Read</span>`,
-    inInbox ? `<span class="status-chip">Inbox</span>` : "",
-    inTrash ? `<span class="status-chip">Trash</span>` : "",
-    inSpam ? `<span class="status-chip">Spam</span>` : "",
-  ].filter(Boolean).join("");
+    isUnread ? html`<span class="status-chip">Unread</span>` : html`<span class="status-chip">Read</span>`,
+    inInbox ? html`<span class="status-chip">Inbox</span>` : "",
+    inTrash ? html`<span class="status-chip">Trash</span>` : "",
+    inSpam ? html`<span class="status-chip">Spam</span>` : "",
+  ];
   const sender = detail.from_value || "Unknown sender";
   const senderInitials = initials(sender);
-  const attachments = detail.attachments
-    .map((attachment) => {
-      const label = attachment.mime_type ? `${attachment.filename} (${attachment.mime_type})` : attachment.filename;
-      return `
-        <li>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-            <span>${esc(label)}</span>
-            <button
-              type="button"
-              class="email-chip"
-              data-email-attachment-download="1"
-              data-message-id="${esc(detail.message_id)}"
-              data-attachment-id="${esc(attachment.attachment_id)}"
-              data-filename="${esc(attachment.filename)}"
-              data-mime-type="${esc(attachment.mime_type || "")}">
-              Download
-            </button>
-          </div>
-        </li>
-      `;
-    })
-    .join("");
-  return `
+  const attachments = detail.attachments.map((attachment) => {
+    const label = attachment.mime_type ? `${attachment.filename} (${attachment.mime_type})` : attachment.filename;
+    return html`
+      <li>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <span>${label}</span>
+          <button
+            type="button"
+            class="email-chip"
+            data-email-attachment-download="1"
+            data-message-id="${detail.message_id}"
+            data-attachment-id="${attachment.attachment_id}"
+            data-filename="${attachment.filename}"
+            data-mime-type="${attachment.mime_type || ""}">
+            Download
+          </button>
+        </div>
+      </li>
+    `;
+  });
+  return html`
     <div class="overlay" role="dialog" aria-modal="true">
       <section class="panel email-panel">
         <div class="email-toolbar">
@@ -2801,18 +2608,18 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
         </div>
         <div class="panel-body email-panel-body">
           <div class="email-subject-line">
-            <h2>${esc(detail.subject || "(No subject)")}</h2>
+            <h2>${detail.subject || "(No subject)"}</h2>
             <div class="email-statuses">${statusChips}</div>
           </div>
           <div class="email-sender-row">
-            <div class="email-sender-avatar">${esc(senderInitials)}</div>
+            <div class="email-sender-avatar">${senderInitials}</div>
             <div class="email-sender-identities">
-              <div><strong>${esc(sender)}</strong> <span>to ${esc(detail.to || "me")}</span></div>
-              ${detail.cc ? `<div class="email-recipient-extra">Cc ${esc(detail.cc)}</div>` : ""}
+              <div><strong>${sender}</strong> <span>to ${detail.to || "me"}</span></div>
+              ${detail.cc ? html`<div class="email-recipient-extra">Cc ${detail.cc}</div>` : ""}
             </div>
-            <time>${esc(detail.date || "")}</time>
+            <time>${detail.date || ""}</time>
           </div>
-          ${detail.attachments.length ? `<div class="email-attachments"><strong>Attachments</strong><ul class="attachment-list">${attachments}</ul></div>` : ""}
+          ${detail.attachments.length ? html`<div class="email-attachments"><strong>Attachments</strong><ul class="attachment-list">${attachments}</ul></div>` : ""}
           <div class="detail-block email-body-block gmail-message-surface">
             <div class="email-body-header">
               <strong>Message</strong>
@@ -2822,14 +2629,14 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
           </div>
           <div class="email-footer-actions">
             <div class="email-actions">
-              ${canRead ? `<button type="button" class="email-chip ${!isUnread ? "active" : ""}" data-email-action="mark_read" data-message-id="${esc(detail.message_id)}">Mark read</button>` : ""}
-              ${canUnread ? `<button type="button" class="email-chip ${isUnread ? "active" : ""}" data-email-action="mark_unread" data-message-id="${esc(detail.message_id)}">Mark unread</button>` : ""}
-              ${canArchive ? `<button type="button" class="email-chip ${!inInbox ? "active" : ""}" data-email-action="archive" data-message-id="${esc(detail.message_id)}">Archive</button>` : ""}
-              ${canTrash ? `<button type="button" class="email-chip ${inTrash ? "active" : ""}" data-email-action="trash" data-message-id="${esc(detail.message_id)}">Trash</button>` : ""}
-              ${canUntrash && inTrash ? `<button type="button" class="email-chip" data-email-action="untrash" data-message-id="${esc(detail.message_id)}">Restore</button>` : ""}
-              ${canSpam ? `<button type="button" class="email-chip ${inSpam ? "active" : ""}" data-email-action="spam" data-message-id="${esc(detail.message_id)}">Spam</button>` : ""}
-              ${canNotSpam && inSpam ? `<button type="button" class="email-chip" data-email-action="not_spam" data-message-id="${esc(detail.message_id)}">Not spam</button>` : ""}
-              <button type="button" class="email-chip" data-action-msg="${esc(`Reply to ${detail.from_value} about: ${detail.subject}`)}">Reply in chat</button>
+              ${canRead ? html`<button type="button" class="email-chip ${!isUnread ? "active" : ""}" data-email-action="mark_read" data-message-id="${detail.message_id}">Mark read</button>` : ""}
+              ${canUnread ? html`<button type="button" class="email-chip ${isUnread ? "active" : ""}" data-email-action="mark_unread" data-message-id="${detail.message_id}">Mark unread</button>` : ""}
+              ${canArchive ? html`<button type="button" class="email-chip ${!inInbox ? "active" : ""}" data-email-action="archive" data-message-id="${detail.message_id}">Archive</button>` : ""}
+              ${canTrash ? html`<button type="button" class="email-chip ${inTrash ? "active" : ""}" data-email-action="trash" data-message-id="${detail.message_id}">Trash</button>` : ""}
+              ${canUntrash && inTrash ? html`<button type="button" class="email-chip" data-email-action="untrash" data-message-id="${detail.message_id}">Restore</button>` : ""}
+              ${canSpam ? html`<button type="button" class="email-chip ${inSpam ? "active" : ""}" data-email-action="spam" data-message-id="${detail.message_id}">Spam</button>` : ""}
+              ${canNotSpam && inSpam ? html`<button type="button" class="email-chip" data-email-action="not_spam" data-message-id="${detail.message_id}">Not spam</button>` : ""}
+              <button type="button" class="email-chip" data-action-msg="${`Reply to ${detail.from_value} about: ${detail.subject}`}">Reply in chat</button>
             </div>
           </div>
         </div>
