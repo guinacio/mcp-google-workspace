@@ -135,6 +135,20 @@ $env:ENABLE_APPS_DASHBOARD="true"
 uv run python -m mcp_google_workspace
 ```
 
+### Local stdio trust boundary
+
+A local stdio server (including the MCPB bundle) serves exactly one trusted user: the
+person running it. There is no bearer token, so every request runs as one explicit
+trusted-local principal (`MCP_LOCAL_PRINCIPAL`, default `local-user`). That principal owns
+the Google grant, the picker uploads, and the dashboard views of this process.
+
+Dashboard view handles and upload IDs are still unguessable (256-bit and 192-bit random
+values) and are checked on every call, but over stdio they only keep one view's state
+apart from another view's. They are **not** multitenant isolation: anything that can talk
+to this stdio process already acts as that user. Serve more than one user only through
+the authenticated Streamable HTTP entrypoint, where every handle and upload is bound to
+the verified `(issuer, subject)` of the bearer token.
+
 ## MCP Bundle (MCPB)
 
 This repository now includes a native `uv`-based MCP Bundle manifest and packaging assets.
@@ -436,7 +450,7 @@ Admission control is principal- and tool-cost-aware:
 
 Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, or recipient lists.
 
-For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, approval tokens, and upload metadata. Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. Task-enabled tools run through the MCP Tasks extension (`io.modelcontextprotocol/tasks`), registered once on the root server by one shared factory for HTTP, stdio, and workers: the queue is `FASTMCP_DOCKET_URL` when set, otherwise `MCP_REDIS_URL` (except in the local stdio bundle), otherwise an in-process `memory://` queue; the queue name defaults to `mcp-google-workspace` (`FASTMCP_DOCKET_NAME` overrides it). Set the same `FASTMCP_TASKS_ENCRYPTION_KEY` on every server and worker so queued caller-credential snapshots are encrypted (tool arguments and results are not). Additional workers run with `uv run mcp-google-workspace-worker` against the same Redis queue.
+For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, approval tokens, upload metadata, and dashboard view state (encrypted with the same key ring). Dashboard views and uploads are addressed by server-issued handles bound to the authenticated principal, so any replica can serve any request for them. Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. Task-enabled tools run through the MCP Tasks extension (`io.modelcontextprotocol/tasks`), registered once on the root server by one shared factory for HTTP, stdio, and workers: the queue is `FASTMCP_DOCKET_URL` when set, otherwise `MCP_REDIS_URL` (except in the local stdio bundle), otherwise an in-process `memory://` queue; the queue name defaults to `mcp-google-workspace` (`FASTMCP_DOCKET_NAME` overrides it). Set the same `FASTMCP_TASKS_ENCRYPTION_KEY` on every server and worker so queued caller-credential snapshots are encrypted (tool arguments and results are not). Additional workers run with `uv run mcp-google-workspace-worker` against the same Redis queue.
 
 High-impact reversible writes use `prepare_workspace_action` and `commit_workspace_action`. The encrypted one-time token is principal-bound, argument-bound, expires after five minutes, and returns an impact preview before commit. Stable `resource` handles (`gdrive:///...`, `gmail-message:///...`, and related schemes) are included where applicable and can be refreshed through `resolve_workspace_resource`.
 
@@ -462,7 +476,7 @@ Typical flow:
 - Drive `upload_file` and `update_file_content`
 - Gemini `edit_image`, `describe_video`, and `analyze_audio`
 
-Local/stdio uploads are session-scoped in memory. A single remote instance can use encrypted filesystem objects plus SQLite metadata through `MCP_UPLOAD_DB`. Multi-worker production uses Redis metadata and S3-compatible encrypted object storage by configuring `MCP_REDIS_URL` and `MCP_UPLOAD_S3_BUCKET` (plus optional `MCP_UPLOAD_S3_ENDPOINT` and `MCP_UPLOAD_S3_PREFIX`). Remote files use opaque handles, expire after one hour, and have a 250 MiB per-principal aggregate quota by default. Configure `MCP_UPLOAD_TTL_SECONDS` and `MCP_UPLOAD_QUOTA_BYTES` as needed. Uploads are MIME-sniffed, archive expansion is bounded, checksums are verified, and `MCP_REQUIRE_MALWARE_SCAN=true` enforces ClamAV through `MCP_CLAMAV_HOST`/`MCP_CLAMAV_PORT`. Raw host paths are absent from the remote catalog and rejected at runtime.
+Local/stdio uploads live in process memory, scoped to the trusted-local principal (not to an MCP connection, so they survive across requests) and use the same `upl_...` handles, TTL, quota, and content checks as remote uploads; see [Local stdio trust boundary](#local-stdio-trust-boundary). A single remote instance can use encrypted filesystem objects plus SQLite metadata through `MCP_UPLOAD_DB`. Multi-worker production uses Redis metadata and S3-compatible encrypted object storage by configuring `MCP_REDIS_URL` and `MCP_UPLOAD_S3_BUCKET` (plus optional `MCP_UPLOAD_S3_ENDPOINT` and `MCP_UPLOAD_S3_PREFIX`). Uploads use opaque handles, expire after one hour, and have a 250 MiB per-principal aggregate quota by default. Configure `MCP_UPLOAD_TTL_SECONDS` and `MCP_UPLOAD_QUOTA_BYTES` as needed. Uploads are MIME-sniffed, archive expansion is bounded, checksums are verified, and `MCP_REQUIRE_MALWARE_SCAN=true` enforces ClamAV through `MCP_CLAMAV_HOST`/`MCP_CLAMAV_PORT`. Raw host paths are absent from the remote catalog and rejected at runtime.
 
 Use `files_delete_file` to remove an upload before its TTL expires.
 Use `files_list_files_page` with `limit` and `cursor` when a principal has many uploads.
@@ -508,7 +522,12 @@ The UI is a TypeScript web component that communicates with the server via PostM
 - An inbox summary with email detail drill-down
 - Scheduling action buttons (RSVP, reschedule, cancel)
 
-Session-scoped state (current view, anchor date, selected calendars, inbox query) is stored server-side per session and managed through `apps_get_state` / `apps_set_state` / `apps_patch_state`.
+Each dashboard view has its own server-side state (current view, anchor date, selected calendars, inbox query, weekend visibility), addressed by a server-issued view handle:
+
+- `apps_get_dashboard` or `apps_get_weekly_calendar_view` called without `view_handle` opens a new view. The result carries `{handle, revision, expires_at, ttl_seconds}` in `_meta["mcp-google-workspace/view"]` (what the Apps UI reads) and as `view` in the structured content. Pass `view_handle` to reopen an existing view.
+- `apps_get_state`, `apps_set_state`, `apps_patch_state`, `apps_next_range`, `apps_prev_range`, and `apps_today` require `view_handle`. Writes accept `expected_revision`; if the view changed since that revision nothing is written and the call returns a `view_state_conflict` tool error with the current state (the UI refetches). Without it, the change is applied atomically on top of the latest state.
+- Unknown, expired, malformed, or another user's handles return a `view_handle_invalid` tool error; the UI then opens one fresh view and retries once.
+- Views expire after `MCP_APP_VIEW_TTL_SECONDS` of inactivity (default 86400, sliding). State lives in process memory over stdio and in Redis (`MCP_REDIS_URL`) for the HTTP fleet. Each view is isolated from every other view, including other views of the same user.
 
 **Requires:** MCP client with App/iframe rendering support.
 

@@ -35,7 +35,9 @@ The MCPB manifest exposes these settings through the host UI and passes them int
 - `credentials_dir` -> `MCP_CREDENTIALS_DIR`
 - `user_token_dir` -> `MCP_USER_TOKEN_DIR`
 - `token_encryption_key` -> `MCP_TOKEN_ENCRYPTION_KEY`
-- `local_principal` -> `MCP_LOCAL_PRINCIPAL`
+- `local_principal` -> `MCP_LOCAL_PRINCIPAL` (the one trusted-local principal that owns this
+  process's Google grant, picker uploads, and dashboard views; it is a single-user trust
+  boundary, not multitenant isolation — see "Local stdio trust boundary" in the README)
 - `enable_apps_dashboard` -> `ENABLE_APPS_DASHBOARD`
 - `enable_chat` -> `ENABLE_CHAT`
 - `enable_gemini` -> `ENABLE_GEMINI`
