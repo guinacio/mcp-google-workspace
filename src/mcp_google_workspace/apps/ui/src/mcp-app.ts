@@ -1,3 +1,5 @@
+import type { App, McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { THEME_CSS, applyTheme } from "./theme";
 import { RENDER_CSS, renderLoading, renderDashboard, setActionHandler } from "./render";
 import type { UiAction, RenderOptions } from "./render";
@@ -33,10 +35,6 @@ type ToolOperation =
   | "markEmailNotSpam";
 
 type ToolRegistry = Partial<Record<ToolOperation, string>>;
-
-type RequestCapable = {
-  request: (request: { method: string; params?: Record<string, unknown> }) => Promise<unknown>;
-};
 
 type ServerToolCapable = {
   callServerTool: (args: { name: string; arguments?: Record<string, unknown> }) => Promise<unknown>;
@@ -238,43 +236,7 @@ async function initMcpMode() {
     const app = new App(
       { name: "Workspace Dashboard", version: "1.0.0" },
       {}
-    ) as unknown as RequestCapable &
-      ServerToolCapable & {
-        connect: () => Promise<void>;
-        openLink: (params: { url: string }) => Promise<{ isError?: boolean; content?: unknown[] }>;
-        downloadFile: (params: {
-          contents: Array<
-            | {
-                type: "resource_link";
-                name: string;
-                uri: string;
-                mimeType?: string;
-                title?: string;
-                _meta?: Record<string, unknown>;
-              }
-            | {
-                type: "resource";
-                resource: {
-                  uri: string;
-                  mimeType?: string;
-                  text?: string;
-                  blob?: string;
-                  _meta?: Record<string, unknown>;
-                };
-                _meta?: Record<string, unknown>;
-              }
-          >;
-        }) => Promise<{ isError?: boolean; content?: unknown[] }>;
-        ontoolresult: ((result: unknown) => void) | null;
-        onhostcontextchanged:
-          | ((ctx: {
-              theme?: "dark" | "light";
-              styles?: { variables?: Record<string, string>; css?: { fonts?: string } };
-              safeAreaInsets?: { top: number; right: number; bottom: number; left: number };
-            }) => void)
-          | null;
-        onteardown: (() => Promise<Record<string, unknown>>) | null;
-      };
+    );
 
     const uiSessionId = getOrCreateSessionId();
     const makeIdempotencyKey = (prefix: string) =>
@@ -1071,19 +1033,22 @@ async function initMcpMode() {
       }
     };
 
-    app.onhostcontextchanged = (ctx) => {
+    const applyHostContext = (ctx: McpUiHostContext | undefined) => {
+      if (!ctx) return;
       if (ctx.theme) applyDocumentTheme(ctx.theme);
-      if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables as any);
+      if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
       if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
       if (ctx.safeAreaInsets) {
         const { top, right, bottom, left } = ctx.safeAreaInsets;
         document.body.style.padding = `${top}px ${right}px ${bottom}px ${left}px`;
       }
     };
+    app.onhostcontextchanged = applyHostContext;
 
     app.onteardown = async () => ({});
 
     await app.connect();
+    applyHostContext(app.getHostContext());
     toolRegistry = await discoverToolRegistry(app);
     currentData.tool_capabilities = computeToolCapabilities(toolRegistry);
     renderOptions.tool_capabilities = currentData.tool_capabilities;
@@ -1607,43 +1572,32 @@ function normalizeDashboardData(raw: unknown): DashboardData | null {
   return null;
 }
 
-async function discoverToolRegistry(app: RequestCapable): Promise<ToolRegistry> {
+async function discoverToolRegistry(app: Pick<App, "request">): Promise<ToolRegistry> {
   const names = new Set<string>();
   let cursor: string | undefined;
 
-  for (let page = 0; page < 5; page += 1) {
-    const params: Record<string, unknown> = {};
-    if (cursor) {
-      params.cursor = cursor;
-    }
-    const result = await app.request({
-      method: "tools/list",
-      params,
-    });
-    const payload = extractObjectPayload(result);
-    const tools = Array.isArray(payload?.tools) ? payload.tools : [];
-    for (const tool of tools) {
-      if (tool && typeof tool === "object" && typeof (tool as { name?: unknown }).name === "string") {
-        names.add((tool as { name: string }).name);
+  try {
+    for (let page = 0; page < 5; page += 1) {
+      const result = await app.request(
+        { method: "tools/list", params: cursor ? { cursor } : {} },
+        ListToolsResultSchema,
+      );
+      for (const tool of result.tools) {
+        names.add(tool.name);
       }
+      if (!result.nextCursor) break;
+      cursor = result.nextCursor;
     }
-    const nextCursor =
-      typeof payload?.nextCursor === "string"
-        ? payload.nextCursor
-        : typeof payload?.next_cursor === "string"
-          ? payload.next_cursor
-          : undefined;
-    if (!nextCursor) {
-      break;
-    }
-    cursor = nextCursor;
+  } catch (err) {
+    // Discovery is optional: AppBridge hosts may only forward tools/call.
+    console.warn("Tool discovery unavailable; using known Workspace tool names:", err);
   }
 
   const registry: ToolRegistry = {};
   for (const [operation, candidates] of Object.entries(TOOL_CANDIDATES) as Array<
     [ToolOperation, string[]]
   >) {
-    registry[operation] = candidates.find((candidate) => names.has(candidate));
+    registry[operation] = candidates.find((candidate) => names.has(candidate)) ?? candidates[0];
   }
   return registry;
 }

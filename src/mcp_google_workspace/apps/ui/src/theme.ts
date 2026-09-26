@@ -3,24 +3,24 @@ export const THEME_CSS = `
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --md-sys-color-primary: #8ab4f8;
-  --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #174ea6;
-  --md-sys-color-on-primary-container: #d2e3fc;
-  --md-sys-color-secondary: #c4c7c5;
-  --md-sys-color-on-secondary: #202124;
-  --md-sys-color-surface: #202124;
-  --md-sys-color-surface-container: #292a2d;
-  --md-sys-color-surface-container-high: #303134;
-  --md-sys-color-surface-container-highest: #3c4043;
-  --md-sys-color-surface-variant: #3c4043;
-  --md-sys-color-on-surface: #e8eaed;
-  --md-sys-color-on-surface-variant: #bdc1c6;
-  --md-sys-color-outline: #9aa0a6;
-  --md-sys-color-outline-variant: #5f6368;
-  --md-sys-color-error: #f28b82;
-  --workspace-tint: #263b5a;
-  --workspace-header: #292a2d;
+  --md-sys-color-primary: var(--color-text-info, #8ab4f8);
+  --md-sys-color-on-primary: var(--color-text-inverse, #ffffff);
+  --md-sys-color-primary-container: var(--color-background-info, #174ea6);
+  --md-sys-color-on-primary-container: var(--color-text-info, #d2e3fc);
+  --md-sys-color-secondary: var(--color-text-secondary, #c4c7c5);
+  --md-sys-color-on-secondary: var(--color-text-inverse, #202124);
+  --md-sys-color-surface: var(--color-background-primary, #202124);
+  --md-sys-color-surface-container: var(--color-background-secondary, #292a2d);
+  --md-sys-color-surface-container-high: var(--color-background-tertiary, #303134);
+  --md-sys-color-surface-container-highest: var(--color-background-tertiary, #3c4043);
+  --md-sys-color-surface-variant: var(--color-background-tertiary, #3c4043);
+  --md-sys-color-on-surface: var(--color-text-primary, #e8eaed);
+  --md-sys-color-on-surface-variant: var(--color-text-secondary, #bdc1c6);
+  --md-sys-color-outline: var(--color-border-primary, #9aa0a6);
+  --md-sys-color-outline-variant: var(--color-border-secondary, #5f6368);
+  --md-sys-color-error: var(--color-text-danger, #f28b82);
+  --workspace-tint: var(--color-background-info, #263b5a);
+  --workspace-header: var(--color-background-secondary, #292a2d);
 
   --accent-red: #c45a5a;
   --accent-amber: #d4a054;
@@ -50,24 +50,24 @@ export const THEME_CSS = `
 
 [data-theme="light"] {
   color-scheme: light;
-  --md-sys-color-primary: #1a73e8;
-  --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #d2e3fc;
-  --md-sys-color-on-primary-container: #174ea6;
-  --md-sys-color-secondary: #5f6368;
-  --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-surface: #f8fafd;
-  --md-sys-color-surface-container: #ffffff;
-  --md-sys-color-surface-container-high: #f1f3f4;
-  --md-sys-color-surface-container-highest: #e8eaed;
-  --md-sys-color-surface-variant: #f1f3f4;
-  --md-sys-color-on-surface: #202124;
-  --md-sys-color-on-surface-variant: #5f6368;
-  --md-sys-color-outline: #80868b;
-  --md-sys-color-outline-variant: #dadce0;
-  --md-sys-color-error: #d93025;
-  --workspace-tint: #e8f0fe;
-  --workspace-header: #ffffff;
+  --md-sys-color-primary: var(--color-text-info, #1a73e8);
+  --md-sys-color-on-primary: var(--color-text-inverse, #ffffff);
+  --md-sys-color-primary-container: var(--color-background-info, #d2e3fc);
+  --md-sys-color-on-primary-container: var(--color-text-info, #174ea6);
+  --md-sys-color-secondary: var(--color-text-secondary, #5f6368);
+  --md-sys-color-on-secondary: var(--color-text-inverse, #ffffff);
+  --md-sys-color-surface: var(--color-background-primary, #f8fafd);
+  --md-sys-color-surface-container: var(--color-background-secondary, #ffffff);
+  --md-sys-color-surface-container-high: var(--color-background-tertiary, #f1f3f4);
+  --md-sys-color-surface-container-highest: var(--color-background-tertiary, #e8eaed);
+  --md-sys-color-surface-variant: var(--color-background-tertiary, #f1f3f4);
+  --md-sys-color-on-surface: var(--color-text-primary, #202124);
+  --md-sys-color-on-surface-variant: var(--color-text-secondary, #5f6368);
+  --md-sys-color-outline: var(--color-border-primary, #80868b);
+  --md-sys-color-outline-variant: var(--color-border-secondary, #dadce0);
+  --md-sys-color-error: var(--color-text-danger, #d93025);
+  --workspace-tint: var(--color-background-info, #e8f0fe);
+  --workspace-header: var(--color-background-secondary, #ffffff);
 
   --accent-red: #b04040;
   --accent-amber: #b88030;
@@ -104,7 +104,7 @@ body {
 body {
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
-  font-family: "Google Sans", "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans, "Google Sans", "Roboto", "Segoe UI", system-ui, -apple-system, sans-serif);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;

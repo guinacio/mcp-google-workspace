@@ -44,6 +44,12 @@ jobs:
       - name: Build MCP Apps UI
         working-directory: src/mcp_google_workspace/apps/ui
         run: npm run build
+      - name: Install browser for MCP Apps tests
+        working-directory: src/mcp_google_workspace/apps/ui
+        run: npx playwright install --with-deps chromium
+      - name: Test MCP Apps host integration
+        working-directory: src/mcp_google_workspace/apps/ui
+        run: npm test
       - name: Verify generated UI is current
         run: git diff --exit-code -- src/mcp_google_workspace/apps/ui/dist/index.html
       - name: Build MCPB from clean locked dependencies

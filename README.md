@@ -20,7 +20,7 @@ Production-oriented Google Workspace MCP package with:
 
 - Python 3.12+
 - UV package manager
-- Node.js 18+ and npm (required for MCP Apps UI in `src/mcp_google_workspace/apps/ui`)
+- Node.js 20+ and npm (required for MCP Apps UI in `src/mcp_google_workspace/apps/ui`)
 - Google Cloud OAuth desktop credentials (`credentials.json`)
 - Google APIs enabled in your Google Cloud project: Gmail, Calendar, Drive, Sheets, Docs, Tasks, People, Forms, and Slides
 - Optional APIs when enabling feature-flagged integrations: Google Keep, Google Chat, and Google Meet
@@ -502,7 +502,7 @@ Drive, Calendar, and Gemini Drive-media downloads stream through bounded tempora
 
 ### MCP Apps (UI Dashboard)
 
-When `ENABLE_APPS_DASHBOARD=true`, the `apps_get_dashboard` and `apps_get_weekly_calendar_view` tools carry an `_meta.ui.resourceUri` annotation pointing to `ui://apps/dashboard-ui`. MCP clients that support the Apps rendering protocol (e.g. Claude Desktop) will embed an interactive workspace dashboard UI alongside the tool response.
+When `ENABLE_APPS_DASHBOARD=true`, the `apps_get_dashboard` and `apps_get_weekly_calendar_view` tools carry `_meta.ui.resourceUri` metadata pointing to `ui://apps/dashboard-ui` (with `ui/resourceUri` retained for older hosts). MCP clients that support the Apps rendering protocol (e.g. Claude Desktop) will embed an interactive workspace dashboard UI alongside the tool response. The dashboard applies the host's initial theme, colors, and fonts, and uses known Workspace tool names when the host does not support `tools/list`.
 
 The UI is a TypeScript web component that communicates with the server via PostMessage. It renders:
 
@@ -632,6 +632,18 @@ Replace `c:/path/to/mcp-google-workspace` with your local repo path.
 ```powershell
 uv run pytest -q
 ```
+
+Dashboard browser regression tests (from `src/mcp_google_workspace/apps/ui`):
+
+```powershell
+npm ci
+npx playwright install chromium
+npm run build
+npm test
+```
+
+These tests embed the generated UI bundle in an AppBridge host with fixture data;
+Google credentials are not required.
 
 Apps smoke test:
 

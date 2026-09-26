@@ -29,11 +29,6 @@ async def _list_server_tools(server):
     return {tool.name: tool for tool in tools}
 
 
-def _meta(tool) -> dict | None:
-    annotations = tool.annotations
-    assert annotations is not None
-    return annotations._meta
-
 def test_workspace_tool_catalog_has_strong_metadata() -> None:
     tools = anyio.run(_list_server_tools, workspace_mcp)
 
@@ -305,4 +300,8 @@ def test_apps_tools_preserve_ui_metadata_and_local_hints() -> None:
     assert tools["set_state"].annotations.openWorldHint is False
     assert tools["set_state"].annotations.idempotentHint is True
     assert "respond_to_event" not in tools
-    assert _meta(tools["get_dashboard"]) == {"ui": {"resourceUri": "ui://apps/dashboard-ui"}}
+    for name in ("get_dashboard", "get_weekly_calendar_view"):
+        assert tools[name].meta == {
+            "ui": {"resourceUri": "ui://apps/dashboard-ui"},
+            "ui/resourceUri": "ui://apps/dashboard-ui",
+        }

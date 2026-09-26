@@ -30,6 +30,10 @@ src/credentials/credentials.json
 src/credentials/token.json
 src/mcp_google_workspace/apps/ui/node_modules/
 src/mcp_google_workspace/apps/ui/src/
+src/mcp_google_workspace/apps/ui/tests/
+src/mcp_google_workspace/apps/ui/test-results/
+src/mcp_google_workspace/apps/ui/playwright-report/
+src/mcp_google_workspace/apps/ui/playwright.config.ts
 src/mcp_google_workspace/apps/ui/package-lock.json
 src/mcp_google_workspace/apps/ui/package.json
 src/mcp_google_workspace/apps/ui/tsconfig.json
