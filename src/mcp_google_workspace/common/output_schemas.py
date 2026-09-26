@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
+import copy
 import inspect
 import textwrap
 from types import UnionType
@@ -13,8 +14,8 @@ from typing import Annotated, Any, Union, get_args, get_origin
 _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
     "prepare_workspace_action": ("status", "commit_token", "expires_at", "impact", "next_action"),
     "commit_workspace_action": ("status", "tool", "result"),
-    "get_dashboard": ("title", "generated_at_utc", "state", "sections", "warnings", "section_errors", "weekly_calendar"),
-    "get_weekly_calendar_view": ("state", "week_start", "week_end", "timezone", "total_events", "days", "fallback_text"),
+    "get_dashboard": ("title", "generated_at_utc", "state", "sections", "warnings", "section_errors", "weekly_calendar", "view"),
+    "get_weekly_calendar_view": ("state", "week_start", "week_end", "timezone", "total_events", "days", "fallback_text", "view"),
     "get_event_detail": (
         "event_id", "calendar_id", "title", "start", "end", "timezone", "status",
         "location", "description", "conference_link", "conference_provider",
@@ -66,6 +67,43 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Server-issued MCP App view descriptor (see apps.state). Launch tools return it
+# as ``view`` in structuredContent and under ``_meta["mcp-google-workspace/view"]``.
+VIEW_DESCRIPTOR_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "Server-issued dashboard view handle and its current state revision.",
+    "properties": {
+        "handle": {
+            "type": "string",
+            "description": "Opaque view handle; pass it as view_handle on every call for this view.",
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Current state revision; pass it as expected_revision to reject stale updates.",
+        },
+        "expires_at": {
+            "type": "integer",
+            "description": "Unix time (seconds) when the view expires unless it is used again.",
+        },
+        "ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sliding idle lifetime of the view in seconds.",
+        },
+    },
+    "required": ["handle", "revision", "expires_at", "ttl_seconds"],
+    "additionalProperties": False,
+}
+
+# Registered fields whose documented schema is more specific than the
+# name-based heuristic in ``_named_field_schema``.
+_REGISTERED_FIELD_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
+    "get_dashboard": {"view": VIEW_DESCRIPTOR_SCHEMA},
+    "get_weekly_calendar_view": {"view": VIEW_DESCRIPTOR_SCHEMA},
+}
+
+
 # Every tool may return the shared in-tool error envelope instead of its
 # documented payload (see common.errors.tool_error_payload); "error" also
 # accepts an object for tools that embed structured error details.
@@ -90,6 +128,8 @@ def _registered_schema(tool_name: str) -> dict[str, Any] | None:
     if fields is None:
         return None
     properties = {name: _named_field_schema(name) for name in fields}
+    for name, schema in _REGISTERED_FIELD_SCHEMAS.get(tool_name, {}).items():
+        properties[name] = copy.deepcopy(schema)
     properties.update(_ERROR_ENVELOPE_PROPERTIES)
     return {
         "type": "object",
