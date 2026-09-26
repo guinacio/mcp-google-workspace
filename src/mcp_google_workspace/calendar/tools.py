@@ -16,10 +16,10 @@ from googleapiclient.errors import HttpError
 
 from ..auth import build_calendar_service, build_drive_service
 from ..common.async_ops import (
-    confirm_destructive_action,
     execute_google_request,
     run_blocking,
 )
+from ..common.confirmation import confirm_destructive_action
 from ..common.downloads import stream_google_download
 from .presentation import event_envelope
 from ..common.timezone import resolve_user_timezone, user_now
@@ -1181,8 +1181,6 @@ def register_tools(server: FastMCP) -> None:
             force=force,
         )
         if not request.force:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "delete_event",

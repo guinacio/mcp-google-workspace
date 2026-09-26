@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .apps import apps_mcp
 from .common.component_annotations import apply_default_tool_annotations
+from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
 from .common.errors import StructuredToolErrorMiddleware
 from .common.task_backend import install_tasks_extension
 from .common.production import (
@@ -66,6 +67,9 @@ workspace_mcp = FastMCP(
         "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations."
     ),
     lifespan=production_lifespan,
+    # Seals multi-round-trip continuation state (confirmations). Shared across
+    # replicas via MCP_REQUEST_STATE_KEYS; ephemeral per process otherwise.
+    request_state_security=build_request_state_security(audience=REQUEST_STATE_AUDIENCE),
 )
 # One root-managed Tasks extension (and therefore one queue/worker) for every
 # runnable entrypoint: HTTP, stdio bundle, and out-of-process task workers all

@@ -253,8 +253,11 @@ def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, tool_name) -> N
     monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
 
     class DecliningContext:
-        # W4: legacy (handshake-era) request, where imperative elicitation applies.
+        # Legacy (handshake-era) request from a client that declared
+        # elicitation, where the adapter's imperative branch applies.
+        is_background_task = False
         request_context = SimpleNamespace(protocol_version="2025-11-25")
+        session = SimpleNamespace(client_capabilities=SimpleNamespace(elicitation=object()))
 
         async def info(self, _message: str) -> None:
             return None

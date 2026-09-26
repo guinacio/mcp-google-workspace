@@ -7,7 +7,8 @@ from typing import Any
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
-from ..common.async_ops import confirm_destructive_action, run_blocking
+from ..common.async_ops import run_blocking
+from ..common.confirmation import confirm_destructive_action
 from ..common.errors import tool_error_payload
 from .client import normalize_contact_group_name, normalize_person_name, people_service
 from .schemas import (

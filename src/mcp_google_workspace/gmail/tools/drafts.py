@@ -8,7 +8,8 @@ from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import confirm_destructive_action, execute_google_request
+from ...common.async_ops import execute_google_request
+from ...common.confirmation import confirm_destructive_action
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
 from ..mime_utils import build_email_message, email_to_gmail_raw

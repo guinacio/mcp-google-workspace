@@ -291,6 +291,7 @@ def test_multi_worker_readiness_requires_distributed_oauth_state(
     monkeypatch.setenv("MCP_REDIS_URL", "redis://example")
     monkeypatch.setenv("MCP_UPLOAD_S3_BUCKET", "uploads")
     monkeypatch.setenv("MCP_SESSION_AFFINITY", "true")
+    monkeypatch.setenv("MCP_REQUEST_STATE_KEYS", "k" * 64)
 
     class Backend:
         backend_name = "redis"
@@ -320,6 +321,14 @@ def test_multi_worker_readiness_requires_distributed_oauth_state(
     assert ready
     assert payload["checks"]["token_storage"]["backend"] == "redis"
     assert payload["checks"]["multi_worker_storage"]["ok"]
+    assert payload["checks"]["continuation_keys"]["ok"]
+
+    # Without a shared continuation key ring a replica fleet is not ready:
+    # a confirmation asked on one replica could not be answered on another.
+    monkeypatch.delenv("MCP_REQUEST_STATE_KEYS")
+    ready, payload = readiness_report()
+    assert not ready
+    assert payload["checks"]["continuation_keys"]["ok"] is False
 
 
 def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:

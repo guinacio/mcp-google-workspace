@@ -11,7 +11,8 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
-from ...common.async_ops import confirm_destructive_action, execute_google_request
+from ...common.async_ops import execute_google_request
+from ...common.confirmation import confirm_destructive_action
 from ...common.timezone import resolve_user_timezone
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
@@ -188,8 +189,6 @@ def register(server: FastMCP) -> None:
         )
         service = gmail_service()
         if request.confirm_send:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "send_email",
@@ -279,8 +278,6 @@ def register(server: FastMCP) -> None:
         )
 
         if confirm_send:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "reply_all_email" if reply_all else "reply_email",
@@ -526,8 +523,6 @@ def register(server: FastMCP) -> None:
         request = DeleteMessageRequest(message_id=message_id, permanent=permanent)
         service = gmail_service()
         if request.permanent:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "delete_email",

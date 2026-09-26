@@ -59,21 +59,32 @@ class RecoverableToolError(RuntimeError):
         self.retry_after = retry_after
 
 
-class ConfirmationRequiredError(RecoverableToolError):
-    """An irreversible action needs user confirmation this server cannot collect yet.
+class ConfirmationError(RecoverableToolError):
+    """Base for confirmation outcomes that are tool results, never protocol errors.
 
     Raised before any provider mutation. ``StructuredToolErrorMiddleware``
-    returns it to the client as an ``isError`` tool result (not a protocol
-    error) carrying the ``confirmation_required`` envelope and the exact
-    confirmation prompt, so the model can explain what was not done.
+    returns it as an ``isError`` tool result carrying the structured envelope,
+    so the model can explain what was not done.
+    """
+
+    action_name: str
+
+
+class ConfirmationRequiredError(ConfirmationError):
+    """An action needs user confirmation that this request cannot collect.
+
+    Used when the client declared no elicitation capability, the protocol
+    version is unknown, or there is no live request (fail closed: unavailable
+    confirmation is never consent). The envelope carries the exact prompt.
     """
 
     def __init__(self, action_name: str, prompt: str) -> None:
         super().__init__(
             "confirmation_required",
             (
-                f"{action_name} requires explicit user confirmation, which this server "
-                "cannot collect yet over MCP 2026-07-28. No changes were made."
+                f"{action_name} requires explicit user confirmation, which this request "
+                "cannot collect (the client did not declare elicitation support). "
+                "No changes were made."
             ),
             required_action={
                 "action": "request_host_confirmation",
@@ -83,6 +94,32 @@ class ConfirmationRequiredError(RecoverableToolError):
         )
         self.action_name = action_name
         self.prompt = prompt
+
+
+class ConfirmationRejectedError(ConfirmationError):
+    """A multi-round-trip confirmation answer or continuation failed verification.
+
+    Covers tampered, expired, foreign-principal, changed-argument, replayed and
+    malformed continuations and wrong or missing answers. Nothing is executed;
+    the client must start a fresh confirmation by calling the tool again
+    without ``requestState``/``inputResponses``.
+    """
+
+    def __init__(self, action_name: str, reason: str) -> None:
+        super().__init__(
+            "confirmation_invalid",
+            (
+                f"The confirmation for {action_name} could not be verified ({reason}). "
+                "No changes were made."
+            ),
+            required_action={
+                "action": "restart_confirmation",
+                "operation": action_name,
+                "reason": reason,
+            },
+        )
+        self.action_name = action_name
+        self.reason = reason
 
 
 def _error_envelope(error: Exception) -> tuple[int, dict[str, Any]]:
@@ -207,10 +244,10 @@ class StructuredToolErrorMiddleware(Middleware):
         except Exception as raised:
             error = unwrap_tool_error(raised)
             rpc_code, envelope = _error_envelope(error)
-            if isinstance(error, ConfirmationRequiredError):
-                # A missing confirmation is a tool outcome, not a malformed
-                # request: return an isError result the model can read and
-                # explain. (W5 extends this classification to other failures.)
+            if isinstance(error, ConfirmationError):
+                # A missing or rejected confirmation is a tool outcome, not a
+                # malformed request: return an isError result the model can
+                # read and explain. (W5 extends this classification.)
                 return ToolResult(
                     content=[mt.TextContent(type="text", text=render_error_message(envelope))],
                     structured_content=envelope,
