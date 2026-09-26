@@ -5,17 +5,22 @@ from __future__ import annotations
 import logging
 
 import base64
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
+import mcp.types as mt
 import pytz
 from dateutil.relativedelta import relativedelta
 from fastmcp import Context, FastMCP
+from fastmcp.tools import ToolResult
+from pydantic import Field
 
 from ..auth import build_calendar_service, build_gmail_service
-from ..auth.identity import current_principal
 from ..common.async_ops import run_blocking
 from ..common.downloads import max_download_bytes
+from ..common.errors import render_error_message
+from ..common.output_schemas import VIEW_DESCRIPTOR_SCHEMA
 from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from ..gmail.presentation import envelope as gmail_envelope
@@ -24,7 +29,18 @@ from .schemas import (
     DashboardState,
     DashboardStatePatch,
 )
-from .state import get_state, next_range, patch_state, prev_range, set_state, today
+from .state import (
+    HANDLE_MAX_LENGTH,
+    VIEW_META_KEY,
+    DashboardView,
+    DashboardViewService,
+    ViewHandleError,
+    ViewStateConflict,
+    dashboard_views,
+    next_range,
+    patch_state,
+    prev_range,
+)
 from .view_models import (
     build_dashboard_view_model,
     build_email_detail_view_model,
@@ -56,36 +72,6 @@ _ATTACHMENT_EXTENSION_BY_MIME: dict[str, str] = {
     "text/html": ".html",
     "text/plain": ".txt",
 }
-
-
-def _resolve_session_id(candidate: str | None, ctx: Context | None = None) -> str:
-    principal_prefix = current_principal().storage_key
-    if candidate:
-        return f"{principal_prefix}:{candidate}"
-    if ctx is not None:
-        session_id = getattr(ctx, "session_id", None)
-        if isinstance(session_id, str) and session_id:
-            return f"{principal_prefix}:{session_id}"
-    return f"{principal_prefix}:default"
-
-
-async def _get_account_state(
-    session_id: str, *, timezone_name: str | None = None
-) -> DashboardState:
-    """Materialize a session using the account-local date and timezone once."""
-    effective_timezone = timezone_name or await resolve_user_timezone()
-    state = get_state(
-        session_id,
-        timezone=effective_timezone,
-        anchor_date=user_now(effective_timezone).date(),
-    )
-    if state.timezone != effective_timezone:
-        state = set_state(
-            session_id,
-            state.model_copy(update={"timezone": effective_timezone}),
-        )
-    return state
-
 
 
 def _compute_window(state: DashboardState) -> tuple[str, str]:
@@ -436,62 +422,258 @@ def _execute_request(request: Any) -> Any:
     return request.execute()
 
 
-def register_tools(server: FastMCP) -> None:
-    @server.tool(name="get_state")
-    async def apps_get_state(
-        session_id: str | None = None,
-        timezone: str | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Get current dashboard state for the caller session."""
-        sid = _resolve_session_id(session_id, ctx)
-        state = await _get_account_state(sid, timezone_name=timezone)
-        return state.model_dump(mode="json")
+# --- Server-issued view handles -------------------------------------------------
+#
+# The dashboard never uses the transport session or a browser-minted id. A
+# launch tool (get_dashboard / get_weekly_calendar_view) called without a handle
+# mints a new, isolated view and returns its descriptor twice:
+#
+# * in the result ``_meta`` under VIEW_META_KEY — the canonical carrier. The MCP
+#   Apps host forwards the complete CallToolResult (including ``_meta``) to the
+#   view in ui/notifications/tool-result, and ``_meta`` is the spec's channel for
+#   metadata that is not render data;
+# * as ``view`` in structuredContent, so the model-visible state tools stay
+#   usable by a model (which never sees ``_meta``) and hosts that only forward
+#   structuredContent to the view still work.
+#
+# Every later callback passes ``view_handle``; the server resolves and
+# authorizes it on each use (see apps.state).
 
-    @server.tool(name="set_state")
-    async def apps_set_state(
-        session_id: str | None = None,
-        view: str | None = None,
-        anchor_date: date | None = None,
-        timezone: str | None = None,
-        selected_calendars: list[str] | None = None,
-        inbox_query: str | None = None,
-        include_weekend: bool | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Replace dashboard state for the caller session."""
-        sid = _resolve_session_id(session_id, ctx)
-        effective_timezone = timezone or await resolve_user_timezone()
-        fields: dict[str, Any] = {
-            "session_id": sid,
-            "timezone": effective_timezone,
-            "anchor_date": anchor_date or user_now(effective_timezone).date(),
+VIEW_HANDLE_DESCRIPTION = (
+    "Server-issued dashboard view handle (wsv_...) returned by apps_get_dashboard or "
+    "apps_get_weekly_calendar_view in _meta['mcp-google-workspace/view'].handle and "
+    "view.handle. Unknown, expired, malformed, or another user's handles fail with "
+    "code view_handle_invalid; open a new view then."
+)
+LAUNCH_HANDLE_DESCRIPTION = (
+    "Existing dashboard view handle to reopen. Omit it to open a new, independent "
+    "view; the result returns the new handle in view.handle."
+)
+OPTIONAL_HANDLE_DESCRIPTION = (
+    "Dashboard view handle of the calling view, if any. When supplied it is "
+    "validated and its idle expiry is extended; detail reads do not change view state."
+)
+EXPECTED_REVISION_DESCRIPTION = (
+    "view.revision the caller last observed. When set, the update is applied only if "
+    "the view is still at that revision; otherwise nothing changes and the call fails "
+    "with code view_state_conflict carrying the current state. Omit to apply the "
+    "change on top of the latest state."
+)
+
+ViewHandleArg = Annotated[
+    str, Field(description=VIEW_HANDLE_DESCRIPTION, max_length=HANDLE_MAX_LENGTH)
+]
+LaunchHandleArg = Annotated[
+    str | None, Field(description=LAUNCH_HANDLE_DESCRIPTION, max_length=HANDLE_MAX_LENGTH)
+]
+OptionalHandleArg = Annotated[
+    str | None, Field(description=OPTIONAL_HANDLE_DESCRIPTION, max_length=HANDLE_MAX_LENGTH)
+]
+ExpectedRevisionArg = Annotated[
+    int | None, Field(description=EXPECTED_REVISION_DESCRIPTION, ge=1)
+]
+
+DASHBOARD_STATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "Persisted state of one dashboard view.",
+    "properties": {
+        "view": {
+            "type": "string",
+            "enum": ["agenda", "day", "week", "month"],
+            "description": "Calendar range shown by the view.",
+        },
+        "anchor_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the displayed range is anchored on (YYYY-MM-DD).",
+        },
+        "timezone": {"type": "string", "description": "IANA timezone of the view."},
+        "selected_calendars": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Calendar IDs shown by the view.",
+        },
+        "inbox_query": {
+            "type": ["string", "null"],
+            "description": "Extra Gmail search terms for the inbox summary.",
+        },
+        "include_weekend": {
+            "type": "boolean",
+            "description": "Whether weekly ranges include Saturday and Sunday.",
+        },
+    },
+    "required": [
+        "view",
+        "anchor_date",
+        "timezone",
+        "selected_calendars",
+        "inbox_query",
+        "include_weekend",
+    ],
+    "additionalProperties": False,
+}
+
+VIEW_STATE_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "Dashboard view state response",
+    "description": "Current state of one dashboard view and its handle/revision.",
+    "properties": {"state": DASHBOARD_STATE_SCHEMA, "view": VIEW_DESCRIPTOR_SCHEMA},
+    "required": ["state", "view"],
+    "additionalProperties": False,
+}
+
+
+def _error_result(envelope: dict[str, Any], meta: dict[str, Any] | None = None) -> ToolResult:
+    return ToolResult(
+        content=[mt.TextContent(type="text", text=render_error_message(envelope))],
+        structured_content=envelope,
+        meta=meta,
+        is_error=True,
+    )
+
+
+def view_error_result(error: ViewHandleError | ViewStateConflict) -> ToolResult:
+    """Deterministic isError tool result for handle and revision failures."""
+    if isinstance(error, ViewStateConflict):
+        current = error.current
+        descriptor = current.descriptor()
+        return _error_result(
+            {
+                "code": error.code,
+                "message": str(error),
+                "retryable": False,
+                "retry_after": None,
+                "required_action": {
+                    "action": "refresh_view",
+                    "tool": "apps_get_state",
+                    "arguments": {"view_handle": current.handle},
+                },
+                "provider_status": None,
+                "field_errors": [
+                    {"field": "expected_revision", "reason": "stale_revision"}
+                ],
+                "details": {
+                    "expected_revision": error.expected_revision,
+                    "current_revision": current.revision,
+                },
+                "state": current.state.model_dump(mode="json"),
+                "view": descriptor,
+            },
+            meta={VIEW_META_KEY: descriptor},
+        )
+    return _error_result(
+        {
+            "code": error.code,
+            "message": str(error),
+            "retryable": False,
+            "retry_after": None,
+            "required_action": {
+                "action": "open_new_view",
+                "tool": "apps_get_dashboard",
+                "arguments": {},
+            },
+            "provider_status": None,
+            "field_errors": [{"field": "view_handle", "reason": error.reason}],
+            "details": {"reason": error.reason},
         }
-        if view is not None:
-            fields["view"] = view
-        if selected_calendars is not None:
-            fields["selected_calendars"] = selected_calendars
-        if inbox_query is not None:
-            fields["inbox_query"] = inbox_query
-        if include_weekend is not None:
-            fields["include_weekend"] = include_weekend
-        request = DashboardState(**fields)
-        updated = set_state(sid, request)
-        LOGGER.debug(f"Dashboard state replaced for session {sid}.")
-        return updated.model_dump(mode="json")
+    )
 
-    @server.tool(name="patch_state")
-    async def apps_patch_state(
-        session_id: str | None = None,
+
+def view_result(payload: dict[str, Any], view: DashboardView) -> ToolResult:
+    """Successful view result: descriptor in structuredContent.view and _meta."""
+    descriptor = view.descriptor()
+    return ToolResult(
+        structured_content={**payload, "view": descriptor},
+        meta={VIEW_META_KEY: descriptor},
+    )
+
+
+def _state_result(view: DashboardView) -> ToolResult:
+    return view_result({"state": view.state.model_dump(mode="json")}, view)
+
+
+async def _guarded(operation: Callable[[], Awaitable[ToolResult]]) -> ToolResult:
+    try:
+        return await operation()
+    except (ViewHandleError, ViewStateConflict) as error:
+        return view_error_result(error)
+
+
+def register_tools(server: FastMCP, views: DashboardViewService | None = None) -> None:
+    """Register the dashboard tools on ``server`` over one view service."""
+    service = views or dashboard_views()
+
+    async def open_view(view_handle: str | None) -> DashboardView:
+        if view_handle is not None:
+            return await service.resolve(view_handle)
+        timezone_name = await resolve_user_timezone()
+        return await service.create(
+            DashboardState(
+                timezone=timezone_name,
+                anchor_date=user_now(timezone_name).date(),
+            )
+        )
+
+    @server.tool(name="get_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    async def apps_get_state(view_handle: ViewHandleArg) -> ToolResult:
+        """Get the current state and revision of one dashboard view."""
+
+        async def run() -> ToolResult:
+            return _state_result(await service.resolve(view_handle))
+
+        return await _guarded(run)
+
+    @server.tool(name="set_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    async def apps_set_state(
+        view_handle: ViewHandleArg,
+        expected_revision: ExpectedRevisionArg = None,
         view: Literal["agenda", "day", "week", "month"] | None = None,
         anchor_date: date | None = None,
         timezone: str | None = None,
         selected_calendars: list[str] | None = None,
         inbox_query: str | None = None,
         include_weekend: bool | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Patch selected dashboard state fields for the caller session."""
+    ) -> ToolResult:
+        """Replace the state of one dashboard view; omitted fields reset to defaults."""
+
+        async def run() -> ToolResult:
+            current = await service.resolve(view_handle)
+            effective_timezone = timezone or current.state.timezone
+            fields: dict[str, Any] = {
+                "timezone": effective_timezone,
+                "anchor_date": anchor_date or user_now(effective_timezone).date(),
+            }
+            if view is not None:
+                fields["view"] = view
+            if selected_calendars is not None:
+                fields["selected_calendars"] = selected_calendars
+            if inbox_query is not None:
+                fields["inbox_query"] = inbox_query
+            if include_weekend is not None:
+                fields["include_weekend"] = include_weekend
+            replacement = DashboardState(**fields)
+            updated = await service.update(
+                view_handle,
+                lambda _current: replacement,
+                expected_revision=expected_revision,
+            )
+            LOGGER.debug("Dashboard view state replaced (revision %s).", updated.revision)
+            return _state_result(updated)
+
+        return await _guarded(run)
+
+    @server.tool(name="patch_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    async def apps_patch_state(
+        view_handle: ViewHandleArg,
+        expected_revision: ExpectedRevisionArg = None,
+        view: Literal["agenda", "day", "week", "month"] | None = None,
+        anchor_date: date | None = None,
+        timezone: str | None = None,
+        selected_calendars: list[str] | None = None,
+        inbox_query: str | None = None,
+        include_weekend: bool | None = None,
+    ) -> ToolResult:
+        """Patch selected state fields of one dashboard view."""
         request = DashboardStatePatch(
             view=view,
             anchor_date=anchor_date,
@@ -500,44 +682,65 @@ def register_tools(server: FastMCP) -> None:
             inbox_query=inbox_query,
             include_weekend=include_weekend,
         )
-        sid = _resolve_session_id(session_id, ctx)
-        await _get_account_state(sid)
-        updated = patch_state(sid, request)
-        return updated.model_dump(mode="json")
 
-    @server.tool(name="next_range")
+        async def run() -> ToolResult:
+            return _state_result(
+                await service.update(
+                    view_handle,
+                    lambda current: patch_state(current, request),
+                    expected_revision=expected_revision,
+                )
+            )
+
+        return await _guarded(run)
+
+    @server.tool(name="next_range", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
     async def apps_next_range(
-        session_id: str | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Move dashboard anchor date to the next range based on current view."""
-        sid = _resolve_session_id(session_id, ctx)
-        await _get_account_state(sid)
-        updated = next_range(sid)
-        return updated.model_dump(mode="json")
+        view_handle: ViewHandleArg,
+        expected_revision: ExpectedRevisionArg = None,
+    ) -> ToolResult:
+        """Move one dashboard view's anchor date to the next range of its current view."""
 
-    @server.tool(name="prev_range")
+        async def run() -> ToolResult:
+            return _state_result(
+                await service.update(view_handle, next_range, expected_revision=expected_revision)
+            )
+
+        return await _guarded(run)
+
+    @server.tool(name="prev_range", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
     async def apps_prev_range(
-        session_id: str | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Move dashboard anchor date to the previous range based on current view."""
-        sid = _resolve_session_id(session_id, ctx)
-        await _get_account_state(sid)
-        updated = prev_range(sid)
-        return updated.model_dump(mode="json")
+        view_handle: ViewHandleArg,
+        expected_revision: ExpectedRevisionArg = None,
+    ) -> ToolResult:
+        """Move one dashboard view's anchor date to the previous range of its current view."""
 
-    @server.tool(name="today")
+        async def run() -> ToolResult:
+            return _state_result(
+                await service.update(view_handle, prev_range, expected_revision=expected_revision)
+            )
+
+        return await _guarded(run)
+
+    @server.tool(name="today", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
     async def apps_today(
-        session_id: str | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Reset dashboard anchor date to today for this session."""
-        sid = _resolve_session_id(session_id, ctx)
-        timezone_name = await resolve_user_timezone()
-        await _get_account_state(sid, timezone_name=timezone_name)
-        updated = today(sid, current_date=user_now(timezone_name).date())
-        return updated.model_dump(mode="json")
+        view_handle: ViewHandleArg,
+        expected_revision: ExpectedRevisionArg = None,
+    ) -> ToolResult:
+        """Reset one dashboard view's anchor date to today in the view's timezone."""
+
+        async def run() -> ToolResult:
+            return _state_result(
+                await service.update(
+                    view_handle,
+                    lambda current: current.model_copy(
+                        update={"anchor_date": user_now(current.timezone).date()}
+                    ),
+                    expected_revision=expected_revision,
+                )
+            )
+
+        return await _guarded(run)
 
     @server.tool(
         name="get_dashboard",
@@ -547,18 +750,24 @@ def register_tools(server: FastMCP) -> None:
         },
     )
     async def apps_get_dashboard(
-        session_id: str | None = None,
+        view_handle: LaunchHandleArg = None,
         date_override: date | None = None,
         ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Build workspace dashboard view model from calendar and inbox data."""
-        sid = _resolve_session_id(session_id, ctx)
-        state = await _get_account_state(sid)
-        if date_override is not None:
-            state = state.model_copy(update={"anchor_date": date_override})
-        if ctx is not None:
-            return await build_dashboard_payload_with_progress(state, ctx)
-        return await run_blocking(build_dashboard_payload, state)
+    ) -> dict[str, Any] | ToolResult:
+        """Open (or refresh) a workspace dashboard view from calendar and inbox data."""
+
+        async def run() -> ToolResult:
+            view = await open_view(view_handle)
+            state = view.state
+            if date_override is not None:
+                state = state.model_copy(update={"anchor_date": date_override})
+            if ctx is not None:
+                payload = await build_dashboard_payload_with_progress(state, ctx)
+            else:
+                payload = await run_blocking(build_dashboard_payload, state)
+            return view_result(payload, view)
+
+        return await _guarded(run)
 
     @server.tool(
         name="get_weekly_calendar_view",
@@ -568,36 +777,52 @@ def register_tools(server: FastMCP) -> None:
         },
     )
     async def apps_get_weekly_calendar_view(
-        session_id: str | None = None,
+        view_handle: LaunchHandleArg = None,
         date_override: date | None = None,
         include_weekend: bool | None = None,
         ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Return a Google Calendar-like weekly view model (columns per day)."""
-        sid = _resolve_session_id(session_id, ctx)
-        state = await _get_account_state(sid)
-        if ctx is not None:
-            return await build_weekly_calendar_payload_with_progress(
-                state,
-                ctx=ctx,
-                date_override=date_override,
-                include_weekend_override=include_weekend,
-            )
-        return await run_blocking(
-            build_weekly_calendar_payload,
-            state,
-            date_override=date_override,
-            include_weekend_override=include_weekend,
-        )
+    ) -> dict[str, Any] | ToolResult:
+        """Open (or refresh) a Google Calendar-like weekly view (columns per day)."""
+
+        async def run() -> ToolResult:
+            view = await open_view(view_handle)
+            if ctx is not None:
+                payload = await build_weekly_calendar_payload_with_progress(
+                    view.state,
+                    ctx=ctx,
+                    date_override=date_override,
+                    include_weekend_override=include_weekend,
+                )
+            else:
+                payload = await run_blocking(
+                    build_weekly_calendar_payload,
+                    view.state,
+                    date_override=date_override,
+                    include_weekend_override=include_weekend,
+                )
+            return view_result(payload, view)
+
+        return await _guarded(run)
+
+    async def touch(view_handle: str | None) -> ToolResult | None:
+        if view_handle is None:
+            return None
+        try:
+            await service.resolve(view_handle)
+        except ViewHandleError as error:
+            return view_error_result(error)
+        return None
 
     @server.tool(name="get_event_detail")
     async def apps_get_event_detail(
         event_id: str,
         calendar_id: str = "primary",
-        session_id: str | None = None,
+        view_handle: OptionalHandleArg = None,
         ctx: Context | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         """Return full event details (attendees, location, description, conference)."""
+        if (rejected := await touch(view_handle)) is not None:
+            return rejected
         account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading event details")
@@ -617,10 +842,12 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_email_detail")
     async def apps_get_email_detail(
         message_id: str,
-        session_id: str | None = None,
+        view_handle: OptionalHandleArg = None,
         ctx: Context | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         """Return full email details (headers + body)."""
+        if (rejected := await touch(view_handle)) is not None:
+            return rejected
         account_timezone = await resolve_user_timezone()
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading email details")
@@ -639,10 +866,12 @@ def register_tools(server: FastMCP) -> None:
     async def apps_get_email_attachment(
         message_id: str,
         attachment_id: str,
-        session_id: str | None = None,
+        view_handle: OptionalHandleArg = None,
         ctx: Context | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         """Return attachment content (base64) for one Gmail message attachment."""
+        if (rejected := await touch(view_handle)) is not None:
+            return rejected
         if ctx is not None:
             await ctx.report_progress(20, 100, "Loading attachment data")
         try:
@@ -652,3 +881,4 @@ def register_tools(server: FastMCP) -> None:
         if ctx is not None:
             await ctx.report_progress(100, 100, "Attachment ready")
         return payload
+

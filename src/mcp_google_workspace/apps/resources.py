@@ -22,9 +22,10 @@ _MCP_APP_UI_MIME = "text/html;profile=mcp-app"
 async def _resource_state(
     *, anchor_date: date | None = None, view: str = "week"
 ) -> DashboardState:
+    # Resources are pure reads: they build a transient default state and never
+    # create, read, or modify a dashboard view.
     timezone_name = await resolve_user_timezone()
     state = DashboardState(
-        session_id="resource-default",
         timezone=timezone_name,
         anchor_date=user_now(timezone_name).date(),
     )

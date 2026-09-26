@@ -1034,6 +1034,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "burner-redis" },
     { name = "httpx" },
     { name = "jsonschema" },
     { name = "mypy" },
@@ -1075,6 +1076,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "burner-redis", specifier = ">=0.1.7" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "mypy", specifier = ">=1.19.1" },

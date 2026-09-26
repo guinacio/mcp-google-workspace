@@ -3,6 +3,14 @@ import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { THEME_CSS, applyTheme } from "./theme";
 import { RENDER_CSS, renderLoading, renderDashboard, setActionHandler } from "./render";
 import { safeExternalUrl } from "./urls";
+import {
+  ToolCallError,
+  VIEW_HANDLE_INVALID,
+  VIEW_STATE_CONFLICT,
+  ViewSession,
+  toolErrorCode,
+  toolErrorMessage,
+} from "./view-handle";
 import type { UiAction, RenderOptions } from "./render";
 import type {
   CalendarCatalogItem,
@@ -38,9 +46,37 @@ type ToolOperation =
 
 type ToolRegistry = Partial<Record<ToolOperation, string>>;
 
-type ServerToolCapable = {
-  callServerTool: (args: { name: string; arguments?: Record<string, unknown> }) => Promise<unknown>;
-};
+/** Dashboard callbacks that carry the server-issued view handle. */
+type ViewOperation =
+  | "getDashboard"
+  | "getWeeklyCalendar"
+  | "getEventDetail"
+  | "getEmailDetail"
+  | "getEmailAttachment"
+  | "patchState"
+  | "nextRange"
+  | "prevRange"
+  | "today";
+
+/** Launch operations mint a new view when called without a handle. */
+const LAUNCH_OPERATIONS: ReadonlySet<ViewOperation> = new Set(["getDashboard", "getWeeklyCalendar"]);
+/** State writes are conditional on the last revision this view observed. */
+const CONDITIONAL_OPERATIONS: ReadonlySet<ViewOperation> = new Set([
+  "patchState",
+  "nextRange",
+  "prevRange",
+  "today",
+]);
+
+type ViewCaller = (operation: ViewOperation, args?: Record<string, unknown>) => Promise<unknown>;
+
+/** Raised after a stale state write; the view has already been refreshed. */
+class ViewRefreshedAfterConflict extends Error {
+  constructor() {
+    super("This dashboard view changed elsewhere and was refreshed. Try again.");
+    this.name = "ViewRefreshedAfterConflict";
+  }
+}
 
 const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
   getDashboard: ["apps_get_dashboard", "get_dashboard"],
@@ -71,7 +107,6 @@ style.textContent = THEME_CSS + RENDER_CSS;
 document.head.appendChild(style);
 
 const root = document.getElementById("app")!;
-const UI_SESSION_STORAGE_KEY = "mcp-dashboard-ui-session-id";
 const MIME_EXTENSION_MAP: Record<string, string> = {
   "application/json": ".json",
   "application/msword": ".doc",
@@ -285,9 +320,15 @@ async function initMcpMode() {
       {}
     );
 
-    const uiSessionId = getOrCreateSessionId();
-    const makeIdempotencyKey = (prefix: string) =>
-      `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // The view handle is issued by the server in the launch tool result; the
+    // view keeps it only in memory and never mints or persists an identity.
+    const view = new ViewSession();
+    const makeIdempotencyKey = (prefix: string) => {
+      const random = new Uint8Array(12);
+      crypto.getRandomValues(random);
+      const suffix = Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      return `${prefix}-${Date.now()}-${suffix}`;
+    };
     let eventSaveInFlight = false;
 
     const shiftIsoMinutes = (iso: string, minutes: number): string => {
@@ -349,6 +390,89 @@ async function initMcpMode() {
       throw lastError || new Error(`No valid tool found for operation ${operation}.`);
     };
 
+    const invokeView = async (
+      operation: ViewOperation,
+      args: Record<string, unknown>,
+    ): Promise<unknown> => {
+      const withHandle: Record<string, unknown> = { ...args };
+      if (view.handle) {
+        withHandle.view_handle = view.handle;
+        if (CONDITIONAL_OPERATIONS.has(operation) && view.revision !== undefined) {
+          withHandle.expected_revision = view.revision;
+        }
+      } else if (CONDITIONAL_OPERATIONS.has(operation)) {
+        throw new ToolCallError("The dashboard view is not open yet.", VIEW_HANDLE_INVALID);
+      }
+      let result: unknown;
+      try {
+        result = await callToolForOperation(operation, withHandle);
+      } catch (err) {
+        throw new ToolCallError(String(err), toolErrorCode(err), err);
+      }
+      if (result && typeof result === "object" && (result as { isError?: unknown }).isError === true) {
+        // A conflict still tells us the current revision of this view.
+        view.adoptResult(result);
+        throw new ToolCallError(toolErrorMessage(result), toolErrorCode(result), result);
+      }
+      view.adoptResult(result);
+      return result;
+    };
+
+    /**
+     * Call a dashboard tool with this view's handle. An unknown or expired handle
+     * is answered by re-requesting a fresh view exactly once, then retrying the
+     * call once; a second failure is reported, never looped.
+     */
+    const callView: ViewCaller = async (operation, args = {}) => {
+      try {
+        return await invokeView(operation, args);
+      } catch (err) {
+        if (!(err instanceof ToolCallError) || err.code !== VIEW_HANDLE_INVALID) {
+          throw err;
+        }
+      }
+      view.forget();
+      if (!LAUNCH_OPERATIONS.has(operation)) {
+        const fresh = await invokeView("getDashboard", {});
+        const parsed = extractDashboardData(fresh);
+        if (parsed) {
+          currentData = mergeDashboardData(currentData, parsed);
+        }
+      }
+      return invokeView(operation, args);
+    };
+
+    /**
+     * Recover from a failed view action. A stale-revision conflict never retries
+     * the write: the view refetches the current server state instead.
+     */
+    const recoverFromViewError = async (err: unknown): Promise<never> => {
+      if (err instanceof ToolCallError && err.code === VIEW_STATE_CONFLICT) {
+        const conflictState = (err.result as { structuredContent?: { state?: unknown } } | undefined)
+          ?.structuredContent?.state;
+        if (conflictState && typeof conflictState === "object") {
+          currentData = replaceDashboardState(currentData, conflictState as Record<string, unknown>);
+        }
+        await refreshFull();
+        throw new ViewRefreshedAfterConflict();
+      }
+      throw err;
+    };
+
+    const reportViewActionFailure = (
+      err: unknown,
+      previousData: DashboardData,
+      label: string,
+    ) => {
+      if (err instanceof ViewRefreshedAfterConflict) {
+        setUiMessage(err.message, "notice");
+      } else {
+        currentData = previousData;
+        setUiMessage(`${label}: ${String(err instanceof ToolCallError ? err.message : err)}`, "error");
+      }
+      renderCurrent();
+    };
+
     const renderCurrent = () => {
       const state = readDashboardState(currentData);
       renderOptions.include_weekend = state.include_weekend;
@@ -359,11 +483,11 @@ async function initMcpMode() {
     };
 
     const refreshFull = async () => {
-      currentData = await fetchAndRenderDashboardData(app, uiSessionId, currentData, "full", toolRegistry);
+      currentData = await fetchAndRenderDashboardData(callView, currentData, "full", toolRegistry);
       renderCurrent();
     };
     const refreshWeekly = async () => {
-      currentData = await fetchAndRenderDashboardData(app, uiSessionId, currentData, "weekly", toolRegistry);
+      currentData = await fetchAndRenderDashboardData(callView, currentData, "weekly", toolRegistry);
       renderCurrent();
     };
 
@@ -387,17 +511,14 @@ async function initMcpMode() {
     };
 
     const updateStatePatch = async (patch: Record<string, unknown>) => {
-      const toolName = resolveTool(toolRegistry, "patchState");
-      if (!toolName) {
+      if (!resolveTool(toolRegistry, "patchState")) {
         throw new Error("State patch tool is unavailable.");
       }
-      await app.callServerTool({
-        name: toolName,
-        arguments: {
-          session_id: uiSessionId,
-          ...patch,
-        },
-      });
+      try {
+        await callView("patchState", patch);
+      } catch (err) {
+        await recoverFromViewError(err);
+      }
     };
 
     const startEditor = (mode: "create" | "edit", seedDate?: string) => {
@@ -528,8 +649,7 @@ async function initMcpMode() {
       if (currentData.email_detail?.message_id !== messageId) {
         return;
       }
-      const result = await callToolForOperation("getEmailDetail", {
-        session_id: uiSessionId,
+      const result = await callView("getEmailDetail", {
         message_id: messageId,
       });
       const parsed = extractDashboardData(result);
@@ -647,7 +767,7 @@ async function initMcpMode() {
 
       if (action.type === "email_download_attachment") {
         void withUiPending(async () => {
-          const payload = await callToolForOperation("getEmailAttachment", {
+          const payload = await callView("getEmailAttachment", {
             message_id: action.messageId,
             attachment_id: action.attachmentId,
           });
@@ -749,9 +869,7 @@ async function initMcpMode() {
           await updateStatePatch({ include_weekend: action.include_weekend });
           await refreshWeekly();
         }).catch((err: unknown) => {
-          currentData = previousData;
-          setUiMessage(`Failed to update weekend preference: ${String(err)}`, "error");
-          renderCurrent();
+          reportViewActionFailure(err, previousData, "Failed to update weekend preference");
         });
         return;
       }
@@ -766,9 +884,7 @@ async function initMcpMode() {
           await updateStatePatch({ selected_calendars: action.selected_calendar_ids });
           await refreshFull();
         }).catch((err: unknown) => {
-          currentData = previousData;
-          setUiMessage(`Failed to update selected calendars: ${String(err)}`, "error");
-          renderCurrent();
+          reportViewActionFailure(err, previousData, "Failed to update selected calendars");
         });
         return;
       }
@@ -781,13 +897,9 @@ async function initMcpMode() {
           return;
         }
         void withUiPending(async () => {
-          const result = await app.callServerTool({
-            name: toolName,
-            arguments: {
-              session_id: uiSessionId,
-              calendar_id: action.calendarId,
-              event_id: action.eventId,
-            },
+          const result = await callView("getEventDetail", {
+            calendar_id: action.calendarId,
+            event_id: action.eventId,
           });
           const parsed = extractDashboardData(result);
           if (parsed?.event_detail) {
@@ -807,8 +919,7 @@ async function initMcpMode() {
 
       if (action.type === "select_email") {
         void withUiPending(async () => {
-          const result = await callToolForOperation("getEmailDetail", {
-            session_id: uiSessionId,
+          const result = await callView("getEmailDetail", {
             message_id: action.messageId,
           });
           const parsed = extractDashboardData(result);
@@ -1046,36 +1157,32 @@ async function initMcpMode() {
       }
 
       if (action.type === "week_nav") {
-        const toolName =
-          action.direction === "prev"
-            ? resolveTool(toolRegistry, "prevRange")
-            : action.direction === "next"
-              ? resolveTool(toolRegistry, "nextRange")
-              : resolveTool(toolRegistry, "today");
-        if (!toolName) {
+        const operation: ViewOperation =
+          action.direction === "prev" ? "prevRange" : action.direction === "next" ? "nextRange" : "today";
+        if (!resolveTool(toolRegistry, operation)) {
           setUiMessage("Navigation tool is unavailable.", "error");
           renderCurrent();
           return;
         }
         const previousData = currentData;
         void withUiPending(async () => {
-          const result = await app.callServerTool({
-            name: toolName,
-            arguments: { session_id: uiSessionId },
-          });
-          const nextState = extractObjectPayload(result);
-          if (nextState) {
+          let result: unknown;
+          try {
+            result = await callView(operation);
+          } catch (err) {
+            await recoverFromViewError(err);
+          }
+          const nextState = extractObjectPayload(result)?.state;
+          if (nextState && typeof nextState === "object") {
             currentData = replaceDashboardState(currentData, {
               ...(currentData.dashboard?.state || {}),
-              ...nextState,
+              ...(nextState as Record<string, unknown>),
             });
             renderCurrent();
           }
           await refreshWeekly();
         }).catch((err) => {
-          currentData = previousData;
-          setUiMessage(`Failed to navigate week: ${String(err)}`, "error");
-          renderCurrent();
+          reportViewActionFailure(err, previousData, "Failed to navigate week");
         });
         return;
       }
@@ -1086,7 +1193,14 @@ async function initMcpMode() {
       });
     });
 
+    app.ontoolinput = (params) => {
+      // Reopening an existing view: the model passed its handle as input.
+      view.adoptInputHandle(params.arguments?.view_handle);
+    };
+
     app.ontoolresult = (result) => {
+      // The invocation that launched this view carries its server-issued handle.
+      view.adoptResult(result);
       const data = extractDashboardData(result);
       if (data && (data.weekly_calendar || data.dashboard || data.event_detail || data.email_detail)) {
         hasRenderedFromToolResult = true;
@@ -1134,8 +1248,7 @@ async function initMcpMode() {
 }
 
 async function fetchAndRenderDashboardData(
-  app: ServerToolCapable,
-  sessionId: string,
+  callView: ViewCaller,
   current: DashboardData,
   mode: "full" | "weekly",
   registry: ToolRegistry
@@ -1149,10 +1262,7 @@ async function fetchAndRenderDashboardData(
   const dashboardTool = resolveTool(registry, "getDashboard");
   if (mode === "weekly") {
     if (weeklyTool) {
-      const weeklyResult = await app.callServerTool({
-        name: weeklyTool,
-        arguments: { session_id: sessionId },
-      });
+      const weeklyResult = await callView("getWeeklyCalendar");
       const parsed = extractDashboardData(weeklyResult);
       if (parsed?.weekly_calendar) {
         merged.weekly_calendar = parsed.weekly_calendar;
@@ -1168,10 +1278,7 @@ async function fetchAndRenderDashboardData(
     throw new Error("Dashboard tool is unavailable.");
   }
 
-  const dashboardResult = await app.callServerTool({
-    name: dashboardTool,
-    arguments: { session_id: sessionId },
-  });
+  const dashboardResult = await callView("getDashboard");
   const parsed = extractDashboardData(dashboardResult);
   if (parsed) {
     if (parsed.dashboard) merged.dashboard = parsed.dashboard;
@@ -1518,22 +1625,6 @@ function syncInboxMessageFromEmailDetail(
     ...data,
     dashboard: nextDashboard,
   };
-}
-
-function getOrCreateSessionId(): string {
-  try {
-    const existing = window.localStorage.getItem(UI_SESSION_STORAGE_KEY);
-    if (existing) return existing;
-  } catch {
-    // Ignore storage issues and generate ephemeral id below.
-  }
-  const generated = `ui-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  try {
-    window.localStorage.setItem(UI_SESSION_STORAGE_KEY, generated);
-  } catch {
-    // Ignore storage issues.
-  }
-  return generated;
 }
 
 function extractDashboardData(result: unknown): DashboardData | null {
