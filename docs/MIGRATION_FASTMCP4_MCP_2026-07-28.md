@@ -398,3 +398,16 @@ These do not block starting W0–W2, but must be resolved before their dependent
 - Which Apps draft features are supported by the deployed hosts? Downloads can remain optional; app-provided tools are deferred by default.
 
 Record decisions and measured host results here as implementation proceeds. Do not silently weaken confirmation, isolation, CSP, or error handling to make an individual client appear compatible.
+
+### 9.1 Owner decisions (2026-09-26)
+
+These supersede conflicting guidance elsewhere in this plan.
+
+| Decision | Consequence for the work packages |
+| --- | --- |
+| **No backward compatibility.** Target MCP 2026-07-28 only. | Legacy core protocol support, the legacy `ctx.elicit` confirmation branch, legacy session affinity, old storage-key migration, old dashboard URIs and the flat `ui/resourceUri` alias are dropped, not retained. Wherever this plan says "retain for transition", "supported legacy", or "compatible readers", the answer is: remove. W2 restricts the server to the modern protocol if FastMCP exposes a supported setting for it. W4 builds only the MRTR (`InputRequiredResult`) path. W6 removes UI aliases. W7 drops the legacy test suites. W8 has no dual-version transition: before cutover, drain the task queues and discard old application state. |
+| **Remove everything the 2026-07-28 spec deprecates.** | No Sampling, client Logging (`ctx.info/debug/warning/...` to the client), Roots, old HTTP+SSE or DCR dependencies. Server-side logging and progress remain. |
+| **No summarization provider.** | The Chat `summarize_space_messages` and Keep `summarize_note` tools are removed, not stubbed. Clients summarize from the read tools themselves. |
+| Apps `ui/initialize` handshake | Retained. It is part of the separate Apps protocol and is not deprecated. |
+
+Known risk the owner accepted: hosts that speak only pre-2026-07-28 core MCP cannot connect.
