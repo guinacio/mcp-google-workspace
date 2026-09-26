@@ -47,7 +47,8 @@ def test_note_envelope_surfaces_preview_and_checklist_progress():
 def test_keep_tools_all_have_descriptions():
     tools = anyio.run(_list_tools, keep_mcp)
 
-    assert len(tools) == 18
+    # W2: 18 -> 17 after the owner-approved removal of summarize_note.
+    assert len(tools) == 17
     assert all(tool.description for tool in tools)
 
 

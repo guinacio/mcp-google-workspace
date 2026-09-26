@@ -153,7 +153,6 @@ Follow-up note:
 | 32 | keep_update_note | Call (expect unsupported) | Expect status unsupported |
 | 33 | keep_archive_note | Call (expect unsupported) | Expect status unsupported |
 | 34 | keep_list_keep_labels | Call (expect unsupported) | Expect status unsupported |
-| 35 | keep_summarize_note | Summarize one note by name | Sampling tool |
 
 ---
 
@@ -168,7 +167,6 @@ Follow-up note:
 | 40 | chat_create_message | Post "QA test" in first space, notify=False | Then delete |
 | 41 | chat_update_message | Update message text | Use message from create |
 | 42 | chat_delete_message | Delete QA message, force=True | After create |
-| 43 | chat_summarize_space_messages | Summarize messages in one space | Sampling (needs ctx) |
 
 ---
 
