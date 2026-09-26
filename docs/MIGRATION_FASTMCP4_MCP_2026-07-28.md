@@ -398,3 +398,11 @@ These do not block starting W0–W2, but must be resolved before their dependent
 - Which Apps draft features are supported by the deployed hosts? Downloads can remain optional; app-provided tools are deferred by default.
 
 Record decisions and measured host results here as implementation proceeds. Do not silently weaken confirmation, isolation, CSP, or error handling to make an individual client appear compatible.
+
+### Recorded decisions (2026-09-26, during W2)
+
+- **Summaries:** no server-side summarization provider. `chat_summarize_space_messages` and `keep_summarize_note` are removed (catalog 193 → 191 before the app-only listing change; see `docs/migration/W2_CATALOG_DIFF.md`).
+- **Deprecated features:** no dependency on Sampling, Roots, legacy HTTP+SSE, or client-facing Logging (`ctx.info`/`warning`/… now go to server logs at DEBUG; progress notifications remain).
+- **Legacy protocol:** legacy connectivity is kept. FastMCP 4.0.10 / SDK 2.2.0 still negotiate `initialize` for 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 alongside 2026-07-28; `/version` reports both sets plus the tested pair (2025-11-25, 2026-07-28).
+- **Confirmations:** all 24 sites use one gate (`common.async_ops.confirm_destructive_action`): legacy requests elicit; 2026-07-28 requests fail closed with a `confirmation_required` tool result and no mutation until W4 adds the MRTR branch.
+- **App aliases:** the flat `ui/resourceUri` alias and legacy dashboard URI stay until W6.

@@ -134,21 +134,27 @@ def _reload_workspace_server() -> FastMCP:
     return server_module.workspace_mcp
 
 
-def _dump_annotations(annotations: object | None) -> dict[str, Any] | None:
-    if annotations is None:
+def _dump_wire(model: object | None) -> dict[str, Any] | None:
+    """Dump an SDK model in its wire (camelCase, ``by_alias``) form."""
+    if model is None:
         return None
-    assert isinstance(annotations, mcp.types.ToolAnnotations | mcp.types.Annotations)
-    return annotations.model_dump(mode="json", exclude_none=True)
+    assert isinstance(
+        model,
+        mcp.types.ToolAnnotations | mcp.types.Annotations,
+    )
+    return model.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 def _tool_entry(tool: mcp.types.Tool) -> dict[str, Any]:
+    # Python reads use SDK 2 snake_case attributes; snapshot keys stay in the
+    # camelCase wire form so the contract diff is meaningful across SDKs.
     return {
         "name": tool.name,
         "title": tool.title,
         "description": tool.description,
-        "inputSchema": tool.inputSchema,
-        "outputSchema": tool.outputSchema,
-        "annotations": _dump_annotations(tool.annotations),
+        "inputSchema": tool.input_schema,
+        "outputSchema": tool.output_schema,
+        "annotations": _dump_wire(tool.annotations),
         "meta": tool.meta,
     }
 
@@ -159,20 +165,20 @@ def _resource_entry(resource: mcp.types.Resource) -> dict[str, Any]:
         "name": resource.name,
         "title": resource.title,
         "description": resource.description,
-        "mimeType": resource.mimeType,
-        "annotations": _dump_annotations(resource.annotations),
+        "mimeType": resource.mime_type,
+        "annotations": _dump_wire(resource.annotations),
         "meta": resource.meta,
     }
 
 
 def _template_entry(template: mcp.types.ResourceTemplate) -> dict[str, Any]:
     return {
-        "uriTemplate": template.uriTemplate,
+        "uriTemplate": template.uri_template,
         "name": template.name,
         "title": template.title,
         "description": template.description,
-        "mimeType": template.mimeType,
-        "annotations": _dump_annotations(template.annotations),
+        "mimeType": template.mime_type,
+        "annotations": _dump_wire(template.annotations),
         "meta": template.meta,
     }
 
