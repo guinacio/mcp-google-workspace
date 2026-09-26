@@ -2,11 +2,13 @@ import type { App, McpUiHostContext } from "@modelcontextprotocol/ext-apps";
 import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { THEME_CSS, applyTheme } from "./theme";
 import { RENDER_CSS, renderLoading, renderDashboard, setActionHandler } from "./render";
+import { safeExternalUrl } from "./urls";
 import type { UiAction, RenderOptions } from "./render";
 import type {
   CalendarCatalogItem,
   DashboardData,
   EventEditorDraft,
+  IframeMessage,
   ParentMessage,
   UiToolCapabilities,
 } from "./types";
@@ -94,9 +96,13 @@ const MIME_EXTENSION_MAP: Record<string, string> = {
 };
 
 const params = new URLSearchParams(window.location.search);
+// The standalone postMessage bridge is a nonstandard development preview channel. It is
+// compiled out of production builds (import.meta.env.DEV is false there), so the shipped
+// artifact only speaks the official MCP Apps protocol.
 const isStandalone =
-  params.get("mode") === "standalone" ||
-  document.documentElement.dataset.mcpMode === "standalone";
+  import.meta.env.DEV &&
+  (params.get("mode") === "standalone" ||
+    document.documentElement.dataset.mcpMode === "standalone");
 
 if (isStandalone) {
   initStandaloneMode();
@@ -104,8 +110,42 @@ if (isStandalone) {
   void initMcpMode();
 }
 
+function renderStatusMessage(message: string) {
+  const status = document.createElement("div");
+  status.className = "loading-state";
+  const text = document.createElement("div");
+  text.textContent = message;
+  status.append(text);
+  root.replaceChildren(status);
+}
+
+/**
+ * The only trusted peer is the embedding parent at the origin it had when this frame
+ * loaded. ancestorOrigins is authoritative where supported; the referrer is a fallback.
+ */
+function resolveStandaloneParentOrigin(): string | null {
+  if (window.parent === window) return null;
+  let origin = window.location.ancestorOrigins?.[0] ?? "";
+  if (!origin && document.referrer) {
+    try {
+      origin = new URL(document.referrer).origin;
+    } catch {
+      origin = "";
+    }
+  }
+  return origin && origin !== "null" ? origin : null;
+}
+
 function initStandaloneMode() {
   applyTheme("dark");
+  const parentOrigin = resolveStandaloneParentOrigin();
+  if (!parentOrigin) {
+    renderStatusMessage("Standalone preview requires an embedding parent with a known origin.");
+    return;
+  }
+  const postToParent = (message: IframeMessage) => {
+    window.parent.postMessage(message, parentOrigin);
+  };
   renderLoading(root);
   let standaloneData: DashboardData | undefined;
 
@@ -143,7 +183,7 @@ function initStandaloneMode() {
     }
 
     if (action.type === "chat") {
-      window.parent.postMessage({ type: "inject_chat_message", text: action.text }, "*");
+      postToParent({ type: "inject_chat_message", text: action.text });
       return;
     }
 
@@ -170,6 +210,8 @@ function initStandaloneMode() {
       text = `Set selected calendars: ${action.selected_calendar_ids.join(", ")}`;
     } else if (action.type === "open_attachment") {
       text = `Open attachment: ${action.url}`;
+    } else if (action.type === "open_link") {
+      text = `Open link: ${action.url}`;
     } else if (action.type === "download_attachment") {
       text = `Download attachment: ${action.name}`;
     } else if (action.type === "email_mark_read") {
@@ -190,27 +232,32 @@ function initStandaloneMode() {
       text = `Download attachment ${action.filename} from email ${action.messageId}.`;
     }
 
-    window.parent.postMessage({ type: "inject_chat_message", text }, "*");
+    postToParent({ type: "inject_chat_message", text });
   });
 
   window.addEventListener("message", (e: MessageEvent<ParentMessage>) => {
+    // Ignore sibling/child frames, popups, and a parent that navigated to another origin.
+    if (e.source !== window.parent || e.origin !== parentOrigin) return;
     if (!e.data || typeof e.data !== "object") return;
 
     switch (e.data.type) {
       case "dashboard_data": {
-        const data = e.data.data as DashboardData;
-        standaloneData = data;
+        const data = e.data.data;
+        if (!data || typeof data !== "object") return;
+        standaloneData = data as DashboardData;
         renderStandaloneData();
         break;
       }
       case "theme_changed": {
-        applyTheme(e.data.theme);
+        if (e.data.theme === "dark" || e.data.theme === "light") {
+          applyTheme(e.data.theme);
+        }
         break;
       }
     }
   });
 
-  window.parent.postMessage({ type: "request_dashboard_data" }, "*");
+  postToParent({ type: "request_dashboard_data" });
 }
 
 async function initMcpMode() {
@@ -534,20 +581,35 @@ async function initMcpMode() {
         return;
       }
 
-      if (action.type === "open_attachment") {
+      if (action.type === "open_attachment" || action.type === "open_link") {
+        const kind = action.type === "open_link" ? action.kind : "attachment";
+        const noun = kind === "attachment" ? "attachment" : "link";
+        // Re-validate at the adapter boundary; only the host navigates.
+        const url = safeExternalUrl(action.url, kind);
+        if (!url) {
+          setUiMessage(`Blocked an unsupported ${noun} URL.`, "error");
+          renderCurrent();
+          return;
+        }
         void withUiPending(async () => {
-          const result = await app.openLink({ url: action.url });
+          const result = await app.openLink({ url });
           if (result?.isError) {
-            throw new Error("Host could not open attachment link.");
+            throw new Error(`Host could not open ${noun}.`);
           }
         }).catch((err: unknown) => {
-          setUiMessage(`Failed to open attachment: ${String(err)}`, "error");
+          setUiMessage(`Failed to open ${noun}: ${String(err)}`, "error");
           renderCurrent();
         });
         return;
       }
 
       if (action.type === "download_attachment") {
+        const url = safeExternalUrl(action.url, "attachment");
+        if (!url) {
+          setUiMessage("Blocked an unsupported attachment URL.", "error");
+          renderCurrent();
+          return;
+        }
         void withUiPending(async () => {
           const resourceLink: {
             type: "resource_link";
@@ -557,7 +619,7 @@ async function initMcpMode() {
           } = {
             type: "resource_link",
             name: action.name || "attachment",
-            uri: action.url,
+            uri: url,
           };
           if (action.mimeType) {
             resourceLink.mimeType = action.mimeType;
@@ -566,7 +628,7 @@ async function initMcpMode() {
             contents: [resourceLink],
           });
           if (result?.isError) {
-            const openResult = await app.openLink({ url: action.url });
+            const openResult = await app.openLink({ url });
             if (openResult?.isError) {
               throw new Error("Host could not download or open attachment.");
             }
@@ -1067,11 +1129,7 @@ async function initMcpMode() {
     }, 300);
   } catch (err) {
     console.warn("MCP ext-apps not available:", err);
-    root.innerHTML = `
-      <div class="loading-state">
-        <div>MCP app connection failed.</div>
-      </div>
-    `;
+    renderStatusMessage("MCP app connection failed.");
   }
 }
 

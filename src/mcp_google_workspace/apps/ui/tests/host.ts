@@ -1,12 +1,15 @@
 import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { McpUiHostContext } from "@modelcontextprotocol/ext-apps";
 import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import * as adversarial from "./fixtures";
 
 const params = new URLSearchParams(location.search);
 const discovery = params.get("discovery");
+const fixture = params.get("fixture");
 const calls: string[] = [];
 const cursors: Array<string | undefined> = [];
-const weekly = {
+const openedLinks: string[] = [];
+const defaultWeekly = {
   week_start: "2026-09-21",
   week_end: "2026-09-27",
   timezone: "UTC",
@@ -28,6 +31,7 @@ const weekly = {
   }],
   fallback_text: "One test event",
 };
+const weekly = fixture === "adversarial" ? adversarial.weekly : defaultWeekly;
 const hostContext: McpUiHostContext = params.has("styled") ? {
   theme: "light",
   styles: {
@@ -45,9 +49,13 @@ const hostContext: McpUiHostContext = params.has("styled") ? {
 const bridge = new AppBridge(
   null,
   { name: "Dashboard test host", version: "1.0.0" },
-  { serverTools: {} },
+  fixture === "adversarial" ? { serverTools: {}, openLinks: {} } : { serverTools: {} },
   { hostContext },
 );
+bridge.onopenlink = async ({ url }) => {
+  openedLinks.push(url);
+  return {};
+};
 
 if (discovery !== "unsupported") {
   bridge.setRequestHandler(ListToolsRequestSchema, async (request) => {
@@ -68,8 +76,21 @@ if (discovery !== "unsupported") {
   });
 }
 
+function adversarialResult(name: string): Record<string, unknown> {
+  if (name.endsWith("get_dashboard")) return { dashboard: adversarial.dashboard, weekly_calendar: weekly };
+  if (name.endsWith("list_calendars")) return adversarial.calendarCatalog;
+  if (name.endsWith("get_event_detail")) {
+    return params.has("safeConference") ? adversarial.safeConferenceEventDetail : adversarial.eventDetail;
+  }
+  if (name.endsWith("get_email_detail")) return adversarial.emailDetail;
+  return { weekly_calendar: weekly };
+}
+
 bridge.oncalltool = async ({ name }) => {
   calls.push(name);
+  if (fixture === "adversarial") {
+    return { content: [], structuredContent: adversarialResult(name) };
+  }
   const structuredContent = name.endsWith("list_calendars")
     ? { items: [{ id: "primary", summary: "Test calendar", primary: true }] }
     : name.endsWith("next_range")
@@ -89,7 +110,7 @@ const iframe = document.createElement("iframe");
 iframe.id = "dashboard";
 iframe.style.cssText = "width: 1200px; height: 900px; border: 0";
 document.body.appendChild(iframe);
-Object.assign(window, { bridge, calls, cursors });
+Object.assign(window, { bridge, calls, cursors, openedLinks });
 await bridge.connect(new PostMessageTransport(iframe.contentWindow!, iframe.contentWindow!));
 // Exercise the shipped single-file bundle, including its actual SDK and CSS.
 iframe.src = "/dist/index.html";
