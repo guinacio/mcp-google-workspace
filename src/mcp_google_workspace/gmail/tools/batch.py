@@ -8,7 +8,8 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import confirm_destructive_action, execute_google_request
+from ...common.async_ops import execute_google_request
+from ...common.confirmation import confirm_destructive_action
 from ..client import gmail_service
 from ..schemas import BatchDeleteRequest, BatchModifyRequest
 
@@ -62,8 +63,6 @@ def register(server: FastMCP) -> None:
         request = BatchDeleteRequest(message_ids=message_ids, permanent=permanent)
         service = gmail_service()
         if request.permanent:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "batch_delete",

@@ -12,6 +12,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from .fastmcp_compat import local_tools
+from .confirmation import install_confirmation_guard
 from .output_schemas import infer_tool_output_schema
 
 
@@ -772,6 +773,11 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
             tool_component,
             _base_tool_name(tool_component.name, namespace_hint=namespace_hint),
         )
+        # Outermost wrapper: binds tool identity + validated arguments for the
+        # confirmation adapter and returns its multi-round-trip ask as this
+        # tool's InputRequiredResult (common/confirmation.py). Installed after
+        # output-schema inference, which reads the undecorated source.
+        install_confirmation_guard(tool_component, tool_component.name)
         tool_component.annotations = _merge_annotations(
             tool_component.annotations,
             base_name=_base_tool_name(tool_component.name, namespace_hint=namespace_hint),

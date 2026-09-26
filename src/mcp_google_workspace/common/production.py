@@ -27,7 +27,7 @@ from mcp_types.version import (
 import redis
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools import Tool, ToolResult
+from fastmcp.tools import InputRequiredToolResult, Tool, ToolResult
 from opentelemetry import trace
 from prometheus_client import Counter, Gauge, Histogram
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -36,6 +36,7 @@ from starlette.responses import JSONResponse, Response
 
 from ..auth.identity import current_principal
 from .approvals import COMMIT_ACTIVE, requires_prepare
+from .confirmation import shared_request_state_keys_configured
 from .errors import RecoverableToolError
 
 LOGGER = logging.getLogger("mcp_google_workspace.production")
@@ -372,7 +373,14 @@ class ProductionControlMiddleware(Middleware):
                         ACTIVE_REQUESTS.inc()
                         try:
                             with anyio.fail_after(deadline):
-                                return await call_next(context)
+                                result = await call_next(context)
+                            if isinstance(result, InputRequiredToolResult):
+                                # One multi-round-trip leg that asked the
+                                # client a question: a round, not a completed
+                                # (or failed) logical operation.
+                                outcome = "input_required"
+                                span.set_attribute("mcp.tool.round", "input_required")
+                            return result
                         finally:
                             RUNTIME_STATE.active_requests -= 1
                             ACTIVE_REQUESTS.dec()
@@ -584,6 +592,13 @@ def readiness_report() -> tuple[bool, dict[str, Any]]:
         distributed = bool(
             redis_url and bucket and affinity and token_backend == "redis"  # nosec B105 -- backend identifier
         )
+        # Multi-round-trip confirmations resume on whichever replica receives
+        # the answering request, so continuation state must be sealed with a
+        # key ring every replica shares (independent of the token and task keys).
+        checks["continuation_keys"] = {
+            "ok": shared_request_state_keys_configured(),
+            "requirement": "MCP_REQUEST_STATE_KEYS shared by every replica",
+        }
         checks["multi_worker_storage"] = {
             "ok": distributed,
             "workers": workers,

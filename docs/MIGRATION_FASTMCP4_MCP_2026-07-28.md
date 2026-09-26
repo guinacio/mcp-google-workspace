@@ -443,3 +443,14 @@ These supersede conflicting guidance elsewhere in this plan.
 - **Dashboard handles:** `wsv_` + `secrets.token_urlsafe(32)`, bound to `current_principal()` (verified `(issuer, subject)` remotely; the explicit trusted-local principal over stdio), keyed by `sha256(handle)` under the principal. Every launch without a handle mints a new, isolated view. The descriptor travels in the result `_meta["mcp-google-workspace/view"]` (canonical) and in `structuredContent.view`. TTL: `MCP_APP_VIEW_TTL_SECONDS`, default 24h sliding. Stale conditional writes return `view_state_conflict`; unknown/expired/foreign/malformed handles return `view_handle_invalid` (isError tool results).
 - **No compatibility:** `session_id` parameters, the `ctx.session_id` fallback, session-keyed dictionaries, `DashboardState.session_id`, and the browser `localStorage`/`Math.random()` view id are removed; old state is not migrated.
 - **Uploads:** local picker storage is scoped to the trusted-local principal and keyed by `upl_` IDs (`LocalUploadStore`); remote SQLite/blob and Redis/S3 backends are unchanged. Catalog changes: `docs/migration/W3_CATALOG_DIFF.md`.
+
+### 9.4 Implementation record (W4a, 2026-09-26)
+
+Details: `docs/migration/W4_CONFIRMATION_POLICY.md`, `docs/migration/W4_CATALOG_DIFF.md`.
+
+- **Confirmations:** one adapter (`common/confirmation.py`) for all 24 sites. 2026-07-28 requests from clients that declared elicitation get an `InputRequiredResult` before any mutation and resume on retry after the continuation (principal, inner tool, canonical argument digest, preview digest, expiry, single-use operation id) and the answer are verified. Legacy requests keep `ctx.elicit`. No capability or unknown version still fails closed with `confirmation_required`.
+- **Keys:** `MCP_REQUEST_STATE_KEYS` (shared ring, first = active) configures FastMCP `RequestStateSecurity` and the application continuation MAC; `MCP_CONFIRMATION_TTL_SECONDS` (default 600). Ephemeral per-process key otherwise; HTTP warns, multi-worker readiness fails.
+- **Replay:** used operation ids in memory (stdio/tests) or Redis (`MCP_REDIS_URL`); W4b replaces this with durable operation records.
+- **Tasks:** a tasked tool that asks parks in `input_required` and resumes via `tasks/update` (supported by fastmcp-tasks 4.0.10); no current confirmation site is a task tool.
+- **Prepare/commit:** claim → release (asked a question, or rejected before execution) / complete (ran, or outcome uncertain). The full `prepared → awaiting_input → executing → succeeded | failed | outcome_unknown` record is W4b.
+- **Bypass flags:** inventoried, unchanged; policy is an owner decision.

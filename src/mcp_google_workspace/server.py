@@ -8,6 +8,9 @@ import os
 import secrets
 from typing import Annotated
 from fastmcp import FastMCP
+from fastmcp.exceptions import McpError
+from fastmcp.tools import InputRequiredToolResult, ToolResult
+import mcp_types
 from fastmcp.server.providers.addressing import hash_tool, hashed_resource_uri
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -16,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .apps import apps_mcp
 from .common.component_annotations import apply_default_tool_annotations
+from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
 from .common.errors import StructuredToolErrorMiddleware
 from .common.task_backend import install_tasks_extension
 from .common.production import (
@@ -43,7 +47,12 @@ from .auth.google_auth import (
 )
 from .common.async_ops import execute_google_request
 from .common.resources import ResourceHandleMiddleware, parse_resource_uri, resource_handle
-from .common.approvals import APPROVAL_STORE, COMMIT_ACTIVE, CONSEQUENTIAL_TOOLS
+from .common.approvals import (
+    APPROVAL_STORE,
+    COMMIT_ACTIVE,
+    CONSEQUENTIAL_TOOLS,
+    PRE_EXECUTION_ERROR_CODES,
+)
 from .calendar import calendar_mcp
 from .chat import chat_mcp
 from .docs import docs_mcp
@@ -66,6 +75,9 @@ workspace_mcp = FastMCP(
         "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations."
     ),
     lifespan=production_lifespan,
+    # Seals multi-round-trip continuation state (confirmations). Shared across
+    # replicas via MCP_REQUEST_STATE_KEYS; ephemeral per process otherwise.
+    request_state_security=build_request_state_security(audience=REQUEST_STATE_AUDIENCE),
 )
 # One root-managed Tasks extension (and therefore one queue/worker) for every
 # runnable entrypoint: HTTP, stdio bundle, and out-of-process task workers all
@@ -476,30 +488,65 @@ def prepare_workspace_action(
     return APPROVAL_STORE.prepare(tool_name, arguments)
 
 
+def _nested_error_code(error: Exception | None = None, result: ToolResult | None = None) -> str | None:
+    """Stable application error code of a failed nested call, if it carries one."""
+    data: object = None
+    if isinstance(error, McpError):
+        data = error.error.data
+    elif result is not None:
+        data = result.structured_content
+    code = data.get("code") if isinstance(data, dict) else None
+    return code if isinstance(code, str) else None
+
+
+def _settle_failed_commit(commit_token: str, code: str | None) -> None:
+    if code in PRE_EXECUTION_ERROR_CODES:
+        APPROVAL_STORE.release(commit_token)
+    else:
+        # The action may have reached Google: never allow a blind retry.
+        APPROVAL_STORE.complete(commit_token)
+
+
 @workspace_mcp.tool(name="commit_workspace_action")
 async def commit_workspace_action(
     commit_token: Annotated[
         str,
         (
             "One-time, principal-bound token from prepare_workspace_action's response; "
-            "expires 5 minutes after issuance and is consumed on first use."
+            "expires 5 minutes after issuance and is consumed once the bound action "
+            "runs (a confirmation question keeps it valid for the answering call)."
         ),
     ],
-) -> dict[str, object]:
-    """Atomically consume a prepared action token and execute its exact bound arguments."""
-    tool_name, arguments = APPROVAL_STORE.consume(commit_token)
+) -> dict[str, object] | ToolResult | mcp_types.InputRequiredResult:
+    """Claim a prepared action token and execute its exact bound arguments once."""
+    claim = APPROVAL_STORE.claim(commit_token)
     active_token = COMMIT_ACTIVE.set(True)
     try:
         # Re-enter the complete middleware chain so revocation, admission,
         # deadlines, input limits, handle resolution, telemetry, and structured
         # errors still apply at commit time. COMMIT_ACTIVE bypasses only the
         # consequential-action gate for this exact bound invocation.
-        result = await workspace_mcp.call_tool(tool_name, arguments)
+        result = await workspace_mcp.call_tool(claim.tool, claim.arguments)
+    except McpError as exc:
+        _settle_failed_commit(commit_token, _nested_error_code(error=exc))
+        raise
+    except BaseException:
+        APPROVAL_STORE.complete(commit_token)
+        raise
     finally:
         COMMIT_ACTIVE.reset(active_token)
+    if isinstance(result, InputRequiredToolResult):
+        # The bound tool asked a confirmation question: nothing ran yet. Keep
+        # the token for the answering call and return the question unwrapped.
+        APPROVAL_STORE.release(commit_token)
+        return result.input_required
+    if result.is_error:
+        _settle_failed_commit(commit_token, _nested_error_code(result=result))
+        return result
+    APPROVAL_STORE.complete(commit_token)
     return {
         "status": "committed",
-        "tool": tool_name,
+        "tool": claim.tool,
         "result": result.structured_content or {
             "content": [item.model_dump() for item in result.content]
         },

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -9,10 +10,13 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 from starlette.middleware import Middleware as ASGIMiddleware
 
 from .auth.google_oauth import register_oauth_callback_route
+from .common.confirmation import REQUEST_STATE_KEYS_ENV, shared_request_state_keys_configured
 from .common.production import RequestSizeLimitMiddleware
 from .runtime import configure_logging, get_remote_security_settings
 from .server import workspace_mcp
 from .tool_discovery import configure_tool_search
+
+LOGGER = logging.getLogger("mcp_google_workspace.http")
 
 
 def configure_remote_tool_search() -> None:
@@ -35,6 +39,12 @@ def main() -> None:
     host = os.getenv("MCP_HOST", "127.0.0.1")
     port = int(os.getenv("MCP_PORT", "8000"))
     configure_remote_tool_search()
+    if not shared_request_state_keys_configured():
+        LOGGER.warning(
+            "%s is not set: confirmation continuations are sealed with an ephemeral "
+            "per-process key and will not resume on another replica or after a restart.",
+            REQUEST_STATE_KEYS_ENV,
+        )
     # The Tasks queue (MCP_REDIS_URL / FASTMCP_DOCKET_URL) is configured once by
     # install_tasks_extension() when server.py composes workspace_mcp.
     security = get_remote_security_settings()

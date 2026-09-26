@@ -10,7 +10,8 @@ from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import confirm_destructive_action, execute_google_request, run_blocking
+from ...common.async_ops import execute_google_request, run_blocking
+from ...common.confirmation import confirm_destructive_action
 from ...common.timezone import resolve_user_timezone, user_now
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ...common.downloads import stream_google_download
@@ -605,8 +606,6 @@ def register(server: FastMCP) -> None:
             raise ValueError(
                 "Permanent deletion requires confirm_permanent=true and interactive confirmation."
             )
-        # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-        # requests fail closed until the MRTR branch lands (common.async_ops).
         if not await confirm_destructive_action(
             ctx,
             "delete_file",

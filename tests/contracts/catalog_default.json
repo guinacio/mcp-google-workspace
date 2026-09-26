@@ -3298,13 +3298,13 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Atomically consume a prepared action token and execute its exact bound arguments.",
+      "description": "Claim a prepared action token and execute its exact bound arguments once.",
       "inputSchema": {
         "additionalProperties": false,
         "maxProperties": 10000,
         "properties": {
           "commit_token": {
-            "description": "One-time, principal-bound token from prepare_workspace_action's response; expires 5 minutes after issuance and is consumed on first use.",
+            "description": "One-time, principal-bound token from prepare_workspace_action's response; expires 5 minutes after issuance and is consumed once the bound action runs (a confirmation question keeps it valid for the answering call).",
             "maxLength": 1000000,
             "type": "string"
           }

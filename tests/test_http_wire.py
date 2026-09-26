@@ -14,6 +14,7 @@ import pytest
 from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS
 from starlette.testclient import TestClient
 
+import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.common.production import build_version_payload
 from mcp_google_workspace.server import workspace_mcp
 
@@ -34,7 +35,14 @@ def client() -> Iterator[TestClient]:
         yield test_client
 
 
-def _modern(client: TestClient, request_id: int, method: str, params: dict[str, Any] | None = None, name: str | None = None):
+def _modern(
+    client: TestClient,
+    request_id: int,
+    method: str,
+    params: dict[str, Any] | None = None,
+    name: str | None = None,
+    capabilities: dict[str, Any] | None = None,
+):
     headers = {
         "Accept": _ACCEPT,
         "Content-Type": "application/json",
@@ -47,7 +55,7 @@ def _modern(client: TestClient, request_id: int, method: str, params: dict[str, 
     body_params["_meta"] = {
         "io.modelcontextprotocol/protocolVersion": MODERN,
         "io.modelcontextprotocol/clientInfo": {"name": "wire-test", "version": "0"},
-        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientCapabilities": capabilities or {},
     }
     return client.post(
         "/mcp",
@@ -114,3 +122,82 @@ def test_every_reported_legacy_version_still_negotiates(client: TestClient, vers
     assert response.status_code == 200, response.text
     assert response.json()["result"]["protocolVersion"] == version
     assert response.headers.get("mcp-session-id")
+
+
+class _GoogleRecorder:
+    def __init__(self, calls: list[str], path: tuple[str, ...] = ()) -> None:
+        self._calls = calls
+        self._path = path
+
+    def __getattr__(self, name: str) -> "_GoogleRecorder":
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return _GoogleRecorder(self._calls, (*self._path, name))
+
+    def __call__(self, *_args: Any, **_kwargs: Any) -> "_GoogleRecorder":
+        return self
+
+    def execute(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        self._calls.append(".".join(self._path))
+        return {}
+
+
+_DELETE_CONTACT = {"name": "people_delete_contact", "arguments": {"person_name": "people/c-wire"}}
+
+
+def test_modern_mutation_asks_first_and_completes_with_input_responses(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MRTR on the raw wire: input_required with no side effect, then completion."""
+    calls: list[str] = []
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _GoogleRecorder(calls))
+    capabilities = {"elicitation": {"form": {}}}
+
+    asked = _modern(client, 20, "tools/call", _DELETE_CONTACT, name="people_delete_contact", capabilities=capabilities)
+    assert asked.status_code == 200, asked.text
+    first = asked.json()["result"]
+    assert first["resultType"] == "input_required"
+    assert "content" not in first and "structuredContent" not in first
+    request = first["inputRequests"]["confirm"]
+    assert request["method"] == "elicitation/create"
+    assert request["params"]["mode"] == "form"
+    assert request["params"]["requestedSchema"]["properties"]["value"]["type"] == "boolean"
+    state = first["requestState"]
+    assert isinstance(state, str) and state
+    # Sealed on the wire: the plaintext continuation format is not visible.
+    assert not state.startswith("cw1.")
+    assert calls == []
+
+    answered = _modern(
+        client,
+        21,
+        "tools/call",
+        {
+            **_DELETE_CONTACT,
+            "inputResponses": {"confirm": {"action": "accept", "content": {"value": True}}},
+            "requestState": state,
+        },
+        name="people_delete_contact",
+        capabilities=capabilities,
+    )
+    assert answered.status_code == 200, answered.text
+    done = answered.json()["result"]
+    assert done["resultType"] == "complete"
+    assert done.get("isError") in (None, False)
+    assert done["structuredContent"]["status"] == "deleted"
+    assert calls == ["people.deleteContact"]
+
+
+def test_modern_mutation_without_elicitation_capability_fails_closed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _GoogleRecorder(calls))
+
+    response = _modern(client, 22, "tools/call", _DELETE_CONTACT, name="people_delete_contact")
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result["resultType"] == "complete"
+    assert result["isError"] is True
+    assert result["structuredContent"]["code"] == "confirmation_required"
+    assert calls == []

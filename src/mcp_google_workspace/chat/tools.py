@@ -11,7 +11,8 @@ from fastmcp import Context, FastMCP
 from ..common.timezone import resolve_user_timezone
 from googleapiclient.errors import HttpError
 
-from ..common.async_ops import confirm_destructive_action, execute_google_request
+from ..common.async_ops import execute_google_request
+from ..common.confirmation import confirm_destructive_action
 from .client import chat_service, normalize_message_name, normalize_space_name, normalize_user_name, resolve_space_members
 from .presentation import enrich_messages, space_envelope
 from .schemas import (
@@ -30,6 +31,17 @@ from .schemas import (
 
 LOGGER = logging.getLogger(__name__)
 
+
+
+async def _execute_message_request(request: Any) -> dict[str, Any]:
+    """Execute a Chat ``messages.create``/``patch`` call.
+
+    Google returns a Chat ``Message`` object. The explicit return annotation is
+    what output-schema inference reads, so the published ``message`` field is
+    an object rather than the name-based string guess.
+    """
+    message: dict[str, Any] = await execute_google_request(request)
+    return message
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_spaces")
@@ -201,15 +213,13 @@ def register_tools(server: FastMCP) -> None:
         }
         LOGGER.debug(f"Creating Chat message in {parent}.")
         if request.notify:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "create_message",
                 f"Send Chat message to {parent}?",
             ):
                 return {"status": "cancelled"}
-        created = await execute_google_request(service.spaces().messages().create(**query))
+        created = await _execute_message_request(service.spaces().messages().create(**query))
         return {"status": "ok", "message": created}
 
     @server.tool(name="delete_message")
@@ -217,8 +227,6 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_message_name(request.message_name)
         if not request.force:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "delete_message",
@@ -233,7 +241,7 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_message_name(request.message_name)
         LOGGER.debug(f"Updating Chat message {name}.")
-        updated = await execute_google_request(
+        updated = await _execute_message_request(
             service.spaces().messages().patch(
                 name=name,
                 updateMask=request.update_mask,
@@ -248,15 +256,13 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         parent = normalize_space_name(request.space_name)
         if request.notify:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "post_message_simple",
                 f"Send Chat message to {parent}?",
             ):
                 return {"status": "cancelled"}
-        created = await execute_google_request(
+        created = await _execute_message_request(
             service.spaces().messages().create(
                 parent=parent,
                 body={"text": request.text},
@@ -270,8 +276,6 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         message_name = normalize_message_name(request.message_name)
         if request.notify:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "reply_to_message",
@@ -284,7 +288,7 @@ def register_tools(server: FastMCP) -> None:
         thread_name = source.get("thread", {}).get("name")
         if thread_name:
             body["thread"] = {"name": thread_name}
-        created = await execute_google_request(
+        created = await _execute_message_request(
             service.spaces().messages().create(
                 parent=parent,
                 body=body,

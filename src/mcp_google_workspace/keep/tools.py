@@ -9,7 +9,8 @@ from typing import Any
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
-from ..common.async_ops import confirm_destructive_action, execute_google_request
+from ..common.async_ops import execute_google_request
+from ..common.confirmation import confirm_destructive_action
 from ..common.errors import tool_error_payload
 from ..common.timezone import resolve_user_timezone
 from .client import keep_service, normalize_note_name
@@ -96,8 +97,6 @@ def register_tools(server: FastMCP) -> None:
         """
         service = keep_service()
         if request.confirm_create:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "create_note",
@@ -190,8 +189,6 @@ def register_tools(server: FastMCP) -> None:
         service = keep_service()
         name = normalize_note_name(request.note_name)
         if request.confirm_delete:
-            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-            # requests fail closed until the MRTR branch lands (common.async_ops).
             if not await confirm_destructive_action(
                 ctx,
                 "delete_note",

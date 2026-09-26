@@ -8,7 +8,8 @@ from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import confirm_destructive_action, execute_google_request
+from ...common.async_ops import execute_google_request
+from ...common.confirmation import confirm_destructive_action
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..presentation import clean_message_content, envelope
@@ -191,8 +192,6 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Permanently delete a thread after mandatory interactive confirmation."""
         request = ThreadIdRequest(thread_id=thread_id)
-        # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
-        # requests fail closed until the MRTR branch lands (common.async_ops).
         if not await confirm_destructive_action(
             ctx,
             "delete_thread",
