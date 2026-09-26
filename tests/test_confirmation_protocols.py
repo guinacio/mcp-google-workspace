@@ -247,3 +247,31 @@ def test_only_the_shared_gate_uses_imperative_elicitation() -> None:
         if ".elicit(" in path.read_text(encoding="utf-8")
     )
     assert offenders == ["common/async_ops.py"]
+
+
+class _NoElicitContext:
+    """Context stand-in whose request negotiated no known handshake version."""
+
+    def __init__(self, protocol_version: str | None) -> None:
+        self.request_context = (
+            None if protocol_version is None else type("RC", (), {"protocol_version": protocol_version})()
+        )
+
+    async def elicit(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - must not run
+        raise AssertionError("elicit must not be attempted outside a handshake-era request")
+
+
+@pytest.mark.parametrize("protocol_version", [None, "", "1999-01-01", "2026-07-28"])
+def test_confirmation_gate_fails_closed_without_known_legacy_version(protocol_version: str | None) -> None:
+    from mcp_google_workspace.common.async_ops import confirm_destructive_action
+    from mcp_google_workspace.common.errors import ConfirmationRequiredError
+
+    async def run() -> None:
+        with pytest.raises(ConfirmationRequiredError):
+            await confirm_destructive_action(
+                _NoElicitContext(protocol_version),  # type: ignore[arg-type]
+                "delete_thing",
+                "Delete the thing?",
+            )
+
+    anyio.run(run)

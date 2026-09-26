@@ -12,7 +12,7 @@ from typing import Any, TypeVar
 
 import anyio
 from fastmcp import Context
-from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS
 
 from .errors import ConfirmationRequiredError
 
@@ -73,11 +73,15 @@ class Confirmation:
     confirm: bool
 
 
-def _is_modern_request(ctx: Context) -> bool:
-    """Whether this request negotiated a stateless (2026-07-28+) protocol era."""
+def _is_legacy_request(ctx: Context) -> bool:
+    """Whether this request negotiated a handshake-era protocol that supports ``ctx.elicit``.
+
+    An allowlist, so an unknown or missing version (e.g. worker execution
+    without a live request) fails closed instead of attempting elicitation.
+    """
     request_context = getattr(ctx, "request_context", None)
     version = getattr(request_context, "protocol_version", None)
-    return version in MODERN_PROTOCOL_VERSIONS
+    return version in HANDSHAKE_PROTOCOL_VERSIONS
 
 
 async def confirm_destructive_action(
@@ -100,7 +104,7 @@ async def confirm_destructive_action(
       mutated and the caller receives a ``confirmation_required`` tool result.
       Unavailable confirmation is never treated as consent.
     """
-    if ctx is None or _is_modern_request(ctx):
+    if ctx is None or not _is_legacy_request(ctx):
         raise ConfirmationRequiredError(action_name, message)
     if explicit_confirm_field:
         response = await ctx.elicit(message, response_type=Confirmation)
