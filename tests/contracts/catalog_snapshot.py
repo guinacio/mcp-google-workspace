@@ -249,6 +249,9 @@ def build_catalog(config_name: str) -> dict[str, Any]:
         )
     finally:
         _restore_env(previous)
+        # Leave the shared module rebuilt from the ambient environment, without
+        # the discovery transform, so later tests never inherit this state.
+        _reload_workspace_server()
 
     return catalog
 
@@ -260,7 +263,7 @@ def render(data: dict[str, Any]) -> str:
 
 def write_snapshot(config_name: str, data: dict[str, Any]) -> Path:
     path = SNAPSHOT_DIR / config_name
-    path.write_text(render(data), encoding="utf-8")
+    path.write_text(render(data), encoding="utf-8", newline="\n")
     return path
 
 

@@ -50,7 +50,7 @@ def test_catalog_matches_committed_snapshot(config_name: str) -> None:
     path = SNAPSHOT_DIR / config_name
 
     if os.getenv("UPDATE_CATALOG_SNAPSHOTS", "").strip() == "1":
-        path.write_text(actual, encoding="utf-8")
+        path.write_text(actual, encoding="utf-8", newline="\n")
         pytest.skip(f"Regenerated {path} because UPDATE_CATALOG_SNAPSHOTS=1.")
 
     expected = path.read_text(encoding="utf-8")
