@@ -5112,10 +5112,7 @@
         "properties": {
           "message": {
             "description": "Response field: message.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "object"
           },
           "resource": {
             "additionalProperties": false,
@@ -6280,10 +6277,7 @@
         "properties": {
           "message": {
             "description": "Response field: message.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "object"
           },
           "resource": {
             "additionalProperties": false,
@@ -6422,10 +6416,7 @@
         "properties": {
           "message": {
             "description": "Response field: message.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "object"
           },
           "replied_to": {
             "description": "Response field: replied to.",
@@ -6572,10 +6563,7 @@
         "properties": {
           "message": {
             "description": "Response field: message.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "object"
           },
           "resource": {
             "additionalProperties": false,

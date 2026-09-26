@@ -30,6 +30,15 @@ from .schemas import (
 
 LOGGER = logging.getLogger(__name__)
 
+async def _execute_message_request(request: Any) -> dict[str, Any]:
+    """Execute a Chat ``messages.create``/``patch`` call.
+
+    Google returns a Chat ``Message`` object. The explicit return annotation is
+    what output-schema inference reads, so the published ``message`` field is
+    an object rather than the name-based string guess.
+    """
+    message: dict[str, Any] = await execute_google_request(request)
+    return message
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_spaces")
@@ -209,7 +218,7 @@ def register_tools(server: FastMCP) -> None:
                 f"Send Chat message to {parent}?",
             ):
                 return {"status": "cancelled"}
-        created = await execute_google_request(service.spaces().messages().create(**query))
+        created = await _execute_message_request(service.spaces().messages().create(**query))
         return {"status": "ok", "message": created}
 
     @server.tool(name="delete_message")
@@ -233,7 +242,7 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         name = normalize_message_name(request.message_name)
         LOGGER.debug(f"Updating Chat message {name}.")
-        updated = await execute_google_request(
+        updated = await _execute_message_request(
             service.spaces().messages().patch(
                 name=name,
                 updateMask=request.update_mask,
@@ -256,7 +265,7 @@ def register_tools(server: FastMCP) -> None:
                 f"Send Chat message to {parent}?",
             ):
                 return {"status": "cancelled"}
-        created = await execute_google_request(
+        created = await _execute_message_request(
             service.spaces().messages().create(
                 parent=parent,
                 body={"text": request.text},
@@ -284,7 +293,7 @@ def register_tools(server: FastMCP) -> None:
         thread_name = source.get("thread", {}).get("name")
         if thread_name:
             body["thread"] = {"name": thread_name}
-        created = await execute_google_request(
+        created = await _execute_message_request(
             service.spaces().messages().create(
                 parent=parent,
                 body=body,
