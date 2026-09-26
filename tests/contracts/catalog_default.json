@@ -8308,13 +8308,13 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "Delete one uploaded file from the current scoped upload store.",
+      "description": "Delete one uploaded file of the current user by its upload ID.",
       "inputSchema": {
         "additionalProperties": false,
         "maxProperties": 10000,
         "properties": {
           "name": {
-            "description": "Uploaded filename in the current user session.",
+            "description": "Opaque upload ID (upl_...) returned by the picker or files_list_files.",
             "maxLength": 1000000,
             "type": "string"
           }
@@ -8346,7 +8346,7 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "description": "Uploaded filename requested for deletion.",
+            "description": "Upload ID requested for deletion.",
             "type": "string"
           },
           "status": {
@@ -8479,7 +8479,7 @@
         "additionalProperties": false,
         "properties": {
           "result": {
-            "description": "Files stored in the current user session.",
+            "description": "Files currently stored for the calling user.",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -8496,7 +8496,7 @@
                   "type": "string"
                 },
                 "remaining_quota_bytes": {
-                  "description": "Bytes still available in the authenticated user's remote upload quota. Present for remote uploads.",
+                  "description": "Bytes still available in the calling user's upload quota.",
                   "minimum": 0,
                   "type": "integer"
                 },
@@ -8635,10 +8635,10 @@
                     }
                   ],
                   "default": null,
-                  "description": "Remote handle expiry epoch."
+                  "description": "Upload handle expiry epoch."
                 },
                 "name": {
-                  "description": "Opaque upload handle or local filename.",
+                  "description": "Opaque upload handle (same value as upload_id).",
                   "type": "string"
                 },
                 "remaining_quota_bytes": {
@@ -8652,7 +8652,7 @@
                     }
                   ],
                   "default": null,
-                  "description": "Remaining remote upload quota in bytes."
+                  "description": "Remaining upload quota of the current user in bytes."
                 },
                 "size": {
                   "description": "Decoded file size in bytes.",
@@ -8677,7 +8677,7 @@
                     }
                   ],
                   "default": null,
-                  "description": "Opaque remote upload ID."
+                  "description": "Opaque upload ID (upl_...)."
                 },
                 "uploaded_at": {
                   "description": "UTC upload timestamp.",
@@ -8729,7 +8729,7 @@
         "maxProperties": 10000,
         "properties": {
           "name": {
-            "description": "Uploaded filename in the current user session.",
+            "description": "Opaque upload ID (upl_...) returned by the picker or files_list_files.",
             "maxLength": 1000000,
             "type": "string"
           }
@@ -8800,7 +8800,8 @@
         "required": [
           "result"
         ],
-        "type": "object"
+        "type": "object",
+        "x-fastmcp-wrap-result": true
       },
       "title": "Files Read File"
     },
@@ -8884,7 +8885,7 @@
         "additionalProperties": false,
         "properties": {
           "result": {
-            "description": "Files stored in the current user session.",
+            "description": "Files currently stored for the calling user.",
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -8901,7 +8902,7 @@
                   "type": "string"
                 },
                 "remaining_quota_bytes": {
-                  "description": "Bytes still available in the authenticated user's remote upload quota. Present for remote uploads.",
+                  "description": "Bytes still available in the calling user's upload quota.",
                   "minimum": 0,
                   "type": "integer"
                 },
