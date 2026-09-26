@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import execute_google_request, require_elicitation_context
+from ...common.async_ops import confirm_destructive_action, execute_google_request
 from ..client import gmail_service
 from ..schemas import BatchDeleteRequest, BatchModifyRequest
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
@@ -29,8 +33,7 @@ def register(server: FastMCP) -> None:
             raise ValueError("At least one of add_label_ids/remove_label_ids must be provided.")
         service = gmail_service()
         total = max(len(request.message_ids), 1)
-        if ctx is not None:
-            await ctx.info(f"Batch modifying {len(request.message_ids)} messages.")
+        LOGGER.debug(f"Batch modifying {len(request.message_ids)} messages.")
         for index, _ in enumerate(request.message_ids, start=1):
             if ctx is not None:
                 await ctx.report_progress(index, total, f"Preparing message {index}/{total}")
@@ -59,12 +62,13 @@ def register(server: FastMCP) -> None:
         request = BatchDeleteRequest(message_ids=message_ids, permanent=permanent)
         service = gmail_service()
         if request.permanent:
-            confirm_ctx = require_elicitation_context(ctx, "batch_delete")
-            response = await confirm_ctx.elicit(
+            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
+            # requests fail closed until the MRTR branch lands (common.async_ops).
+            if not await confirm_destructive_action(
+                ctx,
+                "batch_delete",
                 f"Permanently delete {len(request.message_ids)} messages?",
-                response_type=bool,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(response.data):
+            ):
                 return {"status": "cancelled"}
             await execute_google_request(
                 service.users().messages().batchDelete(userId="me", body={"ids": request.message_ids})

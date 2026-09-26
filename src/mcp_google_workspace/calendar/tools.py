@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import re
 from hashlib import sha256
 from datetime import datetime, timedelta
@@ -16,7 +18,6 @@ from ..auth import build_calendar_service, build_drive_service
 from ..common.async_ops import (
     confirm_destructive_action,
     execute_google_request,
-    require_elicitation_context,
     run_blocking,
 )
 from ..common.downloads import stream_google_download
@@ -38,6 +39,8 @@ from .schemas import (
     RemoveEventAttachmentRequest,
     UpdateEventRequest,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _validate_and_fix_datetime(dt_string: str | None, timezone_name: str) -> str | None:
@@ -334,8 +337,7 @@ def register_tools(server: FastMCP) -> None:
             range_preset=range_preset,
         )
         service = build_calendar_service()
-        if ctx is not None:
-            await ctx.info(f"Listing events for calendar {request.calendar_id}.")
+        LOGGER.debug(f"Listing events for calendar {request.calendar_id}.")
         user_timezone = await resolve_user_timezone()
         preset_min, preset_max = _resolve_relative_range(request.range_preset, user_timezone)
         effective_time_min = request.time_min or preset_min
@@ -556,8 +558,7 @@ def register_tools(server: FastMCP) -> None:
         if window_end <= window_start:
             raise ValueError("time_max must be greater than time_min.")
 
-        if ctx is not None:
-            await ctx.info(f"Checking common availability for {len(request.participants)} participant(s).")
+        LOGGER.debug(f"Checking common availability for {len(request.participants)} participant(s).")
         body: dict[str, Any] = {
             "timeMin": fixed_min,
             "timeMax": fixed_max,
@@ -761,8 +762,7 @@ def register_tools(server: FastMCP) -> None:
                     requested_end=end,
                 )
             return response
-        if ctx is not None:
-            await ctx.info(f"Creating event '{request.summary}'.")
+        LOGGER.debug(f"Creating event '{request.summary}'.")
         try:
             event = await execute_google_request(
                 service.events()
@@ -909,8 +909,7 @@ def register_tools(server: FastMCP) -> None:
                         requested_end=patch_data["end"]["dateTime"],
                     )
                 return response
-        if ctx is not None:
-            await ctx.info(f"Updating event {request.event_id}.")
+        LOGGER.debug(f"Updating event {request.event_id}.")
         event = await execute_google_request(
             service.events()
             .patch(
@@ -964,8 +963,7 @@ def register_tools(server: FastMCP) -> None:
                 sendUpdates=request.send_updates,
             )
         )
-        if ctx is not None:
-            await ctx.info(f"RSVP updated to {request.response_status}.")
+        LOGGER.debug(f"RSVP updated to {request.response_status}.")
         return {
             "success": True,
             "event_id": request.event_id,
@@ -992,8 +990,7 @@ def register_tools(server: FastMCP) -> None:
             send_updates=send_updates,
         )
         service = build_calendar_service()
-        if ctx is not None:
-            await ctx.info(f"Adding attachment to event {request.event_id}.")
+        LOGGER.debug(f"Adding attachment to event {request.event_id}.")
         event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
@@ -1040,8 +1037,7 @@ def register_tools(server: FastMCP) -> None:
             f"Remove the selected attachment from event {request.event_id}?",
         ):
             return {"status": "cancelled", "event_id": request.event_id}
-        if ctx is not None:
-            await ctx.info(f"Removing attachment from event {request.event_id}.")
+        LOGGER.debug(f"Removing attachment from event {request.event_id}.")
         event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
@@ -1097,8 +1093,7 @@ def register_tools(server: FastMCP) -> None:
         require_local_filesystem("Calendar attachment download")
         service = build_calendar_service()
         drive = build_drive_service()
-        if ctx is not None:
-            await ctx.info(f"Resolving attachment for event {request.event_id}.")
+        LOGGER.debug(f"Resolving attachment for event {request.event_id}.")
         event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
@@ -1186,12 +1181,13 @@ def register_tools(server: FastMCP) -> None:
             force=force,
         )
         if not request.force:
-            confirm_ctx = require_elicitation_context(ctx, "delete_event")
-            response = await confirm_ctx.elicit(
+            # W4: shared confirmation gate - legacy requests elicit; 2026-07-28
+            # requests fail closed until the MRTR branch lands (common.async_ops).
+            if not await confirm_destructive_action(
+                ctx,
+                "delete_event",
                 f"Delete event {request.event_id} from calendar {request.calendar_id}?",
-                response_type=bool,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(response.data):
+            ):
                 return {"status": "cancelled"}
         service = build_calendar_service()
         await execute_google_request(

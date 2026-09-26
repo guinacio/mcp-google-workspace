@@ -244,6 +244,14 @@ def register_connection_tools(server: FastMCP) -> None:
     @server.tool(name="refresh_workspace_catalog")
     async def refresh_workspace_catalog(ctx: Context) -> dict[str, Any]:
         """Refresh capability-aware tools after Google consent or disconnection."""
+        # W5: Context.reset_visibility() still exists in FastMCP 4.0.10 and is kept
+        # unchanged. This server never sets session visibility rules, so the call
+        # only emits tools/resources/prompts list_changed notifications. On MCP
+        # 2026-07-28 they travel on the request's own response stream: delivered
+        # over stdio/in-memory and SSE responses, but dropped by the production
+        # HTTP entrypoint (json_response=True), where "notification_sent" below is
+        # therefore untrue. W5 replaces this with per-request grant/catalog
+        # freshness and a truthful result.
         await ctx.reset_visibility()
         status = google_connection_status()
         return {

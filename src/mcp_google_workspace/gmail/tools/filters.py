@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
@@ -10,13 +12,15 @@ from ...common.async_ops import confirm_destructive_action, execute_google_reque
 from ..client import gmail_service
 from ..schemas import CreateFilterRequest, DeleteFilterRequest, FilterActionInput, FilterCriteriaInput
 
+LOGGER = logging.getLogger(__name__)
+
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_filters")
     async def list_filters(ctx: Context) -> dict[str, Any]:
         """List Gmail server-side filters (rules)."""
         service = gmail_service()
-        await ctx.info("Listing Gmail filters.")
+        LOGGER.debug("Listing Gmail filters.")
         result = await execute_google_request(service.users().settings().filters().list(userId="me"))
         filters = result.get("filter", [])
         return {"filters": filters, "count": len(filters)}
@@ -46,8 +50,7 @@ def register(server: FastMCP) -> None:
         if not action_api:
             raise ValueError("action must include add/remove labels or forward.")
 
-        if ctx is not None:
-            await ctx.info("Creating Gmail filter.")
+        LOGGER.debug("Creating Gmail filter.")
         created = await execute_google_request(
             service.users()
             .settings()
@@ -68,8 +71,7 @@ def register(server: FastMCP) -> None:
         ):
             return {"status": "cancelled", "filter_id": request.filter_id}
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Deleting Gmail filter {request.filter_id}.")
+        LOGGER.debug(f"Deleting Gmail filter {request.filter_id}.")
         await execute_google_request(
             service.users().settings().filters().delete(userId="me", id=request.filter_id)
         )
