@@ -6,7 +6,6 @@ import os
 from urllib.parse import urlparse
 
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-import fastmcp
 from starlette.middleware import Middleware as ASGIMiddleware
 
 from .auth.google_oauth import register_oauth_callback_route
@@ -36,9 +35,8 @@ def main() -> None:
     host = os.getenv("MCP_HOST", "127.0.0.1")
     port = int(os.getenv("MCP_PORT", "8000"))
     configure_remote_tool_search()
-    redis_url = os.getenv("MCP_REDIS_URL", "").strip()
-    if redis_url and not os.getenv("FASTMCP_DOCKET_URL", "").strip():
-        fastmcp.settings.docket.url = redis_url
+    # The Tasks queue (MCP_REDIS_URL / FASTMCP_DOCKET_URL) is configured once by
+    # install_tasks_extension() when server.py composes workspace_mcp.
     security = get_remote_security_settings()
     workspace_mcp.auth = build_http_auth()
     register_oauth_callback_route(workspace_mcp)

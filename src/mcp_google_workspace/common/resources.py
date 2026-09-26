@@ -8,7 +8,7 @@ from urllib.parse import quote, unquote, urlparse
 from pydantic import BaseModel, ConfigDict, Field
 import mcp.types as mt
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools import InputRequiredToolResult, ToolResult
 
 
 class ResourceHandle(BaseModel):
@@ -126,6 +126,12 @@ class ResourceHandleMiddleware(Middleware):
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         result = await call_next(context)
+        # Only a completed tool result carries business payload. A tasked call
+        # yields the Tasks extension's CreateTaskResult receipt, and a
+        # multi-round-trip guard yields an InputRequiredToolResult; neither may
+        # be decorated with resource handles.
+        if not isinstance(result, ToolResult) or isinstance(result, InputRequiredToolResult):
+            return result
         payload = result.structured_content
         if isinstance(payload, dict):
             namespace = context.message.name.split("_", 1)[0]

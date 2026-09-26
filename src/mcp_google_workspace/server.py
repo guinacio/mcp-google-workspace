@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .apps import apps_mcp
 from .common.component_annotations import apply_default_tool_annotations
 from .common.errors import StructuredToolErrorMiddleware
+from .common.task_backend import install_tasks_extension
 from .common.production import (
     CapabilityCatalogMiddleware,
     ConsequentialActionMiddleware,
@@ -66,6 +67,10 @@ workspace_mcp = FastMCP(
     ),
     lifespan=production_lifespan,
 )
+# One root-managed Tasks extension (and therefore one queue/worker) for every
+# runnable entrypoint: HTTP, stdio bundle, and out-of-process task workers all
+# serve this object. Mounted namespaces defer to the root's extension.
+install_tasks_extension(workspace_mcp)
 workspace_mcp.add_middleware(StructuredToolErrorMiddleware())
 workspace_mcp.add_middleware(ProductionControlMiddleware())
 workspace_mcp.add_middleware(CapabilityCatalogMiddleware())
