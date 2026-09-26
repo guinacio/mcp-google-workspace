@@ -1742,7 +1742,7 @@ export const RENDER_CSS = `
 
 .email-body-content pre,
 .email-body-content code {
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono, "IBM Plex Mono", "SFMono-Regular", Consolas, monospace);
 }
 
 .email-body-content pre {

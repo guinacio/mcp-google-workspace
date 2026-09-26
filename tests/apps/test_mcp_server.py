@@ -5,7 +5,7 @@ from datetime import date
 
 import anyio
 import pytest
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 from jsonschema import validate
 
 import mcp_google_workspace.apps.resources as apps_resources
@@ -26,6 +26,25 @@ def clear_apps_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(apps_resources, "resolve_user_timezone", fake_resolve_user_timezone)
     yield
     apps_state._STATE_BY_SESSION.clear()
+
+
+@pytest.mark.parametrize("namespace", [None, "apps"])
+def test_dashboard_ui_metadata_reaches_client(namespace: str | None) -> None:
+    server = apps_mcp
+    if namespace:
+        server = FastMCP("dashboard-metadata-test")
+        server.mount(apps_mcp, namespace=namespace)
+
+    async def catalog():
+        async with Client(server) as client:
+            return {tool.name: tool.model_dump(by_alias=True) for tool in await client.list_tools()}
+
+    tools = anyio.run(catalog)
+    prefix = f"{namespace}_" if namespace else ""
+    for name in ("get_dashboard", "get_weekly_calendar_view"):
+        metadata = tools[f"{prefix}{name}"]["_meta"]
+        assert metadata["ui"]["resourceUri"] == "ui://apps/dashboard-ui"
+        assert metadata["ui/resourceUri"] == "ui://apps/dashboard-ui"
 
 
 def test_detail_tool_output_schemas_accept_complete_ui_payloads() -> None:

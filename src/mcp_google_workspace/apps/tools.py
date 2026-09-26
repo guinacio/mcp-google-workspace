@@ -538,14 +538,10 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(
         name="get_dashboard",
-        annotations={
-            "_meta": {
-                "ui": {
-                    "resourceUri": "ui://apps/dashboard-ui",
-                },
-            },
+        meta={
+            "ui": {"resourceUri": "ui://apps/dashboard-ui"},
+            "ui/resourceUri": "ui://apps/dashboard-ui",
         },
-        meta={"ui/resourceUri": "ui://apps/dashboard-ui"},
     )
     async def apps_get_dashboard(
         session_id: str | None = None,
@@ -563,14 +559,10 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(
         name="get_weekly_calendar_view",
-        annotations={
-            "_meta": {
-                "ui": {
-                    "resourceUri": "ui://apps/dashboard-ui",
-                },
-            },
+        meta={
+            "ui": {"resourceUri": "ui://apps/dashboard-ui"},
+            "ui/resourceUri": "ui://apps/dashboard-ui",
         },
-        meta={"ui/resourceUri": "ui://apps/dashboard-ui"},
     )
     async def apps_get_weekly_calendar_view(
         session_id: str | None = None,
