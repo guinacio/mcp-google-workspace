@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Final
 
 import mcp.types as mt
-from fastmcp.exceptions import McpError
+from fastmcp.exceptions import FastMCPError, McpError, ToolError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import ToolResult
-from mcp.types import ErrorData
+from fastmcp.tools import ToolResult
 
 LOGGER = logging.getLogger("mcp_google_workspace.errors")
+
+# JSON-RPC codes for uncaught tool failures. MCP 2026-07-28 reserves
+# -32020..-32099 for specification-defined codes (the SDK already emits
+# HeaderMismatch -32020, MissingRequiredClientCapability -32021 and
+# UnsupportedProtocolVersion -32022), leaving -32000..-32019 to implementations.
+# The retired FastMCP 3 rate-limit code -32029 sat inside the reserved band.
+RPC_RATE_LIMITED: Final[int] = -32005
+"""Application code for a provider or admission rate limit (was -32029)."""
 
 
 def tool_error_payload(exc: Exception, **context: Any) -> dict[str, Any]:
@@ -52,6 +59,32 @@ class RecoverableToolError(RuntimeError):
         self.retry_after = retry_after
 
 
+class ConfirmationRequiredError(RecoverableToolError):
+    """An irreversible action needs user confirmation this server cannot collect yet.
+
+    Raised before any provider mutation. ``StructuredToolErrorMiddleware``
+    returns it to the client as an ``isError`` tool result (not a protocol
+    error) carrying the ``confirmation_required`` envelope and the exact
+    confirmation prompt, so the model can explain what was not done.
+    """
+
+    def __init__(self, action_name: str, prompt: str) -> None:
+        super().__init__(
+            "confirmation_required",
+            (
+                f"{action_name} requires explicit user confirmation, which this server "
+                "cannot collect yet over MCP 2026-07-28. No changes were made."
+            ),
+            required_action={
+                "action": "request_host_confirmation",
+                "operation": action_name,
+                "prompt": prompt,
+            },
+        )
+        self.action_name = action_name
+        self.prompt = prompt
+
+
 def _error_envelope(error: Exception) -> tuple[int, dict[str, Any]]:
     provider_status = getattr(getattr(error, "resp", None), "status", None)
     message = str(error)
@@ -60,7 +93,7 @@ def _error_envelope(error: Exception) -> tuple[int, dict[str, Any]]:
     explicit_code = getattr(error, "error_code", None)
     if isinstance(explicit_code, str):
         code = explicit_code
-        rpc_code = -32029 if code == "rate_limited" else -32000
+        rpc_code = RPC_RATE_LIMITED if code == "rate_limited" else -32000
         retryable = bool(getattr(error, "retryable", True))
     elif error_type == "GoogleAccountConnectionRequired" and "scope" in lowered:
         code, rpc_code, retryable = "missing_capability", -32001, False
@@ -77,7 +110,7 @@ def _error_envelope(error: Exception) -> tuple[int, dict[str, Any]]:
     elif isinstance(error, (ValueError, TypeError)):
         code, rpc_code, retryable = "invalid_input", -32602, False
     elif provider_status == 429 or "rate limit" in lowered:
-        code, rpc_code, retryable = "rate_limited", -32029, True
+        code, rpc_code, retryable = "rate_limited", RPC_RATE_LIMITED, True
     elif provider_status in {500, 502, 503, 504}:
         code, rpc_code, retryable = "provider_unavailable", -32002, True
     elif isinstance(error, TimeoutError):
@@ -129,6 +162,36 @@ def _error_envelope(error: Exception) -> tuple[int, dict[str, Any]]:
     return rpc_code, envelope
 
 
+def render_error_message(envelope: dict[str, Any]) -> str:
+    """Human-readable error text carrying the stable code and next step."""
+    text = f"{envelope['message']} [code: {envelope['code']}]"
+    action = envelope.get("required_action")
+    if action:
+        text += f" Next step: {json.dumps(action, separators=(',', ':'), sort_keys=True)}"
+    return text
+
+
+def unwrap_tool_error(error: Exception) -> Exception:
+    """Return the application exception behind FastMCP's tool-call wrapper.
+
+    FastMCP 4 re-raises a failing tool body as ``ToolError("Error calling tool
+    ...") from exc``. This package never raises ``ToolError`` itself, so the
+    wrapped cause is what carries the machine-readable ``error_code`` and
+    ``required_action``; classify that rather than the generic wrapper.
+    """
+    current = error
+    while (
+        isinstance(current, ToolError)
+        and isinstance(current.__cause__, Exception)
+        and not isinstance(current.__cause__, McpError)
+    ):
+        cause = current.__cause__
+        if isinstance(cause, FastMCPError) and not isinstance(cause, ToolError):
+            break
+        current = cause
+    return current
+
+
 class StructuredToolErrorMiddleware(Middleware):
     """Convert every uncaught tool exception to one stable JSON envelope."""
 
@@ -141,17 +204,29 @@ class StructuredToolErrorMiddleware(Middleware):
             return await call_next(context)
         except McpError:
             raise
-        except Exception as error:
+        except Exception as raised:
+            error = unwrap_tool_error(raised)
             rpc_code, envelope = _error_envelope(error)
+            if isinstance(error, ConfirmationRequiredError):
+                # A missing confirmation is a tool outcome, not a malformed
+                # request: return an isError result the model can read and
+                # explain. (W5 extends this classification to other failures.)
+                return ToolResult(
+                    content=[mt.TextContent(type="text", text=render_error_message(envelope))],
+                    structured_content=envelope,
+                    is_error=True,
+                )
             if envelope.get("code") == "internal_error":
                 LOGGER.exception(
                     "Unhandled tool exception (%s): %s",
                     type(error).__name__,
                     error,
                 )
+            # The complete envelope travels as structured JSON-RPC error data;
+            # the message stays human-readable but still names the stable code
+            # and the next step for clients that surface only the message.
             raise McpError(
-                ErrorData(
-                    code=rpc_code,
-                    message=json.dumps(envelope, separators=(",", ":")),
-                )
-            ) from error
+                code=rpc_code,
+                message=render_error_message(envelope),
+                data=envelope,
+            ) from raised

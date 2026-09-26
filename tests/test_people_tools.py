@@ -183,9 +183,9 @@ def test_people_tool_annotations():
     update_tool = anyio.run(_get_tool, people_mcp, "update_contact")
     delete_tool = anyio.run(_get_tool, people_mcp, "delete_contact")
 
-    assert list_tool.annotations.readOnlyHint is True
-    assert update_tool.annotations.idempotentHint is True
-    assert delete_tool.annotations.destructiveHint is True
+    assert list_tool.annotations.read_only_hint is True
+    assert update_tool.annotations.idempotent_hint is True
+    assert delete_tool.annotations.destructive_hint is True
 
 
 class _FailingExec:

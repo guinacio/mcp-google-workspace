@@ -11,7 +11,7 @@ import mcp.types as mt
 import pytest
 from types import SimpleNamespace
 from fastmcp.server.middleware import MiddlewareContext
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools import ToolResult
 
 import mcp_google_workspace
 from mcp_google_workspace.common.approvals import (
@@ -22,6 +22,8 @@ from mcp_google_workspace.common.approvals import (
 from mcp_google_workspace.common.crypto import FernetKeyring
 from mcp_google_workspace.common.resources import parse_resource_uri, resource_handle
 from mcp_google_workspace.common.errors import (
+    RPC_RATE_LIMITED,
+    ConfirmationRequiredError,
     RecoverableToolError,
     StructuredToolErrorMiddleware,
     _error_envelope,
@@ -167,7 +169,33 @@ def test_commit_context_does_not_bypass_revocation_admission(monkeypatch) -> Non
 def test_version_payload_advertises_streamable_http_and_current_protocol() -> None:
     payload = build_version_payload()
     assert payload["protocol_transport"] == "streamable-http"
-    assert payload["mcp_protocol_version"] == "2025-11-25"
+    # W2: was "2025-11-25" under FastMCP 3 / SDK 1. The preferred revision is now
+    # the stateless 2026-07-28 era; tested legacy support is reported separately
+    # and never conflated with the package version.
+    assert payload["mcp_protocol_version"] == "2026-07-28"
+    versions = payload["mcp_protocol_versions"]
+    assert versions["preferred"] == "2026-07-28"
+    assert versions["modern"] == ["2026-07-28"]
+    assert versions["tested"] == ["2025-11-25", "2026-07-28"]
+    assert set(versions["tested"]) <= set(versions["modern"]) | set(versions["legacy"])
+    assert payload["version"] not in versions["tested"]
+
+
+def test_tested_protocol_versions_are_actually_negotiated() -> None:
+    from fastmcp import Client
+
+    from mcp_google_workspace.server import workspace_mcp
+
+    async def negotiate(mode: str) -> tuple[str | None, int]:
+        async with Client(workspace_mcp, mode=mode) as client:  # type: ignore[arg-type]
+            tools = await client.list_tools()
+            return client.protocol_version, len(tools)
+
+    modern_version, modern_tools = anyio.run(negotiate, "auto")
+    legacy_version, legacy_tools = anyio.run(negotiate, "legacy")
+    assert modern_version == "2026-07-28"
+    assert legacy_version == "2025-11-25"
+    assert modern_tools == legacy_tools
 
 
 def test_exported_package_version_matches_installed_metadata() -> None:
@@ -323,3 +351,70 @@ def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:
     assert "gmail_download_attachment" not in names
     attachment_items = parameters["properties"]["attachments"]["anyOf"][0]["items"]
     assert "file_path" not in attachment_items["properties"]
+
+
+def _run_error_middleware(error: Exception):
+    async def exercise():
+        middleware = StructuredToolErrorMiddleware()
+        context = MiddlewareContext(
+            message=mt.CallToolRequestParams(name="gmail_read_emails", arguments={}),
+            method="tools/call",
+        )
+
+        async def call_next(_context):
+            raise error
+
+        return await middleware.on_call_tool(context, call_next)
+
+    return anyio.run(exercise)
+
+
+def test_rate_limit_uses_implementation_defined_code_and_structured_data() -> None:
+    # W2: the FastMCP 3 code -32029 sat in the range MCP 2026-07-28 reserves for
+    # spec-defined codes; -32005 is in the implementation-defined band and does
+    # not collide with the SDK's -32020/-32021/-32022.
+    assert -32019 <= RPC_RATE_LIMITED <= -32000
+    assert RPC_RATE_LIMITED not in {-32000, -32001, -32020, -32021, -32022}
+    error = RecoverableToolError(
+        "rate_limited",
+        "Per-principal request rate exceeded.",
+        required_action={"action": "retry", "after_seconds": 3},
+        retryable=True,
+        retry_after=3,
+    )
+    with pytest.raises(McpError) as raised:
+        _run_error_middleware(error)
+    assert raised.value.code == RPC_RATE_LIMITED
+    envelope = raised.value.data
+    assert envelope["code"] == "rate_limited"
+    assert envelope["retryable"] is True
+    assert envelope["required_action"] == {"action": "retry", "after_seconds": 3}
+    # Human-readable message, not a JSON document; still names code and next step.
+    assert not raised.value.message.startswith("{")
+    assert "[code: rate_limited]" in raised.value.message
+
+
+def test_framework_wrapped_errors_keep_their_recovery_envelope() -> None:
+    from fastmcp.exceptions import ToolError
+
+    cause = RecoverableToolError(
+        "picker_required",
+        "Use the Workspace Files picker.",
+        required_action={"tool": "files_file_manager", "arguments": {}},
+    )
+    try:
+        raise ToolError("Error calling tool 'upload_file': Use the picker") from cause
+    except ToolError as wrapped:
+        error = wrapped
+    with pytest.raises(McpError) as raised:
+        _run_error_middleware(error)
+    assert raised.value.data["code"] == "picker_required"
+    assert raised.value.data["required_action"] == {"tool": "files_file_manager", "arguments": {}}
+
+
+def test_confirmation_required_is_an_error_tool_result_not_a_protocol_error() -> None:
+    result = _run_error_middleware(ConfirmationRequiredError("delete_task", "Delete task t1?"))
+    assert isinstance(result, ToolResult)
+    assert result.is_error is True
+    assert result.structured_content["code"] == "confirmation_required"
+    assert result.structured_content["required_action"]["prompt"] == "Delete task t1?"

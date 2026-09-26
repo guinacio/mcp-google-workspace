@@ -158,6 +158,8 @@ async def _call_picker_over_bundle_stdio(tmp_path: Path):
         log_file=tmp_path / "bundle-stderr.log",
     )
     async with Client(transport) as client:
+        # The stdio bundle serves MCP 2026-07-28 without an initialize handshake.
+        assert client.protocol_version == "2026-07-28"
         tools = await client.list_tools()
         names = {tool.name for tool in tools}
         picker = next(tool for tool in tools if tool.name == "files_file_manager")
@@ -179,7 +181,7 @@ def test_bundle_stdio_lists_and_calls_prefab_file_manager(tmp_path) -> None:
     assert len(names) <= 16
     assert {"search_tools", "call_tool"} <= names
     assert meta["ui/resourceUri"] == uri
-    assert contents[0].mimeType == "text/html;profile=mcp-app"
+    assert contents[0].mime_type == "text/html;profile=mcp-app"
     assert result.is_error is False
     assert action_tool in json.dumps(result.structured_content)
     assert backend.is_error is False

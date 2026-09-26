@@ -163,9 +163,9 @@ def test_tasks_tool_annotations():
     complete_tool = anyio.run(_get_tool, tasks_mcp, "complete_task")
     delete_tool = anyio.run(_get_tool, tasks_mcp, "delete_task")
 
-    assert list_tool.annotations.readOnlyHint is True
-    assert complete_tool.annotations.idempotentHint is True
-    assert delete_tool.annotations.destructiveHint is True
+    assert list_tool.annotations.read_only_hint is True
+    assert complete_tool.annotations.idempotent_hint is True
+    assert delete_tool.annotations.destructive_hint is True
 
 
 def test_task_envelope_and_digest_surface_actionable_state():
