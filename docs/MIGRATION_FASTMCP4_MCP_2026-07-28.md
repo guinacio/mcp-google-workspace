@@ -418,3 +418,14 @@ These supersede conflicting guidance elsewhere in this plan.
 - **Legacy protocol:** legacy connectivity is kept. FastMCP 4.0.10 / SDK 2.2.0 still negotiate `initialize` for 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25 alongside 2026-07-28; `/version` reports both sets plus the tested pair (2025-11-25, 2026-07-28).
 - **Confirmations:** all 24 sites use one gate (`common.async_ops.confirm_destructive_action`): legacy requests elicit; 2026-07-28 requests fail closed with a `confirmation_required` tool result and no mutation until W4 adds the MRTR branch.
 - **App aliases:** the flat `ui/resourceUri` alias and legacy dashboard URI stay until W6.
+
+### 9.3 Implementation record (W4a, 2026-09-26)
+
+Details: `docs/migration/W4_CONFIRMATION_POLICY.md`, `docs/migration/W4_CATALOG_DIFF.md`.
+
+- **Confirmations:** one adapter (`common/confirmation.py`) for all 24 sites. 2026-07-28 requests from clients that declared elicitation get an `InputRequiredResult` before any mutation and resume on retry after the continuation (principal, inner tool, canonical argument digest, preview digest, expiry, single-use operation id) and the answer are verified. Legacy requests keep `ctx.elicit`. No capability or unknown version still fails closed with `confirmation_required`.
+- **Keys:** `MCP_REQUEST_STATE_KEYS` (shared ring, first = active) configures FastMCP `RequestStateSecurity` and the application continuation MAC; `MCP_CONFIRMATION_TTL_SECONDS` (default 600). Ephemeral per-process key otherwise; HTTP warns, multi-worker readiness fails.
+- **Replay:** used operation ids in memory (stdio/tests) or Redis (`MCP_REDIS_URL`); W4b replaces this with durable operation records.
+- **Tasks:** a tasked tool that asks parks in `input_required` and resumes via `tasks/update` (supported by fastmcp-tasks 4.0.10); no current confirmation site is a task tool.
+- **Prepare/commit:** claim → release (asked a question, or rejected before execution) / complete (ran, or outcome uncertain). The full `prepared → awaiting_input → executing → succeeded | failed | outcome_unknown` record is W4b.
+- **Bypass flags:** inventoried, unchanged; policy is an owner decision.
