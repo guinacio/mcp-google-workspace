@@ -3,11 +3,29 @@
 **Baseline:** `fba625378725aefabec88c06e8c5bfd6a9ce391e`, package `0.3.13`  
 **Research and verification date:** 2026-09-26  
 **Targets:** FastMCP **4.0.10**, MCP **2026-07-28**, MCP Apps SDK **2.0.3**  
-**Status:** implementation plan; the production source and dependency locks have not been migrated.
+**Status:** migration in progress; W0–W2 are merged at `173208ded63e79f91cde3dfa413e75167f4b5d60`. The original audit below describes the baseline; section 0 records the current status.
 
-The server needs a coordinated migration of execution, state, and UI behavior. Changing the dependency requirement alone fails: the isolated FastMCP 4 experiment produced **24 failures / 192 passes**, compared with **216 passes** in a clean environment installed from the existing lock. The dashboard's seven existing browser tests pass, but they do not establish conformance under a real sandbox, authentication, or the new protocol. See `docs/MIGRATION_AUDIT_2026-09-26.md` for the evidence, scope, and experimental limitations.
+The server needs a coordinated migration of execution, state, and UI behavior. Against the original baseline, changing the dependency requirement alone produced **24 failures / 192 passes**, compared with **216 passes** in a clean environment installed from its lock. Those historical failures are not the current checkout's results: the W2 checkout now passes **316 Python tests**. See [the audit evidence](MIGRATION_AUDIT_2026-09-26.md) for the experiments, current verification, and limitations.
 
-The recommended destination is one FastMCP 4 application supporting modern clients and a tested compatibility path for older clients. Business state must survive independently of transport connections. Modern confirmations must finish a request and resume through a new request. The dashboard and Prefab file picker both need changes. A confirmed HTML attribute-escaping defect should be fixed before releasing either UI migration.
+The destination is one FastMCP 4 application supporting modern clients and a tested compatibility path for older clients. Business state must survive independently of transport connections. Modern confirmations must finish a request and resume through a new request. The dashboard and Prefab file picker both need further state/lifecycle work. W1 addressed the original HTML attribute-escaping defect; W2 addressed the initial picker schema incompatibility.
+
+## 0. Current implementation status
+
+The working tree advanced while the audit was paused. This continuation inspected the merged W0, W1 and W2 changes and preserved them. Sections 1–4 retain the original baseline inventory and rationale; fixed findings there must be read with this status table. Section 9.1 records the repository's owner decisions and takes precedence over the original alternatives.
+
+| Work | Observed status at `173208d` | Remaining qualification |
+| --- | --- | --- |
+| W0: baseline and catalogs | Merged; frozen catalog contracts and subprocess isolation exist. | Real host/version matrix remains unqualified. See [W0 record](migration/W0_BASELINE.md). |
+| W1: rendering security | Merged; escaped HTML templates, DOMPurify, URL policy, host-mediated links and a development-only restricted standalone bridge replace the vulnerable code. Current browser suite: **13 passed** after installing the committed lock. | Preserve adversarial rendering checks through the SDK 2 upgrade; qualify the actual sandbox host in W6/W7. |
+| W2: framework foundation | Merged; FastMCP 4.0.10 / SDK 2.2.0, Tasks bootstrap, SDK field/error changes, picker envelope and callback schema, removal of sampled summary tools and client-facing logging. Current Python suite: **316 passed** with camelCase compatibility disabled by the test configuration. | Green unit tests do not complete W3–W7. See [W2 catalog diff](migration/W2_CATALOG_DIFF.md). |
+| Modern confirmations | Central gate rejects modern confirmation-dependent mutations with `confirmation_required`; known legacy versions retain elicitation. | W4 must implement MRTR before these modern workflows are functional. This is an intentional safe intermediate state. |
+| W3–W5: state, actions, HTTP/auth | Outstanding: transport-derived upload scope, process-local dashboard state, destructive approval-token consumption, bare JWT verifier, visibility reset and affinity assumptions remain. | Explicit handles/shared storage, continuation/replay rules and authenticated replica tests. |
+| W6: Apps SDK/lifecycle | Frontend remains on Apps SDK 1.1.2 / monolithic SDK 1.30.1; source TypeScript check passes. | SDK 2, host capability checks, input/cancel/teardown handling, state handles and sandbox-host coverage. |
+| W7–W8: qualification/cutover | Not established by this audit. | Release gates, actual supported hosts, shared workers/backends and rollback drill. |
+
+Current catalog snapshots list **140 default / 192 all-optional tools**. The delta is one newly listed app-only upload callback and removal of two summary tools; resources/templates/prompts keep their baseline counts. Raw catalog size is not model-visible tool count.
+
+The original effort estimate in section 6 covers the whole migration, including completed work; it is not an estimate of remaining effort. This audit continuation changes documentation only and does not implement or deploy W3–W8.
 
 ## 1. Version baseline and source authority
 
@@ -138,13 +156,13 @@ The isolated SDK probe emitted `ttlMs: 0`, `cacheScope: "private"`, and `resultT
 
 Client-registration changes primarily belong to the external authorization server and MCP clients. This repository does not implement dynamic client registration; do not build an authorization server solely to migrate. Verify the IdP/client integration supports Client ID Metadata Documents where available, correct issuer binding, and validation of a returned authorization `iss`. Review the separate Google callback's issuer handling and move its blocking token exchange off the event loop. Preserve its existing one-time state and PKCE protections.
 
-`chat/server.py:32` and `keep/server.py:34` use the removed FastMCP `ctx.sample()`. Recommended replacement: optional, configured server-side summarization using an explicit provider; when unconfigured, return an actionable unavailable result and keep the underlying read tools usable. Preserve summary tool names where practical. Do not silently move private Chat/Keep content to Gemini merely because the optional media integration is enabled. Selection of provider, data handling, and cost is a deployment decision. Core Sampling is deprecated, rather than already deleted from the protocol. [FastMCP sampling migration](https://gofastmcp.com/servers/sampling), [deprecated features](https://modelcontextprotocol.io/specification/2026-07-28/deprecated).
+At baseline, `chat/server.py:32` and `keep/server.py:34` used the removed FastMCP `ctx.sample()`. The recorded owner decision is to remove those summary tools and let clients summarize from read tools; W2 implements that decision. Do not add a replacement summarization provider. Core Sampling is deprecated, rather than already deleted from the protocol; removing application dependencies is the chosen project policy. [FastMCP sampling migration](https://gofastmcp.com/servers/sampling), [deprecated features](https://modelcontextprotocol.io/specification/2026-07-28/deprecated).
 
-Retain ordinary server logging and existing metrics. Reduce dependency on client-facing `ctx.info/debug/warning`, because protocol Logging is deprecated and modern logging notifications require request opt-in. Keep progress as a separate supported feature. Extract allowed `traceparent`/`tracestate` metadata into spans, bound or drop untrusted baggage, and distinguish an MRTR round from a completed logical operation. Never put tokens, raw mail, or continuation secrets into logs. Verify httpx2 exception handling, OS trust-store behavior, and logger names at framework boundaries; Google libraries may still use httpx/requests independently.
+Retain ordinary server logging and existing metrics. Remove application dependencies on client-facing `ctx.info/debug/warning`, as W2 does, because protocol Logging is deprecated and the owner chose to drop deprecated features. Keep progress as a separate supported feature. Extract allowed `traceparent`/`tracestate` metadata into spans, bound or drop untrusted baggage, and distinguish an MRTR round from a completed logical operation. Never put tokens, raw mail, or continuation secrets into logs. Verify httpx2 exception handling, OS trust-store behavior, and logger names at framework boundaries; Google libraries may still use httpx/requests independently.
 
 ## 4. MCP Apps compliance and best-practice review
 
-**Verdict:** both UIs have useful standard foundations, but neither is ready to be certified for the migration target. The dashboard needs security and lifecycle work; the file picker has a reproduced FastMCP 4 result-schema incompatibility and connection-scoped local storage. Existing browser tests demonstrate selected behavior, not full host conformance.
+**Verdict:** both UIs have useful standard foundations, but neither is fully qualified for the migration target. The original findings below include dashboard security and picker schema defects now addressed by W1/W2. State, lifecycle, optional-capability handling and real sandbox-host qualification remain outstanding. Existing browser tests demonstrate selected behavior, not full host conformance.
 
 ### 4.1 Compliance matrix
 
@@ -153,8 +171,8 @@ Retain ordinary server logging and existing metrics. Reduce dependency on client
 | Contract / practice | Dashboard | Prefab file picker | Required work |
 | --- | --- | --- | --- |
 | `ui://` resource, standard MIME, HTML | Pass: registered HTML resources | Pass: fetched standard MIME in v4 probe | Keep wire contract tests. |
-| Nested `_meta.ui.resourceUri` | Pass, alongside old flat alias | Pass, generated by provider | Make nested metadata canonical; remove flat alias only after supported hosts are verified. |
-| URI resolves after composition | Currently works through alias; mounted canonical URI also becomes `ui://apps/apps/dashboard-ui` | Provider-generated hashed URI resolves | Normalize dashboard declaration/namespace, retain old resource URIs during transition. Do not simply delete the alias. |
+| Nested `_meta.ui.resourceUri` | Pass, alongside old flat alias | Pass, generated by provider | Make nested metadata canonical; remove the flat alias in W6 under the recorded owner decision. |
+| URI resolves after composition | Currently works through alias; mounted canonical URI also becomes `ui://apps/apps/dashboard-ui` | Provider-generated hashed URI resolves | Normalize dashboard declaration/namespace and remove old URI aliases atomically in W6. Deleting the alias alone breaks addressing. |
 | Text fallback | View models include fallback text; dictionaries become text content | Declarative picker output is not a useful upload fallback for every host | Provide concise meaningful `content` for all launch tools and clear alternatives for hosts without UI. |
 | App-only visibility | Explicit only on email attachment callback; omitted elsewhere defaults to model + app | Main picker model-only; store/delete app-only metadata supplied by provider | Review intended exposure for every callback; server authorization must remain authoritative. |
 | Initialization | Uses official App SDK; handlers before `connect()` | Delegated to Prefab renderer | Keep Apps `ui/initialize` handshake. Core handshake removal does not remove the UI handshake. |
@@ -199,7 +217,7 @@ Do not add React, WebMCP, CodeMode, an OpenAPI rewrite, or app-side tools solely
 | Decision | Recommended design and rationale |
 | --- | --- |
 | Core protocol | Let FastMCP/SDK 2 serialize, negotiate and dispatch the modern protocol; validate it with raw-wire tests. |
-| Compatibility | Support 2026-07-28 plus selected legacy versions through FastMCP's compatibility implementation. Keep application confirmation branches in one adapter. Legacy retirement is based on supported-client evidence. |
+| Compatibility | Support 2026-07-28 plus legacy connectivity through FastMCP's compatibility implementation. Keep confirmation branches in one adapter. Application storage/URI aliases are not retained. |
 | Dashboard state | Use a server-issued per-view `SessionId`/application handle; shared Redis state with explicit TTL remotely, explicit trusted local storage for stdio. FastMCP `SessionProvider` is a candidate. |
 | State identity | Preserve Google-token identity `(issuer, subject)`. FastMCP sessions additionally scope by client ID; document whether cross-client UI state should be separate. Do not silently migrate existing storage keys. |
 | State concurrency | Use atomic revision/CAS or a per-view serialization policy. FastMCP's simple session get/set uses read-modify-write and is insufficient by itself for concurrent navigation updates. |
@@ -209,7 +227,7 @@ Do not add React, WebMCP, CodeMode, an OpenAPI rewrite, or app-side tools solely
 | Catalog | Deterministic current-authority filtering; zero/private caching first; progressive discovery must preserve Apps addressing. |
 | UI delivery | Versioned single-file dashboard; exact Prefab renderer version/bundle; nested Apps metadata; narrow CSP. |
 | Errors | Stable application envelopes with correct protocol-vs-tool classification and SDK 2 constructors. |
-| Summaries | Optional explicitly configured server-side provider; no dependency on removed Context methods. |
+| Summaries | Remove sampled summary tools; clients summarize using the existing read tools. No replacement provider, per owner decision. |
 
 FastMCP supplies both per-user injected state and explicit session handles, but storage retention is configured on the store. Set a default TTL wrapper rather than assuming FastMCP expires those records automatically. These are **application sessions**, not the removed transport session. [FastMCP state APIs](https://gofastmcp.com/servers/sessions).
 
@@ -255,7 +273,7 @@ The work packages are reviewable PR-sized outcomes, not instructions to deploy i
 - Fix exception constructors and Python field access; make compatibility-shim-off tests pass.
 - Fix the picker output schema for the actual 4.0.10 Prefab envelope, including `_meta`, without blindly accepting arbitrary fields. Validate newly generated `files_store_files` input documentation/limits and app-only visibility.
 - Replace private registry manipulation with supported registration/transform APIs where practical; isolate unavoidable version-specific provider code in a tested adapter.
-- Replace Chat/Keep sampling or explicitly gate it until the provider integration is configured.
+- Remove Chat/Keep sampling-based summary tools; retain read tools and summary prompts, without introducing a replacement provider.
 
 **Exit:** import, startup/shutdown, discovery, read-only smoke tests, picker launch and safe callback round trips work under 4.0.10. No incidental import breakages are waived as warnings. Confirmation-dependent tools are not released yet.
 
@@ -265,7 +283,7 @@ The work packages are reviewable PR-sized outcomes, not instructions to deploy i
 - Mint per-view handles and return them in initial tool results; UI interactions pass the handle. Resolve and authorize every handle; reject unknown, expired and wrong-principal handles.
 - Use explicit revisioned state and TTL. Back remote state with shared storage; prevent races and stale UI overwrites.
 - Move local picker store/read/delete/get_file to the same stable explicit application scope. Preserve remote `upload_id`, quota, encryption, TTL and MIME checks.
-- Migrate or expire old dashboard state deliberately. Do not invalidate encrypted Google grants or durable uploads merely to remove transport state.
+- Expire old dashboard state at cutover; do not build an old storage-key compatibility layer. Identify application state separately from encrypted Google grants and durable uploads; removing transport state does not itself authorize deleting those assets.
 - Document local stdio's trusted-user boundary and avoid pretending unauthenticated handle secrecy gives multitenant isolation.
 
 **Exit:** state and uploads work across independent modern requests and two HTTP replicas; two users and two views of one user remain isolated; expiry and concurrent updates have deterministic results.
@@ -302,7 +320,7 @@ The work packages are reviewable PR-sized outcomes, not instructions to deploy i
 - Resolve both result-level and thrown errors; migrate request-handler APIs and typed error detection.
 - Support host-mediated links/downloads, including absent capability, rejection, size limits and usable fallback. Keep `ui/download-file` draft status documented.
 - Preserve theme/fonts/safe area and test resize, narrow layouts and keyboard access. Add chat buttons only through supported, user-triggered messaging.
-- Normalize resource URIs; retain old aliases until regression hosts pass. Test both subserver-only and root-composed addressing.
+- Normalize resource URIs and remove old aliases together in W6. Test both subserver-only and root-composed addressing; retain the distinct Apps initialization handshake.
 - Rebuild from a clean lock, inspect the shipped artifact, and validate Prefab delivery under the chosen CSP with external networks blocked when bundled mode is selected.
 
 **Exit:** full dashboard workflows and file picker pass through a policy-enforcing sandbox host, including reduced-capability hosts, task/no-task hosts and UI/no-UI fallbacks. No action depends on guessed privileges.
@@ -320,10 +338,10 @@ The work packages are reviewable PR-sized outcomes, not instructions to deploy i
 ### W8 — Roll out and retire obsolete paths
 
 - Publish a candidate and canary to a bounded group; compare tool failures, confirmation completion, task age, duplicate/uncertain mutations, reconnects, upload failures and App rendering errors with baseline.
-- Use versioned backend schemas and keys; maintain compatible readers during the transition. Drain old task queues before switching task protocol/worker formats. Do not let v3 and v4 workers consume the same queue without an explicit compatibility proof.
+- Use a coordinated cutover with versioned backend schemas and keys; do not run old and new application versions side by side or build compatibility readers for old app state. Drain old task queues before switching protocol/worker formats, discard expired application state deliberately, and keep v3/v4 queues separate.
 - Roll back the whole coherent release (server, locks, UI bundle, worker image, configuration) if a release gate regresses. Do not undo user mutations as part of a software rollback.
 - Retain old encrypted grants/uploads and operation evidence needed for recovery. Reconnect only if an actual token/provider migration requires it.
-- Retire legacy-only adapters/aliases after the supported-client policy and observed usage allow it. Record removed public behavior in release notes.
+- Remove old application aliases and deprecated-feature dependencies according to the owner decisions. Keep legacy protocol connectivity and its confirmation adapter. Record removed public behavior in release notes.
 
 ## 7. Removal and retention ledger
 
@@ -342,9 +360,9 @@ The work packages are reviewable PR-sized outcomes, not instructions to deploy i
 | `McpError(ErrorData(...))`, custom `-32029` | Replace constructor and reserved application code. |
 | Dashboard session fallback and local picker transport scope | Remove from the business state model. |
 | `@modelcontextprotocol/sdk` 1.x frontend dependency | Remove once imports/tests move to split SDK 2 packages. |
-| Flat `ui/resourceUri`, legacy dashboard URI | Compatibility artifacts, not proof of a current-spec violation. Retire after URI/host migration, not prematurely. |
+| Flat `ui/resourceUri`, legacy dashboard URI | Remove in W6 together with canonical URI normalization, per owner decision. Their presence at baseline is not itself a current-spec violation. |
 | Apps `ui/initialize` / `ui/notifications/initialized` | **Retain**. Separate iframe protocol lifecycle. |
-| Client Logging, Roots, Sampling; old HTTP+SSE; DCR | Protocol-deprecated, not all already removed. Avoid new dependencies; retain only justified compatibility. |
+| Client Logging, Roots, Sampling; old HTTP+SSE; DCR | Protocol-deprecated, not all already removed. Remove application dependencies under the owner policy; keep legacy core connectivity separately. |
 | Request-scoped SSE, progress, resources, prompts, annotations, structured output | **Retain** and validate. They were not removed. |
 | Google Tasks tools | **Retain**. They are Google API operations, unrelated to the MCP Tasks extension. |
 | Removed FastMCP proxy/OpenAPI/import_server/exclude_args/serializer aliases | No matching production usage found in the targeted scan; keep a regression scan, do not invent migration work. |
@@ -380,7 +398,7 @@ Minimum service coverage is one read, one mutation and one provider-error case p
 | Drive | Upload task, local-vs-remote file sources, public sharing/ownership confirmation, delete, export/download. |
 | Sheets / Docs / Forms / Slides | Every `batch_update_*` task, output validation, timeout/replay safety, nested commit for Sheets. |
 | Google Tasks / People | Confirmation-helper deletion paths, stable output schemas, unchanged API namespaces. |
-| Keep / Chat | Replacement summaries, no configured provider, sensitive-content policy, all direct elicitation cases. |
+| Keep / Chat | Summary tools absent, read tools and summary prompts usable, all migrated confirmation cases. |
 | Meet | Access isolation, consequential conference actions, feature-disabled behavior. |
 | Gemini | All four tasks, upload handle persistence, provider errors, long-running cancellation and charges/retry handling. |
 
@@ -390,8 +408,7 @@ Minimum service coverage is one read, one mutation and one provider-error case p
 
 These do not block starting W0–W2, but must be resolved before their dependent release gates:
 
-- Which exact deployed hosts/versions require legacy core support, and when may that support retire?
-- Which explicitly approved provider/configuration should replace client-sampled Chat/Keep summaries?
+- Which exact deployed hosts/versions must be qualified for the retained legacy connectivity?
 - Should dashboard preferences be shared across OAuth client IDs, or should each host keep an independent view?
 - What are the production TTL, retention, concurrency and reconciliation policies for app state, uploads, operations and tasks?
 - Is Prefab bundled delivery required in production, or is a pinned CSP-allowed renderer origin acceptable?
