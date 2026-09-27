@@ -506,17 +506,6 @@
             "description": "Response field: calendars.",
             "type": "object"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "groups": {
             "description": "Response field: groups.",
             "type": "object"
@@ -527,10 +516,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -1957,20 +1942,9 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -2020,10 +1994,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -3330,21 +3300,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
-          },
           "resource": {
             "additionalProperties": false,
             "description": "Stable cross-tool Workspace resource handle when applicable.",
@@ -3781,27 +3736,12 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "documentId": {
             "description": "Response field: documentId.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "replies": {
             "description": "Response field: replies.",
@@ -3946,27 +3886,12 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "documentId": {
             "description": "Response field: documentId.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "replies": {
             "description": "Response field: replies.",
@@ -4089,10 +4014,6 @@
             "description": "Response field: body.",
             "type": "object"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "documentId": {
             "description": "Response field: documentId.",
             "type": [
@@ -4102,13 +4023,6 @@
           },
           "documentStyle": {
             "description": "Response field: documentStyle."
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "footers": {
             "description": "Response field: footers.",
@@ -4134,10 +4048,6 @@
             "description": "Response field: namedStyles.",
             "items": {},
             "type": "array"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -4297,10 +4207,6 @@
             "description": "Response field: body.",
             "type": "object"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "documentId": {
             "description": "Response field: documentId.",
             "type": [
@@ -4310,13 +4216,6 @@
           },
           "documentStyle": {
             "description": "Response field: documentStyle."
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "footers": {
             "description": "Response field: footers.",
@@ -4342,10 +4241,6 @@
             "description": "Response field: namedStyles.",
             "items": {},
             "type": "array"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -4495,27 +4390,12 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "documentId": {
             "description": "Response field: documentId.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "replies": {
             "description": "Response field: replies.",
@@ -9000,24 +8880,9 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "form": {
             "description": "Response field: form.",
             "type": "object"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "replies": {
             "description": "Response field: replies.",
@@ -9153,17 +9018,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "formId": {
             "description": "Response field: formId.",
             "type": [
@@ -9185,10 +9039,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -9315,17 +9165,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "formId": {
             "description": "Response field: formId.",
             "type": [
@@ -9347,10 +9186,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -9494,10 +9329,6 @@
             "items": {},
             "type": "array"
           },
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
           "created_at": {
             "description": "Response field: created at.",
             "type": [
@@ -9505,20 +9336,12 @@
               "null"
             ]
           },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
-          },
           "id": {
             "description": "Response field: id.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -9682,17 +9505,9 @@
             "description": "Response field: account timezone.",
             "type": "string"
           },
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -9713,10 +9528,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -9845,27 +9656,12 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "formId": {
             "description": "Response field: formId.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "publishSettings": {
             "description": "Response field: publishSettings.",
@@ -17734,21 +17530,10 @@
             "items": {},
             "type": "array"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "emailAddresses": {
             "description": "Response field: emailAddresses.",
             "items": {},
             "type": "array"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -17785,10 +17570,6 @@
             "description": "Response field: photos.",
             "items": {},
             "type": "array"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "relations": {
             "description": "Response field: relations.",
@@ -17915,17 +17696,6 @@
           "clientData": {
             "description": "Response field: clientData."
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "etag": {
             "description": "Response field: etag.",
             "type": [
@@ -17953,10 +17723,6 @@
           },
           "name": {
             "description": "Response field: name."
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -18069,20 +17835,8 @@
         "additionalProperties": false,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
-          },
           "person_name": {
             "description": "Response field: person name."
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -18239,21 +17993,10 @@
             "items": {},
             "type": "array"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "emailAddresses": {
             "description": "Response field: emailAddresses.",
             "items": {},
             "type": "array"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -18290,10 +18033,6 @@
             "description": "Response field: photos.",
             "items": {},
             "type": "array"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "relations": {
             "description": "Response field: relations.",
@@ -18439,20 +18178,9 @@
             "items": {},
             "type": "array"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -18476,10 +18204,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -18655,20 +18379,9 @@
             "items": {},
             "type": "array"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -18699,10 +18412,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -18857,25 +18566,10 @@
             "items": {},
             "type": "array"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "notFoundResourceNames": {
             "description": "Response field: notFoundResourceNames.",
             "items": {},
             "type": "array"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -19017,20 +18711,9 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -19047,10 +18730,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -19320,21 +18999,10 @@
             "items": {},
             "type": "array"
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "emailAddresses": {
             "description": "Response field: emailAddresses.",
             "items": {},
             "type": "array"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -19371,10 +19039,6 @@
             "description": "Response field: photos.",
             "items": {},
             "type": "array"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "relations": {
             "description": "Response field: relations.",
@@ -19508,17 +19172,6 @@
               "null"
             ]
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "expires_at": {
             "description": "Response field: expires at."
           },
@@ -19529,10 +19182,6 @@
           "next_action": {
             "description": "Response field: next action.",
             "type": "object"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -19614,7 +19263,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Refresh capability-aware tools after Google consent or disconnection.",
+      "description": "Report the caller's current Google grants after consent or disconnection.\n\ntools/list is evaluated against the caller's current grants on every\nrequest, so no refresh is needed for the catalog to change: list tools\nagain. No tools/list_changed notification is sent.",
       "inputSchema": {
         "additionalProperties": false,
         "maxProperties": 10000,
@@ -19638,14 +19287,25 @@
         "additionalProperties": false,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
+          "connected": {
+            "description": "Response field: connected.",
+            "type": "boolean"
+          },
+          "grant_revision": {
+            "description": "Response field: grant revision."
+          },
           "granted_capabilities": {
             "description": "Response field: granted capabilities.",
             "items": {},
             "type": "array"
           },
+          "next_action": {
+            "description": "Response field: next action.",
+            "type": "string"
+          },
           "notification_sent": {
             "description": "Response field: notification sent.",
-            "type": "string"
+            "type": "boolean"
           },
           "resource": {
             "additionalProperties": false,
@@ -20029,21 +19689,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
-          },
           "resource": {
             "additionalProperties": false,
             "description": "Stable cross-tool Workspace resource handle when applicable.",
@@ -20223,21 +19868,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
-          },
           "resource": {
             "additionalProperties": false,
             "description": "Stable cross-tool Workspace resource handle when applicable.",
@@ -20375,21 +20005,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
-          },
           "replies": {
             "description": "Response field: replies.",
             "items": {},
@@ -20530,10 +20145,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "dataSourceSchedules": {
             "description": "Response field: dataSourceSchedules.",
             "items": {},
@@ -20547,13 +20158,6 @@
           "developerMetadata": {
             "description": "Response field: developerMetadata."
           },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "namedRanges": {
             "description": "Response field: namedRanges.",
             "type": "object"
@@ -20561,10 +20165,6 @@
           "properties": {
             "description": "Response field: properties.",
             "type": "object"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -20745,27 +20345,12 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "majorDimension": {
             "description": "Response field: majorDimension.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "range": {
             "description": "Response field: range.",
@@ -20909,10 +20494,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "dataSourceSchedules": {
             "description": "Response field: dataSourceSchedules.",
             "items": {},
@@ -20926,13 +20507,6 @@
           "developerMetadata": {
             "description": "Response field: developerMetadata."
           },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "namedRanges": {
             "description": "Response field: namedRanges.",
             "type": "object"
@@ -20940,10 +20514,6 @@
           "properties": {
             "description": "Response field: properties.",
             "type": "object"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -21105,21 +20675,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
-          },
           "resource": {
             "additionalProperties": false,
             "description": "Stable cross-tool Workspace resource handle when applicable.",
@@ -21265,27 +20820,12 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "presentationId": {
             "description": "Response field: presentationId.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "replies": {
             "description": "Response field: replies.",
@@ -21404,17 +20944,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "layouts": {
             "description": "Response field: layouts.",
             "items": {},
@@ -21440,10 +20969,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -21572,17 +21097,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "layouts": {
             "description": "Response field: layouts.",
             "items": {},
@@ -21608,10 +21122,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -21747,17 +21257,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "layoutProperties": {
             "description": "Response field: layoutProperties.",
             "items": {},
@@ -21792,10 +21291,6 @@
           },
           "pageType": {
             "description": "Response field: pageType."
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -21953,23 +21448,8 @@
               "null"
             ]
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "height": {
             "description": "Response field: height.",
-            "type": "integer"
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
             "type": "integer"
           },
           "resource": {
@@ -22102,27 +21582,12 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "presentationId": {
             "description": "Response field: presentationId.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "replies": {
             "description": "Response field: replies.",
@@ -22266,22 +21731,11 @@
           "completed": {
             "description": "Response field: completed."
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "deleted": {
             "description": "Response field: deleted."
           },
           "due": {
             "description": "Response field: due."
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -22322,10 +21776,6 @@
           },
           "position": {
             "description": "Response field: position."
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -22532,22 +21982,11 @@
           "completed": {
             "description": "Response field: completed."
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "deleted": {
             "description": "Response field: deleted."
           },
           "due": {
             "description": "Response field: due."
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -22588,10 +22027,6 @@
           },
           "position": {
             "description": "Response field: position."
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -22724,17 +22159,6 @@
         "additionalProperties": false,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
-          },
           "etag": {
             "description": "Response field: etag.",
             "type": [
@@ -22755,10 +22179,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -22887,18 +22307,6 @@
         "additionalProperties": false,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
-          },
           "resource": {
             "additionalProperties": false,
             "description": "Stable cross-tool Workspace resource handle when applicable.",
@@ -23034,10 +22442,6 @@
           "completed_at": {
             "description": "Response field: completed at."
           },
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
           "deleted": {
             "description": "Response field: deleted.",
             "type": "boolean"
@@ -23052,10 +22456,6 @@
           "due_is_date_only": {
             "description": "Response field: due is date only.",
             "type": "boolean"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
           },
           "hidden": {
             "description": "Response field: hidden.",
@@ -23084,10 +22484,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -23217,24 +22613,12 @@
         "additionalProperties": false,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
-          },
           "id": {
             "description": "Response field: id.",
             "type": [
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -23365,17 +22749,9 @@
         "additionalProperties": false,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -23392,10 +22768,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -23616,17 +22988,9 @@
             "description": "Response field: account timezone.",
             "type": "string"
           },
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -23643,10 +23007,6 @@
               "string",
               "null"
             ]
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -23816,22 +23176,11 @@
           "completed": {
             "description": "Response field: completed."
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "deleted": {
             "description": "Response field: deleted."
           },
           "due": {
             "description": "Response field: due."
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -23872,10 +23221,6 @@
           },
           "position": {
             "description": "Response field: position."
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -24016,22 +23361,10 @@
         "additionalProperties": false,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
-          "context": {
-            "description": "Response field: context.",
-            "type": "object"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
-          },
           "overdue": {
             "description": "Response field: overdue.",
             "items": {},
             "type": "array"
-          },
-          "provider_status": {
-            "description": "Response field: provider status.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
@@ -24256,22 +23589,11 @@
           "completed": {
             "description": "Response field: completed."
           },
-          "context": {
-            "description": "Identifying request arguments echoed back with an error.",
-            "type": "object"
-          },
           "deleted": {
             "description": "Response field: deleted."
           },
           "due": {
             "description": "Response field: due."
-          },
-          "error": {
-            "description": "Error message or structured error details when the call failed.",
-            "type": [
-              "object",
-              "string"
-            ]
           },
           "etag": {
             "description": "Response field: etag.",
@@ -24312,10 +23634,6 @@
           },
           "position": {
             "description": "Response field: position."
-          },
-          "provider_status": {
-            "description": "HTTP status code returned by the Google API for a failed call.",
-            "type": "integer"
           },
           "resource": {
             "additionalProperties": false,
