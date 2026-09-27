@@ -15,7 +15,9 @@ Every failure case asserts that no mutation happened.
 
 from __future__ import annotations
 
+import base64
 import importlib
+import json
 import sys
 import time
 from collections.abc import Iterator
@@ -169,7 +171,12 @@ def test_ask_then_accept_runs_once_and_state_carries_no_plaintext() -> None:
     state = ask.request_state or ""
     assert state.startswith("cw1.")
     # Only digests and ids: the preview text and argument values are absent.
-    assert "t1" not in state and "Delete" not in state
+    # Inspect the decoded claims, not the base64 text, where short substrings
+    # can occur by chance.
+    encoded_claims = state.split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(encoded_claims + "=" * (-len(encoded_claims) % 4)))
+    serialized_values = json.dumps(list(claims.values()))
+    assert '"t1"' not in serialized_values and "Delete" not in serialized_values
     result = _run(DELETE, "t1", ctx=_ModernContext(state=state, responses=_accept(ask)))
     assert result == {"status": "deleted", "thing_id": "t1"}
     assert _MUTATIONS == ["t1"]
