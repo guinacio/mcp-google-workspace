@@ -34,6 +34,7 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import InputRequiredToolResult, Tool, ToolResult
 from opentelemetry import trace
 from prometheus_client import Counter, Gauge, Histogram
+from starlette.requests import ClientDisconnect
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -269,7 +270,15 @@ class RequestSizeLimitMiddleware:
                     return {"type": "http.disconnect"}
             return message
 
-        await self.app(scope, limited_receive, guarded_send)
+        try:
+            await self.app(scope, limited_receive, guarded_send)
+        except ClientDisconnect:
+            # The simulated disconnect after a 413 surfaces as Starlette's
+            # ClientDisconnect from request.body(). The request was already
+            # answered; without this every oversized body logged an
+            # "Exception in ASGI application" traceback (W7a fleet logs).
+            if not rejected:
+                raise
 
 
 # ---------------------------------------------------------------------------
@@ -946,7 +955,12 @@ def readiness_report() -> tuple[bool, dict[str, Any]]:
             "ok": _truthy(os.getenv("MCP_SESSION_AFFINITY")),
             "required": False,
             "scope": "legacy (handshake-era) clients only",
-            "requirement": "load-balancer affinity on Mcp-Session-Id, confirmed by MCP_SESSION_AFFINITY=true",
+            # A hash on Mcp-Session-Id alone cannot work: initialize carries no
+            # session id yet (docs/DEPLOYMENT_FLEET.md, W7a fleet finding).
+            "requirement": (
+                "load-balancer affinity for legacy sessions (client-address hash; see "
+                "docs/DEPLOYMENT_FLEET.md), confirmed by MCP_SESSION_AFFINITY=true"
+            ),
         }
     required = [check for check in checks.values() if check.get("required", True)]
     ready = RUNTIME_STATE.ready() and all(bool(check.get("ok")) for check in required)
@@ -966,6 +980,15 @@ def readiness_report() -> tuple[bool, dict[str, Any]]:
     }
 
 
+def shutdown_grace_seconds() -> int:
+    """Drain window after SIGTERM (``MCP_SHUTDOWN_GRACE_SECONDS``, 1..300, default 30).
+
+    Bounds both in-flight HTTP requests (uvicorn's graceful shutdown, see
+    ``server_http``) and in-process task executions (``production_lifespan``).
+    """
+    return _integer_env("MCP_SHUTDOWN_GRACE_SECONDS", 30, 1, 300)
+
+
 @asynccontextmanager
 async def production_lifespan(_: Any):
     """Drain in-flight requests and task executions for a bounded interval."""
@@ -979,6 +1002,6 @@ async def production_lifespan(_: Any):
         # draining here can make uninstall wait for the full grace period.
         if os.getenv("MCP_RUNTIME_MODE", "").strip().lower() == "bundle":
             return
-        deadline = time.monotonic() + _integer_env("MCP_SHUTDOWN_GRACE_SECONDS", 30, 1, 300)
+        deadline = time.monotonic() + shutdown_grace_seconds()
         while RUNTIME_STATE.active_total and time.monotonic() < deadline:
             await anyio.sleep(0.05)

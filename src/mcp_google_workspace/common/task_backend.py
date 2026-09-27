@@ -92,11 +92,15 @@ def resolve_task_backend_config(
             url, source = MEMORY_BACKEND_URL, "default"
 
     name = framework.name if "name" in explicit else DEFAULT_TASK_QUEUE_NAME
+    # Set-but-empty (an unpopulated secret interpolated as "") is not a key:
+    # fastmcp-tasks refuses it on the first submission, so readiness must
+    # not report the queue as snapshot-encrypted.
+    key = TasksSettings().encryption_key
     return TaskBackendConfig(
         url=url,
         name=name,
         url_source=source,
-        snapshot_encryption=TasksSettings().encryption_key is not None,
+        snapshot_encryption=key is not None and bool(key.get_secret_value().strip()),
     )
 
 

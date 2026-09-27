@@ -14,7 +14,8 @@ HTTP policy (applied identically by ``main`` and by :func:`build_http_app`):
   SSE.
 * **Legacy (handshake-era) clients** keep FastMCP's stateful compatibility
   transport (``Mcp-Session-Id``, GET stream); behind several replicas they need
-  load-balancer affinity on that header.
+  load-balancer affinity. A hash of that header cannot provide it (initialize
+  has none yet); ``docs/DEPLOYMENT_FLEET.md`` has the qualified proxy rule.
 * ``MCP-Protocol-Version`` / ``Mcp-Method`` / ``Mcp-Name`` are validated by the
   SDK before dispatch (``-32020`` / ``-32022``, HTTP 400).
 * Host and Origin are always validated (strict mode): the default bind is
@@ -41,7 +42,12 @@ from starlette.middleware import Middleware as ASGIMiddleware
 from .auth.google_oauth import register_oauth_callback_route
 from .auth.remote_auth import MCP_PATH, build_remote_auth
 from .common.confirmation import REQUEST_STATE_KEYS_ENV, shared_request_state_keys_configured
-from .common.production import RequestSizeLimitMiddleware, validate_operation_lease
+from .common.deployment_guard import reject_test_only_settings
+from .common.production import (
+    RequestSizeLimitMiddleware,
+    shutdown_grace_seconds,
+    validate_operation_lease,
+)
 from .runtime import RemoteSecuritySettings, configure_logging, get_remote_security_settings
 from .server import workspace_mcp
 from .tool_discovery import configure_tool_search
@@ -116,7 +122,21 @@ def build_http_app(server: FastMCP, policy: HttpServingPolicy) -> Any:
     return server.http_app(transport="http", **policy.app_options())
 
 
+def uvicorn_options() -> dict[str, Any]:
+    """uvicorn settings for :func:`main`.
+
+    On SIGTERM uvicorn stops accepting connections at once (the replica drops
+    out of the load balancer), then waits for in-flight requests. FastMCP's
+    ``run`` defaults that wait to 2 s and then cancels whatever is still
+    running, so a normal tool call was cut off mid-flight on every rolling
+    restart (found by the W7a fleet drain test). The wait is the configured
+    drain window instead.
+    """
+    return {"timeout_graceful_shutdown": shutdown_grace_seconds()}
+
+
 def main() -> None:
+    reject_test_only_settings()
     configure_logging()
     host = os.getenv("MCP_HOST", "127.0.0.1")
     port = int(os.getenv("MCP_PORT", "8000"))
@@ -136,7 +156,13 @@ def main() -> None:
     workspace_mcp.auth = build_http_auth(security)
     register_oauth_callback_route(workspace_mcp)
     policy = HttpServingPolicy.from_environment(security.base_url)
-    workspace_mcp.run(transport="http", host=host, port=port, **policy.app_options())
+    workspace_mcp.run(
+        transport="http",
+        host=host,
+        port=port,
+        uvicorn_config=uvicorn_options(),
+        **policy.app_options(),
+    )
 
 
 if __name__ == "__main__":
