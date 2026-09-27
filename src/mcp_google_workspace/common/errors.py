@@ -292,6 +292,18 @@ class ConfirmationRejectedError(ConfirmationError):
         self.reason = reason
 
 
+class OperationOutcomeError(RecoverableToolError):
+    """The state of a recorded operation, reported as a tool result (W4b).
+
+    Codes: ``outcome_unknown`` (a non-idempotent Google call may or may not
+    have been applied; verify before retrying), ``operation_in_progress``
+    (another request is executing the same operation) and ``operation_failed``
+    (the operation already failed; its saved failure is repeated, nothing was
+    re-executed). Like confirmation outcomes these are tool results
+    (``isError``), never protocol errors. See ``common/operations.py``.
+    """
+
+
 def _field_errors(error: Exception) -> list[dict[str, str]]:
     """Bounded ``[{field, message}]`` list from a pydantic validation failure."""
     source: Exception | None = error
@@ -333,7 +345,9 @@ def classify_error(error: Exception) -> tuple[int | None, dict[str, Any]]:
     elif isinstance(explicit_code, str):
         code = explicit_code
         retryable = bool(getattr(error, "retryable", False))
-        rpc_code = PROTOCOL_ERROR_CODES.get(code)
+        if not isinstance(error, (ConfirmationError, OperationOutcomeError)):
+            # Confirmation and operation outcomes are always tool results.
+            rpc_code = PROTOCOL_ERROR_CODES.get(code)
     elif isinstance(error, FastMCPValidationError):
         code, retryable = "invalid_input", False
         field_errors = _field_errors(error)
@@ -504,6 +518,9 @@ class StructuredToolErrorMiddleware(Middleware):
             error = unwrap_tool_error(raised)
             rpc_code, envelope = classify_error(error)
             if rpc_code is None:
+                # Confirmation outcomes (W4a), operation outcomes (W4b:
+                # outcome_unknown / operation_in_progress / operation_failed)
+                # and every other tool execution failure: an isError result.
                 return error_tool_result(envelope)
             if envelope.get("code") == "internal_error":
                 LOGGER.exception(
@@ -521,6 +538,7 @@ __all__ = [
     "ConfirmationRequiredError",
     "JSONRPC_INTERNAL_ERROR",
     "JSONRPC_INVALID_PARAMS",
+    "OperationOutcomeError",
     "PROTOCOL_ERROR_CODES",
     "ProtocolRejection",
     "ProviderToolError",

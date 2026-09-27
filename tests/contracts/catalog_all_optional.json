@@ -3415,7 +3415,7 @@
           },
           "force": {
             "default": false,
-            "description": "Whether to enable force.",
+            "description": "Skip the interactive confirmation when true. Default false: the deletion is confirmed with the user first (clients that cannot confirm get a confirmation_required result and nothing is deleted).",
             "type": "boolean"
           },
           "send_updates": {
@@ -5682,7 +5682,7 @@
                   }
                 ],
                 "default": null,
-                "description": "Idempotency key for message creation."
+                "description": "Idempotency key for message creation: Google Chat returns the existing message instead of posting again when the same request_id is reused, so reuse it when retrying after an unknown outcome."
               },
               "space_name": {
                 "description": "Chat space resource name.",
@@ -7278,7 +7278,7 @@
         "maxProperties": 10000,
         "properties": {
           "commit_token": {
-            "description": "One-time, principal-bound token from prepare_workspace_action's response; expires 5 minutes after issuance and is consumed once the bound action runs (a confirmation question keeps it valid for the answering call).",
+            "description": "One-time, principal-bound token from prepare_workspace_action's response; expires 10 minutes after issuance by default (MCP_CONFIRMATION_TTL_SECONDS). The bound action runs at most once: repeating a commit that already ran returns its saved result, and a confirmation question keeps the token valid for the answering call.",
             "maxLength": 1000000,
             "type": "string"
           }
@@ -9359,7 +9359,7 @@
         "properties": {
           "confirm_permanent": {
             "default": true,
-            "description": "Whether to enable confirm permanent.",
+            "description": "Must stay true for delete_mode='permanent' (false is rejected); a permanent delete is always confirmed interactively. Ignored for delete_mode='trash'.",
             "type": "boolean"
           },
           "delete_mode": {
@@ -17348,11 +17348,6 @@
         "additionalProperties": false,
         "maxProperties": 10000,
         "properties": {
-          "force": {
-            "default": false,
-            "description": "Whether to enable force.",
-            "type": "boolean"
-          },
           "thread_id": {
             "description": "Gmail thread identifier.",
             "maxLength": 1000000,

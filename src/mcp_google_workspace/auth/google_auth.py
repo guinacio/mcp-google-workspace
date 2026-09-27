@@ -410,11 +410,18 @@ class RetryingHttpRequest(HttpRequest):
     """Apply the configured retry budget to every Google API request."""
 
     def execute(self, http: Any = None, num_retries: int = 0) -> Any:
-        configured_retries = get_runtime_settings().http_retries
+        from ..common.repeat_safety import http_request_params, http_retry_budget
+
+        # Transport retries resend the identical request: only for calls whose
+        # repeat is safe (common/repeat_safety.py). A resent messages.send
+        # after a socket timeout could deliver the email twice.
+        retries = http_retry_budget(
+            getattr(self, "methodId", None),
+            http_request_params(getattr(self, "uri", None), getattr(self, "body", None)),
+            max(num_retries, get_runtime_settings().http_retries),
+        )
         try:
-            return super().execute(
-                http=http, num_retries=max(num_retries, configured_retries)
-            )
+            return super().execute(http=http, num_retries=retries)
         except Exception as exc:
             _conditionally_invalidate_failed_credentials(self, exc)
             raise
@@ -473,13 +480,33 @@ class LazyGoogleRequest:
                 value = value(*args, **kwargs)
         return value
 
+    def method_id(self) -> str:
+        """Discovery ``methodId`` of the recorded call (``gmail.users.messages.send``)."""
+        names = [payload for operation, payload in self._operations if operation == "attribute"]
+        return ".".join([self._api_name, *names])
+
+    def call_params(self) -> dict[str, Any]:
+        """Keyword arguments of the final method call (``body`` and query parameters)."""
+        for operation, payload in reversed(self._operations):
+            if operation == "call":
+                return dict(payload[1])
+        return {}
+
     def execute(self, http: Any = None, num_retries: int = 0) -> Any:
+        from ..common.repeat_safety import track_provider_call
+
+        # Record the call on the tool call's mutation tracker so a timeout,
+        # disconnect or cancellation after a non-repeatable call started is
+        # reported as outcome_unknown (common/operations.py).
+        # Credentials and the client are built first: a failure there never
+        # reached Google.
         request = self.materialize()
         configured_retries = get_runtime_settings().http_retries
-        return request.execute(
-            http=http,
-            num_retries=max(num_retries, configured_retries),
-        )
+        with track_provider_call(self.method_id(), self.call_params()):
+            return request.execute(
+                http=http,
+                num_retries=max(num_retries, configured_retries),
+            )
 
 
 def materialize_google_request(request: Any) -> Any:

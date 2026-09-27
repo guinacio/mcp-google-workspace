@@ -4,7 +4,7 @@ Two independently constructed FastMCP applications, each served by its own
 uvicorn server on its own port, share only what a real fleet shares: the
 issuer's JWKS, the continuation key ring (``MCP_REQUEST_STATE_KEYS``), the
 encrypted Google grant store, and one Redis (an in-memory Redis
-implementation) holding dashboard state, the confirmation replay record and
+implementation) holding dashboard state, the W4b operation records and
 fleet-wide admission counters. Every request is an independent MCP 2026-07-28
 POST sent to the next replica in turn; no request carries or receives an
 ``Mcp-Session-Id``.
@@ -16,7 +16,6 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from itertools import count
 import json
-import threading
 from typing import Any
 
 import burner_redis
@@ -36,13 +35,18 @@ from mcp_google_workspace.auth.remote_auth import build_jwt_verifier, build_remo
 from mcp_google_workspace.common.admission import AdmissionController, AdmissionLimits, RedisFleetLimits
 from mcp_google_workspace.common.app_state import RedisAppStateStore
 from mcp_google_workspace.common.confirmation import (
-    RedisReplayStore,
     build_request_state_security,
     reset_confirmation_keys,
-    set_replay_store,
 )
 from mcp_google_workspace.common.crypto import FernetKeyring
 from mcp_google_workspace.common.errors import StructuredToolErrorMiddleware
+from mcp_google_workspace.common.operations import (
+    OPERATION_META_KEY,
+    REDIS_PREFIX as OPERATION_PREFIX,
+    OperationOutcomeMiddleware,
+    OperationStore,
+    set_operation_store,
+)
 from mcp_google_workspace.common.production import (
     CapabilityCatalogMiddleware,
     ConsequentialActionMiddleware,
@@ -60,21 +64,6 @@ RATE_LIMIT = 40
 TIMEOUT = 10.0
 ELICITATION = {"elicitation": {"form": {}}}
 DELETE = {"name": "people_delete_contact", "arguments": {"person_name": "people/c-fleet"}}
-
-
-class _SyncSetNx:
-    """The one synchronous Redis command the replay store needs (``SET NX EX``)."""
-
-    def __init__(self) -> None:
-        self.keys: set[str] = set()
-        self.lock = threading.Lock()
-
-    def set(self, key: str, value: bytes, *, nx: bool, ex: int) -> bool | None:
-        with self.lock:
-            if nx and key in self.keys:
-                return None
-            self.keys.add(key)
-            return True
 
 
 class _GoogleRecorder:
@@ -160,7 +149,13 @@ def fleet(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fleet]:
     monkeypatch.delenv("MCP_REDIS_URL", raising=False)
     reset_confirmation_keys()
     clear_grant_cache()
-    set_replay_store(RedisReplayStore(_SyncSetNx()))
+    shared_redis = burner_redis.BurnerRedis()
+    keyring = FernetKeyring.single(Fernet.generate_key().decode())
+    # W4b operation records (confirmation single use, commit replay) live in
+    # the same shared Redis, exactly as build_operation_store() configures it.
+    set_operation_store(
+        OperationStore(RedisAppStateStore(shared_redis, prefix=OPERATION_PREFIX, keyring=keyring))
+    )
 
     google_calls: list[str] = []
     monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _GoogleRecorder(google_calls))
@@ -183,8 +178,6 @@ def fleet(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fleet]:
 
     keys = SigningKeys()
     keys.add("k1")
-    shared_redis = burner_redis.BurnerRedis()
-    keyring = FernetKeyring.single(Fernet.generate_key().decode())
     jwks_sock, *replica_socks = reserve_sockets(3)
     jwks_url = "http://{}:{}".format(*jwks_sock.getsockname()[:2])
     urls = ["http://{}:{}".format(*sock.getsockname()[:2]) for sock in replica_socks]
@@ -215,6 +208,7 @@ def fleet(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fleet]:
         )
         server.auth = build_remote_auth(settings, verifier=build_jwt_verifier(settings))
         server.add_middleware(StructuredToolErrorMiddleware())
+        server.add_middleware(OperationOutcomeMiddleware())
         server.add_middleware(
             ProductionControlMiddleware(
                 AdmissionController(
@@ -234,7 +228,7 @@ def fleet(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fleet]:
         with LiveServers([jwks_sock, *replica_socks], [keys.app(), replica(), replica()]):
             yield Fleet(urls, keys, google_calls)
     finally:
-        set_replay_store(None)
+        set_operation_store(None)
         reset_confirmation_keys()
         clear_grant_cache()
 
@@ -291,11 +285,13 @@ def test_modern_flow_alternates_replicas_without_affinity(fleet: Fleet) -> None:
     assert done["result"]["structuredContent"]["status"] == "deleted"
     assert fleet.google_calls == ["people.deleteContact"]
 
-    # Replaying the same answer on the next replica cannot mutate again.
+    # Replaying the same answer on the next replica cannot mutate again: the
+    # shared W4b operation record returns the saved result instead.
     index, replayed = fleet.tool("alice", DELETE["name"], DELETE["arguments"], capabilities=ELICITATION, extra=answer)
     served.append(index)
-    assert replayed["result"]["isError"] is True
-    assert replayed["result"]["structuredContent"]["code"] == "confirmation_invalid"
+    assert replayed["result"].get("isError") in (None, False), replayed
+    assert replayed["result"]["structuredContent"]["status"] == "deleted"
+    assert replayed["result"]["_meta"][OPERATION_META_KEY]["replayed"] is True
     assert fleet.google_calls == ["people.deleteContact"]
 
     # Dashboard state is still the shared, revisioned record.

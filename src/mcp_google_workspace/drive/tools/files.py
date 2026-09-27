@@ -10,8 +10,10 @@ from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
 
+from ...auth.google_auth import LazyGoogleRequest, materialize_google_request
 from ...common.async_ops import execute_google_request, run_blocking
 from ...common.confirmation import confirm_destructive_action
+from ...common.repeat_safety import track_provider_call
 from ...common.timezone import resolve_user_timezone, user_now
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ...common.downloads import stream_google_download
@@ -90,14 +92,23 @@ async def _execute_resumable_upload_with_progress(
     progress_message: str,
 ) -> dict[str, Any]:
     response: dict[str, Any] | None = None
-    while response is None:
-        status, response = await run_blocking(request.next_chunk)
-        if status is not None and ctx is not None:
-            await ctx.report_progress(
-                int(status.progress() * 100),
-                100,
-                progress_message,
-            )
+    method_id = "drive.files.upload"
+    params: dict[str, Any] = {}
+    if isinstance(request, LazyGoogleRequest):
+        # A lazy request records the call; next_chunk needs the built one.
+        method_id, params = request.method_id(), request.call_params()
+        request = await run_blocking(materialize_google_request, request)
+    # The whole chunk loop is one provider call for repeat safety: a create
+    # interrupted mid-upload may or may not have produced the file.
+    with track_provider_call(method_id, params):
+        while response is None:
+            status, response = await run_blocking(request.next_chunk)
+            if status is not None and ctx is not None:
+                await ctx.report_progress(
+                    int(status.progress() * 100),
+                    100,
+                    progress_message,
+                )
     if ctx is not None:
         await ctx.report_progress(100, 100, f"{progress_message} completed")
     return response
@@ -579,7 +590,13 @@ def register(server: FastMCP) -> None:
             Literal["trash", "permanent"],
             "Safer delete mode: 'trash' moves to trash (reversible), 'permanent' irreversibly deletes.",
         ] = "trash",
-        confirm_permanent: bool = True,
+        confirm_permanent: Annotated[
+            bool,
+            (
+                "Must stay true for delete_mode='permanent' (false is rejected); a permanent "
+                "delete is always confirmed interactively. Ignored for delete_mode='trash'."
+            ),
+        ] = True,
         supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:

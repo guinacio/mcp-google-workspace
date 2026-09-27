@@ -13,6 +13,7 @@ from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
 from ..common.confirmation import confirm_destructive_action
+from ..common.repeat_safety import generated_request_id
 from .client import chat_service, normalize_message_name, normalize_space_name, normalize_user_name, resolve_space_members
 from .presentation import enrich_messages, space_envelope
 from .schemas import (
@@ -207,7 +208,10 @@ def register_tools(server: FastMCP) -> None:
             "parent": parent,
             "body": body,
             "threadKey": request.thread_key,
-            "requestId": request.request_id,
+            # Chat deduplicates on requestId. The caller's key makes a retried
+            # call safe; otherwise a per-call key at least makes transport
+            # retries safe (common/repeat_safety.py).
+            "requestId": request.request_id or generated_request_id(),
             "messageId": request.message_id,
             "messageReplyOption": request.message_reply_option,
         }
@@ -266,6 +270,7 @@ def register_tools(server: FastMCP) -> None:
             service.spaces().messages().create(
                 parent=parent,
                 body={"text": request.text},
+                requestId=generated_request_id(),
             )
         )
         return {"status": "ok", "message": created}
@@ -292,6 +297,7 @@ def register_tools(server: FastMCP) -> None:
             service.spaces().messages().create(
                 parent=parent,
                 body=body,
+                requestId=generated_request_id(),
             )
         )
         return {"status": "ok", "message": created, "replied_to": message_name, "thread_name": thread_name}

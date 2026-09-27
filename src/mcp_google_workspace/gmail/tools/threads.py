@@ -187,7 +187,6 @@ def register(server: FastMCP) -> None:
     @server.tool(name="delete_thread")
     async def delete_thread(
         thread_id: str,
-        force: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Permanently delete a thread after mandatory interactive confirmation."""
