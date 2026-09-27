@@ -126,7 +126,11 @@ async def task_execution_scope(tool: str) -> AsyncIterator[None]:
             raise missing_capability_error(tool, capability)
 
     controller = admission_controller()
-    deadline = controller.limits.deadline_for(tool_cost(tool))
+    from .operations import lease_seconds
+
+    # A task's run deadline never outlives the W4b operation lease (startup
+    # and readiness validate this; the clamp covers a misconfigured worker).
+    deadline = min(controller.limits.deadline_for(tool_cost(tool)), max(1, lease_seconds() - 1))
     correlation_id = uuid4().hex
     started = time.perf_counter()
     queue_ms: float | None = None

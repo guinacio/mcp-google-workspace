@@ -41,7 +41,7 @@ from starlette.middleware import Middleware as ASGIMiddleware
 from .auth.google_oauth import register_oauth_callback_route
 from .auth.remote_auth import MCP_PATH, build_remote_auth
 from .common.confirmation import REQUEST_STATE_KEYS_ENV, shared_request_state_keys_configured
-from .common.production import RequestSizeLimitMiddleware
+from .common.production import RequestSizeLimitMiddleware, validate_operation_lease
 from .runtime import RemoteSecuritySettings, configure_logging, get_remote_security_settings
 from .server import workspace_mcp
 from .tool_discovery import configure_tool_search
@@ -129,6 +129,9 @@ def main() -> None:
         )
     # The Tasks queue (MCP_REDIS_URL / FASTMCP_DOCKET_URL) is configured once by
     # install_tasks_extension() when server.py composes workspace_mcp.
+    # Deadlines must stay below the operation lease (W4b), or a second request
+    # could re-run an operation whose first execution is still in flight.
+    validate_operation_lease()
     security = get_remote_security_settings()
     workspace_mcp.auth = build_http_auth(security)
     register_oauth_callback_route(workspace_mcp)

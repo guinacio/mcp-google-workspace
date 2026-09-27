@@ -479,6 +479,67 @@ def test_draining_is_not_ready(storage_env: pytest.MonkeyPatch) -> None:
     assert not ready and payload["status"] == "not_ready"
 
 
+def test_operation_records_readiness(storage_env: pytest.MonkeyPatch) -> None:
+    ready, payload = readiness_report()
+    assert payload["checks"]["operation_records"] == {"backend": "memory", "ok": True}
+
+    class RedisClient:
+        def ping(self) -> bool:
+            return True
+
+    storage_env.setenv("MCP_REDIS_URL", "redis://fleet:6379/0")
+    storage_env.setattr("mcp_google_workspace.common.production.redis.Redis.from_url", lambda _url: RedisClient())
+    _, payload = readiness_report()
+    assert payload["checks"]["operation_records"] == {"backend": "redis", "ok": True}
+
+    # Redis-backed records are Fernet-encrypted: no key ring, not ready.
+    storage_env.delenv("MCP_TOKEN_ENCRYPTION_KEY")
+    ready, payload = readiness_report()
+    assert not ready
+    check = payload["checks"]["operation_records"]
+    assert check["ok"] is False and "key ring" in check["requirement"]
+
+    class Down:
+        def ping(self) -> bool:
+            raise ConnectionError("down")
+
+    storage_env.setenv("MCP_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    storage_env.setattr("mcp_google_workspace.common.production.redis.Redis.from_url", lambda _url: Down())
+    _, payload = readiness_report()
+    assert payload["checks"]["operation_records"] == {"backend": "redis", "ok": False, "error": "ConnectionError"}
+
+
+def test_operation_lease_must_exceed_every_deadline(storage_env: pytest.MonkeyPatch) -> None:
+    storage_env.delenv("MCP_OPERATION_LEASE_SECONDS", raising=False)
+    storage_env.delenv("MCP_EXPENSIVE_DEADLINE_SECONDS", raising=False)
+    assert production.validate_operation_lease() == (900, 600)
+    ready, payload = readiness_report()
+    assert payload["checks"]["operation_lease"] == {"ok": True, "lease_seconds": 900, "longest_deadline_seconds": 600}
+
+    storage_env.setenv("MCP_EXPENSIVE_DEADLINE_SECONDS", "900")
+    with pytest.raises(ValueError, match="MCP_OPERATION_LEASE_SECONDS"):
+        production.validate_operation_lease()
+    ready, payload = readiness_report()
+    assert not ready
+    assert payload["checks"]["operation_lease"]["ok"] is False
+
+
+def test_http_entrypoint_refuses_to_start_when_the_lease_is_too_short(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_google_workspace import server_http
+
+    monkeypatch.setenv("MCP_OPERATION_LEASE_SECONDS", "60")
+    monkeypatch.setenv("MCP_TOOL_DEADLINE_SECONDS", "120")
+    monkeypatch.setattr(server_http, "configure_logging", lambda: None)
+    monkeypatch.setattr(server_http, "configure_remote_tool_search", lambda: None)
+
+    def never(**_kwargs: Any) -> None:  # pragma: no cover - must not start
+        raise AssertionError("server started with an invalid lease")
+
+    monkeypatch.setattr(server_http.workspace_mcp, "run", never)
+    with pytest.raises(ValueError, match="MCP_OPERATION_LEASE_SECONDS"):
+        server_http.main()
+
+
 # ---------------------------------------------------------------------------
 # Tracing
 # ---------------------------------------------------------------------------

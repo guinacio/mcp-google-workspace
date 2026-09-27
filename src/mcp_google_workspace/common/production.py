@@ -784,6 +784,69 @@ def _ping_redis(url: str) -> dict[str, Any]:
         return {"ok": False, "error": exc.__class__.__name__}
 
 
+def _operation_records_check(
+    fleet: bool, redis_url: str, redis_check: dict[str, Any] | None
+) -> dict[str, Any]:
+    """W4b operation records: shared (Redis) and decryptable for a fleet.
+
+    A Redis-backed store needs the token key ring (records are Fernet
+    encrypted) and a reachable Redis; without this check a misconfiguration
+    only surfaced on the first commit or confirmation.
+    """
+    try:
+        from .app_state import app_state_backend_url
+        from .crypto import FernetKeyring
+
+        url = app_state_backend_url()
+        if url is None:
+            check: dict[str, Any] = {"backend": "memory", "ok": not fleet}
+            if fleet:
+                check["requirement"] = "shared Redis operation records (MCP_REDIS_URL) for a fleet"
+            return check
+        check = {"backend": "redis"}
+        try:
+            FernetKeyring.from_environment()
+        except ValueError:
+            return {
+                **check,
+                "ok": False,
+                "requirement": "token encryption key ring (MCP_SECRET_FILE / MCP_TOKEN_ENCRYPTION_KEY[S])",
+            }
+        check.update(redis_check if url == redis_url and redis_check is not None else _ping_redis(url))
+        return check
+    except Exception as exc:  # noqa: BLE001 - configuration errors fail readiness
+        return {"ok": False, "error": exc.__class__.__name__}
+
+
+def validate_operation_lease(limits: AdmissionLimits | None = None) -> tuple[int, int]:
+    """``MCP_OPERATION_LEASE_SECONDS`` must exceed every tool deadline.
+
+    An executing operation's lease is what keeps a second request from
+    re-running it; a deadline (foreground or background task) longer than the
+    lease would let the lease lapse while the first execution is still running.
+    Returns ``(lease, longest deadline)``; raises ``ValueError`` when violated.
+    """
+    from .operations import lease_seconds
+
+    limits = limits or AdmissionLimits.from_environment()
+    lease = lease_seconds()
+    longest = max(limits.standard_deadline, limits.expensive_deadline)
+    if lease <= longest:
+        raise ValueError(
+            f"MCP_OPERATION_LEASE_SECONDS ({lease}) must be greater than the longest tool "
+            f"deadline ({longest}s; MCP_TOOL_DEADLINE_SECONDS / MCP_EXPENSIVE_DEADLINE_SECONDS)."
+        )
+    return lease, longest
+
+
+def _operation_lease_check() -> dict[str, Any]:
+    try:
+        lease, longest = validate_operation_lease()
+    except ValueError as exc:
+        return {"ok": False, "requirement": str(exc)}
+    return {"ok": True, "lease_seconds": lease, "longest_deadline_seconds": longest}
+
+
 def readiness_report() -> tuple[bool, dict[str, Any]]:
     """Verify secret, shared-state, queue and continuation-key dependencies.
 
@@ -855,6 +918,9 @@ def readiness_report() -> tuple[bool, dict[str, Any]]:
         checks["task_queue"] = queue
     except Exception as exc:
         checks["task_queue"] = {"ok": False, "error": exc.__class__.__name__}
+
+    checks["operation_records"] = _operation_records_check(fleet, redis_url, checks.get("redis"))
+    checks["operation_lease"] = _operation_lease_check()
 
     if fleet:
         # Multi-round-trip confirmations resume on whichever replica receives
