@@ -271,3 +271,20 @@ def test_prefab_picker_is_served_bundled_without_external_csp_domains(workspace)
     assert not re.search(r"<link\b[^>]*href=\"https?://", head)
     assert len(html) > 1_000_000
     assert diagnostics.structured_content["renderer_mode"] == "bundled"
+
+
+def test_dashboard_ui_resource_declares_no_csp_domains(workspace) -> None:
+    async def run():
+        async with Client(workspace) as client:
+            resources = {str(item.uri): item for item in await client.list_resources()}
+            contents = await client.read_resource("ui://apps/dashboard-ui")
+            return resources, contents
+
+    resources, contents = anyio.run(run)
+    meta = resources["ui://apps/dashboard-ui"].meta or {}
+    assert "csp" not in (meta.get("ui") or {})
+    html = contents[0].text
+    # No external stylesheet/font/script loads in the shipped single file.
+    assert "fonts.googleapis.com" not in html
+    assert "fonts.gstatic.com" not in html
+    assert "<link" not in html.lower()

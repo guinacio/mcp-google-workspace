@@ -1,8 +1,13 @@
 import { expect, test } from "@playwright/test";
+import { appFrame, blockExternalNetwork } from "./helpers";
 
+let external: string[] = [];
 test.beforeEach(async ({ page }) => {
-  // The dashboard's optional public fonts are unrelated to host integration.
-  await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
+  // W6: the dashboard makes no external requests at all (no web fonts).
+  external = await blockExternalNetwork(page);
+});
+test.afterEach(() => {
+  expect(external).toEqual([]);
 });
 
 for (const discovery of ["supported", "unsupported", "malformed", "partial"]) {
@@ -10,7 +15,7 @@ for (const discovery of ["supported", "unsupported", "malformed", "partial"]) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`/tests/host.html?discovery=${discovery}`);
-    const app = page.frameLocator("#dashboard");
+    const app = appFrame(page);
     await expect(app.getByRole("button", { name: "Open event: AppBridge regression meeting", exact: true })).toBeVisible();
     await expect(app.getByText("MCP app connection failed.")).toHaveCount(0);
     const discovered = discovery === "supported" || discovery === "partial";
@@ -21,8 +26,10 @@ for (const discovery of ["supported", "unsupported", "malformed", "partial"]) {
       expect(await page.evaluate(() => (window as any).cursors)).toEqual([undefined, "second-page"]);
     }
     await app.getByRole("button", { name: "Next week" }).click();
+    // W6: after the launch result, names come from the server's operation manifest
+    // (the discovered hosts here serve a subserver-only composition with local names).
     await expect.poll(() => page.evaluate(() => (window as any).calls)).toContain(
-      discovery === "supported" ? "get_weekly_calendar_view" : "apps_get_weekly_calendar_view",
+      discovered ? "get_weekly_calendar_view" : "apps_get_weekly_calendar_view",
     );
     expect(errors).toEqual([]);
   });
@@ -30,14 +37,14 @@ for (const discovery of ["supported", "unsupported", "malformed", "partial"]) {
 
 test("renders host-pushed data when tools/list is unsupported", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported&pushResult");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: "Open event: AppBridge regression meeting", exact: true })).toBeVisible();
   await expect(app.getByText("MCP app connection failed.")).toHaveCount(0);
 });
 
 test("applies initial host context and later partial updates", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported&styled");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: "Open event: AppBridge regression meeting", exact: true })).toBeVisible();
   await expect(app.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(app.locator("body")).toHaveCSS("background-color", "rgb(240, 230, 220)");
@@ -66,7 +73,7 @@ test("applies initial host context and later partial updates", async ({ page }) 
 
 test("keeps default colors when the host supplies no style variables", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: "Open event: AppBridge regression meeting", exact: true })).toBeVisible();
   await expect(app.locator("body")).toHaveCSS("background-color", "rgb(32, 33, 36)");
   await page.evaluate(() => (window as any).bridge.setHostContext({ theme: "light" }));
