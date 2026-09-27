@@ -60,3 +60,10 @@ SUBSERVERS = (
 for _subserver in SUBSERVERS:
     if any(tool.task_config.supports_tasks() for tool in local_tools(_subserver)):
         install_tasks_extension(_subserver)
+
+
+def pytest_configure(config) -> None:  # type: ignore[no-untyped-def]
+    config.addinivalue_line(
+        "markers",
+        "fleet: Docker fleet qualification (deploy/fleet-test); skipped unless MCP_FLEET_TEST=1",
+    )
