@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
-from ..common.errors import tool_error_payload
+from ..common.errors import provider_tool_error
 from .client import sheets_service
 from .schemas import (
     AppendSheetValuesRequest,
@@ -120,7 +120,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, spreadsheet_id=spreadsheet_id)
+            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id) from exc
 
     @server.tool(name="create_spreadsheet")
     def create_spreadsheet(
@@ -140,7 +140,7 @@ def register_tools(server: FastMCP) -> None:
                 CreateSpreadsheetRequest(title=title, sheet_titles=sheet_titles or [])
             )
         except HttpError as exc:
-            return tool_error_payload(exc, title=title)
+            raise provider_tool_error(exc, title=title) from exc
 
     @server.tool(name="get_sheet_values")
     def get_sheet_values(
@@ -175,7 +175,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1)
+            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1) from exc
 
     @server.tool(name="batch_get_sheet_values")
     def batch_get_sheet_values(
@@ -211,7 +211,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, spreadsheet_id=spreadsheet_id)
+            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id) from exc
 
     @server.tool(name="append_sheet_values")
     def append_sheet_values(
@@ -243,7 +243,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1)
+            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1) from exc
 
     @server.tool(name="update_sheet_values")
     def update_sheet_values(
@@ -270,7 +270,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1)
+            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1) from exc
 
     @server.tool(name="batch_update_spreadsheet", task=True)
     async def batch_update_spreadsheet(
@@ -303,4 +303,4 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, spreadsheet_id=spreadsheet_id)
+            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id) from exc

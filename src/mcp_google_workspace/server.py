@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .apps import apps_mcp
 from .common.component_annotations import apply_default_tool_annotations
 from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
-from .common.errors import StructuredToolErrorMiddleware
+from .common.errors import RecoverableToolError, StructuredToolErrorMiddleware
 from .common.task_backend import install_tasks_extension
 from .common.production import (
     CapabilityCatalogMiddleware,
@@ -415,6 +415,18 @@ async def search_workspace(
     async with anyio.create_task_group() as task_group:
         for service_name in selected:
             task_group.start_soon(searchers[service_name])
+    if errors and len(errors) == len(set(selected)):
+        # Partial-success policy: some services answered -> a successful
+        # "partial" result listing per-service errors; none answered -> a tool
+        # execution error, never an empty "ok"-shaped success.
+        raise RecoverableToolError(
+            "provider_unavailable",
+            "No Workspace service could be searched.",
+            required_action={"action": "retry", "after_seconds": 5},
+            retryable=True,
+            retry_after=5,
+            details={"errors": dict(sorted(errors.items()))},
+        )
     return {
         "status": "ok" if not errors else "partial",
         "query": query,

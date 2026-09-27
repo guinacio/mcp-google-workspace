@@ -19,13 +19,12 @@ from pydantic import Field
 from ..auth import build_calendar_service, build_gmail_service
 from ..common.async_ops import run_blocking
 from ..common.downloads import max_download_bytes
-from ..common.errors import render_error_message
+from ..common.errors import ProviderToolError, provider_tool_error, render_error_message
 from ..common.output_schemas import VIEW_DESCRIPTOR_SCHEMA
 from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from ..gmail.presentation import envelope as gmail_envelope
 from .schemas import (
-    AppError,
     DashboardState,
     DashboardStatePatch,
 )
@@ -269,15 +268,9 @@ def _fetch_email_attachment(message_id: str, attachment_id: str) -> dict[str, An
     }
 
 
-def _fetch_error_payload(exc: Exception, **details: str) -> dict[str, Any]:
-    """Wrap a detail-fetch failure in the AppError structured-error contract."""
-    error = AppError(
-        code="PROVIDER_ERROR",
-        message=str(exc) or exc.__class__.__name__,
-        retryable=False,
-        details=dict(details),
-    )
-    return {"error": error.model_dump()}
+def _fetch_error(exc: Exception, **details: str) -> ProviderToolError:
+    """A detail-fetch failure as a tool execution error (``isError`` result)."""
+    return provider_tool_error(exc, **details)
 
 
 def build_dashboard_payload(state: DashboardState) -> dict[str, Any]:
@@ -834,7 +827,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
                 account_timezone,
             )
         except Exception as exc:
-            return _fetch_error_payload(exc, event_id=event_id, calendar_id=calendar_id)
+            raise _fetch_error(exc, event_id=event_id, calendar_id=calendar_id) from exc
         if ctx is not None:
             await ctx.report_progress(100, 100, "Event details ready")
         return payload
@@ -854,7 +847,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
         try:
             payload = await run_blocking(_fetch_email_detail, message_id, account_timezone)
         except Exception as exc:
-            return _fetch_error_payload(exc, message_id=message_id)
+            raise _fetch_error(exc, message_id=message_id) from exc
         if ctx is not None:
             await ctx.report_progress(100, 100, "Email details ready")
         return payload
@@ -877,7 +870,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
         try:
             payload = await run_blocking(_fetch_email_attachment, message_id, attachment_id)
         except Exception as exc:
-            return _fetch_error_payload(exc, message_id=message_id, attachment_id=attachment_id)
+            raise _fetch_error(exc, message_id=message_id, attachment_id=attachment_id) from exc
         if ctx is not None:
             await ctx.report_progress(100, 100, "Attachment ready")
         return payload

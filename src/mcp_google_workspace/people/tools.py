@@ -9,7 +9,7 @@ from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
 from ..common.confirmation import confirm_destructive_action
-from ..common.errors import tool_error_payload
+from ..common.errors import provider_tool_error
 from .client import normalize_contact_group_name, normalize_person_name, people_service
 from .schemas import (
     CreateContactGroupRequest,
@@ -194,7 +194,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc)
+            raise provider_tool_error(exc) from exc
 
     @server.tool(name="search_contacts")
     def search_contacts(
@@ -220,7 +220,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, query=query)
+            raise provider_tool_error(exc, query=query) from exc
 
     @server.tool(name="get_contact")
     def get_contact(
@@ -243,7 +243,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, person_name=person_name)
+            raise provider_tool_error(exc, person_name=person_name) from exc
 
     @server.tool(name="create_contact")
     def create_contact(
@@ -276,7 +276,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc)
+            raise provider_tool_error(exc) from exc
 
     @server.tool(name="update_contact")
     def update_contact(
@@ -317,7 +317,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, person_name=person_name)
+            raise provider_tool_error(exc, person_name=person_name) from exc
 
     @server.tool(name="delete_contact")
     async def delete_contact(
@@ -338,7 +338,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return await run_blocking(delete_contact_payload, request)
         except HttpError as exc:
-            return tool_error_payload(exc, person_name=person_name)
+            raise provider_tool_error(exc, person_name=person_name) from exc
 
     @server.tool(name="list_contact_groups")
     def list_contact_groups(
@@ -357,7 +357,7 @@ def register_tools(server: FastMCP) -> None:
                 ListContactGroupsRequest(page_size=page_size, page_token=page_token, group_fields=group_fields)
             )
         except HttpError as exc:
-            return tool_error_payload(exc)
+            raise provider_tool_error(exc) from exc
 
     @server.tool(name="create_contact_group")
     def create_contact_group(name: str) -> dict[str, Any]:
@@ -369,7 +369,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return create_contact_group_payload(CreateContactGroupRequest(name=name))
         except HttpError as exc:
-            return tool_error_payload(exc, name=name)
+            raise provider_tool_error(exc, name=name) from exc
 
     @server.tool(name="modify_contact_group_members")
     def modify_contact_group_members(
@@ -393,4 +393,4 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, group_name=group_name)
+            raise provider_tool_error(exc, group_name=group_name) from exc

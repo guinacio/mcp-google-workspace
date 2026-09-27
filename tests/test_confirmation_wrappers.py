@@ -349,8 +349,10 @@ def test_commit_asking_round_keeps_the_approval_token(workspace_env, approval_st
     assert (done.structured_content or {})["status"] == "committed"
     assert mutations(google_calls) == ["users.messages.send"]
     assert _row(approval_store, token) is None
-    # Replaying the commit cannot send again.
-    assert isinstance(replay, MCPError)
+    # Replaying the commit cannot send again. W5: a consumed token is a tool
+    # execution error (isError result), not a JSON-RPC protocol error.
+    assert isinstance(replay, mcp_types.CallToolResult)
+    assert replay.is_error is True
     assert mutations(google_calls) == ["users.messages.send"]
 
 

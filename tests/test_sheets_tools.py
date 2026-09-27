@@ -187,12 +187,18 @@ def test_get_sheet_values_tool_returns_structured_error(monkeypatch):
     async def scenario():
         async with Client(sheets_mcp) as client:
             result = await client.call_tool(
-                "get_sheet_values", {"spreadsheet_id": "sheet-1", "range_a1": "A:C"}
+                "get_sheet_values",
+                {"spreadsheet_id": "sheet-1", "range_a1": "A:C"},
+                raise_on_error=False,
             )
-            return result.structured_content or result.data
+            assert result.is_error is True
+            return result.structured_content
 
+    # W5: a Google API failure is an isError tool result with the error envelope
+    # (was a successful result carrying an "error" dict).
     result = anyio.run(scenario)
-    assert "400" in result["error"]
+    assert "400" in result["message"]
+    assert result["code"] == "invalid_input"
     assert result["provider_status"] == 400
-    assert result["context"]["spreadsheet_id"] == "sheet-1"
-    assert result["context"]["range_a1"] == "A:C"
+    assert result["details"]["context"]["spreadsheet_id"] == "sheet-1"
+    assert result["details"]["context"]["range_a1"] == "A:C"
