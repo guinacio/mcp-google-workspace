@@ -199,13 +199,7 @@
         "fastmcp": {
           "tags": []
         },
-        "ui": {
-          "csp": {
-            "resourceDomains": [
-              "https://cdn.jsdelivr.net"
-            ]
-          }
-        }
+        "ui": {}
       },
       "mimeType": "text/html;profile=mcp-app",
       "name": "Prefab Renderer (file_manager)",
@@ -8392,8 +8386,7 @@
           "visibility": [
             "model"
           ]
-        },
-        "ui/resourceUri": "ui://prefab/tool/872d2c9e20b2/renderer.html"
+        }
       },
       "name": "files_file_manager",
       "outputSchema": {
@@ -8469,7 +8462,6 @@
         },
         "ui": {
           "visibility": [
-            "app",
             "model"
           ]
         }
@@ -8582,7 +8574,6 @@
         },
         "ui": {
           "visibility": [
-            "app",
             "model"
           ]
         }
@@ -8751,7 +8742,6 @@
         },
         "ui": {
           "visibility": [
-            "app",
             "model"
           ]
         }

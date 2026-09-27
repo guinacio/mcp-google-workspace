@@ -24,6 +24,8 @@ from ..common.output_schemas import VIEW_DESCRIPTOR_SCHEMA
 from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
 from ..gmail.presentation import envelope as gmail_envelope
+from .addressing import dashboard_ui_meta
+from .operations import DashboardOperationCatalog, operation_catalog
 from .schemas import (
     AppError,
     DashboardState,
@@ -42,6 +44,7 @@ from .state import (
     prev_range,
 )
 from .view_models import (
+    OPERATIONS_META_KEY,
     build_dashboard_view_model,
     build_email_detail_view_model,
     build_event_detail_view_model,
@@ -579,13 +582,22 @@ def view_error_result(error: ViewHandleError | ViewStateConflict) -> ToolResult:
     )
 
 
-def view_result(payload: dict[str, Any], view: DashboardView) -> ToolResult:
-    """Successful view result: descriptor in structuredContent.view and _meta."""
+def view_result(
+    payload: dict[str, Any],
+    view: DashboardView,
+    *,
+    operations: dict[str, Any] | None = None,
+) -> ToolResult:
+    """Successful view result: descriptor in structuredContent.view and _meta.
+
+    Launch results also carry the operation manifest under
+    ``_meta[OPERATIONS_META_KEY]`` (UI metadata only; the model never needs it).
+    """
     descriptor = view.descriptor()
-    return ToolResult(
-        structured_content={**payload, "view": descriptor},
-        meta={VIEW_META_KEY: descriptor},
-    )
+    meta: dict[str, Any] = {VIEW_META_KEY: descriptor}
+    if operations is not None:
+        meta[OPERATIONS_META_KEY] = operations
+    return ToolResult(structured_content={**payload, "view": descriptor}, meta=meta)
 
 
 def _state_result(view: DashboardView) -> ToolResult:
@@ -599,9 +611,24 @@ async def _guarded(operation: Callable[[], Awaitable[ToolResult]]) -> ToolResult
         return view_error_result(error)
 
 
-def register_tools(server: FastMCP, views: DashboardViewService | None = None) -> None:
+# Tool exposure (docs/RICH_OUTPUTS.md, "Tool visibility"): the two launch tools
+# are for the model and the view; every other dashboard tool is a callback of
+# the view (state writes, UI-shaped detail reads, attachment bytes) with a
+# model-facing equivalent elsewhere, so it is app-only. Visibility is a host
+# hint: each call is still authorized here (principal-bound view handle, Google
+# grant) because some hosts do not enforce it.
+def _app_only() -> dict[str, Any]:
+    return {"ui": {"visibility": ["app"]}}
+
+
+def register_tools(
+    server: FastMCP,
+    views: DashboardViewService | None = None,
+    catalog: DashboardOperationCatalog | None = None,
+) -> None:
     """Register the dashboard tools on ``server`` over one view service."""
     service = views or dashboard_views()
+    operations = catalog or operation_catalog(server)
 
     async def open_view(view_handle: str | None) -> DashboardView:
         if view_handle is not None:
@@ -614,7 +641,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
             )
         )
 
-    @server.tool(name="get_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    @server.tool(name="get_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA, meta=_app_only())
     async def apps_get_state(view_handle: ViewHandleArg) -> ToolResult:
         """Get the current state and revision of one dashboard view."""
 
@@ -623,7 +650,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
 
         return await _guarded(run)
 
-    @server.tool(name="set_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    @server.tool(name="set_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA, meta=_app_only())
     async def apps_set_state(
         view_handle: ViewHandleArg,
         expected_revision: ExpectedRevisionArg = None,
@@ -662,7 +689,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
 
         return await _guarded(run)
 
-    @server.tool(name="patch_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    @server.tool(name="patch_state", output_schema=VIEW_STATE_OUTPUT_SCHEMA, meta=_app_only())
     async def apps_patch_state(
         view_handle: ViewHandleArg,
         expected_revision: ExpectedRevisionArg = None,
@@ -694,7 +721,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
 
         return await _guarded(run)
 
-    @server.tool(name="next_range", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    @server.tool(name="next_range", output_schema=VIEW_STATE_OUTPUT_SCHEMA, meta=_app_only())
     async def apps_next_range(
         view_handle: ViewHandleArg,
         expected_revision: ExpectedRevisionArg = None,
@@ -708,7 +735,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
 
         return await _guarded(run)
 
-    @server.tool(name="prev_range", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    @server.tool(name="prev_range", output_schema=VIEW_STATE_OUTPUT_SCHEMA, meta=_app_only())
     async def apps_prev_range(
         view_handle: ViewHandleArg,
         expected_revision: ExpectedRevisionArg = None,
@@ -722,7 +749,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
 
         return await _guarded(run)
 
-    @server.tool(name="today", output_schema=VIEW_STATE_OUTPUT_SCHEMA)
+    @server.tool(name="today", output_schema=VIEW_STATE_OUTPUT_SCHEMA, meta=_app_only())
     async def apps_today(
         view_handle: ViewHandleArg,
         expected_revision: ExpectedRevisionArg = None,
@@ -742,13 +769,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
 
         return await _guarded(run)
 
-    @server.tool(
-        name="get_dashboard",
-        meta={
-            "ui": {"resourceUri": "ui://apps/dashboard-ui"},
-            "ui/resourceUri": "ui://apps/dashboard-ui",
-        },
-    )
+    @server.tool(name="get_dashboard", meta=dashboard_ui_meta())
     async def apps_get_dashboard(
         view_handle: LaunchHandleArg = None,
         date_override: date | None = None,
@@ -765,17 +786,11 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
                 payload = await build_dashboard_payload_with_progress(state, ctx)
             else:
                 payload = await run_blocking(build_dashboard_payload, state)
-            return view_result(payload, view)
+            return view_result(payload, view, operations=await operations.manifest())
 
         return await _guarded(run)
 
-    @server.tool(
-        name="get_weekly_calendar_view",
-        meta={
-            "ui": {"resourceUri": "ui://apps/dashboard-ui"},
-            "ui/resourceUri": "ui://apps/dashboard-ui",
-        },
-    )
+    @server.tool(name="get_weekly_calendar_view", meta=dashboard_ui_meta())
     async def apps_get_weekly_calendar_view(
         view_handle: LaunchHandleArg = None,
         date_override: date | None = None,
@@ -800,7 +815,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
                     date_override=date_override,
                     include_weekend_override=include_weekend,
                 )
-            return view_result(payload, view)
+            return view_result(payload, view, operations=await operations.manifest())
 
         return await _guarded(run)
 
@@ -813,7 +828,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
             return view_error_result(error)
         return None
 
-    @server.tool(name="get_event_detail")
+    @server.tool(name="get_event_detail", meta=_app_only())
     async def apps_get_event_detail(
         event_id: str,
         calendar_id: str = "primary",
@@ -839,7 +854,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
             await ctx.report_progress(100, 100, "Event details ready")
         return payload
 
-    @server.tool(name="get_email_detail")
+    @server.tool(name="get_email_detail", meta=_app_only())
     async def apps_get_email_detail(
         message_id: str,
         view_handle: OptionalHandleArg = None,
@@ -859,10 +874,7 @@ def register_tools(server: FastMCP, views: DashboardViewService | None = None) -
             await ctx.report_progress(100, 100, "Email details ready")
         return payload
 
-    @server.tool(
-        name="get_email_attachment",
-        meta={"ui": {"visibility": ["app"]}},
-    )
+    @server.tool(name="get_email_attachment", meta=_app_only())
     async def apps_get_email_attachment(
         message_id: str,
         attachment_id: str,

@@ -57,7 +57,7 @@ def test_file_picker_uses_the_standard_mcp_apps_contract() -> None:
     assert uri.startswith("ui://prefab/tool/")
     assert uri.endswith("/renderer.html")
     assert picker.meta["ui"]["visibility"] == ["model"]
-    assert picker.meta["ui/resourceUri"] == uri
+    assert "ui/resourceUri" not in picker.meta  # W6: flat alias removed
 
     resource = next(item for item in resources if str(item.uri) == uri)
     assert resource.mime_type == "text/html;profile=mcp-app"
