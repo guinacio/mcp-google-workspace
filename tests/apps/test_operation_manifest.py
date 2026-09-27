@@ -165,6 +165,31 @@ def test_custom_namespace_manifest_uses_the_mount_prefix() -> None:
     assert "createEvent" not in manifest["operations"]  # calendar is not composed here
 
 
+def test_manifest_sees_tools_hidden_by_progressive_discovery() -> None:
+    from fastmcp.server.transforms.search import BM25SearchTransform
+
+    calendar = FastMCP("calendar-stub")
+
+    @calendar.tool(name="create_event")
+    def create_event(summary: str) -> str:
+        return summary
+
+    root = FastMCP("discovery-root")
+    root.mount(calendar, namespace="calendar")
+    mount_apps_dashboard(root, create_apps_server(), namespace="apps")
+    root.add_transform(BM25SearchTransform(max_results=3, always_visible=["apps_get_dashboard"]))
+
+    async def listed() -> set[str]:
+        async with Client(root) as client:
+            return {tool.name for tool in await client.list_tools()}
+
+    visible = anyio.run(listed)
+    assert "calendar_create_event" not in visible and "apps_next_range" not in visible
+    manifest, _ = _launch(root, "apps_get_dashboard")
+    assert manifest["operations"]["createEvent"]["tool"] == "calendar_create_event"
+    assert manifest["operations"]["nextRange"]["tool"] == "apps_next_range"
+
+
 def test_operations_the_host_would_reject_are_not_advertised(monkeypatch: pytest.MonkeyPatch) -> None:
     server = create_apps_server()
     original = server.get_tool
