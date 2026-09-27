@@ -26,6 +26,7 @@ dependencies = [
     "prometheus-client>=0.25.0",
     "pydantic[email]>=2.12.5",
     "idna>=3.15",
+    "keyring>=25.7.0",
     "pyasn1>=0.6.3",
     "pydantic-settings>=2.14.2",
     "pygments>=2.20.0",

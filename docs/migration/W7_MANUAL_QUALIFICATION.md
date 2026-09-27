@@ -290,6 +290,24 @@ Requires the dashboard and a test email with an attachment.
 2. Drop a small test file and confirm it uploads and appears in the list.
 3. **Record:** whether the picker rendered at all, and whether any CSP
    violation appeared in the host's console.
+4. Upload a file larger than 1 MB (for example a 3 MB photo), then a small
+   one. Both must succeed (regression check for the base64 string limit).
+
+### 4i. Token encryption key in the OS keychain (MCPB)
+
+1. Install the 1.0.0 MCPB. Confirm the host's extension settings do **not**
+   ask for a token encryption key.
+2. Connect Google (`connect_google_workspace`) and run one read tool.
+3. Confirm the keychain entry exists: Windows Credential Manager → Windows
+   Credentials → `mcp-google-workspace` / `token-encryption-key`; macOS
+   Keychain Access → search `mcp-google-workspace`; Linux `secret-tool search
+   service mcp-google-workspace`. Confirm no key file appears in
+   `user_token_dir` (only encrypted `.token` files).
+4. Restart the host. The read tool still works without reconnecting.
+5. **Cleanup/negative check:** delete the keychain entry and restart. The
+   next Google call asks you to reconnect (old tokens are unreadable); after
+   reconnecting, a new entry exists.
+6. **Record:** OS, host version, and each step's result.
 
 ---
 

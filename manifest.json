@@ -57,7 +57,6 @@
       "env": {
         "MCP_CREDENTIALS_DIR": "${user_config.credentials_dir}",
         "MCP_USER_TOKEN_DIR": "${user_config.user_token_dir}",
-        "MCP_TOKEN_ENCRYPTION_KEY": "${user_config.token_encryption_key}",
         "MCP_LOCAL_PRINCIPAL": "${user_config.local_principal}",
         "ENABLE_APPS_DASHBOARD": "${user_config.enable_apps_dashboard}",
         "ENABLE_CHAT": "${user_config.enable_chat}",
@@ -96,12 +95,6 @@
       "description": "Directory for encrypted per-user Google OAuth credentials. Keep it private to this MCP installation.",
       "required": false
     },
-    "token_encryption_key": {
-      "type": "string",
-      "title": "Token Encryption Key",
-      "description": "Fernet key used to encrypt Google OAuth credentials at rest. Generate once with cryptography.fernet.Fernet.generate_key().decode().",
-      "required": true
-    },
     "local_principal": {
       "type": "string",
       "title": "Local Principal",
@@ -131,7 +124,8 @@
       "type": "string",
       "title": "Gemini API Key",
       "description": "Gemini Developer API key used for Gemini media tools. Required only when Gemini Media is enabled.",
-      "required": false
+      "required": false,
+      "sensitive": true
     },
     "gemini_image_generate_model": {
       "type": "string",
@@ -233,5 +227,3 @@
     "https://developers.google.com/terms/api-services-user-data-policy"
   ]
 }
-
-

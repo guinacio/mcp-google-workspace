@@ -28,13 +28,16 @@ The entrypoint adds:
 - the complete tool catalog for Claude Desktop's current MCP Apps router
 - clearer startup errors when bundle configuration is invalid
 
+## Token encryption
+
+The bundle asks for no encryption key. On first use it generates a Fernet key and stores it in the OS keychain (service `mcp-google-workspace`, account `token-encryption-key`) through `keyring`: Windows Credential Manager, macOS Keychain, or the Linux Secret Service. Encrypted Google tokens stay in `user_token_dir`; the key never touches disk. Without a secure keychain backend the server refuses to start and asks for `MCP_TOKEN_ENCRYPTION_KEY` in its environment. Deleting the keychain entry forces a one-time Google reconnect.
+
 ## User Configuration Mapped By The Manifest
 
 The MCPB manifest exposes these settings through the host UI and passes them into the local process as environment variables:
 
 - `credentials_dir` -> `MCP_CREDENTIALS_DIR`
 - `user_token_dir` -> `MCP_USER_TOKEN_DIR`
-- `token_encryption_key` -> `MCP_TOKEN_ENCRYPTION_KEY`
 - `local_principal` -> `MCP_LOCAL_PRINCIPAL` (the one trusted-local principal that owns this
   process's Google grant, picker uploads, and dashboard views; it is a single-user trust
   boundary, not multitenant isolation — see "Local stdio trust boundary" in the README)

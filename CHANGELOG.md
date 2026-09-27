@@ -18,6 +18,13 @@ MCP Apps dashboard/picker to **Apps SDK 2.0.3**. See
 
 ### Breaking changes
 
+- **MCPB no longer asks for a token encryption key.** The
+  `token_encryption_key` setting is removed from the bundle manifest. The
+  local stdio runtime now generates its key on first use and keeps it in the
+  OS keychain (see Security). Google connections saved with a previously
+  pasted key cannot be decrypted with the new one: reconnect Google once
+  after upgrading. Headless setups without a secure keychain set
+  `MCP_TOKEN_ENCRYPTION_KEY` in the environment instead.
 - **Removed tools.** `chat_summarize_space_messages` and `keep_summarize_note`
   are deleted, not stubbed. Both depended on FastMCP's `ctx.sample()`
   (Sampling), which the 2026-07-28 spec deprecates and this project does not
@@ -182,6 +189,19 @@ MCP Apps dashboard/picker to **Apps SDK 2.0.3**. See
 
 ### Security fixes
 
+- **Local token encryption key lives in the OS keychain.** The stdio/MCPB
+  runtime stores its Fernet key in Windows Credential Manager, macOS Keychain
+  or the Linux Secret Service via `keyring`, instead of a value the user
+  generated and pasted into (unencrypted) extension settings. Insecure
+  `keyring` backends (fail/null/`keyrings.alt` files) are refused; the key
+  is never written to disk. HTTP deployments keep operator-managed key rings.
+  The MCPB `gemini_api_key` setting is now marked `sensitive`, so hosts store
+  it in the OS keychain too.
+- **Picker uploads over ~750 KB were rejected.** The generic 1,000,000-character
+  argument limit applied to the picker's base64 file field. String limits now
+  honor a larger `maxLength` the called tool declares (only the upload field),
+  and rejections name the argument path. The default `MCP_MAX_REQUEST_BYTES`
+  rises from 30 to 36 MiB so one 25 MiB upload fits after base64 encoding.
 - **Dashboard rendering (W1).** `render.ts` used `textContent`-derived values
   interpolated into HTML attributes/URLs without attribute-safe escaping, so
   a crafted filename/subject/title (e.g. containing `" data-audit-injected="yes`)

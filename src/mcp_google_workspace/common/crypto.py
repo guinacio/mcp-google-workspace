@@ -9,6 +9,8 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
+LOCAL_KEYCHAIN_KEY_ID = "keychain"
+
 
 @dataclass(frozen=True, slots=True)
 class DecryptionResult:
@@ -72,12 +74,18 @@ class FernetKeyring:
             return cls(keys, active_id)
 
         legacy = payload.get("token_encryption_key") or os.getenv("MCP_TOKEN_ENCRYPTION_KEY", "")
-        if not isinstance(legacy, str) or not legacy.strip():
-            raise ValueError(
-                "Configure token encryption through MCP_SECRET_FILE, "
-                "MCP_TOKEN_ENCRYPTION_KEYS, or MCP_TOKEN_ENCRYPTION_KEY."
-            )
-        return cls.single(legacy.strip())
+        if isinstance(legacy, str) and legacy.strip():
+            return cls.single(legacy.strip())
+        if os.getenv("MCP_RUNTIME_MODE", "").strip().lower() == "bundle":
+            # Local stdio runtime: the key is generated once and kept in the OS
+            # keychain, never in a file or in the host's extension settings.
+            from .local_keychain import load_or_create_local_key
+
+            return cls({LOCAL_KEYCHAIN_KEY_ID: load_or_create_local_key()}, LOCAL_KEYCHAIN_KEY_ID)
+        raise ValueError(
+            "Configure token encryption through MCP_SECRET_FILE, "
+            "MCP_TOKEN_ENCRYPTION_KEYS, or MCP_TOKEN_ENCRYPTION_KEY."
+        )
 
     def encrypt(self, plaintext: bytes) -> bytes:
         token = self._fernets[self.active_key_id].encrypt(plaintext)

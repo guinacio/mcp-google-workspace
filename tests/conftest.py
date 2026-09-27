@@ -11,6 +11,9 @@
    subserver the runtime root, and FastMCP 4 refuses to serve task tools
    without an extension, so those runnable test roots need their own
    (in-memory) one.
+3. Point ``keyring`` at its refusing backend for this process and every
+   subprocess it starts, so no test can read or write the developer's real OS
+   keychain. Tests of the keychain path install an in-memory backend.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import os
 
 os.environ["FASTMCP_MCP_CAMELCASE_COMPAT"] = "false"
+os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
 
 import fastmcp  # noqa: E402
 

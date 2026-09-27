@@ -48,7 +48,11 @@ Place the Google OAuth client `credentials.json` in one of:
 - project root: `./credentials.json`
 - package credentials folder: `./src/credentials/credentials.json`
 
-Configure a versioned Fernet key ring before first use. Production deployments should mount a secret-manager document through `MCP_SECRET_FILE`; `MCP_TOKEN_ENCRYPTION_KEY` remains a single-key development option. The MCP encrypts each user's refresh token separately and never writes a shared `token.json`.
+Each user's Google refresh token is encrypted separately with Fernet; the MCP never writes a shared `token.json`.
+
+**Local stdio / MCPB:** nothing to configure. On first use the server generates the encryption key and keeps it in the OS keychain (Windows Credential Manager, macOS Keychain, or the Secret Service on Linux), never in a file or in the host's extension settings. If no secure keychain is available (for example headless Linux), startup stops and asks you to set `MCP_TOKEN_ENCRYPTION_KEY` instead. Losing the keychain entry (new machine, OS reinstall) only means reconnecting Google once.
+
+**HTTP deployments:** configure a versioned key ring from your secret manager. Mount a secret-manager document through `MCP_SECRET_FILE`; `MCP_TOKEN_ENCRYPTION_KEY` remains a single-key development option. The keychain is never used over HTTP.
 
 Generate a key once and store it in your secret manager:
 
