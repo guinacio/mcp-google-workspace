@@ -1,0 +1,17 @@
+{
+  "body": {
+    "error": {
+      "code": -32022,
+      "data": {
+        "requested": "1999-01-01",
+        "supported": [
+          "2026-07-28"
+        ]
+      },
+      "message": "Unsupported protocol version"
+    },
+    "id": 21,
+    "jsonrpc": "2.0"
+  },
+  "status_code": 400
+}

@@ -1,0 +1,12 @@
+{
+  "resources_list": {
+    "cacheScope": "private",
+    "resultType": "complete",
+    "ttlMs": 0
+  },
+  "tools_list": {
+    "cacheScope": "private",
+    "resultType": "complete",
+    "ttlMs": 0
+  }
+}

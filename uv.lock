@@ -999,7 +999,7 @@ wheels = [
 
 [[package]]
 name = "mcp-google-workspace"
-version = "0.3.13"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

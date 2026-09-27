@@ -132,6 +132,13 @@ trade-off: the resource is about 6.6 MB instead of a small stub, in exchange for
 no version drift, and no `https://cdn.jsdelivr.net` allowance (which would admit any npm package on
 that CDN).
 
+FastMCP 4.0.10 otherwise rebuilds that ~6.6 MB resource -- including a fresh disk read of the
+bundled renderer HTML -- on every single `resources/list`/`resources/read`, with no supported
+cache hook (see `common/prefab_render_cache.py`'s module docstring for why). This project patches
+that one synthesis function with a process-wide cache keyed on the tool, the installed `prefab-ui`
+version, the resolved renderer mode/`PREFAB_RENDERER_URL`, and the tool's CSP/permissions meta, cutting
+a `resources/list` call from ~41ms to ~5ms after the first build (`tests/test_prefab_render_cache.py`).
+
 ### Browser test host
 
 `src/mcp_google_workspace/apps/ui/tests` runs every dashboard test through a web-host sandbox. The

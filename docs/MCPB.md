@@ -74,14 +74,29 @@ The command first runs `npm ci` and `npm run build` for the Apps UI, then writes
 `dist/mcp-google-workspace-<version>.mcpb`. Packaging fails when the locked UI
 cannot be rebuilt.
 
+## Automated Validation (CI)
+
+The `mcpb-lifecycle` job in `.github/workflows/ci.yml` runs
+`uv run python scripts/verify_mcpb_bundle.py` on every push/PR from a clean
+checkout: it builds the `.mcpb`, extracts it into an isolated directory
+(proving the packaged artifact is self-sufficient, not just the repo
+checkout), and drives the extracted copy's stdio entrypoint through a real
+MCP client — start, list tools, call a safe tool, the Workspace Files
+picker's store/list/read/delete callbacks across independent MCP 2026-07-28
+requests, close, and reconnect to the same kept-alive subprocess. Run it
+locally the same way: `uv run python scripts/verify_mcpb_bundle.py`
+(add `--bundle path/to/existing.mcpb` to reuse an already-built archive).
+
 ## Manual Validation
 
-1. Run `pytest tests/test_bundle_manifest.py tests/test_bundle_runtime.py tests/test_auth_scopes.py tests/test_composition.py`.
+1. Run `pytest tests/test_bundle_manifest.py tests/test_bundle_runtime.py tests/test_auth_scopes.py tests/test_composition.py tests/test_prefab_render_cache.py`.
 2. Run `uv run python scripts/build_mcpb.py`.
 3. Inspect the archive and confirm it contains `manifest.json`, `pyproject.toml`, and `src/`, but not credentials or `node_modules`.
 4. Start the bundle entrypoint locally with `uv run python -m mcp_google_workspace.bundle_entry`.
 5. Install the resulting `.mcpb` in an MCPB-capable host and verify that the host reads the manifest settings and can list tools over stdio.
 6. Call `get_mcp_apps_diagnostics` with `run_self_test=true`, then open `files_file_manager` and upload a real file.
+
+Steps 2–5 are also covered automatically; see "Automated Validation" above. Manual validation with a real host remains necessary for anything the CI's mock host cannot exercise — see `docs/migration/W7_MANUAL_QUALIFICATION.md`.
 
 ## Notes
 

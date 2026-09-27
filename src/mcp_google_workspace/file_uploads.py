@@ -32,9 +32,13 @@ from .common.crypto import FernetKeyring
 from .common.errors import RecoverableToolError
 from .common.fastmcp_compat import local_tools
 from .common.component_annotations import apply_structural_input_limits
+from .common.prefab_render_cache import install_prefab_resource_cache
 from .runtime import get_token_storage_settings
 
 AUDIT_LOGGER = logging.getLogger("mcp_google_workspace.audit")
+
+_prefab_renderer_lock = RLock()
+_prefab_renderer_configured = False
 
 
 def configure_prefab_renderer() -> str:
@@ -47,11 +51,40 @@ def configure_prefab_renderer() -> str:
     needs no ``_meta.ui.csp`` domains, so the host's restrictive default CSP
     applies. ``PREFAB_RENDERER_URL`` (prefab's development override pointing at
     a local renderer build) is left untouched. Returns the effective mode.
+
+    This mutates ``os.environ``, process-wide, because
+    ``fastmcp.server.providers.prefab_synthesis._build_resource_for_tool``
+    calls the bare ``prefab_ui.renderer.get_renderer_html()``/``get_renderer_csp()``
+    with no arguments: prefab-ui resolves the renderer mode from the
+    environment (``PREFAB_RENDERER_URL`` / ``PREFAB_BUNDLED_RENDERER``), not
+    from a per-call or per-instance parameter FastMCP exposes. There is no
+    supported way to scope this per server instance or per request in FastMCP
+    4.0.10 / prefab-ui 0.20.2, so it is made explicit instead: a named,
+    idempotent, logged function (rather than a bare module-level statement)
+    that every caller can invoke safely and tests can assert against
+    directly (``tests/test_prefab_render_cache.py``). It is called once, here,
+    at import of this module — which is also the module that owns the picker
+    provider and therefore the module that must run before FastMCP ever
+    synthesizes the picker's renderer resource on a ``resources/list`` or
+    ``resources/read`` call.
+
+    Also installs the process-wide Prefab picker resource cache
+    (``common/prefab_render_cache.py``) so the effect of this configuration —
+    and the ~6.6 MB bundled HTML it selects — is computed once per process
+    instead of on every listing/read.
     """
-    if os.environ.get("PREFAB_RENDERER_URL", "").strip():
-        return "external"
-    os.environ["PREFAB_BUNDLED_RENDERER"] = "1"
-    return "bundled"
+    global _prefab_renderer_configured
+    with _prefab_renderer_lock:
+        if os.environ.get("PREFAB_RENDERER_URL", "").strip():
+            mode = "external"
+        else:
+            os.environ["PREFAB_BUNDLED_RENDERER"] = "1"
+            mode = "bundled"
+        if not _prefab_renderer_configured:
+            AUDIT_LOGGER.debug("prefab_renderer_configured mode=%s", mode)
+            _prefab_renderer_configured = True
+    install_prefab_resource_cache()
+    return mode
 
 
 configure_prefab_renderer()

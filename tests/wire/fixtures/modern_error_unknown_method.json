@@ -1,0 +1,12 @@
+{
+  "body": {
+    "error": {
+      "code": -32601,
+      "data": "totally/unknown",
+      "message": "Method not found"
+    },
+    "id": 23,
+    "jsonrpc": "2.0"
+  },
+  "status_code": 404
+}

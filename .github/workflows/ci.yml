@@ -68,3 +68,30 @@ jobs:
         with:
           name: mcp-google-workspace-mcpb
           path: dist/*.mcpb
+
+  mcpb-lifecycle:
+    # Independent job (its own clean checkout, no dependency on `validate`'s
+    # workspace) so the .mcpb it builds and runs is provably self-sufficient:
+    # its own pyproject.toml/uv.lock, not anything `validate` happened to
+    # leave lying around outside `.mcpbignore`'s excludes.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/mcp_google_workspace/apps/ui/package-lock.json
+      - name: Install locked Python environment
+        run: uv sync --frozen --all-groups
+      # Builds the .mcpb (rebuilding the Apps UI from its own lock first),
+      # extracts it into an isolated directory, and drives the extracted
+      # copy's stdio entrypoint through a real MCP client: start, list, a
+      # safe tool call, the Workspace Files picker's store/list/read/delete
+      # callbacks across independent MCP 2026-07-28 requests, close, and
+      # reconnect to the same kept-alive subprocess.
+      - name: Verify MCPB bundle stdio lifecycle
+        run: uv run python scripts/verify_mcpb_bundle.py

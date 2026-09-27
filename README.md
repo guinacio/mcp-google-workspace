@@ -15,6 +15,7 @@ Production-oriented Google Workspace MCP package with:
 - Optional Google Keep MCP, Google Chat MCP, Google Meet MCP, and Gemini media integrations behind feature flags.
 - FastMCP advanced features: progress updates, background tasks, resources, and prompts on MCP 2026-07-28.
 - Composed server architecture: Gmail + Calendar + Drive + Sheets + Docs + Tasks + People + Forms + Slides mounted by default, with optional Apps/Keep/Chat/Meet/Gemini namespaces.
+- Protocol support: MCP **2026-07-28** (modern, no session) plus legacy handshake-era connectivity for **2024-11-05 through 2025-11-25**, over both stdio and Streamable HTTP.
 
 ## Requirements
 
@@ -180,7 +181,7 @@ Bundle-specific documentation, runtime settings, and validation steps live in `d
 
 ## Run (Streamable HTTP)
 
-The remote server speaks MCP Streamable HTTP for protocol 2026-07-28 and keeps FastMCP's compatibility path for handshake-era clients (2025-11-25 and earlier). Modern requests are self-contained POSTs with no session: a response is JSON unless the tool reports progress or runs long, in which case it becomes a request-scoped SSE stream, and closing that stream cancels the tool. Durable long-running work runs as MCP Tasks on the Redis queue. It requires an OIDC bearer-token issuer and refuses to start without this configuration:
+The remote server speaks MCP Streamable HTTP for protocol **2026-07-28** and keeps FastMCP's built-in compatibility path for every handshake-era (legacy) client version: **2024-11-05, 2025-03-26, 2025-06-18, and 2025-11-25**. `/version` reports both the full supported set and the pair this repository's suite actively tests (2025-11-25 and 2026-07-28). Modern requests are self-contained POSTs with no session: a response is JSON unless the tool reports progress or runs long, in which case it becomes a request-scoped SSE stream, and closing that stream cancels the tool. Legacy requests keep the `initialize` handshake and an `Mcp-Session-Id` session. Durable long-running work runs as MCP Tasks on the Redis queue. It requires an OIDC bearer-token issuer and refuses to start without this configuration:
 
 ```powershell
 $env:MCP_HOST="0.0.0.0"
@@ -204,7 +205,7 @@ Every GitHub release publishes a signed multi-architecture image for
 
 ```bash
 docker pull ghcr.io/guinacio/mcp-google-workspace:latest
-docker pull ghcr.io/guinacio/mcp-google-workspace:0.3.13
+docker pull ghcr.io/guinacio/mcp-google-workspace:1.0.0
 ```
 
 The image runs the authenticated Streamable HTTP entrypoint on port 8000. It
@@ -228,7 +229,7 @@ Release images include signed GitHub build provenance. Verify a tag with:
 
 ```bash
 gh attestation verify \
-  oci://ghcr.io/guinacio/mcp-google-workspace:0.3.13 \
+  oci://ghcr.io/guinacio/mcp-google-workspace:1.0.0 \
   -R guinacio/mcp-google-workspace
 ```
 
@@ -408,12 +409,12 @@ Chat resources:
 - `chat://users/{user_ref}`
 - `chat://users/me`
 
-Apps resources (mounted when `ENABLE_APPS_DASHBOARD=true`):
+Apps resources (mounted when `ENABLE_APPS_DASHBOARD=true`; the root composition adds the `apps` namespace prefix, matching the mounted `ui://apps/dashboard-ui` address below):
 
-- `apps://dashboard/current`
-- `apps://dashboard/day/{ymd}`
-- `apps://dashboard/week/{ymd}`
-- `apps://calendar/week/{ymd}`
+- `apps://apps/dashboard/current`
+- `apps://apps/dashboard/day/{ymd}`
+- `apps://apps/dashboard/week/{ymd}`
+- `apps://apps/calendar/week/{ymd}`
 
 Prompts:
 
@@ -452,6 +453,10 @@ Admission control is principal- and tool-cost-aware. Per-principal limits are fl
 Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, recipient lists or continuation state. A valid W3C `traceparent`/`tracestate` in the request `_meta` parents the tool span; malformed values are ignored and baggage is never accepted. A multi-round-trip question is recorded as outcome `input_required` (a round, span attribute `mcp.tool.round`), separately from completed logical operations (`mcp_workspace_logical_operations_total`).
 
 The HTTP boundary validates `Host` and `Origin` (defaults derived from `MCP_HTTP_BASE_URL`; `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS`), bounds request bodies while they stream (`MCP_MAX_REQUEST_BYTES`, 30 MiB; chunked bodies are refused with `413` before being buffered) and lets the SDK reject `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` mismatches (`-32020`) and unsupported versions (`-32022`) before any tool runs. `MCP_HTTP_RESPONSE_MODE=json` disables request-scoped SSE for intermediaries that cannot pass it (no progress, and disconnects no longer cancel tools). Change subscriptions (`subscriptions/listen`) are not advertised.
+
+### Deployment
+
+A single stdio (MCPB) process or a single-process Streamable HTTP deployment needs none of the distributed infrastructure below: app state, uploads, operation records and the task queue all use in-memory backends, and Redis is not required. Redis (and S3-compatible object storage for uploads) becomes required only when you run more than one HTTP process or replica behind a load balancer, as described next. For a dedicated walkthrough of that fleet topology (Redis/S3 contract, reverse proxy, and running workers), see `docs/DEPLOYMENT_FLEET.md`.
 
 For more than one HTTP process or replica, declare the fleet (`MCP_WORKERS` for processes per replica, `MCP_REPLICAS` for single-worker replicas; setting `MCP_REDIS_URL` implies a fleet too) and set `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, `MCP_REQUEST_STATE_KEYS` and `FASTMCP_TASKS_ENCRYPTION_KEY` identically on every replica and worker. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, operation records, upload metadata, dashboard view state (encrypted with the same key ring), fleet admission counters and the task queue. Modern (2026-07-28) clients need **no session affinity**: every request is independent, and views, uploads, confirmations and tasks are addressed by server-issued handles or sealed continuations that any replica can verify. Only handshake-era (legacy) clients hold an `Mcp-Session-Id` session in one process; if you serve them behind several replicas, pin that header at the load balancer and set `MCP_SESSION_AFFINITY=true` (readiness reports it as an advisory `legacy_session_affinity` check). Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. Task-enabled tools run through the MCP Tasks extension (`io.modelcontextprotocol/tasks`), registered once on the root server by one shared factory for HTTP, stdio, and workers: the queue is `FASTMCP_DOCKET_URL` when set, otherwise `MCP_REDIS_URL` (except in the local stdio bundle), otherwise an in-process `memory://` queue; the queue name defaults to `mcp-google-workspace` (`FASTMCP_DOCKET_NAME` overrides it). Set the same `FASTMCP_TASKS_ENCRYPTION_KEY` on every server and worker so queued caller-credential snapshots are encrypted (tool arguments and results are not). Additional workers run with `uv run mcp-google-workspace-worker` against the same Redis queue.
 
@@ -648,6 +653,19 @@ Replace `c:/path/to/mcp-google-workspace` with your local repo path.
 
 ```powershell
 uv run pytest -q
+```
+
+This includes the golden wire-contract fixtures (`tests/wire/`, raw JSON-RPC over HTTP and the
+in-memory stdio-equivalent transport, modern and legacy) and the feature-flag matrix
+(`tests/test_feature_flag_matrix.py`, startup + list + one safe call per optional integration,
+independently and together). Regenerate the wire fixtures deliberately after a reviewed
+protocol/behavior change with `UPDATE_WIRE_FIXTURES=1 uv run pytest tests/wire`.
+
+Verify the packaged MCPB bundle actually runs standalone (build, extract, stdio lifecycle: start,
+list, a safe call, picker store/list/read/delete, close, reconnect):
+
+```powershell
+uv run python scripts/verify_mcpb_bundle.py
 ```
 
 Dashboard browser regression tests (from `src/mcp_google_workspace/apps/ui`):
