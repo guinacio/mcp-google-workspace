@@ -38,6 +38,7 @@ LEGACY = "2025-11-25"
 TASKS_EXTENSION = {"extensions": {"io.modelcontextprotocol/tasks": {}}}
 ELICITATION = {"elicitation": {"form": {}}}
 REPLICAS = ("replica-1", "replica-2")
+_LIFECYCLE = frozenset({"kill", "restart", "start", "stop", "up"})
 T = TypeVar("T")
 
 
@@ -182,6 +183,8 @@ class Fleet:
     # -- topology -------------------------------------------------------------
 
     def compose(self, *args: str, check: bool = True, timeout: float = 180) -> subprocess.CompletedProcess[str]:
+        if args and args[0] in _LIFECYCLE:
+            self._addresses.clear()
         return subprocess.run(
             self.orchestrator.compose_command(*args),
             check=check, text=True, capture_output=True, timeout=timeout,
@@ -219,6 +222,10 @@ class Fleet:
     def docker(self, *args: str, timeout: float = 180) -> subprocess.CompletedProcess[str]:
         # Plain docker (not compose) so starting a service never re-runs its
         # compose dependencies (fleet-init).
+        if args and args[0] in _LIFECYCLE:
+            # A restarted container can come back with another container's
+            # former address: re-inspect instead of trusting the old map.
+            self._addresses.clear()
         return subprocess.run(["docker", *args], check=True, text=True, capture_output=True, timeout=timeout)
 
     def health(self, service: str) -> str:
