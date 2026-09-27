@@ -24,3 +24,11 @@ tests
 # CI-drift-checked single-file build (apps/ui/dist/index.html).
 src/mcp_google_workspace/apps/ui/*
 !src/mcp_google_workspace/apps/ui/dist
+# Google OAuth client files, user tokens and local env never enter an image;
+# deployments mount the client via MCP_CREDENTIALS_DIR (see docker-compose.yml).
+**/credentials.json
+**/token.json
+src/credentials
+.env
+.env.*
+!.env.example
