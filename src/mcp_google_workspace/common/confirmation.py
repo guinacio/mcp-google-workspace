@@ -30,7 +30,8 @@ The plaintext continuation is ``cw1.<payload>.<key id>.<mac>``: base64url JSON
 claims plus an HMAC-SHA256 under a key derived (HKDF, separate label) from the
 request-state key ring. The claims bind:
 
-``op``      random operation id (single use, see the replay store)
+``op``      random operation id; keys the durable operation record
+            (``common/operations.py``) and is never stored or shown raw
 ``tool``    ``<module>:<registered tool name>`` of the guarded tool
 ``action``  the site's action name (``reply_email`` vs ``reply_all_email``)
 ``args``    SHA-256 of the canonical validated arguments (below)
@@ -71,7 +72,7 @@ import os
 import secrets
 import threading
 import time
-from typing import Any, Final, Literal, Protocol
+from typing import Any, Final, Literal
 
 import mcp_types
 from cryptography.hazmat.primitives.hashes import SHA256
@@ -83,8 +84,19 @@ from mcp.server.request_state import RequestStateSecurity
 from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, MODERN_PROTOCOL_VERSIONS
 import pydantic_core
 
+from fastmcp.tools import ToolResult
+
 from ..auth.identity import current_principal
 from .errors import ConfirmationRejectedError, ConfirmationRequiredError
+from .operations import (
+    get_operation_store,
+    operation_key,
+    operation_ref,
+    resolve_claim,
+    settle_after_failure,
+    settle_after_return,
+)
+from .repeat_safety import current_tracker, tracking_scope
 
 LOGGER = logging.getLogger("mcp_google_workspace.confirmation")
 
@@ -236,82 +248,6 @@ def reset_confirmation_keys() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Replay store: single use of every continuation
-# ---------------------------------------------------------------------------
-
-
-class ContinuationReplayStore(Protocol):
-    """Records used continuation operation ids until they expire.
-
-    Deliberately minimal: W4b replaces it with durable operation records.
-    """
-
-    async def claim(self, operation_id: str, ttl_seconds: int) -> bool:
-        """Atomically mark ``operation_id`` used; ``False`` if it already was."""
-        ...
-
-
-class MemoryReplayStore:
-    """Process-local store for stdio, single-process servers, and tests."""
-
-    def __init__(self) -> None:
-        self._used: dict[str, float] = {}
-        self._lock = threading.Lock()
-
-    async def claim(self, operation_id: str, ttl_seconds: int) -> bool:
-        now = time.monotonic()
-        with self._lock:
-            expired = [key for key, until in self._used.items() if until <= now]
-            for key in expired:
-                del self._used[key]
-            if operation_id in self._used:
-                return False
-            self._used[operation_id] = now + max(1, ttl_seconds)
-            return True
-
-
-class RedisReplayStore:
-    """Fleet-wide store: ``SET NX EX`` per operation id."""
-
-    _PREFIX = "mcp:confirmation:used:"
-
-    def __init__(self, client: Any) -> None:
-        self._client = client
-
-    @classmethod
-    def from_url(cls, url: str) -> RedisReplayStore:
-        import redis
-
-        return cls(redis.Redis.from_url(url))
-
-    async def claim(self, operation_id: str, ttl_seconds: int) -> bool:
-        from .async_ops import run_blocking
-
-        key = self._PREFIX + hashlib.sha256(operation_id.encode("ascii")).hexdigest()
-        stored = await run_blocking(self._client.set, key, b"1", nx=True, ex=max(1, ttl_seconds))
-        return bool(stored)
-
-
-_REPLAY_STORE: ContinuationReplayStore | None = None
-
-
-def get_replay_store() -> ContinuationReplayStore:
-    """Redis when ``MCP_REDIS_URL`` is set (except the local stdio bundle), else memory."""
-    global _REPLAY_STORE
-    if _REPLAY_STORE is None:
-        redis_url = os.getenv("MCP_REDIS_URL", "").strip()
-        bundle = os.getenv("MCP_RUNTIME_MODE", "").strip().lower() == "bundle"
-        _REPLAY_STORE = RedisReplayStore.from_url(redis_url) if redis_url and not bundle else MemoryReplayStore()
-    return _REPLAY_STORE
-
-
-def set_replay_store(store: ContinuationReplayStore | None) -> None:
-    """Install a replay store (``None`` re-resolves from the environment)."""
-    global _REPLAY_STORE
-    _REPLAY_STORE = store
-
-
-# ---------------------------------------------------------------------------
 # Tool binding captured by the guard
 # ---------------------------------------------------------------------------
 
@@ -362,6 +298,28 @@ class ConfirmationInputRequired(ConfirmationRequiredError):
         self.input_required = input_required
 
 
+class OperationReplay(Exception):
+    """A repeat of a completed confirmed operation: return its saved result.
+
+    Raised by the adapter and returned by this call's guard, so the tool body
+    never runs again.
+    """
+
+    def __init__(self, binding: _ToolBinding, result: ToolResult) -> None:
+        super().__init__("operation replay")
+        self.binding = binding
+        self.result = result
+
+
+def _safe_digest(binding: _ToolBinding | None) -> str | None:
+    if binding is None:
+        return None
+    try:
+        return binding.digest()
+    except (TypeError, ValueError, pydantic_core.PydanticSerializationError):
+        return None
+
+
 def install_confirmation_guard(component: Any, tool_name: str) -> None:
     """Wrap an async tool body so the adapter can bind and ask (idempotent).
 
@@ -396,11 +354,37 @@ def install_confirmation_guard(component: Any, tool_name: str) -> None:
             binding = None
         token = _BINDING.set(binding)
         try:
-            return await original(*args, **kwargs)
-        except ConfirmationInputRequired as ask:
-            if binding is None or ask.binding is not binding:
-                raise
-            return ask.input_required
+            with tracking_scope() as tracker:
+                try:
+                    result = await original(*args, **kwargs)
+                except ConfirmationInputRequired as ask:
+                    if binding is None or ask.binding is not binding:
+                        raise
+                    return ask.input_required
+                except OperationReplay as replay:
+                    if binding is None or replay.binding is not binding:
+                        raise
+                    return replay.result
+                except GeneratorExit:
+                    # The coroutine is being closed, not cancelled: it may not
+                    # await again. A claimed record expires through its lease.
+                    raise
+                except BaseException as exc:
+                    # Settle the operation this call claimed (W4b): release,
+                    # failed, or outcome_unknown when a non-repeatable Google
+                    # call may have been applied. Cancellation is re-raised.
+                    replacement = await settle_after_failure(
+                        tracker, exc, tool=tool_key, args_digest=_safe_digest(binding)
+                    )
+                    if replacement is not None and isinstance(exc, Exception):
+                        raise replacement from exc
+                    raise
+                replacement = await settle_after_return(
+                    tracker, result, tool=tool_key, args_digest=_safe_digest(binding)
+                )
+                if replacement is not None:
+                    raise replacement
+                return result
         finally:
             _BINDING.reset(token)
 
@@ -521,11 +505,13 @@ def _ask(
     kind: AnswerKind,
     principal: str,
     preview: str,
+    operation_id: str,
+    ttl_seconds: int,
 ) -> ConfirmationInputRequired:
     now = int(time.time())
     claims = {
         "v": _STATE_VERSION,
-        "op": secrets.token_urlsafe(18),
+        "op": operation_id,
         "tool": binding.tool,
         "action": action_name,
         "args": binding.digest(),
@@ -533,7 +519,7 @@ def _ask(
         "sub": principal,
         "kind": kind,
         "iat": now,
-        "exp": now + confirmation_ttl_seconds(),
+        "exp": now + ttl_seconds,
     }
     schema = parse_elicit_response_type(Confirmation if kind == "confirm" else bool).schema
     request = mcp_types.ElicitRequest(
@@ -627,9 +613,30 @@ async def _multi_round_confirm(
         if responses:
             # An answer with no continuation is not consent to anything.
             raise _reject(action_name, "answer_without_continuation")
-        raise _ask(action_name, message, binding=binding, kind=kind, principal=principal, preview=preview)
+        # Asking round: open the operation record (awaiting_input) that the
+        # answering round will claim. The record holds digests only.
+        operation_id = secrets.token_urlsafe(18)
+        ttl = confirmation_ttl_seconds()
+        await get_operation_store().open_confirmation(
+            operation_key(principal, operation_id),
+            tool=binding.tool,
+            action=action_name,
+            args_digest=binding.digest(),
+            preview_digest=preview,
+            ttl_seconds=ttl + _FUTURE_SKEW_SECONDS,
+        )
+        raise _ask(
+            action_name,
+            message,
+            binding=binding,
+            kind=kind,
+            principal=principal,
+            preview=preview,
+            operation_id=operation_id,
+            ttl_seconds=ttl,
+        )
 
-    operation_id, remaining = _verify_claims(
+    operation_id, _remaining = _verify_claims(
         _open_state(state),
         action_name=action_name,
         binding=binding,
@@ -638,26 +645,45 @@ async def _multi_round_confirm(
         preview=preview,
     )
     accepted = _read_answer(responses, action_name=action_name, kind=kind)
-    if not await get_replay_store().claim(operation_id, remaining + _FUTURE_SKEW_SECONDS):
+    ref = operation_ref(operation_id)
+    outcome = await get_operation_store().claim(
+        operation_key(principal, operation_id),
+        kind="confirmation",
+        ref=ref,
+        answer="accept" if accepted else "decline",
+        args_digest=binding.digest(),
+        preview_digest=preview,
+    )
+    if outcome.status == "claimed":
+        tracker = current_tracker()
+        if tracker is not None:
+            # The guard settles this claim when the tool body finishes.
+            tracker.operation = outcome.handle
+        return accepted
+    if outcome.status == "missing":
+        raise _reject(action_name, "expired")
+    if outcome.status == "answer_changed":
+        # One continuation carries one answer: a decline cannot become an
+        # accept (or the reverse) by replaying it.
         raise _reject(action_name, "replayed")
-    return accepted
+    if outcome.status == "payload_changed":
+        raise _reject(action_name, "arguments_changed")
+    # Already executed (or executing): never run the body again. Return the
+    # saved result, "in progress", the saved failure, or outcome_unknown.
+    raise OperationReplay(binding, await resolve_claim(outcome, tool=binding.tool, ref=ref))
 
 
 __all__ = [
     "Confirmation",
     "ConfirmationInputRequired",
-    "ContinuationReplayStore",
-    "MemoryReplayStore",
+    "OperationReplay",
     "REQUEST_KEY",
-    "RedisReplayStore",
     "build_request_state_security",
     "canonical_arguments",
     "confirm_destructive_action",
     "confirmation_ttl_seconds",
     "configured_request_state_keys",
-    "get_replay_store",
     "install_confirmation_guard",
     "reset_confirmation_keys",
-    "set_replay_store",
     "shared_request_state_keys_configured",
 ]

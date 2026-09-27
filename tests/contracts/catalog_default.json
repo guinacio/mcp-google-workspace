@@ -3304,7 +3304,7 @@
         "maxProperties": 10000,
         "properties": {
           "commit_token": {
-            "description": "One-time, principal-bound token from prepare_workspace_action's response; expires 5 minutes after issuance and is consumed once the bound action runs (a confirmation question keeps it valid for the answering call).",
+            "description": "One-time, principal-bound token from prepare_workspace_action's response; expires 10 minutes after issuance by default (MCP_CONFIRMATION_TTL_SECONDS). The bound action runs at most once: repeating a commit that already ran returns its saved result, and a confirmation question keeps the token valid for the answering call.",
             "maxLength": 1000000,
             "type": "string"
           }

@@ -273,7 +273,7 @@ def test_headline_parameter_descriptions_document_real_semantics() -> None:
         ("gmail_get_mail_digest", "window", ["3d"]),
         ("search_workspace", "services", ["drive", "people", "gmail"]),
         ("prepare_workspace_action", "tool_name", ["gmail_send_email"]),
-        ("commit_workspace_action", "commit_token", ["one-time", "5 minutes"]),
+        ("commit_workspace_action", "commit_token", ["one-time", "10 minutes", "saved result"]),
         ("gmail_read_emails", "offset", ["character offset"]),
         ("calendar_check_time_availability", "items", ["calendar"]),
     ]

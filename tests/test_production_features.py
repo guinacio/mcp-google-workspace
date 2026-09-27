@@ -16,8 +16,8 @@ from fastmcp.tools import ToolResult
 import mcp_google_workspace
 from mcp_google_workspace.common.approvals import (
     COMMIT_ACTIVE,
-    ClaimedApproval,
     impact_preview,
+    prepare_action,
     requires_prepare,
 )
 from mcp_google_workspace.common.crypto import FernetKeyring
@@ -102,12 +102,22 @@ def test_consequential_action_policy_is_cost_and_impact_aware() -> None:
 def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
     monkeypatch,
 ) -> None:
-    observed: dict[str, object] = {}
-    settled: list[tuple[str, str]] = []
+    from mcp_google_workspace.auth.identity import current_principal
+    from mcp_google_workspace.common.operations import (
+        memory_operation_store,
+        operation_key,
+        set_operation_store,
+    )
 
-    async def exercise() -> dict[str, object]:
+    observed: dict[str, object] = {}
+    store = memory_operation_store()
+    set_operation_store(store)
+
+    async def exercise() -> tuple[dict[str, object], object]:
         tool = await workspace_mcp.get_tool("commit_workspace_action")
         assert tool is not None
+        prepared = await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10})
+        token = str(prepared["commit_token"])
 
         async def dispatch(name, arguments, **kwargs):
             observed.update(
@@ -119,26 +129,17 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
             return ToolResult(structured_content={"ok": True})
 
         monkeypatch.setattr(
-            "mcp_google_workspace.server.APPROVAL_STORE.claim",
-            lambda token: ClaimedApproval(
-                token, "gmail_batch_modify", {"message_ids": ["m"] * 10}
-            ),
-        )
-        monkeypatch.setattr(
-            "mcp_google_workspace.server.APPROVAL_STORE.complete",
-            lambda token: settled.append(("complete", token)),
-        )
-        monkeypatch.setattr(
-            "mcp_google_workspace.server.APPROVAL_STORE.release",
-            lambda token: settled.append(("release", token)),
-        )
-        monkeypatch.setattr(
             "mcp_google_workspace.server.workspace_mcp",
             SimpleNamespace(call_tool=dispatch),
         )
-        return await tool.fn("cmt_test")
+        result = await tool.fn(token)
+        record = await store.get(operation_key(current_principal().storage_key, token))
+        return result, (record or {}).get("state")
 
-    result = anyio.run(exercise)
+    try:
+        result, state = anyio.run(exercise)
+    finally:
+        set_operation_store(None)
     assert observed == {
         "name": "gmail_batch_modify",
         "arguments": {"message_ids": ["m"] * 10},
@@ -146,7 +147,8 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
         "commit_active": True,
     }
     assert result["status"] == "committed"
-    assert settled == [("complete", "cmt_test")]
+    # W4b: the operation record finishes as succeeded (was: token consumed).
+    assert state == "succeeded"
     assert COMMIT_ACTIVE.get() is False
 
 

@@ -33,7 +33,7 @@ from fastmcp.client.elicitation import ElicitResult
 
 import mcp_google_workspace.auth.google_auth as google_auth
 import mcp_google_workspace.server as server_module
-from mcp_google_workspace.common.confirmation import MemoryReplayStore, set_replay_store
+from mcp_google_workspace.common.operations import OperationStore, memory_operation_store, set_operation_store
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "tests") not in sys.path:
@@ -75,13 +75,13 @@ def workspace() -> Iterator[FastMCP]:
 
 
 @pytest.fixture(autouse=True)
-def replay_store() -> Iterator[MemoryReplayStore]:
-    store = MemoryReplayStore()
-    set_replay_store(store)
+def operation_store() -> Iterator[OperationStore]:
+    store = memory_operation_store()
+    set_operation_store(store)
     try:
         yield store
     finally:
-        set_replay_store(None)
+        set_operation_store(None)
 
 
 @pytest.fixture
