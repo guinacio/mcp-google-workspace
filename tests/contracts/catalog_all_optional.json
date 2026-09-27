@@ -3415,7 +3415,7 @@
           },
           "force": {
             "default": false,
-            "description": "Whether to enable force.",
+            "description": "Skip the interactive confirmation when true. Default false: the deletion is confirmed with the user first (clients that cannot confirm get a confirmation_required result and nothing is deleted).",
             "type": "boolean"
           },
           "send_updates": {
@@ -9359,7 +9359,7 @@
         "properties": {
           "confirm_permanent": {
             "default": true,
-            "description": "Whether to enable confirm permanent.",
+            "description": "Must stay true for delete_mode='permanent' (false is rejected); a permanent delete is always confirmed interactively. Ignored for delete_mode='trash'.",
             "type": "boolean"
           },
           "delete_mode": {
@@ -17348,11 +17348,6 @@
         "additionalProperties": false,
         "maxProperties": 10000,
         "properties": {
-          "force": {
-            "default": false,
-            "description": "Whether to enable force.",
-            "type": "boolean"
-          },
           "thread_id": {
             "description": "Gmail thread identifier.",
             "maxLength": 1000000,

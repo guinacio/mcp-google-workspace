@@ -590,7 +590,13 @@ def register(server: FastMCP) -> None:
             Literal["trash", "permanent"],
             "Safer delete mode: 'trash' moves to trash (reversible), 'permanent' irreversibly deletes.",
         ] = "trash",
-        confirm_permanent: bool = True,
+        confirm_permanent: Annotated[
+            bool,
+            (
+                "Must stay true for delete_mode='permanent' (false is rejected); a permanent "
+                "delete is always confirmed interactively. Ignored for delete_mode='trash'."
+            ),
+        ] = True,
         supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
