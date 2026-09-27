@@ -45,17 +45,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MCP_PORT=8000 \
     MCP_USER_TOKEN_DIR=/data/tokens \
     MCP_UPLOAD_DB=/data/uploads.sqlite3 \
+    GEMINI_OUTPUT_DIR=/data/gemini \
     PATH="/app/.venv/bin:$PATH"
 
-LABEL io.modelcontextprotocol.server.name="io.github.guinacio/mcp-google-workspace"
+# Static OCI metadata for every build; release.yml adds version/created labels.
+LABEL io.modelcontextprotocol.server.name="io.github.guinacio/mcp-google-workspace" \
+      org.opencontainers.image.title="mcp-google-workspace" \
+      org.opencontainers.image.description="Google Workspace MCP server (authenticated Streamable HTTP)" \
+      org.opencontainers.image.source="https://github.com/guinacio/mcp-google-workspace" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.revision="${MCP_BUILD_COMMIT}"
 
 WORKDIR /app
+# Application code and virtualenv stay root-owned and read-only for the
+# runtime user; only /data (tokens, uploads, Gemini output) is writable.
+# (A recursive chown of /app would also duplicate the ~230 MB layer.)
 COPY --from=builder /app /app
 
 RUN groupadd --system mcp \
     && useradd --system --gid mcp --home-dir /app --no-create-home mcp \
-    && mkdir -p /data/tokens \
-    && chown -R mcp:mcp /app /data
+    && mkdir -p /data/tokens /data/gemini \
+    && chown -R mcp:mcp /data
 
 USER mcp
 
