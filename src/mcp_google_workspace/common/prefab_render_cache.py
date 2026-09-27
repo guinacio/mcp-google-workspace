@@ -82,11 +82,12 @@ def _normalize(value: Any) -> Any:
 
 
 def _tool_meta_signature(tool: "Tool") -> Any:
-    """The subset of tool meta that changes the resource's CSP/permissions."""
-    meta = tool.meta or {}
-    ui = meta.get("ui")
-    ui = ui if isinstance(ui, dict) else {}
-    return _normalize({"csp": ui.get("csp"), "permissions": ui.get("permissions")})
+    """The tool's full metadata, which covers CSP, permissions and UI addressing.
+
+    Keying on all of it (not only CSP/permissions) means two tools that share a
+    name but differ in any metadata never share a cached resource.
+    """
+    return _normalize(tool.meta or {})
 
 
 def cache_stats() -> dict[str, int]:
