@@ -428,6 +428,10 @@ These supersede conflicting guidance elsewhere in this plan.
 | **No summarization provider.** | The Chat `summarize_space_messages` and Keep `summarize_note` tools are removed, not stubbed. Clients summarize from the read tools themselves. |
 | Apps `ui/initialize` handshake | Retained. It is part of the separate Apps protocol and is not deprecated. |
 | **Confirmation bypass flags stay model-controlled.** | The `confirm_send`, `notify`, `confirm_create`, `confirm_delete`, `force`, `delete_mode` and `permanent` flags keep their current defaults and behavior (see `docs/migration/W4_CONFIRMATION_POLICY.md` §3). W4b fixes only the stale flag descriptions and removes the dead `gmail_delete_thread.force` flag. |
+| **Release version 1.0.0.** | The migration ships as application `1.0.0`, with a CHANGELOG entry listing every removed or changed public behavior. |
+| **Prefab picker uses the built-in renderer.** | No CDN; the picker declares no external CSP domains. W7 caches the generated picker HTML once per process instead of rebuilding ~6.6 MB on every list/read. |
+| **Multi-replica deployments are qualified.** | Redis stays optional: stdio and single-process HTTP use in-memory backends. W7 qualifies the Redis-backed fleet path against a real Redis, with separate server and worker processes behind a reverse proxy, locally (Docker) and in CI. |
+| **Live Google / real-host checks are run manually by the owner.** | W7 writes a scoped checklist: Gmail Message-ID retention, Drive resumable upload, real hosts' MRTR handling including dashboard-initiated actions, and `ui/download-file` support. Results are recorded in the W0 host matrix. |
 
 ### 9.2 Implementation record (W2, 2026-09-26)
 
