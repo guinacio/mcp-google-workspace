@@ -54,7 +54,9 @@ from .tool_discovery import configure_tool_search
 
 LOGGER = logging.getLogger("mcp_google_workspace.http")
 
-DEFAULT_MAX_REQUEST_BYTES = 30 * 1024 * 1024
+# One Workspace Files picker upload at the maximum file size (25 MiB decoded,
+# about 33.4 MiB once base64-encoded) plus its JSON-RPC envelope must fit.
+DEFAULT_MAX_REQUEST_BYTES = 36 * 1024 * 1024
 ResponseMode = Literal["sse", "json"]
 
 

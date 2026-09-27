@@ -48,6 +48,7 @@ from .admission import (
 from .approvals import COMMIT_ACTIVE, requires_prepare
 from .async_ops import run_blocking
 from .confirmation import shared_request_state_keys_configured
+from .fastmcp_compat import resolve_called_tool
 from .errors import (
     RPC_AUTHORIZATION_UNAVAILABLE,
     RPC_UNAUTHORIZED,
@@ -336,21 +337,61 @@ def principal_revoked_rejection() -> ProtocolRejection:
     )
 
 
-def _validate_payload_shape(value: Any, *, depth: int = 0) -> None:
+DEFAULT_MAX_STRING_CHARS: Final[int] = 1_000_000
+
+
+def _string_limit(schema: Any) -> int:
+    """Character cap for a string argument: the generic anti-abuse limit, raised
+    (never lowered) to a larger ``maxLength`` the tool itself declares, such as
+    the picker's base64 upload field."""
+    declared = schema.get("maxLength") if isinstance(schema, dict) else None
+    if isinstance(declared, int) and not isinstance(declared, bool) and declared > DEFAULT_MAX_STRING_CHARS:
+        return declared
+    return DEFAULT_MAX_STRING_CHARS
+
+
+def _validate_payload_shape(
+    value: Any, *, schema: Any = None, path: str = "arguments", depth: int = 0
+) -> None:
+    """Bound argument size and shape before a tool runs.
+
+    ``schema`` is the called tool's server-declared input schema (never
+    client-supplied); it is walked alongside the value only to find declared
+    string limits larger than the default.
+    """
     if depth > 20:
         raise ValueError("Tool arguments exceed the maximum nesting depth of 20.")
-    if isinstance(value, str) and len(value) > 1_000_000:
-        raise ValueError("A tool string argument exceeds the 1,000,000 character limit.")
-    if isinstance(value, list):
+    schema = schema if isinstance(schema, dict) else {}
+    if isinstance(value, str):
+        limit = _string_limit(schema)
+        if len(value) > limit:
+            raise ValueError(f"Tool argument {path} exceeds the {limit:,} character limit.")
+    elif isinstance(value, list):
         if len(value) > 10_000:
             raise ValueError("A tool array argument exceeds the 10,000 item limit.")
-        for item in value:
-            _validate_payload_shape(item, depth=depth + 1)
+        items = schema.get("items")
+        for index, item in enumerate(value):
+            _validate_payload_shape(item, schema=items, path=f"{path}[{index}]", depth=depth + 1)
     elif isinstance(value, dict):
         if len(value) > 10_000:
             raise ValueError("A tool object argument exceeds the 10,000 property limit.")
-        for item in value.values():
-            _validate_payload_shape(item, depth=depth + 1)
+        properties = schema.get("properties")
+        properties = properties if isinstance(properties, dict) else {}
+        for key, item in value.items():
+            _validate_payload_shape(
+                item, schema=properties.get(key), path=f"{path}.{key}", depth=depth + 1
+            )
+
+
+async def _declared_input_schema(context: MiddlewareContext[Any], name: str) -> dict[str, Any] | None:
+    server = getattr(context.fastmcp_context, "fastmcp", None) if context.fastmcp_context else None
+    if server is None:
+        return None
+    try:
+        tool = await resolve_called_tool(server, name)
+    except Exception:  # noqa: BLE001 - unknown tools fall back to the default limits
+        return None
+    return tool.parameters if tool is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +503,9 @@ class ProductionControlMiddleware(Middleware):
         call_next: CallNext[mt.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         tool = context.message.name
-        _validate_payload_shape(context.message.arguments or {})
+        _validate_payload_shape(
+            context.message.arguments or {}, schema=await _declared_input_schema(context, tool)
+        )
         correlation_id = uuid4().hex
         token = CORRELATION_ID.set(correlation_id)
         try:

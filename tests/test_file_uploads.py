@@ -4,6 +4,7 @@ import base64
 from email import policy
 from hashlib import sha256
 from email.parser import BytesParser
+from typing import Literal
 
 import pytest
 import anyio
@@ -20,6 +21,7 @@ from mcp_google_workspace.file_uploads import (
     LocalUploadStore,
     WorkspaceFileUpload,
     require_local_filesystem,
+    workspace_file_upload,
 )
 from mcp_google_workspace.common.errors import RecoverableToolError
 from mcp_google_workspace.gmail.mime_utils import build_email_message
@@ -247,6 +249,51 @@ def test_local_uploads_persist_across_independent_modern_requests() -> None:
     assert read["content"] == "persist" and read["name"] == "persist.txt"
     assert deleted == {"status": "deleted", "name": upload_id}
     assert upload_id not in {entry["upload_id"] for entry in after}
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize("hashed_address", [False, True])
+def test_picker_accepts_large_file_between_repeated_small_uploads(
+    monkeypatch, mode: Literal["auto", "legacy"], hashed_address: bool
+) -> None:
+    """Exercise admission as well as storage, including the actual Apps address."""
+    monkeypatch.setattr(workspace_file_upload, "_local_store", LocalUploadStore())
+    address = (
+        f"{hash_tool('Workspace Files', 'store_files')}_store_files"
+        if hashed_address else "files_store_files"
+    )
+    files = [
+        ("first.py", "text/x-python", b"# first\n" * 1280),
+        ("photo.jpg", "image/jpeg", b"\xff\xd8\xff" + b"\0" * (2900 * 1024 - 3)),
+        ("second.py", "text/x-python", b"# second\n" * 1280),
+    ]
+
+    async def call(name: str, arguments: dict):
+        async with Client(workspace_mcp, mode=mode) as client:
+            return await client.call_tool(name, arguments, raise_on_error=False)
+
+    async def exercise() -> None:
+        ids: list[str] = []
+        for name, mime, content in files:
+            result = await call(address, {"files": [{
+                "name": name, "size": len(content), "type": mime,
+                "data": base64.b64encode(content).decode("ascii"),
+            }]})
+            assert not result.is_error, result.structured_content
+            entry = next(item for item in result.structured_content["result"]
+                         if item["display_name"] == name)
+            assert entry["size"] == len(content)
+            assert entry["checksum_sha256"] == sha256(content).hexdigest()
+            ids.append(entry["upload_id"])
+        listed = await call("files_list_files", {})
+        assert {item["upload_id"] for item in listed.structured_content["result"]} == set(ids)
+        read = await call("files_read_file", {"name": ids[-1]})
+        assert read.structured_content["result"]["content"] == files[-1][2].decode()
+        for upload_id in ids:
+            deleted = await call("files_delete_file", {"name": upload_id})
+            assert deleted.structured_content["status"] == "deleted"
+
+    anyio.run(exercise)
 
 
 def test_remote_principal_cannot_use_server_local_paths(monkeypatch) -> None:

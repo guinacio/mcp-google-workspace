@@ -150,7 +150,7 @@ proxy_connect_timeout 2s;
 proxy_read_timeout 700s;                # > MCP_EXPENSIVE_DEADLINE_SECONDS (600)
 proxy_send_timeout 700s;
 proxy_next_upstream error timeout;      # only when the request never reached a replica
-client_max_body_size 31m;               # >= MCP_MAX_REQUEST_BYTES (30 MiB default)
+client_max_body_size 37m;               # >= MCP_MAX_REQUEST_BYTES (36 MiB default)
 
 server {
     listen 443 ssl;

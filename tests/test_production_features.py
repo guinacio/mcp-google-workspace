@@ -228,6 +228,46 @@ def test_structural_admission_limits_are_enforced() -> None:
         raise AssertionError("Oversized input was accepted")
 
 
+def test_string_limit_is_raised_only_where_the_tool_declares_it() -> None:
+    upload_schema = {
+        "type": "object",
+        "properties": {
+            "files": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "maxLength": 1024},
+                        "data": {"type": "string", "maxLength": 5_000_000},
+                    },
+                },
+            }
+        },
+    }
+    big = "A" * 3_000_000
+    _validate_payload_shape({"files": [{"name": "photo.jpg", "data": big}]}, schema=upload_schema)
+
+    # Undeclared fields, other fields of the same tool, and schema-less calls keep the default.
+    for arguments, schema in (
+        ({"files": [{"name": big, "data": "YQ=="}]}, upload_schema),
+        ({"files": [{"name": "a", "data": "YQ==", "extra": big}]}, upload_schema),
+        ({"body": big}, None),
+    ):
+        with pytest.raises(ValueError, match="1,000,000 character limit"):
+            _validate_payload_shape(arguments, schema=schema)
+    with pytest.raises(ValueError, match=r"arguments\.files\[0\]\.data exceeds the 5,000,000"):
+        _validate_payload_shape({"files": [{"data": "A" * 5_000_001}]}, schema=upload_schema)
+
+
+def test_default_request_limit_fits_one_max_size_picker_upload() -> None:
+    from mcp_google_workspace.server_http import DEFAULT_MAX_REQUEST_BYTES
+
+    max_file = 25 * 1024 * 1024
+    encoded = 4 * ((max_file + 2) // 3)
+    envelope_allowance = 64 * 1024
+    assert DEFAULT_MAX_REQUEST_BYTES >= encoded + envelope_allowance
+
+
 def test_principal_admission_state_is_bounded_and_evicts_idle_entries(
     monkeypatch,
 ) -> None:

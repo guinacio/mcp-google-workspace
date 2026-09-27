@@ -64,3 +64,23 @@ def registered_extensions(server: FastMCP) -> Mapping[str, Any]:
     if not isinstance(extensions, dict):
         raise RuntimeError(_LAYOUT_ERROR)
     return dict(extensions)
+
+
+async def resolve_called_tool(server: FastMCP, name: str) -> Tool | None:
+    """Resolve a ``tools/call`` name the way FastMCP 4.0.10 dispatches it.
+
+    Display names resolve through ``get_tool``; MCP Apps callbacks addressed
+    by their hashed backend name (``<digest>_<local name>``) resolve through
+    ``get_tool_by_hash``, mirroring ``FastMCP.call_tool``. Returns ``None`` for
+    unknown names so the framework reports them itself.
+    """
+    from fastmcp.server.providers.addressing import parse_hashed_backend_name
+
+    tool = await server.get_tool(name)
+    if tool is not None:
+        return tool
+    hashed = parse_hashed_backend_name(name)
+    if hashed is None:
+        return None
+    digest, local_name = hashed
+    return await server.get_tool_by_hash(digest, local_name)
