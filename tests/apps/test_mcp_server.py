@@ -387,27 +387,31 @@ def test_detail_tools_return_structured_app_error_when_fetch_fails(
 
     async def scenario() -> list[dict]:
         async with Client(apps_mcp) as client:
-            event = await client.call_tool("get_event_detail", {"event_id": "evt-1"})
-            email = await client.call_tool("get_email_detail", {"message_id": "msg-1"})
+            event = await client.call_tool(
+                "get_event_detail", {"event_id": "evt-1"}, raise_on_error=False
+            )
+            email = await client.call_tool(
+                "get_email_detail", {"message_id": "msg-1"}, raise_on_error=False
+            )
             attachment = await client.call_tool(
                 "get_email_attachment",
                 {"message_id": "msg-1", "attachment_id": "att-1"},
+                raise_on_error=False,
             )
-            return [
-                result.structured_content or result.data
-                for result in (event, email, attachment)
-            ]
+            assert all(result.is_error for result in (event, email, attachment))
+            return [result.structured_content for result in (event, email, attachment)]
 
     results = anyio.run(scenario)
 
-    for payload in results:
-        error = payload["error"]
-        assert error["code"] == "PROVIDER_ERROR"
+    # W5: detail-fetch failures are isError tool results carrying the shared
+    # error envelope (was a successful result with an AppError "error" dict).
+    for error in results:
+        assert error["code"] == "provider_error"
         assert error["retryable"] is False
         assert "provider exploded" in error["message"]
-    assert results[0]["error"]["details"] == {"event_id": "evt-1", "calendar_id": "primary"}
-    assert results[1]["error"]["details"] == {"message_id": "msg-1"}
-    assert results[2]["error"]["details"] == {"message_id": "msg-1", "attachment_id": "att-1"}
+    assert results[0]["details"]["context"] == {"event_id": "evt-1", "calendar_id": "primary"}
+    assert results[1]["details"]["context"] == {"message_id": "msg-1"}
+    assert results[2]["details"]["context"] == {"message_id": "msg-1", "attachment_id": "att-1"}
 
 
 def test_expired_view_handles_fail_with_a_clear_tool_error(monkeypatch: pytest.MonkeyPatch) -> None:

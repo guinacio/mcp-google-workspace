@@ -83,9 +83,14 @@ def test_keep_tool_returns_structured_provider_error(monkeypatch):
             result = await client.call_tool(
                 "get_note",
                 {"request": {"note_name": "missing"}},
+                raise_on_error=False,
             )
-            return result.structured_content or result.data
+            assert result.is_error is True
+            return result.structured_content
 
+    # W5: a Google API failure is an isError tool result with the error envelope
+    # (was a successful result carrying an "error" dict).
     result = anyio.run(scenario)
+    assert result["code"] == "not_found"
     assert result["provider_status"] == 404
-    assert result["context"]["note_name"] == "notes/missing"
+    assert result["details"]["context"]["note_name"] == "notes/missing"

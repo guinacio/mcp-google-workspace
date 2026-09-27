@@ -180,7 +180,7 @@ Bundle-specific documentation, runtime settings, and validation steps live in `d
 
 ## Run (Streamable HTTP)
 
-The remote server uses session-aware MCP Streamable HTTP and requires an OIDC bearer-token issuer. Session mode enables progress, cancellation, and `tools/list_changed` notifications; durable long-running work remains Redis-backed. The server refuses to start without this configuration:
+The remote server speaks MCP Streamable HTTP for protocol 2026-07-28 and keeps FastMCP's compatibility path for handshake-era clients (2025-11-25 and earlier). Modern requests are self-contained POSTs with no session: a response is JSON unless the tool reports progress or runs long, in which case it becomes a request-scoped SSE stream, and closing that stream cancels the tool. Durable long-running work runs as MCP Tasks on the Redis queue. It requires an OIDC bearer-token issuer and refuses to start without this configuration:
 
 ```powershell
 $env:MCP_HOST="0.0.0.0"
@@ -195,7 +195,7 @@ $env:MCP_SECRET_FILE="/run/secrets/mcp-google-workspace.json"
 uv run python -m mcp_google_workspace.server_http
 ```
 
-Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience, signature, and expiry; the verified `iss` + `sub` selects an isolated encrypted Google token. Each user calls `connect_google_workspace`, opens its returned URL, completes Google consent, and calls `refresh_workspace_catalog`. The callback is PKCE-protected and one-time; it cannot connect Google credentials to a different MCP principal.
+Clients connect with an OIDC bearer JWT. The server validates its signature (JWKS), issuer, audience and expiry, and requires `iss`, `sub` and `exp`; the verified `iss` + `sub` selects an isolated encrypted Google token. MCP bearer tokens are never forwarded to Google. A request without a valid token gets `401` with a `WWW-Authenticate` challenge whose `resource_metadata` points to the RFC 9728 document served at `/.well-known/oauth-protected-resource<base path>/mcp`, which names the issuer as the authorization server (the server does not implement an authorization server or dynamic client registration). Each user calls `connect_google_workspace`, opens its returned URL and completes Google consent; `tools/list` reflects the caller's current grants on every request (`refresh_workspace_catalog` only reports them). The callback is PKCE-protected, one-time, checks the RFC 9207 `iss` parameter when present, and cannot connect Google credentials to a different MCP principal.
 
 ### Docker / GHCR
 
@@ -430,27 +430,30 @@ Prompts:
 The remote runtime exposes unauthenticated minimal operational endpoints:
 
 - `/health/live` — event-loop/process liveness
-- `/health/ready` — draining, encryption, token storage, Redis, S3, and multi-worker dependency readiness
+- `/health/ready` — draining, encryption, token storage, Redis, S3, app state, task queue, operation records, operation lease and (for a fleet) continuation keys and shared storage; advisory checks are listed under `warnings`
 - `/version` — package/build/MCP protocol versions without secrets
 - `/metrics` — Prometheus/OpenTelemetry-compatible low-cardinality metrics
 
-Admission control is principal- and tool-cost-aware:
+Admission control is principal- and tool-cost-aware. Per-principal limits are fleet-wide (enforced in Redis) whenever `MCP_REDIS_URL` is set, and process-local otherwise (`MCP_ADMISSION_BACKEND=auto|local|redis`); process limits always apply per process. Background-task executions take the same concurrency slots as foreground calls and count toward draining; the request rate is charged once, at submission. Rejections are JSON-RPC errors (`-32005` rate limited, `-32006` draining/unavailable); the deadline and every Google or validation failure are `isError` tool results with a stable error envelope.
 
-| Variable | Default | Purpose |
-| --- | ---: | --- |
-| `MCP_RATE_LIMIT_PER_MINUTE` | `120` | Per-principal request rate |
-| `MCP_GLOBAL_CONCURRENCY` | `64` | Server-wide active tool calls |
-| `MCP_PRINCIPAL_CONCURRENCY` | `8` | Active calls per principal |
-| `MCP_PRINCIPAL_STATE_LIMIT` | `10000` | Maximum retained admission-state identities |
-| `MCP_PRINCIPAL_STATE_TTL_SECONDS` | `900` | Idle admission-state retention |
-| `MCP_EXPENSIVE_CONCURRENCY` | `4` | Gemini/download/export/batch calls |
-| `MCP_TOOL_DEADLINE_SECONDS` | `120` | Standard end-to-end deadline |
-| `MCP_EXPENSIVE_DEADLINE_SECONDS` | `600` | Expensive-tool deadline |
-| `MCP_SHUTDOWN_GRACE_SECONDS` | `30` | In-flight drain interval |
+| Variable | Default | Scope | Purpose |
+| --- | ---: | --- | --- |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `120` | principal (fleet) | Sliding one-minute request rate |
+| `MCP_PRINCIPAL_CONCURRENCY` | `8` | principal (fleet) | Active calls and task executions per principal |
+| `MCP_PRINCIPAL_QUEUE_SECONDS` | `10` | principal (fleet) | Wait for a fleet concurrency slot before refusing |
+| `MCP_GLOBAL_CONCURRENCY` | `64` | process | Active tool calls and task executions in this process |
+| `MCP_PRINCIPAL_STATE_LIMIT` | `10000` | process | Maximum retained process-local admission identities |
+| `MCP_PRINCIPAL_STATE_TTL_SECONDS` | `900` | process | Idle admission-state retention |
+| `MCP_EXPENSIVE_CONCURRENCY` | `4` | process | Gemini/download/export/batch calls |
+| `MCP_TOOL_DEADLINE_SECONDS` | `120` | call | Standard deadline (also bounds a task's runtime) |
+| `MCP_EXPENSIVE_DEADLINE_SECONDS` | `600` | call | Expensive-tool deadline; must stay below `MCP_OPERATION_LEASE_SECONDS` |
+| `MCP_SHUTDOWN_GRACE_SECONDS` | `30` | process | In-flight request and task drain interval |
 
-Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, or recipient lists.
+Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, recipient lists or continuation state. A valid W3C `traceparent`/`tracestate` in the request `_meta` parents the tool span; malformed values are ignored and baggage is never accepted. A multi-round-trip question is recorded as outcome `input_required` (a round, span attribute `mcp.tool.round`), separately from completed logical operations (`mcp_workspace_logical_operations_total`).
 
-For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, approval tokens, upload metadata, and dashboard view state (encrypted with the same key ring). Dashboard views and uploads are addressed by server-issued handles bound to the authenticated principal, so any replica can serve any request for them. Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. Task-enabled tools run through the MCP Tasks extension (`io.modelcontextprotocol/tasks`), registered once on the root server by one shared factory for HTTP, stdio, and workers: the queue is `FASTMCP_DOCKET_URL` when set, otherwise `MCP_REDIS_URL` (except in the local stdio bundle), otherwise an in-process `memory://` queue; the queue name defaults to `mcp-google-workspace` (`FASTMCP_DOCKET_NAME` overrides it). Set the same `FASTMCP_TASKS_ENCRYPTION_KEY` on every server and worker so queued caller-credential snapshots are encrypted (tool arguments and results are not). Additional workers run with `uv run mcp-google-workspace-worker` against the same Redis queue.
+The HTTP boundary validates `Host` and `Origin` (defaults derived from `MCP_HTTP_BASE_URL`; `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS`), bounds request bodies while they stream (`MCP_MAX_REQUEST_BYTES`, 30 MiB; chunked bodies are refused with `413` before being buffered) and lets the SDK reject `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` mismatches (`-32020`) and unsupported versions (`-32022`) before any tool runs. `MCP_HTTP_RESPONSE_MODE=json` disables request-scoped SSE for intermediaries that cannot pass it (no progress, and disconnects no longer cancel tools). Change subscriptions (`subscriptions/listen`) are not advertised.
+
+For more than one HTTP process or replica, declare the fleet (`MCP_WORKERS` for processes per replica, `MCP_REPLICAS` for single-worker replicas; setting `MCP_REDIS_URL` implies a fleet too) and set `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, `MCP_REQUEST_STATE_KEYS` and `FASTMCP_TASKS_ENCRYPTION_KEY` identically on every replica and worker. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, operation records, upload metadata, dashboard view state (encrypted with the same key ring), fleet admission counters and the task queue. Modern (2026-07-28) clients need **no session affinity**: every request is independent, and views, uploads, confirmations and tasks are addressed by server-issued handles or sealed continuations that any replica can verify. Only handshake-era (legacy) clients hold an `Mcp-Session-Id` session in one process; if you serve them behind several replicas, pin that header at the load balancer and set `MCP_SESSION_AFFINITY=true` (readiness reports it as an advisory `legacy_session_affinity` check). Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. Task-enabled tools run through the MCP Tasks extension (`io.modelcontextprotocol/tasks`), registered once on the root server by one shared factory for HTTP, stdio, and workers: the queue is `FASTMCP_DOCKET_URL` when set, otherwise `MCP_REDIS_URL` (except in the local stdio bundle), otherwise an in-process `memory://` queue; the queue name defaults to `mcp-google-workspace` (`FASTMCP_DOCKET_NAME` overrides it). Set the same `FASTMCP_TASKS_ENCRYPTION_KEY` on every server and worker so queued caller-credential snapshots are encrypted (tool arguments and results are not). Additional workers run with `uv run mcp-google-workspace-worker` against the same Redis queue.
 
 High-impact reversible writes use `prepare_workspace_action` and `commit_workspace_action`. The one-time token is principal-bound and argument-bound, expires after `MCP_CONFIRMATION_TTL_SECONDS` (10 minutes by default), and returns an impact preview before commit. The bound action runs at most once: repeating a commit that already ran returns its saved result, and a call whose outcome is uncertain after a timeout or disconnect returns `outcome_unknown` with verification steps instead of being retried (see `docs/migration/W4_CONFIRMATION_POLICY.md`). Stable `resource` handles (`gdrive:///...`, `gmail-message:///...`, and related schemes) are included where applicable and can be refreshed through `resolve_workspace_resource`.
 
@@ -488,7 +491,7 @@ The picker always serves the self-contained renderer bundled in the locked `pref
 
 ### Progressive Tool Discovery
 
-Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to workflow/discovery entry points plus `search_tools` and `call_tool`; hidden tools remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. `refresh_workspace_catalog` sends `tools/list_changed` after incremental consent.
+Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to workflow/discovery entry points plus `search_tools` and `call_tool`; hidden tools remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. The catalog is sorted and evaluated against the caller's current grants on every request (and re-checked when a tool is called, so a stale catalog cannot run a revoked capability); `refresh_workspace_catalog` reports the grants and sends no notification.
 
 Configuration:
 

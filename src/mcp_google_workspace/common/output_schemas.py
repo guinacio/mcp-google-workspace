@@ -20,12 +20,12 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
         "event_id", "calendar_id", "title", "start", "end", "timezone", "status",
         "location", "description", "conference_link", "conference_provider",
         "organizer_email", "organizer_name", "self_response_status", "attendees",
-        "attachments", "error",
+        "attachments",
     ),
     "get_email_detail": (
         "message_id", "thread_id", "subject", "from_value", "to", "cc", "bcc",
         "date", "date_timezone", "source_date", "snippet", "text_body", "html_body",
-        "attachments", "labels", "is_unread", "error",
+        "attachments", "labels", "is_unread",
     ),
     "list_calendars": ("kind", "etag", "nextPageToken", "nextSyncToken", "items"),
     "check_time_availability": ("kind", "timeMin", "timeMax", "groups", "calendars"),
@@ -104,23 +104,10 @@ _REGISTERED_FIELD_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
-# Every tool may return the shared in-tool error envelope instead of its
-# documented payload (see common.errors.tool_error_payload); "error" also
-# accepts an object for tools that embed structured error details.
-_ERROR_ENVELOPE_PROPERTIES: dict[str, dict[str, Any]] = {
-    "error": {
-        "type": ["object", "string"],
-        "description": "Error message or structured error details when the call failed.",
-    },
-    "provider_status": {
-        "type": "integer",
-        "description": "HTTP status code returned by the Google API for a failed call.",
-    },
-    "context": {
-        "type": "object",
-        "description": "Identifying request arguments echoed back with an error.",
-    },
-}
+# Output schemas describe successful results only. A failed call is an
+# ``isError`` result whose structuredContent is the shared error envelope
+# (common.errors.classify_error); clients do not validate it against the
+# tool's outputSchema.
 
 
 def _registered_schema(tool_name: str) -> dict[str, Any] | None:
@@ -130,7 +117,6 @@ def _registered_schema(tool_name: str) -> dict[str, Any] | None:
     properties = {name: _named_field_schema(name) for name in fields}
     for name, schema in _REGISTERED_FIELD_SCHEMAS.get(tool_name, {}).items():
         properties[name] = copy.deepcopy(schema)
-    properties.update(_ERROR_ENVELOPE_PROPERTIES)
     return {
         "type": "object",
         "title": f"{tool_name.replace('_', ' ').title()} response",

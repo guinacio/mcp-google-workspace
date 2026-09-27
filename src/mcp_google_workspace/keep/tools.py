@@ -11,7 +11,7 @@ from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
 from ..common.confirmation import confirm_destructive_action
-from ..common.errors import tool_error_payload
+from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
 from .client import keep_service, normalize_note_name
 from .presentation import note_envelope
@@ -125,7 +125,7 @@ def register_tools(server: FastMCP) -> None:
                     )
                 )
         except HttpError as exc:
-            return tool_error_payload(exc, title=request.title)
+            raise provider_tool_error(exc, title=request.title) from exc
 
         return {"status": "ok", "note": created}
 
@@ -147,7 +147,7 @@ def register_tools(server: FastMCP) -> None:
                 max_text=None,
             )
         except HttpError as exc:
-            return tool_error_payload(exc, note_name=name)
+            raise provider_tool_error(exc, note_name=name) from exc
 
     @server.tool(name="list_notes")
     async def list_notes(request: ListNotesRequest, ctx: Context) -> dict[str, Any]:
@@ -169,7 +169,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, filter=request.filter, page_token=request.page_token)
+            raise provider_tool_error(exc, filter=request.filter, page_token=request.page_token) from exc
         notes = result.get("notes", [])
         await ctx.report_progress(len(notes), request.page_size, "Keep notes page loaded")
         return {
@@ -198,7 +198,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             await execute_google_request(service.notes().delete(name=name))
         except HttpError as exc:
-            return tool_error_payload(exc, note_name=name)
+            raise provider_tool_error(exc, note_name=name) from exc
         return {"status": "ok", "note_name": name}
 
     @server.tool(name="update_note")
@@ -384,7 +384,7 @@ def register_tools(server: FastMCP) -> None:
                 response["original_deleted"] = True
             return response
         except HttpError as exc:
-            return tool_error_payload(exc, note_name=source_name)
+            raise provider_tool_error(exc, note_name=source_name) from exc
 
     @server.tool(name="patch_note_checklist")
     async def patch_note_checklist(request: PatchChecklistItemRequest, ctx: Context) -> dict[str, Any]:
@@ -448,7 +448,7 @@ def register_tools(server: FastMCP) -> None:
                 response["original_deleted"] = True
             return response
         except HttpError as exc:
-            return tool_error_payload(exc, note_name=source_name, operation=request.operation)
+            raise provider_tool_error(exc, note_name=source_name, operation=request.operation) from exc
 
     @server.tool(name="share_note")
     async def share_note(request: ShareNoteRequest, ctx: Context) -> dict[str, Any]:
@@ -474,7 +474,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, note_name=note_name)
+            raise provider_tool_error(exc, note_name=note_name) from exc
         return {"status": "ok", "result": result}
 
     @server.tool(name="unshare_note")
@@ -495,5 +495,5 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, note_name=note_name)
+            raise provider_tool_error(exc, note_name=note_name) from exc
         return {"status": "ok", "removed_permissions": request.permission_names}

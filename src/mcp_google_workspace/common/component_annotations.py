@@ -13,6 +13,7 @@ from mcp.types import ToolAnnotations
 
 from .fastmcp_compat import local_tools
 from .confirmation import install_confirmation_guard
+from .execution import install_execution_guard
 from .output_schemas import infer_tool_output_schema
 
 
@@ -778,6 +779,10 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
         # tool's InputRequiredResult (common/confirmation.py). Installed after
         # output-schema inference, which reads the undecorated source.
         install_confirmation_guard(tool_component, tool_component.name)
+        # Outermost of all: error envelopes on every path, plus execution-time
+        # authorization/admission/deadline for background-task workers, which
+        # run the tool function without FastMCP middleware (common/execution.py).
+        install_execution_guard(tool_component, namespace=namespace_hint)
         tool_component.annotations = _merge_annotations(
             tool_component.annotations,
             base_name=_base_tool_name(tool_component.name, namespace_hint=namespace_hint),

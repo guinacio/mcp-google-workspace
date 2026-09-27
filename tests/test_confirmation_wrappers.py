@@ -421,11 +421,14 @@ def test_commit_failure_is_settled_from_what_reached_google(
         assert getattr(tool.fn, "_workspace_confirmation_guard", False) is True
         monkeypatch.setattr(server_module, "workspace_mcp", SimpleNamespace(call_tool=failing_call))
         try:
-            await tool.fn(token)
-        except Exception as exc:  # noqa: BLE001 - either the McpError or outcome_unknown
+            returned = await tool.fn(token)
+        except Exception as exc:  # noqa: BLE001 - the nested protocol error (McpError)
             raised = getattr(exc, "error_code", None) or "mcp_error"
-        else:  # pragma: no cover - must fail
-            raise AssertionError("commit did not fail")
+        else:
+            # W5: the execution guard returns tool execution errors (here
+            # outcome_unknown) as isError results instead of raising them.
+            assert isinstance(returned, ToolResult) and returned.is_error is True, returned
+            raised = (returned.structured_content or {}).get("code")
         record = await store.get(operation_key(current_principal().storage_key, token))
         return raised, None if record is None else record["state"]
 

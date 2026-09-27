@@ -759,10 +759,12 @@ def test_calendar_create_with_idempotency_key_is_retry_safe(workspace_env, store
 
     first = _call(server, "calendar_create_event", arguments)
     # Repeat safe (deterministic event id): an ordinary retryable failure,
-    # not outcome_unknown.
-    assert isinstance(first, MCPError)
-    assert first.error.data["code"] == "timeout"
-    assert first.error.data["retryable"] is True
+    # not outcome_unknown. W5: a Google API failure is a tool execution error
+    # (isError result), not a JSON-RPC error.
+    assert not isinstance(first, MCPError), first
+    assert first.is_error is True
+    assert first.structured_content["code"] == "timeout"
+    assert first.structured_content["retryable"] is True
 
     retry = _call(server, "calendar_create_event", arguments)
     assert retry.is_error is False

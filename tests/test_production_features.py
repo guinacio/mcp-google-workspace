@@ -30,6 +30,7 @@ from mcp_google_workspace.common.errors import (
     _error_envelope,
 )
 from mcp_google_workspace.common.production import (
+    AdmissionError,
     CapabilityCatalogMiddleware,
     ProductionControlMiddleware,
     _validate_payload_shape,
@@ -305,8 +306,12 @@ def test_multi_worker_readiness_requires_distributed_oauth_state(
     monkeypatch.setenv("MCP_WORKERS", "2")
     monkeypatch.setenv("MCP_REDIS_URL", "redis://example")
     monkeypatch.setenv("MCP_UPLOAD_S3_BUCKET", "uploads")
-    monkeypatch.setenv("MCP_SESSION_AFFINITY", "true")
     monkeypatch.setenv("MCP_REQUEST_STATE_KEYS", "k" * 64)
+    monkeypatch.setenv("FASTMCP_TASKS_ENCRYPTION_KEY", "t" * 40)
+    # W5: modern traffic needs no affinity, so MCP_SESSION_AFFINITY is no
+    # longer required for readiness (it is reported for legacy sessions only).
+    monkeypatch.delenv("MCP_SESSION_AFFINITY", raising=False)
+    monkeypatch.delenv("MCP_RUNTIME_MODE", raising=False)  # set by bundle tests earlier in the run
 
     class Backend:
         backend_name = "redis"
@@ -333,10 +338,14 @@ def test_multi_worker_readiness_requires_distributed_oauth_state(
 
     ready, payload = readiness_report()
 
-    assert ready
+    assert ready, json.dumps(payload["checks"])
     assert payload["checks"]["token_storage"]["backend"] == "redis"
-    assert payload["checks"]["multi_worker_storage"]["ok"]
+    assert payload["checks"]["fleet_storage"]["ok"]
     assert payload["checks"]["continuation_keys"]["ok"]
+    assert payload["checks"]["app_state"] == {"backend": "redis", "ok": True}
+    assert payload["checks"]["task_queue"]["ok"] and payload["checks"]["task_queue"]["backend"] == "redis"
+    assert payload["checks"]["legacy_session_affinity"]["required"] is False
+    assert payload["warnings"] == ["legacy_session_affinity"]
 
     # Without a shared continuation key ring a replica fleet is not ready:
     # a confirmation asked on one replica could not be answered on another.
@@ -362,12 +371,19 @@ def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:
         by_name = {tool.name: tool for tool in visible}
         return set(by_name), by_name["gmail_send_email"].parameters
 
+    from mcp_google_workspace.auth.grants import GrantSnapshot
+
     monkeypatch.setattr(
         "mcp_google_workspace.common.production.get_access_token", lambda: object()
     )
+    # W5: the catalog reads the caller's current grant (auth.grants) per request.
     monkeypatch.setattr(
-        "mcp_google_workspace.auth.google_oauth.google_connection_status",
-        lambda: {"granted_capabilities": ["gmail"]},
+        "mcp_google_workspace.auth.grants.read_grant",
+        lambda principal=None: GrantSnapshot("p", "rev-1", frozenset({"gmail"})),
+    )
+    monkeypatch.setattr(
+        "mcp_google_workspace.auth.grants.current_principal",
+        lambda: SimpleNamespace(storage_key="p"),
     )
     names, parameters = anyio.run(exercise)
     assert "gmail_send_email" in names
@@ -399,13 +415,9 @@ def test_rate_limit_uses_implementation_defined_code_and_structured_data() -> No
     # not collide with the SDK's -32020/-32021/-32022.
     assert -32019 <= RPC_RATE_LIMITED <= -32000
     assert RPC_RATE_LIMITED not in {-32000, -32001, -32020, -32021, -32022}
-    error = RecoverableToolError(
-        "rate_limited",
-        "Per-principal request rate exceeded.",
-        required_action={"action": "retry", "after_seconds": 3},
-        retryable=True,
-        retry_after=3,
-    )
+    # W5: an *admission* rate limit is a protocol rejection (AdmissionError);
+    # a Google 429 is a tool execution error instead.
+    error = AdmissionError("rate_limited", "Per-principal request rate exceeded.", retry_after=3)
     with pytest.raises(McpError) as raised:
         _run_error_middleware(error)
     assert raised.value.code == RPC_RATE_LIMITED
@@ -430,10 +442,11 @@ def test_framework_wrapped_errors_keep_their_recovery_envelope() -> None:
         raise ToolError("Error calling tool 'upload_file': Use the picker") from cause
     except ToolError as wrapped:
         error = wrapped
-    with pytest.raises(McpError) as raised:
-        _run_error_middleware(error)
-    assert raised.value.data["code"] == "picker_required"
-    assert raised.value.data["required_action"] == {"tool": "files_file_manager", "arguments": {}}
+    # W5: a recoverable tool failure is an isError result, not a JSON-RPC error.
+    result = _run_error_middleware(error)
+    assert isinstance(result, ToolResult) and result.is_error is True
+    assert result.structured_content["code"] == "picker_required"
+    assert result.structured_content["required_action"] == {"tool": "files_file_manager", "arguments": {}}
 
 
 def test_confirmation_required_is_an_error_tool_result_not_a_protocol_error() -> None:

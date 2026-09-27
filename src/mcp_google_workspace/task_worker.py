@@ -25,6 +25,12 @@ __all__ = ["main", "workspace_mcp"]
 def main() -> None:
     from fastmcp_tasks.worker_cli import tasks_app
 
+    from mcp_google_workspace.common.production import validate_operation_lease
+
+    # Task executions are bounded by the tool deadlines; they must stay below
+    # the W4b operation lease (fail fast, like the HTTP entrypoint).
+    validate_operation_lease()
+
     tasks_app(["worker", f"{Path(__file__).resolve()}:workspace_mcp"])
 
 
