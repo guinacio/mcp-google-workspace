@@ -427,6 +427,7 @@ These supersede conflicting guidance elsewhere in this plan.
 | **Remove everything the 2026-07-28 spec deprecates.** | No Sampling, client Logging (`ctx.info/debug/warning/...` to the client), Roots, or DCR dependencies. Server-side logging and progress remain. |
 | **No summarization provider.** | The Chat `summarize_space_messages` and Keep `summarize_note` tools are removed, not stubbed. Clients summarize from the read tools themselves. |
 | Apps `ui/initialize` handshake | Retained. It is part of the separate Apps protocol and is not deprecated. |
+| **Confirmation bypass flags stay model-controlled.** | The `confirm_send`, `notify`, `confirm_create`, `confirm_delete`, `force`, `delete_mode` and `permanent` flags keep their current defaults and behavior (see `docs/migration/W4_CONFIRMATION_POLICY.md` §3). W4b fixes only the stale flag descriptions and removes the dead `gmail_delete_thread.force` flag. |
 
 ### 9.2 Implementation record (W2, 2026-09-26)
 
