@@ -14,6 +14,7 @@ import base64
 import email
 import importlib
 import json
+import re
 import socket
 import sys
 import threading
@@ -727,6 +728,21 @@ def test_every_outgoing_email_carries_a_fresh_message_id(workspace_env, store, g
     _call(server, "gmail_send_email", plain)
     ids = [_raw_message_id(kwargs) for kwargs in google.named("users.messages.send")]
     assert len(set(ids)) == 2 and all(value.endswith("@mcp-google-workspace.local>") for value in ids)
+
+
+def test_message_id_header_is_never_folded() -> None:
+    from email.message import EmailMessage
+
+    from mcp_google_workspace.gmail.mime_utils import stamp_message_id
+
+    for _ in range(50):
+        message = EmailMessage()
+        message_id = stamp_message_id(message)
+        assert re.fullmatch(r"<[0-9a-f]{32}@mcp-google-workspace\.local>", message_id)
+        header_lines = [
+            line for line in message.as_bytes().split(b"\n") if line.lower().startswith(b"message-id:")
+        ]
+        assert header_lines == [f"Message-ID: {message_id}".encode()]
 
 
 def _http_error(status: int) -> HttpError:

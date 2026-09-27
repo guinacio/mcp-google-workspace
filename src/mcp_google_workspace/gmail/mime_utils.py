@@ -6,9 +6,9 @@ import base64
 from email import policy
 from email.header import Header, decode_header, make_header
 from email.message import EmailMessage
-from email.utils import make_msgid
 from email.parser import BytesParser
 from pathlib import Path
+import secrets
 from typing import Any
 
 
@@ -69,8 +69,7 @@ def build_email_message(
 
 
 #: Right-hand side of the Message-IDs this server generates. A fixed value
-#: avoids ``make_msgid``'s default ``socket.getfqdn()`` (slow, and it would
-#: publish the server's host name in every email).
+#: avoids publishing the server's host name in every email.
 MESSAGE_ID_DOMAIN = "mcp-google-workspace.local"
 
 
@@ -79,8 +78,13 @@ def stamp_message_id(message: EmailMessage) -> str:
 
     The id lets a send whose outcome is unknown be reconciled by searching
     the mailbox for ``rfc822msgid:<id>`` (``common/reconciliation.py``).
+
+    The id is 128 random bits with a fixed length, so the header always fits
+    on one line (``make_msgid`` embeds the timestamp and PID, which can push
+    it past the 78-character fold limit on some hosts) and reveals nothing
+    about the server process.
     """
-    message_id = make_msgid(domain=MESSAGE_ID_DOMAIN)
+    message_id = f"<{secrets.token_hex(16)}@{MESSAGE_ID_DOMAIN}>"
     del message["Message-ID"]
     message["Message-ID"] = message_id
     return message_id
