@@ -13,6 +13,7 @@ from googleapiclient.errors import HttpError
 
 from ...common.async_ops import execute_google_request
 from ...common.confirmation import confirm_destructive_action
+from ...common.repeat_safety import note_reconciliation
 from ...common.timezone import resolve_user_timezone
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
@@ -21,6 +22,7 @@ from ..mime_utils import (
     decode_rfc2047,
     email_to_gmail_raw,
     extract_message_bodies,
+    stamp_message_id,
 )
 from ..helpers import recipient_set
 from ..presentation import clean_message_content, envelope, header_map, message_attachments
@@ -216,6 +218,11 @@ def register(server: FastMCP) -> None:
             html_body=request.html_body,
             attachments=attachment_payloads,
         )
+        # users.messages.send is not repeat safe: register the Message-ID so
+        # an unknown outcome can be checked in Sent instead of resent.
+        note_reconciliation(
+            {"kind": "gmail_sent", "rfc822_message_id": stamp_message_id(email_message)}
+        )
         raw = email_to_gmail_raw(email_message)
         LOGGER.debug("Sending email through Gmail API.")
         sent = await execute_google_request(
@@ -303,6 +310,9 @@ def register(server: FastMCP) -> None:
             attachments=attachment_payloads,
             in_reply_to=source_message_id,
             references=references,
+        )
+        note_reconciliation(
+            {"kind": "gmail_sent", "rfc822_message_id": stamp_message_id(email_message)}
         )
         raw = email_to_gmail_raw(email_message)
         LOGGER.debug(

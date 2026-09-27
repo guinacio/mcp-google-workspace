@@ -122,6 +122,18 @@ class ConfirmationRejectedError(ConfirmationError):
         self.reason = reason
 
 
+class OperationOutcomeError(RecoverableToolError):
+    """The state of a recorded operation, reported as a tool result (W4b).
+
+    Codes: ``outcome_unknown`` (a non-idempotent Google call may or may not
+    have been applied; verify before retrying), ``operation_in_progress``
+    (another request is executing the same operation) and ``operation_failed``
+    (the operation already failed; its saved failure is repeated, nothing was
+    re-executed). Like confirmation outcomes these are tool results
+    (``isError``), never protocol errors. See ``common/operations.py``.
+    """
+
+
 def _error_envelope(error: Exception) -> tuple[int, dict[str, Any]]:
     provider_status = getattr(getattr(error, "resp", None), "status", None)
     message = str(error)
@@ -244,7 +256,7 @@ class StructuredToolErrorMiddleware(Middleware):
         except Exception as raised:
             error = unwrap_tool_error(raised)
             rpc_code, envelope = _error_envelope(error)
-            if isinstance(error, ConfirmationError):
+            if isinstance(error, (ConfirmationError, OperationOutcomeError)):
                 # A missing or rejected confirmation is a tool outcome, not a
                 # malformed request: return an isError result the model can
                 # read and explain. (W5 extends this classification.)

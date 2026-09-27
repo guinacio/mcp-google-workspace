@@ -27,6 +27,7 @@ import anyio
 import mcp_types
 import pytest
 from fastmcp import Client, Context, FastMCP
+from fastmcp.tools import ToolResult
 from mcp.shared.exceptions import MCPError
 
 import mcp_google_workspace.auth.google_auth as google_auth
@@ -34,15 +35,18 @@ import mcp_google_workspace.server as server_module
 from mcp_google_workspace.common import confirmation
 from mcp_google_workspace.common.confirmation import (
     ConfirmationInputRequired,
-    MemoryReplayStore,
-    RedisReplayStore,
     build_request_state_security,
     canonical_arguments,
     confirm_destructive_action,
     configured_request_state_keys,
     install_confirmation_guard,
     reset_confirmation_keys,
-    set_replay_store,
+)
+from mcp_google_workspace.common.operations import (
+    OPERATION_META_KEY,
+    OperationStore,
+    memory_operation_store,
+    set_operation_store,
 )
 from mcp_google_workspace.common.errors import ConfirmationRejectedError, ConfirmationRequiredError
 
@@ -58,17 +62,17 @@ KEY_OTHER = "oth-" + "c" * 60
 
 
 @pytest.fixture(autouse=True)
-def isolated_keys_and_replay(monkeypatch: pytest.MonkeyPatch) -> Iterator[MemoryReplayStore]:
+def isolated_keys_and_operations(monkeypatch: pytest.MonkeyPatch) -> Iterator[OperationStore]:
     monkeypatch.delenv("MCP_REQUEST_STATE_KEYS", raising=False)
     monkeypatch.delenv("MCP_CONFIRMATION_TTL_SECONDS", raising=False)
     monkeypatch.setenv("MCP_LOCAL_PRINCIPAL", "alice")
     reset_confirmation_keys()
-    store = MemoryReplayStore()
-    set_replay_store(store)
+    store = memory_operation_store()
+    set_operation_store(store)
     try:
         yield store
     finally:
-        set_replay_store(None)
+        set_operation_store(None)
         reset_confirmation_keys()
 
 
@@ -253,14 +257,20 @@ def test_changed_preview_is_rejected() -> None:
     assert _reject_reason(DELETE, "t1", ctx=ctx) == "preview_changed"
 
 
-def test_replayed_accepted_continuation_is_rejected() -> None:
+def test_replayed_accepted_continuation_returns_the_saved_result() -> None:
+    """W4b: a repeat of a succeeded operation replays its result, never re-executes.
+
+    (W4a rejected this repeat as ``replayed``, which left a client that lost
+    the first response with no result at all.)
+    """
     ask = _ask()
     ctx = _ModernContext(state=ask.request_state, responses=_accept(ask))
     assert _run(DELETE, "t1", ctx=ctx)["status"] == "deleted"
     assert _MUTATIONS == ["t1"]
-    with pytest.raises(ConfirmationRejectedError) as raised:
-        _run(DELETE, "t1", ctx=_ModernContext(state=ask.request_state, responses=_accept(ask)))
-    assert raised.value.reason == "replayed"
+    replay = _run(DELETE, "t1", ctx=_ModernContext(state=ask.request_state, responses=_accept(ask)))
+    assert isinstance(replay, ToolResult)
+    assert replay.structured_content == {"status": "deleted", "thing_id": "t1"}
+    assert (replay.meta or {})[OPERATION_META_KEY]["replayed"] is True
     assert _MUTATIONS == ["t1"]
 
 
@@ -369,32 +379,34 @@ def test_key_ring_configuration_is_validated() -> None:
     assert security.ttl == 600.0
 
 
-def test_memory_and_redis_replay_stores_are_single_use() -> None:
-    class FakeRedis:
-        def __init__(self) -> None:
-            self.values: dict[str, Any] = {}
-            self.expiry: dict[str, int] = {}
+@pytest.mark.parametrize("backend", ["memory", "redis"])
+def test_memory_and_redis_operation_records_are_claimed_once(backend: str) -> None:
+    """The W4b record store replaces the W4a replay set: one claim per operation."""
+    import burner_redis
+    from cryptography.fernet import Fernet
 
-        def set(self, key: str, value: Any, *, nx: bool = False, ex: int | None = None) -> bool | None:
-            if nx and key in self.values:
-                return None
-            self.values[key] = value
-            if ex is not None:
-                self.expiry[key] = ex
-            return True
+    from mcp_google_workspace.common.app_state import RedisAppStateStore
+    from mcp_google_workspace.common.crypto import FernetKeyring
 
-    async def exercise() -> list[bool]:
-        memory = MemoryReplayStore()
-        fake = FakeRedis()
-        shared = RedisReplayStore(fake)
-        return [
-            await memory.claim("op", 60),
-            await memory.claim("op", 60),
-            await shared.claim("op", 60),
-            await shared.claim("op", 60),
-        ] + [all(ttl == 60 for ttl in fake.expiry.values()), "op" not in "".join(fake.values)]
+    store = (
+        memory_operation_store()
+        if backend == "memory"
+        else OperationStore(
+            RedisAppStateStore(
+                burner_redis.BurnerRedis(), keyring=FernetKeyring.single(Fernet.generate_key().decode())
+            )
+        )
+    )
 
-    assert anyio.run(exercise) == [True, False, True, False, True, True]
+    async def exercise() -> list[str]:
+        await store.open_confirmation(
+            "p:op", tool="t", action="a", args_digest="d", preview_digest="p", ttl_seconds=60
+        )
+        first = await store.claim("p:op", kind="confirmation", ref="r", answer="accept")
+        second = await store.claim("p:op", kind="confirmation", ref="r", answer="accept")
+        return [first.status, second.status]
+
+    assert anyio.run(exercise) == ["claimed", "in_progress"]
 
 
 # ---------------------------------------------------------------------------
@@ -521,13 +533,16 @@ def test_wire_another_principal_is_rejected(workspace_env, google_calls) -> None
     assert mutations(google_calls) == []
 
 
-def test_wire_replayed_accepted_continuation_is_rejected(workspace_env, google_calls) -> None:
+def test_wire_replayed_accepted_continuation_returns_the_saved_result(workspace_env, google_calls) -> None:
     server = _reload_workspace()
     ask = _wire_ask(server)
     done = _wire_answer(server, ask)
     assert done.is_error is False
     assert len(mutations(google_calls)) == 1
-    assert _invalid_code(_wire_answer(server, ask)) == ("confirmation_invalid", "replayed")
+    replay = _wire_answer(server, ask)
+    assert replay.is_error is False
+    assert replay.structured_content == done.structured_content
+    assert replay.meta[OPERATION_META_KEY]["replayed"] is True
     assert len(mutations(google_calls)) == 1
 
 
@@ -566,8 +581,11 @@ def test_replica_switch_completes_a_flow_started_on_the_other_replica(workspace_
     done = _wire_answer(replica_b, ask)
     assert done.is_error is False
     assert len(mutations(google_calls)) == 1
-    # The shared replay store refuses the same continuation on either replica.
-    assert _invalid_code(_wire_answer(replica_a, ask)) == ("confirmation_invalid", "replayed")
+    # The shared operation store replays the saved result on either replica
+    # instead of executing the same continuation again.
+    replay = _wire_answer(replica_a, ask)
+    assert replay.is_error is False
+    assert replay.structured_content == done.structured_content
     assert len(mutations(google_calls)) == 1
 
 

@@ -1,10 +1,12 @@
-# W4a — Confirmation adapter and confirmation policy inventory
+# W4 — Confirmation adapter, operation records and mutation recovery
 
-Work package **W4a** of `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (sections 3.3,
-3.4, 6 "W4", 9.1). It replaces the W2 fail-closed gate with one confirmation
-adapter that has a multi-round-trip (MRTR) branch for MCP 2026-07-28 and a thin
-`ctx.elicit` branch for handshake-era clients. Durable operation records,
-result replay and uncertain-outcome reconciliation are **W4b**.
+Work packages **W4a** and **W4b** of `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md`
+(sections 3.2, 3.3, 3.4, 6 "W4", 8, 9.1). W4a replaced the W2 fail-closed gate
+with one confirmation adapter that has a multi-round-trip (MRTR) branch for MCP
+2026-07-28 and a thin `ctx.elicit` branch for handshake-era clients (sections
+1–5). W4b replaced destructive commit-token consumption and the W4a replay set
+with durable operation records, saved-result replay, and `outcome_unknown`
+reporting and reconciliation for non-idempotent Google calls (sections 6–9).
 
 ## 1. Adapter
 
@@ -19,7 +21,8 @@ gate in `common/async_ops.py` is removed).
 | --- | --- |
 | 2026-07-28, client declared `elicitation`, no answer yet | Returns `InputRequiredResult` with one form elicitation (key `confirm`) and a continuation in `requestState`. **No mutation.** |
 | 2026-07-28 retry with `inputResponses` + `requestState` | Verifies the continuation and the answer. `accept` + `true` executes once; `decline`, `cancel`, or an unticked box returns the site's `status: cancelled` result with no mutation. |
-| Invalid retry (tampered, expired, other principal, other tool, changed arguments or preview, replayed, wrong/missing answer, answer without state) | `isError` tool result, code `confirmation_invalid`, `required_action.action = restart_confirmation`, no mutation. The FastMCP wire seal rejects tampered/expired/changed-argument state even earlier with JSON-RPC `-32602 Invalid or expired requestState`. |
+| Invalid retry (tampered, expired, other principal, other tool, changed arguments or preview, a different answer than the one already recorded, wrong/missing answer, answer without state) | `isError` tool result, code `confirmation_invalid`, `required_action.action = restart_confirmation`, no mutation. The FastMCP wire seal rejects tampered/expired/changed-argument state even earlier with JSON-RPC `-32602 Invalid or expired requestState`. |
+| Repeat of an answered retry with the same answer (W4b) | The operation record answers: the saved result (`_meta["mcp-google-workspace/operation"].replayed = true`), `operation_in_progress`, the saved failure, or `outcome_unknown`. The tool body never runs twice. |
 | Handshake-era version, client declared `elicitation` | `ctx.elicit(..., response_type=bool)` or the explicit `Confirmation{confirm: bool}` schema (send/reply), unchanged from before. |
 | No elicitation capability, unknown/missing version, no request | `isError` tool result, code `confirmation_required`, with the exact prompt. Never consent. |
 | Background task (Tasks extension) | Guard pattern: the task parks in `input_required`, the client answers through `tasks/update`, the worker re-runs with the answer (section 4). |
@@ -50,7 +53,7 @@ Plaintext (what the tool sees in `ctx.request_state`):
 | Claim | Meaning |
 | --- | --- |
 | `v` | format version (1) |
-| `op` | random operation id (`secrets.token_urlsafe(18)`), single use |
+| `op` | random operation id (`secrets.token_urlsafe(18)`); keys the operation record (section 6) and is never stored or shown raw |
 | `tool` | `<module>:<registered tool name>` of the guarded tool (the *inner* tool, even behind `call_tool` or `commit_workspace_action`) |
 | `action` | the site's action name (`reply_email` vs `reply_all_email`) |
 | `args` | SHA-256 of the canonical validated arguments |
@@ -79,18 +82,19 @@ arguments when the wire call is a proxy.
 **Verification order on retry:** HMAC, version, expiry (60 s future skew),
 principal, tool/action/kind, argument digest, preview digest; then the answer
 (must be an `ElicitResult`; `accept` content must be exactly `{field: bool}`);
-then an atomic claim of `op` in the replay store. Rejections before the claim
-do not consume the continuation.
+then an atomic claim of the `op` operation record (section 6), which also
+re-checks the argument and preview digests and the recorded answer. Rejections
+before the claim do not consume the continuation.
 
-### 1.3 Replay store
+### 1.3 Replay protection (W4b: operation records)
 
-`ContinuationReplayStore.claim(operation_id, ttl_seconds) -> bool` (async), one
-method. `MemoryReplayStore` for stdio, single-process servers and tests;
-`RedisReplayStore` (`SET mcp:confirmation:used:<sha256(op)> 1 NX EX ttl`) when
-`MCP_REDIS_URL` is set, except in the stdio bundle (`MCP_RUNTIME_MODE=bundle`).
-Any answered continuation (accept, decline or cancel) is claimed, so it cannot
-be replayed or flipped from decline to accept. W4b replaces this with durable
-operation records.
+The asking round opens an `awaiting_input` operation record keyed by
+`(principal, SHA-256(op))`; the answering round claims it. One continuation
+carries one answer: a decline (or cancel, or unticked box) cannot later become
+an accept, nor an accept a decline (`confirmation_invalid`, reason
+`replayed`). A repeat of the same answer returns the saved outcome instead of
+running the tool again. The W4a `ContinuationReplayStore` (`SET NX` of used ids)
+is removed. See section 6.
 
 ### 1.4 Sealing keys
 
@@ -115,37 +119,37 @@ warning; `/health/ready` fails when `MCP_WORKERS > 1`
 | Output schemas / validation | The ask never carries `content`/`structuredContent` (FastMCP's `_on_call_tool` returns the raw `InputRequiredResult` before result normalization), so there is nothing for output validation to reject. All 23 site tools publish output schemas; their ask rounds and final results pass through the SDK and FastMCP clients. | `test_modern_ask_round_returns_input_required_before_any_mutation`, `test_guard_preserves_signature_and_published_schemas` |
 | `ProductionControlMiddleware` (admission/telemetry) | Counts an ask as outcome `input_required` (metric label, log line, span attribute `mcp.tool.round`), not `ok`. Each round is still admitted and rate-limited as a request. | `test_admission_telemetry_counts_an_ask_as_a_round_not_a_completion` |
 | `ConsequentialActionMiddleware` | Unchanged; the answering commit round runs under `COMMIT_ACTIVE`. | commit tests |
-| `commit_workspace_action` + `ApprovalStore` | Claims the token; an ask **releases** it and returns the question unwrapped (not `status: committed`); a nested `isError` result is returned as-is (previously wrapped as `committed`). | `test_commit_asking_round_keeps_the_approval_token`, `test_commit_decline_consumes_the_token_without_sending` |
+| `commit_workspace_action` + operation record | Claims the record; an ask **parks** it (`awaiting_input`) and returns the question unwrapped (not `status: committed`); a nested `isError` result is returned as-is (previously wrapped as `committed`). | `test_commit_asking_round_keeps_the_approval_token`, `test_commit_decline_consumes_the_token_without_sending` |
+| `OperationOutcomeMiddleware` (W4b) | Sits between the error envelope and `ProductionControlMiddleware`; a failure or deadline while a non-repeatable Google call may have run becomes an `outcome_unknown` tool result. An ask passes through. | `test_deadline_while_a_send_executes_reports_outcome_unknown` |
 | BM25 `call_tool` proxy | Returns the nested `ToolResult` object, so the `InputRequiredToolResult` reaches the wire intact; the wire seal binds `call_tool` + its arguments, the app state binds the inner tool. | `test_bm25_call_tool_proxy_passes_the_ask_through_intact` |
 | Tasks extension | See section 4. | `test_tasked_tool_parks_for_input_and_resumes_via_tasks_update` |
 
-### 2.1 Prepare/commit token lifecycle (minimal fix)
+### 2.1 Prepare/commit lifecycle
 
-`ApprovalStore`/`RedisApprovalStore` now expose `claim` → `release` | `complete`
-(`consume` = claim + complete remains for single-shot callers). SQLite adds a
-`claimed` column (added in place on an existing table); Redis uses a
-`SET NX PX <remaining TTL>` claim marker. A claim is exclusive: a concurrent
-commit of the same token is refused while one is running.
+W4a added claim → release | complete to the SQLite/Redis approval stores. W4b
+removed both stores (no migration of old tokens, per owner decision):
+`prepare_workspace_action` opens a `prepared` operation record, and
+`commit_workspace_action` claims it. The confirmation guard around the commit
+settles the claim from what actually happened:
 
-| Nested outcome | Token |
+| Nested outcome | Record |
 | --- | --- |
-| `InputRequiredToolResult` (asked a question) | released |
-| `isError` / `McpError` with a code in `PRE_EXECUTION_ERROR_CODES` (`confirmation_required`, `confirmation_invalid`, `prepare_required`, `rate_limited`, `server_draining`, `principal_revoked`, `authorization_backend_unavailable`, `reauth_required`, `missing_capability`) | released |
-| completed (including a declined confirmation) | consumed |
-| any other failure, cancellation or unknown exception | consumed (outcome may be uncertain; never retried blindly) |
+| `InputRequiredToolResult` (asked a question) | `awaiting_input` (TTL restarts with the question) |
+| completed (including a declined confirmation) | `succeeded`, minimized result saved |
+| failure where no non-repeatable Google call started, or a code in `PRE_EXECUTION_ERROR_CODES` | back to `prepared` (the same token can be committed again) |
+| Google definitively rejected (4xx) a non-repeatable call | `failed`, short error saved |
+| a non-repeatable call may have been applied (timeout, disconnect, cancellation, 5xx, lost worker) | `outcome_unknown` |
 
-The brief asked for "release on failure". Releasing on *every* failure would
-let a lost response after a successful Google send be retried into a
-duplicate, which the previous destructive consume prevented; only failures that
-provably executed nothing release the token. W4b's operation records
-(`prepared → awaiting_input → executing → succeeded | failed | outcome_unknown`)
-plug in behind the same claim/release/complete seam.
+A repeated commit of a finished operation returns the saved result (or the
+saved failure, or `outcome_unknown`); it never executes again. Two
+simultaneous commits: one claims, the other gets `operation_in_progress`.
 
 ## 3. Confirmation bypass flags (inventory only — behavior unchanged)
 
 Flags a caller can set so that a site runs **without** asking. Defaults are the
-published input-schema defaults. Policy is an owner decision; nothing here was
-changed.
+published input-schema defaults. Policy is an owner decision (plan section 9.1:
+the flags stay model-controlled); defaults and behavior are unchanged. W4b only
+fixed the stale descriptions and removed the dead `gmail_delete_thread.force`.
 
 | Tool | Flag (default) | Runs without confirmation when | What it bypasses | Reversibility |
 | --- | --- | --- | --- | --- |
@@ -162,7 +166,6 @@ changed.
 | `gmail_reply_email` / `gmail_reply_all_email` | `confirm_send` (`false`) | `confirm_send=false` (the default) | Sending the reply | Irreversible |
 | `keep_create_note` | `confirm_create` (`false`) | `confirm_create=false` (the default) | Creating a note (+ collaborator grants) | Reversible (note can be deleted; collaborators were already granted) |
 | `keep_delete_note` | `confirm_delete` (`false`) | `confirm_delete=false` (the default) | Deleting a note | Irreversible via the API |
-| `gmail_delete_thread` | `force` (`false`) | never — the flag is accepted but ignored | — | Permanent delete, always confirmed |
 
 Always confirmed (no flag): `calendar_remove_event_attachment`,
 `drive_create_permission`, `drive_update_permission`, `drive_delete_permission`,
@@ -176,10 +179,11 @@ Observations for the owner (not acted on):
   `confirm_create`, `confirm_delete`, `delete_mode=trash`, `permanent=false`),
   so the model decides whether the user is asked. Three of them are
   irreversible (Chat posts, email sends, Keep deletes).
-- `DeleteEventRequest.force` documents a default of `true` while the tool
-  signature (the published schema) defaults to `false`; `DeleteFileRequest.confirm_permanent`
-  describes a default of `false` while it is `true`. The descriptions are stale.
-- `gmail_delete_thread.force` is dead: it suggests a bypass that does not exist.
+- Fixed in W4b: `DeleteEventRequest.force` documented a default of `true`
+  while the published schema defaults to `false`, and
+  `DeleteFileRequest.confirm_permanent` described a default of `false` while it
+  is `true`. Both models and the published parameter descriptions now match.
+- Removed in W4b: `gmail_delete_thread.force` was accepted and ignored.
 - Tools that mutate without any confirmation site at all (e.g.
   `gmail_batch_modify`, `drive_upload_file`, `sheets_batch_update_spreadsheet`)
   are outside this inventory; some are covered by prepare/commit.
@@ -208,7 +212,7 @@ nested calls from a worker.
 - A task tool invoked by another tool (BM25 `call_tool`, commit) runs in the
   foreground in 4.0.10, so its ask follows the foreground MRTR path.
 
-## 5. Tests
+## 5. Tests (W4a)
 
 - `tests/test_confirmation_protocols.py` — all 24 sites: modern ask round (no
   mutation), accept (exactly one mutation), decline/cancel (none), the stock
@@ -225,3 +229,178 @@ nested calls from a worker.
 - `tests/test_http_wire.py` — raw 2026-07-28 HTTP: `resultType: input_required`
   with no side effect, then `inputResponses` + `requestState` completes; no
   capability fails closed.
+
+## 6. Operation records (W4b)
+
+Module: `src/mcp_google_workspace/common/operations.py`. One store for
+prepare/commit tokens, confirmation continuations and evidence of uncertain
+plain calls.
+
+### 6.1 Lifecycle
+
+```
+prepared ──claim──► executing ──► succeeded | failed | outcome_unknown
+awaiting_input ──claim──►   │  ▲
+      ▲                     │  └── release (nothing non-repeatable ran)
+      └──── park (asked) ───┘
+```
+
+| State | Meaning | Reached by |
+| --- | --- | --- |
+| `prepared` | commit token issued, not committed | `prepare_workspace_action`; release |
+| `awaiting_input` | a confirmation question is open | adapter ask round; a commit whose tool asked (park); release |
+| `executing` | claimed by one request (`claim_id`) until `lease_until` | claim (compare-and-set on the record revision) |
+| `succeeded` | done; minimized result saved; a declined confirmation also ends here (`answer: decline`, the tool's `status: cancelled`) | completion; positive reconciliation; a late completion of an `outcome_unknown` claim |
+| `failed` | Google definitively rejected a non-repeatable call | completion |
+| `outcome_unknown` | a non-repeatable call may or may not have been applied | uncertain completion; a retry that finds `executing` after its lease expired |
+
+Claims and completions are atomic: every transition reads the record and
+writes it back with compare-and-set on its revision (W3 `AppStateStore`: a lock
+in memory, one Lua script per write in Redis). Of simultaneous claims exactly
+one succeeds; the others see `executing` and get `operation_in_progress`
+(retryable, `after_seconds: 2`). Completions only apply to the claim that owns
+the record (`claim_id`), so a superseded claimant cannot overwrite a newer
+outcome, but a late claimant may still turn its own `outcome_unknown` into the
+real result.
+
+A crash, lost worker or stuck thread leaves `executing`. The first retry
+after `lease_until` moves the record to `outcome_unknown` and reports it; it is
+never re-executed automatically.
+
+### 6.2 Backends, retention and configuration
+
+| Backend | When | Notes |
+| --- | --- | --- |
+| Memory (`MemoryAppStateStore`, 100 000 entries, evicts nearest-expiry first) | stdio, single process, tests; always in the stdio bundle | In-process only; a restart forgets records (a restarted stdio server cannot replay an earlier result). |
+| Redis (`RedisAppStateStore`, prefix `mcp:operation:v1`) | `MCP_REDIS_URL` set, `MCP_RUNTIME_MODE` ≠ `bundle` | Bodies Fernet-encrypted with the token key ring (`MCP_SECRET_FILE` / `MCP_TOKEN_ENCRYPTION_KEYS` / `MCP_TOKEN_ENCRYPTION_KEY`); missing ring → error at first use. |
+
+| Variable | Default | Governs |
+| --- | --- | --- |
+| `MCP_CONFIRMATION_TTL_SECONDS` | 600 | `prepared` and `awaiting_input` records (and the continuation). The W4a mismatch — 300 s tokens, 600 s questions — is gone: a commit token and the question asked while committing it share one TTL, restarted when the question is asked. |
+| `MCP_OPERATION_LEASE_SECONDS` | 900 | `executing` lease; keep above `MCP_TOOL_DEADLINE_SECONDS` (120) and `MCP_EXPENSIVE_DEADLINE_SECONDS` (600). The record itself is kept lease + retention. |
+| `MCP_OPERATION_RETENTION_SECONDS` | 86 400 (24 h) | `succeeded` / `failed` / `outcome_unknown` records, for replay, reconciliation and operator evidence. |
+| `MCP_OPERATION_RESULT_MAX_BYTES` | 65 536 | Largest saved result; larger results are not retained and a repeat reports `operation_already_succeeded` (not re-executed). |
+
+A continuation cannot be replayed after its own expiry (the wire seal and the
+application MAC both expire at `MCP_CONFIRMATION_TTL_SECONDS`), so saved
+confirmation results are replayable within that window; commit replays work
+for the whole retention period.
+
+### 6.3 Stored fields
+
+Key: `<principal storage key>:<SHA-256(operation id)>` — the raw commit token or
+continuation id is never stored. Public reference shown to the model:
+`op_` + 24 hex of `SHA-256("ref" ‖ id)`.
+
+| Field | Content |
+| --- | --- |
+| `v`, `kind` (`commit` / `confirmation` / `call`), `state` | format and lifecycle |
+| `tool`, `action` | public tool name (commit) or `<module>:<tool>` (confirmation); the site's action name |
+| `args_digest`, `preview_digest` | SHA-256 digests only |
+| `arguments` | commit records only, while `prepared`/`awaiting_input`/`executing` (needed to execute); dropped at every terminal state |
+| `answer` | `accept` / `decline` (never the elicitation content) |
+| `claim_id`, `lease_until`, `resume_state`, `pending_expires_at`, `created_at`, `updated_at` | concurrency and expiry |
+| `result`, `result_retained` | saved result: the tool's structured result with the text of `raw`, `text`, `text_body`, `html_body`, `body`, `snippet`, `formattedText`, `argumentText`, `textContent` replaced by a placeholder (types kept, so replays still match the output schema); IDs, statuses and metadata are kept |
+| `error` | `{code, message}` (message truncated to 300 characters) |
+| `uncertain_calls`, `reconcile`, `lease_expired`, `reconciled` | Google method ids, identifier-only reconciliation hints (e.g. the RFC 822 Message-ID) |
+
+Never stored: Google tokens, MCP bearer tokens, continuation strings, the
+confirmation prompt, message bodies, argument values of confirmation sites.
+Logs carry only tool names, public references, method ids and reason codes.
+
+## 7. Repeat safety of Google calls (W4b)
+
+Module: `src/mcp_google_workspace/common/repeat_safety.py`, table
+`METHOD_POLICIES` keyed by discovery `methodId`; tested by
+`tests/test_operation_records.py::test_repeat_safety_is_classified_from_the_google_method`
+and `test_every_mutating_method_the_server_calls_is_in_the_table` (an AST scan of
+every service package). Classification comes from the Google method and its
+parameters, not the tool name. Unknown methods: names starting
+`get`/`list`/`search`/`query`/`batchGet`/`export`/`find` are reads, anything
+else is non-idempotent.
+
+| Class | Meaning | Methods (summary) |
+| --- | --- | --- |
+| `read` | no change | get/list/search/query/… |
+| `idempotent` | repeat gives the same end state | Gmail modify/batchModify/trash/untrash/delete/batchDelete, threads.*, labels patch/delete, filters/forwarding delete, updateVacation, drafts.update/delete; Calendar events.patch/update/delete/move; Drive files.update/delete, permissions.update/delete, drives.update/hide/unhide; Sheets values.update/batchUpdate/clear; Tasks patch/update/delete/move; People updateContact (etag), deleteContact, contactGroups.members.modify; Keep notes.delete, permissions batch*; Chat messages.patch/delete; Meet spaces.patch/endActiveConference; Forms setPublishSettings |
+| `caller_keyed` | the provider deduplicates on a key the caller resends | Calendar `events.insert` **with** body `id` (from `idempotency_key`); Chat `spaces.messages.create` with a caller `request_id`; Drive `drives.create` `requestId`; Docs/Slides/Forms `batchUpdate` with `writeControl.requiredRevisionId` (a repeat is rejected, not applied; not sent by this server today); Drive `files.create`/`copy` with a `generateIds` id (not used today) |
+| `transport_keyed` | the key is generated per tool call | Chat `spaces.messages.create` with the server's `mcpcall-<uuid>` `requestId` |
+| `non_idempotent` | a repeat can duplicate | Gmail `messages.send`, `drafts.send`, `drafts.create`, `labels.create`, `filters.create`, `forwardingAddresses.create`; Calendar `events.insert` without id, `quickAdd`, `import`; Drive `files.create`/`copy` (no id), `permissions.create` (notification email), comments/replies; Sheets `spreadsheets.create`, `batchUpdate`, `values.append`; Docs/Slides/Forms `create` and `batchUpdate`; Tasks `insert`; People `createContact`, `contactGroups.create`; Keep `notes.create`; Chat `spaces.setup`, members/reactions create; Meet `spaces.create` |
+
+Provider idempotency checked against the API references (2026-09-26): Chat
+`spaces.messages.create` `requestId` ("multiple identical requests with the same
+request ID result in only a single message being created"), now always sent —
+the caller's `request_id` when given, otherwise a per-call id; Drive
+`drives.create` `requestId`; Drive `files.generateIds` ids usable in
+create/copy; Docs/Slides/Forms `writeControl.requiredRevisionId`. **No**
+idempotency key exists for Gmail send, Drive `files.create` itself, Sheets
+`batchUpdate`/`append` (the Sheets reference has neither a request id nor write
+control), Tasks, People, Keep or Meet creates.
+
+Consequences:
+
+1. **Transport retries** (`RetryingHttpRequest`, googleapiclient `num_retries`
+   for 5xx/429/socket errors) are limited to `read`, `idempotent`,
+   `caller_keyed` and `transport_keyed` calls. Before W4b a socket timeout on
+   `messages.send` was silently resent up to `MCP_GOOGLE_HTTP_RETRIES` times.
+2. **Tracking.** `LazyGoogleRequest.execute` (every Workspace client call) and
+   the Drive resumable-upload loop record each non-read call on a per-tool-call
+   `MutationTracker`: in flight, applied, definitively rejected (HTTP 4xx other
+   than 408), or ended ambiguously (5xx, timeout, connection error,
+   cancellation). A tracker is closed when its tool call ends; a thread
+   abandoned on cancellation that only then reaches a mutating call is refused
+   (`LateProviderCallError`), so no send starts unaccounted for.
+
+## 8. Uncertain outcomes and reconciliation (W4b)
+
+When a tool call fails, times out (`MCP_TOOL_DEADLINE_SECONDS`), is cancelled
+or disconnected — or returns an error payload it built after swallowing such a
+failure — while a non-repeatable (`non_idempotent` or `transport_keyed`) call
+was in flight, ended ambiguously, or had already been applied, the result is an
+`isError` tool result:
+
+```json
+{"code": "outcome_unknown", "retryable": false,
+ "required_action": {"action": "verify_before_retry", "operation_ref": "op_…",
+   "uncertain_calls": ["gmail.users.messages.send"],
+   "verify": [{"tool": "gmail_search_emails", "arguments": {"query": "in:sent rfc822msgid:<…@mcp-google-workspace.local>"}, "check": "…"}],
+   "instructions": "…"}}
+```
+
+The claimed operation (or, for a plain call, a new `call` evidence record) is
+set to `outcome_unknown`. Repeat-safe failures (for example a timeout on a
+Calendar insert with `idempotency_key`, or on a delete) stay ordinary
+retryable errors.
+
+| Operation | Reconciliation | Where |
+| --- | --- | --- |
+| Gmail `send_email`, `reply_email`, `reply_all_email` (`users.messages.send`) | **Implemented.** Every outgoing message gets a fresh `Message-ID` (`<…@mcp-google-workspace.local>`); a repeat of the operation searches `in:sent rfc822msgid:<id>`. A match resolves it to `succeeded` with the found ids; no match leaves `outcome_unknown` (search can lag; absence is not proof) and never re-sends. Plain calls get the same query as `verify` guidance. Caveat: if Gmail replaces a client Message-ID (reported for malformed ids) the search finds nothing and the outcome stays unknown — safe, never a duplicate. | `common/reconciliation.py` |
+| Calendar `create_event` with `idempotency_key` | **Implemented (retry is the check).** The deterministic event id makes the insert `caller_keyed`: a lost response is an ordinary retryable error, and the retry's `events.get` by that id (or the insert's 409) returns the existing event with `deduplicated: true`. | `calendar/tools.py` |
+| Calendar `create_event` without key, quickAdd | Guidance: `calendar_search_events` in the window; pass `idempotency_key` next time. | `operations.verification_steps` |
+| Gmail drafts.send / drafts.create, labels/filters/forwarding creates | Guidance: `gmail_search_emails` `in:sent`, `gmail_list_drafts`, `gmail_list_labels`, `gmail_list_filters`, `gmail_list_forwarding_addresses`. | 〃 |
+| Chat posts (`create_message`, `post_message_simple`, `reply_to_message`) | Guidance: `chat_list_messages` in the space. Passing `request_id` to `chat_create_message` and reusing it makes the retry safe (Chat returns the existing message). | 〃 |
+| Drive create/upload/copy | Guidance: `drive_list_files` ordered by `createdTime desc`. | 〃 |
+| Drive `permissions.create` | Guidance: `drive_list_permissions` for the file. | 〃 |
+| Sheets `batch_update_spreadsheet`, `append_sheet_values`, `create_spreadsheet` | Guidance: `sheets_get_spreadsheet` for the spreadsheet id (or `drive_list_files` for a create). | 〃 |
+| Docs / Slides / Forms `batch_update_*` and creates | Guidance: `docs_get_document`, `slides_get_presentation`, `forms_get_form`. | 〃 |
+| Tasks / People / Keep / Meet creates | Guidance: `tasks_list_tasks` / `tasks_list_tasklists`, `people_list_contacts` / `people_list_contact_groups`, `keep_list_notes`; otherwise "inspect the target". | 〃 |
+
+## 9. Tests (W4b)
+
+`tests/test_operation_records.py` (memory **and** Redis/burner-redis backends):
+lost response after provider success → saved result; duplicate commit;
+simultaneous claims (8 contenders, one winner) and simultaneous commits over
+the full composition (`operation_in_progress`, one send); deadline while the
+send thread executes → `outcome_unknown` with the Message-ID query; a timed-out
+confirmed send is never re-executed; crash between claim and completion →
+`operation_in_progress` during the lease, `outcome_unknown` after it, late
+completion still recorded; late provider call refused; saved-result replay
+across two server instances sharing the store (continuation and commit);
+changed payload rejected; decline/accept cannot be flipped either way;
+expiry of continuations, commit tokens and records; one TTL for tokens and
+questions; records hold no continuation, id, prompt or argument values (Redis
+values encrypted); Gmail Message-ID reconciliation (not found → still unknown,
+found → resolved); Calendar idempotent create after a lost insert response;
+Calendar create without key → `outcome_unknown`; transport retry budget and
+`RetryingHttpRequest`; the repeat-safety table and source scan; tracker
+verdicts; result minimization and non-retained results.

@@ -10,7 +10,6 @@ the prepare/commit token lifecycle and in-task confirmations.
 from __future__ import annotations
 
 import importlib
-import sqlite3
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -21,7 +20,6 @@ import anyio
 import mcp.types as mt
 import mcp_types
 import pytest
-from cryptography.fernet import Fernet
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import McpError
@@ -33,20 +31,26 @@ from mcp.shared.exceptions import MCPError
 import mcp_google_workspace.auth.google_auth as google_auth
 import mcp_google_workspace.server as server_module
 from mcp_google_workspace import tool_discovery
-from mcp_google_workspace.common import approvals
-from mcp_google_workspace.common.approvals import ApprovalStore, RedisApprovalStore
 from mcp_google_workspace.common.component_annotations import (
     _paginated_result,
     _wrap_pagination,
     apply_default_tool_annotations,
 )
+from mcp_google_workspace.auth.identity import current_principal
+from mcp_google_workspace.common.approvals import prepare_action
 from mcp_google_workspace.common.confirmation import (
-    MemoryReplayStore,
     confirm_destructive_action,
     install_confirmation_guard,
     reset_confirmation_keys,
-    set_replay_store,
 )
+from mcp_google_workspace.common.operations import (
+    OPERATION_META_KEY,
+    OperationStore,
+    memory_operation_store,
+    operation_key,
+    set_operation_store,
+)
+from mcp_google_workspace.common.repeat_safety import track_provider_call
 from mcp_google_workspace.common.errors import StructuredToolErrorMiddleware
 from mcp_google_workspace.common.production import METRICS, RUNTIME_STATE, ProductionControlMiddleware
 from mcp_google_workspace.common.resources import ResourceHandleMiddleware
@@ -83,13 +87,14 @@ def _context(name: str) -> MiddlewareContext[mt.CallToolRequestParams]:
 
 
 @pytest.fixture(autouse=True)
-def fresh_confirmation_state() -> Iterator[None]:
+def fresh_confirmation_state() -> Iterator[OperationStore]:
     reset_confirmation_keys()
-    set_replay_store(MemoryReplayStore())
+    store = memory_operation_store()
+    set_operation_store(store)
     try:
-        yield
+        yield store
     finally:
-        set_replay_store(None)
+        set_operation_store(None)
         reset_confirmation_keys()
 
 
@@ -285,15 +290,6 @@ def test_bm25_call_tool_proxy_passes_the_ask_through_intact(workspace_env, googl
     assert mutations(google_calls) == ["people.deleteContact"]
 
 
-@pytest.fixture
-def approval_store(workspace_env, tmp_path: Path) -> ApprovalStore:
-    workspace_env.setenv("MCP_USER_TOKEN_DIR", str(tmp_path / "tokens"))
-    workspace_env.setenv("MCP_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    store = ApprovalStore(tmp_path / "approvals.sqlite3")
-    workspace_env.setattr(approvals, "APPROVAL_STORE", store)
-    return store
-
-
 _BULK_SEND = {
     "subject": "Announcement",
     "to": [f"person-{index}@example.com" for index in range(10)],
@@ -302,9 +298,7 @@ _BULK_SEND = {
 }
 
 
-def _prepare(server: FastMCP, store: ApprovalStore) -> str:
-    server_module.APPROVAL_STORE = store
-
+def _prepare(server: FastMCP) -> str:
     async def exercise() -> str:
         async with Client(server) as client:
             prepared = await client.call_tool(
@@ -315,21 +309,23 @@ def _prepare(server: FastMCP, store: ApprovalStore) -> str:
     return anyio.run(exercise)
 
 
-def _row(store: ApprovalStore, token: str) -> tuple[int] | None:
-    with sqlite3.connect(store.path) as connection:
-        return connection.execute("SELECT claimed FROM approvals WHERE token=?", (token,)).fetchone()
+def _state(store: OperationStore, token: str) -> str | None:
+    """State of the commit's operation record (``None`` once gone)."""
+    record = anyio.run(lambda: store.get(operation_key(current_principal().storage_key, token)))
+    return None if record is None else str(record["state"])
 
 
-def test_commit_asking_round_keeps_the_approval_token(workspace_env, approval_store, google_calls) -> None:
+def test_commit_asking_round_keeps_the_approval_token(workspace_env, fresh_confirmation_state, google_calls) -> None:
+    store = fresh_confirmation_state
     server = importlib.reload(server_module).workspace_mcp
-    server_module.APPROVAL_STORE = approval_store
-    token = _prepare(server, approval_store)
+    token = _prepare(server)
+    assert _state(store, token) == "prepared"
     commit = {"commit_token": token}
 
     (first,) = anyio.run(_rounds, server, "commit_workspace_action", commit, [])
-    # Ask round: a question, not a commit, and the token is still unclaimed.
+    # Ask round: a question, not a commit; the operation awaits the answer.
     assert isinstance(first, mcp_types.InputRequiredResult)
-    assert _row(approval_store, token) == (0,)
+    assert _state(store, token) == "awaiting_input"
     assert mutations(google_calls) == []
 
     _, retry_without_answer, done, replay = anyio.run(
@@ -343,116 +339,122 @@ def test_commit_asking_round_keeps_the_approval_token(workspace_env, approval_st
     assert isinstance(retry_without_answer, mcp_types.CallToolResult)
     assert retry_without_answer.is_error is True
     assert (retry_without_answer.structured_content or {})["code"] == "confirmation_invalid"
-    # Accepted: exactly one send, and the token is consumed.
+    # Accepted: exactly one send, and the operation is finished.
     assert isinstance(done, mcp_types.CallToolResult), done
     assert done.is_error is False
     assert (done.structured_content or {})["status"] == "committed"
     assert mutations(google_calls) == ["users.messages.send"]
-    assert _row(approval_store, token) is None
-    # Replaying the commit cannot send again.
-    assert isinstance(replay, MCPError)
+    assert _state(store, token) == "succeeded"
+    # W4b: repeating the commit returns the saved result and cannot send again
+    # (W4a rejected the repeat with an error, so a lost response left no result).
+    assert isinstance(replay, mcp_types.CallToolResult), replay
+    assert replay.is_error is False
+    assert (replay.structured_content or {})["status"] == "committed"
+    assert replay.meta[OPERATION_META_KEY]["replayed"] is True
     assert mutations(google_calls) == ["users.messages.send"]
 
 
-def test_commit_decline_consumes_the_token_without_sending(workspace_env, approval_store, google_calls) -> None:
+def test_commit_decline_consumes_the_token_without_sending(workspace_env, fresh_confirmation_state, google_calls) -> None:
+    store = fresh_confirmation_state
     server = importlib.reload(server_module).workspace_mcp
-    server_module.APPROVAL_STORE = approval_store
-    token = _prepare(server, approval_store)
+    token = _prepare(server)
 
     commit = {"commit_token": token}
     (first,) = anyio.run(_rounds, server, "commit_workspace_action", commit, [])
     assert isinstance(first, mcp_types.InputRequiredResult)
-    assert _row(approval_store, token) == (0,)  # asked, token kept and unclaimed
+    assert _state(store, token) == "awaiting_input"  # asked, token kept and unclaimed
     assert mutations(google_calls) == []
 
     declined = anyio.run(_answer, server, "commit_workspace_action", commit, first, "decline")
     assert isinstance(declined, mcp_types.CallToolResult)
     assert (declined.structured_content or {})["result"]["status"] == "cancelled"
-    assert _row(approval_store, token) is None
+    assert _state(store, token) == "succeeded"  # finished (declined); never executable again
     assert mutations(google_calls) == []
 
 
+class _Rejected(Exception):
+    resp = SimpleNamespace(status=400)
+
+
 @pytest.mark.parametrize(
-    ("code", "settlement"),
-    [("rate_limited", "release"), ("confirmation_invalid", "release"), ("timeout", "complete"), ("internal_error", "complete")],
+    ("code", "attempted", "settlement"),
+    [
+        ("rate_limited", None, "prepared"),
+        ("confirmation_invalid", None, "prepared"),
+        ("timeout", None, "prepared"),
+        ("internal_error", "applied", "outcome_unknown"),
+        ("timeout", "uncertain", "outcome_unknown"),
+        ("invalid_input", "rejected", "failed"),
+    ],
 )
-def test_commit_failure_releases_only_provably_unexecuted_actions(
-    monkeypatch: pytest.MonkeyPatch, code: str, settlement: str
+def test_commit_failure_is_settled_from_what_reached_google(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_confirmation_state: OperationStore,
+    code: str,
+    attempted: str | None,
+    settlement: str,
 ) -> None:
-    settled: list[tuple[str, str]] = []
+    """W4a released only for pre-execution codes and otherwise consumed the token.
+
+    W4b settles from the tracked Google calls: nothing non-repeatable reached
+    Google -> back to ``prepared`` (retryable); a send may have happened ->
+    ``outcome_unknown``; Google definitively rejected it -> ``failed``.
+    """
+    store = fresh_confirmation_state
 
     async def failing_call(_name: str, _arguments: dict[str, Any]) -> Any:
+        if attempted is not None:
+            try:
+                with track_provider_call("gmail.users.messages.send", {"userId": "me"}):
+                    if attempted == "rejected":
+                        raise _Rejected("bad request")
+                    if attempted == "uncertain":
+                        raise TimeoutError("socket timeout")
+            except Exception:  # noqa: BLE001 - the nested error middleware's job
+                pass
         raise McpError(code=-32000, message="failed", data={"code": code})
 
-    monkeypatch.setattr(
-        server_module.APPROVAL_STORE,
-        "claim",
-        lambda token: approvals.ClaimedApproval(token, "gmail_batch_modify", {"message_ids": ["m"] * 10}),
-    )
-    monkeypatch.setattr(server_module.APPROVAL_STORE, "complete", lambda token: settled.append(("complete", token)))
-    monkeypatch.setattr(server_module.APPROVAL_STORE, "release", lambda token: settled.append(("release", token)))
-    monkeypatch.setattr(server_module, "workspace_mcp", SimpleNamespace(call_tool=failing_call))
+    async def exercise() -> tuple[str, str | None]:
+        prepared = await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10})
+        token = str(prepared["commit_token"])
+        tool = await server_module.workspace_mcp.get_tool("commit_workspace_action")
+        assert getattr(tool.fn, "_workspace_confirmation_guard", False) is True
+        monkeypatch.setattr(server_module, "workspace_mcp", SimpleNamespace(call_tool=failing_call))
+        try:
+            await tool.fn(token)
+        except Exception as exc:  # noqa: BLE001 - either the McpError or outcome_unknown
+            raised = getattr(exc, "error_code", None) or "mcp_error"
+        else:  # pragma: no cover - must fail
+            raise AssertionError("commit did not fail")
+        record = await store.get(operation_key(current_principal().storage_key, token))
+        return raised, None if record is None else record["state"]
 
-    async def exercise() -> None:
-        with pytest.raises(McpError):
-            await server_module.commit_workspace_action("cmt_x")
-
-    anyio.run(exercise)
-    assert settled == [(settlement, "cmt_x")]
-
-
-def test_sqlite_approval_claims_are_exclusive_and_releasable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MCP_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    monkeypatch.setenv("MCP_USER_TOKEN_DIR", str(tmp_path / "tokens"))
-    store = ApprovalStore(tmp_path / "approvals.sqlite3")
-    token = str(store.prepare("gmail_batch_modify", {"message_ids": ["m"] * 10})["commit_token"])
-
-    claimed = store.claim(token)
-    assert claimed.tool == "gmail_batch_modify"
-    with pytest.raises(ValueError, match="already being committed"):
-        store.claim(token)
-    store.release(token)
-    assert store.claim(token).arguments == {"message_ids": ["m"] * 10}
-    store.complete(token)
-    with pytest.raises(ValueError, match="invalid, expired, already used"):
-        store.claim(token)
+    raised, state = anyio.run(exercise)
+    assert state == settlement
+    assert raised == ("outcome_unknown" if settlement == "outcome_unknown" else "mcp_error")
 
 
-def test_redis_approval_claims_are_exclusive_and_releasable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MCP_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    monkeypatch.setenv("MCP_USER_TOKEN_DIR", str(tmp_path / "tokens"))
+def test_operation_claims_are_exclusive_releasable_and_never_consumed(fresh_confirmation_state) -> None:
+    """Replaces the W4a SQLite/Redis approval-token claim tests (both stores are removed)."""
+    store = fresh_confirmation_state
 
-    class FakeRedis:
-        def __init__(self) -> None:
-            self.values: dict[str, Any] = {}
+    async def exercise() -> list[str]:
+        token = str((await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10}))["commit_token"])
+        key = operation_key(current_principal().storage_key, token)
+        first = await store.claim(key, kind="commit", ref="r")
+        second = await store.claim(key, kind="commit", ref="r")
+        assert first.handle is not None and first.record is not None
+        assert first.record["arguments"] == {"message_ids": ["m"] * 10}
+        await store.release(first.handle)
+        third = await store.claim(key, kind="commit", ref="r")
+        assert third.handle is not None
+        await store.succeed(third.handle, {"status": "committed"})
+        fourth = await store.claim(key, kind="commit", ref="r")
+        assert fourth.record is not None and fourth.record["arguments"] is None  # dropped when terminal
+        other = await store.claim(operation_key("someone-else", token), kind="commit", ref="r")
+        return [first.status, second.status, third.status, fourth.status, other.status]
 
-        def set(self, key: str, value: Any, *, ex: int | None = None, px: int | None = None, nx: bool = False) -> bool | None:
-            if nx and key in self.values:
-                return None
-            self.values[key] = value
-            return True
-
-        def get(self, key: str) -> Any:
-            return self.values.get(key)
-
-        def pttl(self, key: str) -> int:
-            return 300_000 if key in self.values else -2
-
-        def delete(self, *keys: str) -> int:
-            return sum(1 for key in keys if self.values.pop(key, None) is not None)
-
-    monkeypatch.setattr(approvals.redis.Redis, "from_url", lambda _url: FakeRedis())
-    store = RedisApprovalStore("redis://example")
-    token = str(store.prepare("gmail_batch_modify", {"message_ids": ["m"] * 10})["commit_token"])
-
-    assert store.claim(token).tool == "gmail_batch_modify"
-    with pytest.raises(ValueError, match="already being committed"):
-        store.claim(token)
-    store.release(token)
-    store.claim(token)
-    store.complete(token)
-    with pytest.raises(ValueError, match="invalid, expired, already used"):
-        store.claim(token)
+    assert anyio.run(exercise) == ["claimed", "in_progress", "claimed", "saved", "missing"]
 
 
 # ---------------------------------------------------------------------------

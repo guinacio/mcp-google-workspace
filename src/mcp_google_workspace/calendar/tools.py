@@ -1170,7 +1170,14 @@ def register_tools(server: FastMCP) -> None:
         event_id: str,
         calendar_id: str = "primary",
         send_updates: str | None = None,
-        force: bool = False,
+        force: Annotated[
+            bool,
+            (
+                "Skip the interactive confirmation when true. Default false: the deletion "
+                "is confirmed with the user first (clients that cannot confirm get a "
+                "confirmation_required result and nothing is deleted)."
+            ),
+        ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Delete a calendar event after mandatory interactive confirmation."""
