@@ -65,7 +65,10 @@ LOGGER = logging.getLogger("mcp_google_workspace.operations")
 OperationState = Literal[
     "prepared", "awaiting_input", "executing", "succeeded", "failed", "outcome_unknown"
 ]
-OperationKind = Literal["commit", "confirmation", "call"]
+OperationKind = Literal["commit", "confirmation", "call", "task"]
+#: ``uncertain_calls`` entry of a task whose previous delivery started and
+#: never finished (its worker stopped; Docket delivered the task again).
+REDELIVERED_TASK: Final[str] = "(task redelivered after its worker stopped mid-execution)"
 TERMINAL_STATES: Final[frozenset[str]] = frozenset({"succeeded", "failed", "outcome_unknown"})
 
 RETENTION_ENV: Final[str] = "MCP_OPERATION_RETENTION_SECONDS"
@@ -370,6 +373,70 @@ class OperationStore:
             if state == "failed":
                 return None, 0, ClaimOutcome("failed", record=record, key=key)
             return None, 0, ClaimOutcome("unknown", record=record, key=key)
+
+        outcome: ClaimOutcome = await self._update(key, decide, missing=ClaimOutcome("missing", key=key))
+        return outcome
+
+    async def claim_task_delivery(self, key: str, *, tool: str, ref: str) -> ClaimOutcome:
+        """Claim one Docket delivery of a background task (W7a).
+
+        The first delivery creates an ``executing`` record. Docket delivers a
+        task again only when the worker running it stopped renewing its lease
+        (crash, SIGKILL, lost Redis), so finding the record still
+        ``executing`` means the previous run started and never finished: it
+        becomes ``outcome_unknown`` and the body is not run again. A record
+        released before any non-repeatable call (``prepared``) or parked on a
+        question (``awaiting_input``) is claimed again; ``succeeded`` /
+        ``failed`` are replayed.
+        """
+        claim_id = secrets.token_hex(16)
+        handle = OperationHandle(key, claim_id, ref, "task", tool)
+        now = self.now()
+        record = self._base(
+            "task",
+            "executing",
+            tool,
+            claim_id=claim_id,
+            lease_until=now + lease_seconds(),
+            resume_state="prepared",
+            pending_expires_at=now + lease_seconds(),
+        )
+        if await self.create(key, record, ttl_seconds=lease_seconds() + retention_seconds()):
+            return ClaimOutcome("claimed", handle=handle, record=record, key=key)
+
+        def decide(current: dict[str, Any]) -> tuple[dict[str, Any] | None, float, ClaimOutcome]:
+            now = self.now()
+            state = current.get("state")
+            if current.get("kind") != "task":
+                return None, 0, ClaimOutcome("missing", key=key)
+            if state == "executing":
+                updated = {
+                    **current,
+                    "state": "outcome_unknown",
+                    "lease_expired": True,
+                    "redelivered": True,
+                    "uncertain_calls": [REDELIVERED_TASK],
+                    "updated_at": now,
+                }
+                return updated, retention_seconds(), ClaimOutcome("unknown", record=updated, key=key)
+            if state in ("prepared", "awaiting_input"):
+                updated = {
+                    **current,
+                    "state": "executing",
+                    "resume_state": state,
+                    "claim_id": claim_id,
+                    "lease_until": now + lease_seconds(),
+                    "pending_expires_at": now + lease_seconds(),
+                    "updated_at": now,
+                }
+                return updated, lease_seconds() + retention_seconds(), ClaimOutcome(
+                    "claimed", handle=handle, record=updated, key=key
+                )
+            if state == "succeeded":
+                return None, 0, ClaimOutcome("saved", record=current, key=key)
+            if state == "failed":
+                return None, 0, ClaimOutcome("failed", record=current, key=key)
+            return None, 0, ClaimOutcome("unknown", record=current, key=key)
 
         outcome: ClaimOutcome = await self._update(key, decide, missing=ClaimOutcome("missing", key=key))
         return outcome

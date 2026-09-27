@@ -27,7 +27,7 @@ enforces, at *execution* time rather than only at submission:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from functools import wraps
 from hashlib import sha256
@@ -167,6 +167,56 @@ async def task_execution_scope(tool: str) -> AsyncIterator[None]:
         )
 
 
+async def run_task_delivery(tool: str, task_id: str, call: Callable[[], Awaitable[Any]]) -> Any:
+    """Run one Docket delivery of a background task at most once (W7a).
+
+    Docket redelivers a task whose worker stopped mid-execution (crash,
+    SIGKILL, lost Redis), and the redelivered body would repeat Google calls
+    that are not safe to repeat (a batchUpdate twice). The delivery is
+    therefore claimed in the W4b operation store under the task id: a second
+    delivery of a task whose first run started returns ``outcome_unknown``
+    (with verification guidance) instead of executing again, and one whose
+    first run finished replays the saved result. The claim is settled like a
+    confirmed call: released when nothing non-repeatable reached Google,
+    ``failed`` on a definitive rejection, ``outcome_unknown`` when a
+    non-repeatable call may have been applied (deadline, cancellation).
+    """
+    from .operations import (
+        current_principal_key,
+        get_operation_store,
+        operation_key,
+        operation_ref,
+        resolve_claim,
+        settle_after_failure,
+        settle_after_return,
+    )
+    from .repeat_safety import tracking_scope
+
+    operation_id = f"task:{task_id}"
+    key = operation_key(current_principal_key(), operation_id)
+    ref = operation_ref(operation_id)
+    store = get_operation_store()
+    outcome = await store.claim_task_delivery(key, tool=tool, ref=ref)
+    if outcome.status == "missing":  # the record expired between two steps
+        outcome = await store.claim_task_delivery(key, tool=tool, ref=ref)
+    if outcome.status != "claimed" or outcome.handle is None:
+        LOGGER.warning("task delivery not re-executed tool=%s ref=%s status=%s", tool, ref, outcome.status)
+        return await resolve_claim(outcome, tool=tool, ref=ref)
+    with tracking_scope() as tracker:
+        tracker.operation = outcome.handle
+        try:
+            result = await call()
+        except BaseException as exc:
+            replacement = await settle_after_failure(tracker, exc, tool=tool)
+            if replacement is not None and isinstance(exc, Exception):
+                raise replacement from exc
+            raise
+        replacement = await settle_after_return(tracker, result, tool=tool)
+        if replacement is not None:
+            raise replacement
+        return result
+
+
 def install_execution_guard(component: Any, *, namespace: str | None) -> None:
     """Wrap ``component.fn`` with the execution guard (idempotent).
 
@@ -185,10 +235,11 @@ def install_execution_guard(component: Any, *, namespace: str | None) -> None:
         @wraps(original)
         async def guarded(*args: Any, **kwargs: Any) -> Any:
             try:
-                if background_task_id() is None:
+                task_id = background_task_id()
+                if task_id is None:
                     return await original(*args, **kwargs)
                 async with task_execution_scope(tool):
-                    return await original(*args, **kwargs)
+                    return await run_task_delivery(tool, task_id, lambda: original(*args, **kwargs))
             except McpError:
                 raise
             except Exception as error:  # noqa: BLE001 - classified below
@@ -215,5 +266,6 @@ __all__ = [
     "background_task_id",
     "install_execution_guard",
     "qualified_tool_name",
+    "run_task_delivery",
     "task_execution_scope",
 ]
