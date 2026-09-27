@@ -1,16 +1,52 @@
-import type { App, McpUiHostContext } from "@modelcontextprotocol/ext-apps";
-import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
+/**
+ * Workspace dashboard MCP App (MCP Apps SDK 2, stable Apps protocol 2026-01-26).
+ *
+ * Lifecycle (see docs/RICH_OUTPUTS.md, "Dashboard lifecycle"):
+ * 1. Every host notification handler (tool input, tool result, cancellation,
+ *    host-context change, teardown, channel error) is registered before
+ *    `connect()` performs the `ui/initialize` handshake.
+ * 2. The host's tool input/result are the authoritative invocation context. The
+ *    view renders the launch result; it loads on its own only when the host never
+ *    announced an invocation, or announced one that reopens an existing handle.
+ *    It never mints a second view while the launch call is minting one.
+ * 3. Host capabilities (`getHostCapabilities()`) gate every optional action; the
+ *    server's operation manifest gates every server operation that writes.
+ * 4. Loads carry generation tickets (latest wins) and abort signals; teardown
+ *    cancels timers, requests and listeners and ignores anything that arrives later.
+ */
+import type { App, McpUiDownloadFileRequest, McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import type { CallToolResult } from "@modelcontextprotocol/client";
 import { THEME_CSS, applyTheme } from "./theme";
-import { RENDER_CSS, renderLoading, renderDashboard, setActionHandler } from "./render";
+import {
+  RENDER_CSS,
+  detachDashboardHandlers,
+  renderDashboard,
+  renderLoading,
+  setActionHandler,
+} from "./render";
 import { safeExternalUrl } from "./urls";
+import type { LinkKind } from "./urls";
+import { VIEW_HANDLE_INVALID, VIEW_STATE_CONFLICT, ViewSession } from "./view-handle";
 import {
   ToolCallError,
-  VIEW_HANDLE_INVALID,
-  VIEW_STATE_CONFLICT,
-  ViewSession,
-  toolErrorCode,
-  toolErrorMessage,
-} from "./view-handle";
+  classifyRejection,
+  describeFailure,
+  hasEmbeddedError,
+  isUnknownToolError,
+  requireSuccess,
+  toolResultErrorMessage,
+} from "./tool-calls";
+import { OperationRegistry, isReadOperation } from "./operations";
+import type { Operation } from "./operations";
+import {
+  MAX_INLINE_DOWNLOAD_BYTES,
+  NO_HOST_SUPPORT,
+  base64DecodedLength,
+  hostFeatures,
+  readHostSupport,
+} from "./host-support";
+import type { HostSupport } from "./host-support";
+import { ViewLifecycle } from "./lifecycle";
 import type { UiAction, RenderOptions } from "./render";
 import type {
   CalendarCatalogItem,
@@ -20,31 +56,6 @@ import type {
   ParentMessage,
   UiToolCapabilities,
 } from "./types";
-
-type ToolOperation =
-  | "getDashboard"
-  | "getWeeklyCalendar"
-  | "getEventDetail"
-  | "getEmailDetail"
-  | "getEmailAttachment"
-  | "respondToEvent"
-  | "patchState"
-  | "nextRange"
-  | "prevRange"
-  | "today"
-  | "listCalendars"
-  | "createEvent"
-  | "updateEvent"
-  | "deleteEvent"
-  | "markEmailRead"
-  | "markEmailUnread"
-  | "moveEmail"
-  | "deleteEmail"
-  | "untrashEmail"
-  | "markEmailSpam"
-  | "markEmailNotSpam";
-
-type ToolRegistry = Partial<Record<ToolOperation, string>>;
 
 /** Dashboard callbacks that carry the server-issued view handle. */
 type ViewOperation =
@@ -67,8 +78,43 @@ const CONDITIONAL_OPERATIONS: ReadonlySet<ViewOperation> = new Set([
   "prevRange",
   "today",
 ]);
+/** Launch-tool arguments replayed when the view loads without a host result. */
+const LAUNCH_ARGUMENTS = ["date_override", "include_weekend"] as const;
 
-type ViewCaller = (operation: ViewOperation, args?: Record<string, unknown>) => Promise<unknown>;
+/** No tool input at all after the handshake: load a view of our own after this. */
+const NO_INVOCATION_GRACE_MS = 750;
+/** Input reopened an existing handle but no result arrived: load that handle after this. */
+const INPUT_HANDLE_GRACE_MS = 1500;
+/** Input without a handle and still no result: tell the user (never mint automatically). */
+const RESULT_WAIT_NOTICE_MS = 30_000;
+const MAX_DISCOVERY_PAGES = 5;
+
+const NO_TOOL_CAPABILITIES: UiToolCapabilities = Object.freeze({
+  can_create_event: false,
+  can_edit_event: false,
+  can_delete_event: false,
+  can_rsvp: false,
+  can_reschedule_event: false,
+  can_navigate: false,
+  can_toggle_weekend: false,
+  can_select_calendars: false,
+  can_mark_email_read: false,
+  can_mark_email_unread: false,
+  can_archive_email: false,
+  can_trash_email: false,
+  can_untrash_email: false,
+  can_mark_email_spam: false,
+  can_mark_email_not_spam: false,
+  can_open_event_detail: false,
+  can_open_email_detail: false,
+  can_fetch_email_attachment: false,
+});
+
+type ViewCaller = (
+  operation: ViewOperation,
+  args?: Record<string, unknown>,
+  signal?: AbortSignal,
+) => Promise<CallToolResult>;
 
 /** Raised after a stale state write; the view has already been refreshed. */
 class ViewRefreshedAfterConflict extends Error {
@@ -77,30 +123,6 @@ class ViewRefreshedAfterConflict extends Error {
     this.name = "ViewRefreshedAfterConflict";
   }
 }
-
-const TOOL_CANDIDATES: Record<ToolOperation, string[]> = {
-  getDashboard: ["apps_get_dashboard", "get_dashboard"],
-  getWeeklyCalendar: ["apps_get_weekly_calendar_view", "get_weekly_calendar_view"],
-  getEventDetail: ["apps_get_event_detail", "get_event_detail"],
-  getEmailDetail: ["apps_get_email_detail", "get_email_detail"],
-  getEmailAttachment: ["apps_get_email_attachment", "get_email_attachment"],
-  respondToEvent: ["calendar_respond_to_event", "respond_to_event"],
-  patchState: ["apps_patch_state", "patch_state"],
-  nextRange: ["apps_next_range", "next_range"],
-  prevRange: ["apps_prev_range", "prev_range"],
-  today: ["apps_today", "today"],
-  listCalendars: ["calendar_list_calendars", "list_calendars"],
-  createEvent: ["calendar_create_event", "create_event"],
-  updateEvent: ["calendar_update_event", "update_event"],
-  deleteEvent: ["calendar_delete_event", "delete_event"],
-  markEmailRead: ["gmail_mark_as_read", "mark_as_read"],
-  markEmailUnread: ["gmail_mark_as_unread", "mark_as_unread"],
-  moveEmail: ["gmail_move_email", "move_email"],
-  deleteEmail: ["gmail_delete_email", "delete_email"],
-  untrashEmail: ["gmail_untrash_email", "untrash_email"],
-  markEmailSpam: ["gmail_mark_as_spam", "mark_as_spam"],
-  markEmailNotSpam: ["gmail_mark_as_not_spam", "mark_as_not_spam"],
-};
 
 const style = document.createElement("style");
 style.textContent = THEME_CSS + RENDER_CSS;
@@ -145,12 +167,26 @@ if (isStandalone) {
   void initMcpMode();
 }
 
-function renderStatusMessage(message: string) {
+function renderStatusMessage(message: string, action?: { label: string; run: () => void }) {
   const status = document.createElement("div");
   status.className = "loading-state";
+  status.setAttribute("role", "status");
   const text = document.createElement("div");
   text.textContent = message;
   status.append(text);
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "nav-btn";
+    button.textContent = action.label;
+    button.addEventListener("click", () => action.run(), { once: true });
+    const wrapper = document.createElement("div");
+    wrapper.append(text, button);
+    wrapper.style.display = "grid";
+    wrapper.style.gap = "10px";
+    wrapper.style.justifyItems = "center";
+    status.replaceChildren(wrapper);
+  }
   root.replaceChildren(status);
 }
 
@@ -298,336 +334,706 @@ function initStandaloneMode() {
 async function initMcpMode() {
   applyTheme("dark");
   renderLoading(root);
-  let hasRenderedFromToolResult = false;
+
+  const lifecycle = new ViewLifecycle();
+  // The view handle is issued by the server in the launch tool result; the
+  // view keeps it only in memory and never mints or persists an identity.
+  const view = new ViewSession();
+  const registry = new OperationRegistry();
+  let support: HostSupport = NO_HOST_SUPPORT;
+  let hostContext: McpUiHostContext = {};
   let currentData: DashboardData = {};
-  let toolRegistry: ToolRegistry = {};
+  let hasData = false;
+  let calendarsLoaded = false;
+  let pendingFocus: string | undefined;
+  /** Where keyboard focus goes back to when the open detail panel closes. */
+  let returnFocus: string | undefined;
+  let eventSaveInFlight = false;
+  let navigationInFlight = false;
   const renderOptions: RenderOptions = {
     include_weekend: true,
     selected_calendar_ids: [],
     calendar_catalog: [],
   };
+  /** The tool invocation that opened this view, as told by the host. */
+  const invocation = {
+    inputSeen: false,
+    resultSeen: false,
+    cancelled: false,
+    args: {} as Record<string, unknown>,
+  };
+  let cancelPendingLoad: () => void = () => {};
 
+  let ext: typeof import("@modelcontextprotocol/ext-apps");
   try {
-    const {
-      App,
-      applyDocumentTheme,
-      applyHostStyleVariables,
-      applyHostFonts,
-    } = await import("@modelcontextprotocol/ext-apps");
+    ext = await import("@modelcontextprotocol/ext-apps");
+  } catch (err) {
+    console.warn("MCP ext-apps not available:", err);
+    renderStatusMessage("MCP app connection failed.");
+    return;
+  }
 
-    const app = new App(
-      { name: "Workspace Dashboard", version: "1.0.0" },
-      {}
-    );
+  const app = new ext.App(
+    { name: "Workspace Dashboard", version: "2.0.0" },
+    { availableDisplayModes: ["inline", "fullscreen"] },
+    { autoResize: true },
+  );
 
-    // The view handle is issued by the server in the launch tool result; the
-    // view keeps it only in memory and never mints or persists an identity.
-    const view = new ViewSession();
-    const makeIdempotencyKey = (prefix: string) => {
-      const random = new Uint8Array(12);
-      crypto.getRandomValues(random);
-      const suffix = Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
-      return `${prefix}-${Date.now()}-${suffix}`;
+  // --- Rendering ---------------------------------------------------------------
+
+  const setUiMessage = (message: string | undefined, kind: "notice" | "error") => {
+    currentData =
+      kind === "notice"
+        ? { ...currentData, ui_notice: message, ui_error: undefined, ui_fallback_link: undefined }
+        : { ...currentData, ui_error: message, ui_notice: undefined, ui_fallback_link: undefined };
+  };
+
+  const showFallbackLink = (message: string, url: string, offerOpen: boolean) => {
+    currentData = {
+      ...currentData,
+      ui_notice: undefined,
+      ui_error: undefined,
+      ui_fallback_link: { message, url, offer_open: offerOpen },
     };
-    let eventSaveInFlight = false;
+    renderCurrent();
+  };
 
-    const shiftIsoMinutes = (iso: string, minutes: number): string => {
-      const dt = new Date(iso);
-      return new Date(dt.getTime() + minutes * 60_000).toISOString();
-    };
+  const renderCurrent = () => {
+    if (lifecycle.disposed) return;
+    if (!hasData) {
+      if (currentData.ui_error) renderStatusMessage(currentData.ui_error);
+      return;
+    }
+    const state = readDashboardState(currentData);
+    renderOptions.include_weekend = state.include_weekend;
+    renderOptions.selected_calendar_ids = state.selected_calendar_ids;
+    // No server-tools capability: nothing can be called, whatever the manifest says.
+    currentData.tool_capabilities = support.serverTools ? registry.capabilities() : NO_TOOL_CAPABILITIES;
+    renderOptions.tool_capabilities = currentData.tool_capabilities;
+    renderOptions.host_features = hostFeatures(support, hostContext);
+    renderOptions.focus_selector = pendingFocus;
+    pendingFocus = undefined;
+    renderDashboard(root, currentData, renderOptions);
+  };
 
-    const withUiPending = async (operation: () => Promise<void>) => {
-      const previousCursor = document.body.style.cursor;
-      root.style.opacity = "0.92";
-      document.body.style.cursor = "progress";
+  const renderStatus = (message: string, action?: { label: string; run: () => void }) => {
+    if (lifecycle.disposed) return;
+    renderStatusMessage(message, action);
+  };
+
+  const withUiPending = async (operation: () => Promise<void>) => {
+    const previousCursor = document.body.style.cursor;
+    root.style.opacity = "0.92";
+    document.body.style.cursor = "progress";
+    try {
+      await operation();
+    } finally {
+      root.style.opacity = "";
+      document.body.style.cursor = previousCursor;
+    }
+  };
+
+  // --- Server tool calls -------------------------------------------------------
+
+  /** Call the tool implementing `operation`; resolves with the raw result. */
+  const invokeTool = async (
+    operation: Operation,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<CallToolResult> => {
+    if (!support.serverTools) {
+      throw new ToolCallError("This host does not let the dashboard call server tools.", "transport", "server_tools_unsupported");
+    }
+    const candidates = registry.candidates(operation);
+    if (!candidates.length) {
+      throw new ToolCallError("This action is not available for your account here.", "tool", "operation_unavailable");
+    }
+    let firstFailure: ToolCallError | undefined;
+    for (const name of candidates) {
       try {
-        await operation();
-      } finally {
-        root.style.opacity = "";
-        document.body.style.cursor = previousCursor;
-      }
-    };
-
-    const setUiMessage = (message: string | undefined, kind: "notice" | "error") => {
-      if (kind === "notice") {
-        currentData = { ...currentData, ui_notice: message, ui_error: undefined };
-      } else {
-        currentData = { ...currentData, ui_error: message, ui_notice: undefined };
-      }
-    };
-
-    const isToolNotFoundError = (err: unknown): boolean => {
-      const message = String(err || "");
-      return (
-        message.includes("-32601") ||
-        message.toLowerCase().includes("method not found") ||
-        message.toLowerCase().includes("tool not found") ||
-        message.toLowerCase().includes("unknown tool")
-      );
-    };
-
-    const callToolForOperation = async (
-      operation: ToolOperation,
-      args: Record<string, unknown>
-    ): Promise<unknown> => {
-      const preferred = toolRegistry[operation];
-      const candidates = preferred
-        ? [preferred, ...TOOL_CANDIDATES[operation].filter((name) => name !== preferred)]
-        : [...TOOL_CANDIDATES[operation]];
-      let lastError: unknown;
-      for (const toolName of candidates) {
-        try {
-          const result = await app.callServerTool({ name: toolName, arguments: args });
-          toolRegistry[operation] = toolName;
-          return result;
-        } catch (err) {
-          lastError = err;
-          if (!isToolNotFoundError(err)) {
-            throw err;
-          }
-        }
-      }
-      throw lastError || new Error(`No valid tool found for operation ${operation}.`);
-    };
-
-    const invokeView = async (
-      operation: ViewOperation,
-      args: Record<string, unknown>,
-    ): Promise<unknown> => {
-      const withHandle: Record<string, unknown> = { ...args };
-      if (view.handle) {
-        withHandle.view_handle = view.handle;
-        if (CONDITIONAL_OPERATIONS.has(operation) && view.revision !== undefined) {
-          withHandle.expected_revision = view.revision;
-        }
-      } else if (CONDITIONAL_OPERATIONS.has(operation)) {
-        throw new ToolCallError("The dashboard view is not open yet.", VIEW_HANDLE_INVALID);
-      }
-      let result: unknown;
-      try {
-        result = await callToolForOperation(operation, withHandle);
+        const result = await app.callServerTool({ name, arguments: args }, { signal });
+        if (!registry.hasManifest && isReadOperation(operation)) registry.learn(operation, name);
+        return result;
       } catch (err) {
-        throw new ToolCallError(String(err), toolErrorCode(err), err);
+        const failure = classifyRejection(err, signal);
+        if (registry.hasManifest || !isUnknownToolError(failure)) throw failure;
+        firstFailure ??= failure;
       }
-      if (result && typeof result === "object" && (result as { isError?: unknown }).isError === true) {
-        // A conflict still tells us the current revision of this view.
-        view.adoptResult(result);
-        throw new ToolCallError(toolErrorMessage(result), toolErrorCode(result), result);
-      }
-      view.adoptResult(result);
-      return result;
-    };
+    }
+    throw firstFailure!;
+  };
 
-    /**
-     * Call a dashboard tool with this view's handle. An unknown or expired handle
-     * is answered by re-requesting a fresh view exactly once, then retrying the
-     * call once; a second failure is reported, never looped.
-     */
-    const callView: ViewCaller = async (operation, args = {}) => {
-      try {
-        return await invokeView(operation, args);
-      } catch (err) {
-        if (!(err instanceof ToolCallError) || err.code !== VIEW_HANDLE_INVALID) {
-          throw err;
-        }
-      }
-      view.forget();
-      if (!LAUNCH_OPERATIONS.has(operation)) {
-        const fresh = await invokeView("getDashboard", {});
-        const parsed = extractDashboardData(fresh);
-        if (parsed) {
-          currentData = mergeDashboardData(currentData, parsed);
-        }
-      }
-      return invokeView(operation, args);
-    };
+  /** Call a non-view tool and require success (isError and embedded errors throw). */
+  const callTool = async (operation: Operation, args: Record<string, unknown>, signal?: AbortSignal) =>
+    requireSuccess(await invokeTool(operation, args, signal));
 
-    /**
-     * Recover from a failed view action. A stale-revision conflict never retries
-     * the write: the view refetches the current server state instead.
-     */
-    const recoverFromViewError = async (err: unknown): Promise<never> => {
-      if (err instanceof ToolCallError && err.code === VIEW_STATE_CONFLICT) {
-        const conflictState = (err.result as { structuredContent?: { state?: unknown } } | undefined)
-          ?.structuredContent?.state;
-        if (conflictState && typeof conflictState === "object") {
-          currentData = replaceDashboardState(currentData, conflictState as Record<string, unknown>);
-        }
-        await refreshFull();
-        throw new ViewRefreshedAfterConflict();
+  const invokeView = async (
+    operation: ViewOperation,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<CallToolResult> => {
+    const withHandle: Record<string, unknown> = { ...args };
+    if (view.handle) {
+      withHandle.view_handle = view.handle;
+      if (CONDITIONAL_OPERATIONS.has(operation) && view.revision !== undefined) {
+        withHandle.expected_revision = view.revision;
       }
+    } else if (CONDITIONAL_OPERATIONS.has(operation)) {
+      throw new ToolCallError("The dashboard view is not open yet.", "tool", VIEW_HANDLE_INVALID);
+    }
+    const result = await invokeTool(operation, withHandle, signal);
+    if (signal?.aborted || lifecycle.disposed) {
+      throw new ToolCallError("The request was cancelled.", "cancelled", "cancelled");
+    }
+    registry.adoptResult(result);
+    // A conflict still tells us the current revision of this view.
+    view.adoptResult(result);
+    return requireSuccess(result);
+  };
+
+  /**
+   * Call a dashboard tool with this view's handle. An unknown or expired handle
+   * is answered by re-requesting a fresh view exactly once, then retrying the
+   * call once; a second failure is reported, never looped.
+   */
+  const callView: ViewCaller = async (operation, args = {}, signal) => {
+    try {
+      return await invokeView(operation, args, signal);
+    } catch (err) {
+      if (!(err instanceof ToolCallError) || err.code !== VIEW_HANDLE_INVALID) throw err;
+    }
+    view.forget();
+    if (!LAUNCH_OPERATIONS.has(operation)) {
+      const fresh = await invokeView("getDashboard", {}, signal);
+      const parsed = extractDashboardData(fresh);
+      if (parsed) currentData = mergeDashboardData(currentData, parsed);
+    }
+    return invokeView(operation, args, signal);
+  };
+
+  /**
+   * Recover from a failed view action. A stale-revision conflict never retries
+   * the write: the view refetches the current server state instead.
+   */
+  const recoverFromViewError = async (err: unknown): Promise<never> => {
+    if (err instanceof ToolCallError && err.code === VIEW_STATE_CONFLICT) {
+      const conflictState = (err.result as { structuredContent?: { state?: unknown } } | undefined)
+        ?.structuredContent?.state;
+      if (conflictState && typeof conflictState === "object") {
+        currentData = replaceDashboardState(currentData, conflictState as Record<string, unknown>);
+      }
+      await refresh("full");
+      throw new ViewRefreshedAfterConflict();
+    }
+    throw err;
+  };
+
+  const reportFailure = (err: unknown, restore: DashboardData | undefined, label: string) => {
+    if (lifecycle.disposed || (err instanceof ToolCallError && err.kind === "cancelled")) return;
+    if (err instanceof ViewRefreshedAfterConflict) {
+      setUiMessage(err.message, "notice");
+    } else {
+      if (restore) currentData = restore;
+      setUiMessage(`${label}: ${describeFailure(err)}`, "error");
+    }
+    renderCurrent();
+  };
+
+  // --- Loading -------------------------------------------------------------------
+
+  /**
+   * Load dashboard data. Latest wins: a newer load (or an authoritative host
+   * result) supersedes this one, whose response is then dropped.
+   */
+  const refresh = async (mode: "full" | "weekly", launchArgs: Record<string, unknown> = {}): Promise<boolean> => {
+    const ticket = lifecycle.begin("data");
+    try {
+      const weekly = mode === "weekly" && registry.available("getWeeklyCalendar");
+      const result = await callView(weekly ? "getWeeklyCalendar" : "getDashboard", launchArgs, ticket.signal);
+      if (!ticket.current) return false;
+      const parsed = extractDashboardData(result);
+      const next: DashboardData = { ...currentData, ui_error: undefined, ui_notice: undefined };
+      if (parsed?.dashboard) next.dashboard = parsed.dashboard;
+      if (parsed?.weekly_calendar) next.weekly_calendar = parsed.weekly_calendar;
+      currentData = next;
+      hasData = hasData || !!(parsed?.dashboard || parsed?.weekly_calendar);
+      renderCurrent();
+      void loadCalendarsOnce();
+      return true;
+    } catch (err) {
+      if (!ticket.current) return false;
       throw err;
-    };
+    } finally {
+      ticket.done();
+    }
+  };
 
-    const reportViewActionFailure = (
-      err: unknown,
-      previousData: DashboardData,
-      label: string,
-    ) => {
-      if (err instanceof ViewRefreshedAfterConflict) {
-        setUiMessage(err.message, "notice");
-      } else {
-        currentData = previousData;
-        setUiMessage(`${label}: ${String(err instanceof ToolCallError ? err.message : err)}`, "error");
-      }
-      renderCurrent();
-    };
-
-    const renderCurrent = () => {
-      const state = readDashboardState(currentData);
-      renderOptions.include_weekend = state.include_weekend;
-      renderOptions.selected_calendar_ids = state.selected_calendar_ids;
-      currentData.tool_capabilities = computeToolCapabilities(toolRegistry);
-      renderOptions.tool_capabilities = currentData.tool_capabilities;
-      renderDashboard(root, currentData, renderOptions);
-    };
-
-    const refreshFull = async () => {
-      currentData = await fetchAndRenderDashboardData(callView, currentData, "full", toolRegistry);
-      renderCurrent();
-    };
-    const refreshWeekly = async () => {
-      currentData = await fetchAndRenderDashboardData(callView, currentData, "weekly", toolRegistry);
-      renderCurrent();
-    };
-
-    const loadCalendars = async () => {
-      const listTool = toolRegistry.listCalendars;
-      if (!listTool) {
-        return;
-      }
-      const result = await app.callServerTool({ name: listTool, arguments: {} });
+  const loadCalendarsOnce = async () => {
+    if (calendarsLoaded || !registry.available("listCalendars") || lifecycle.disposed) return;
+    calendarsLoaded = true;
+    const ticket = lifecycle.begin("calendars");
+    try {
+      const result = await callTool("listCalendars", {}, ticket.signal);
+      if (!ticket.current) return;
       const calendars = extractCalendarCatalog(result);
       if (calendars.length) {
         renderOptions.calendar_catalog = calendars;
         currentData = {
           ...currentData,
-          calendar_catalog: {
-            items: calendars,
-            fetched_at_utc: new Date().toISOString(),
-          },
+          calendar_catalog: { items: calendars, fetched_at_utc: new Date().toISOString() },
         };
+        renderCurrent();
       }
-    };
+    } catch (err) {
+      if (ticket.current) console.warn("Calendar list unavailable:", err);
+    } finally {
+      ticket.done();
+    }
+  };
 
-    const updateStatePatch = async (patch: Record<string, unknown>) => {
-      if (!resolveTool(toolRegistry, "patchState")) {
-        throw new Error("State patch tool is unavailable.");
-      }
-      try {
-        await callView("patchState", patch);
-      } catch (err) {
-        await recoverFromViewError(err);
-      }
-    };
+  /** The launch operation this view was opened by (host context tool info). */
+  const launchOperation = (): "getDashboard" | "getWeeklyCalendar" => {
+    const name = hostContext.toolInfo?.tool?.name ?? "";
+    return name.endsWith("get_weekly_calendar_view") ? "getWeeklyCalendar" : "getDashboard";
+  };
 
-    const startEditor = (mode: "create" | "edit", seedDate?: string) => {
-      const state = readDashboardState(currentData);
-      if (mode === "edit") {
-        const detail = currentData.event_detail;
-        if (!detail) {
-          setUiMessage("Open an event first to edit it.", "error");
-          renderCurrent();
-          return;
-        }
-        currentData = {
-          ...currentData,
-          event_editor: {
-            mode: "edit",
-            event_id: detail.event_id,
-            calendar_id: detail.calendar_id,
-            summary: detail.title,
-            start_local: toLocalInputValue(detail.start),
-            end_local: toLocalInputValue(detail.end),
-            timezone: detail.timezone || state.timezone,
-            location: detail.location || "",
-            description: detail.description || "",
-            attendees_csv: detail.attendees.map((item) => item.email).join(", "),
-            create_conference: !!detail.conference_link,
+  /**
+   * Load without a host result. Replays the invocation the host announced: the
+   * same launch tool with the input's arguments (and so the input's handle).
+   */
+  const loadWithoutHostResult = async (reason: "no-invocation" | "input-handle" | "user") => {
+    if (lifecycle.disposed || !support.serverTools) return;
+    if (reason !== "user" && (invocation.resultSeen || invocation.cancelled)) return;
+    const launchArgs: Record<string, unknown> = {};
+    for (const key of LAUNCH_ARGUMENTS) {
+      if (invocation.args[key] !== undefined) launchArgs[key] = invocation.args[key];
+    }
+    try {
+      await refresh(launchOperation() === "getWeeklyCalendar" ? "weekly" : "full", launchArgs);
+    } catch (err) {
+      if (lifecycle.disposed || (err instanceof ToolCallError && err.kind === "cancelled")) return;
+      if (hasData) {
+        setUiMessage(`Initial load failed: ${describeFailure(err)}`, "error");
+        renderCurrent();
+      } else {
+        renderStatus(`Initial load failed: ${describeFailure(err)}`, {
+          label: "Try again",
+          run: () => void loadWithoutHostResult("user"),
+        });
+      }
+    }
+  };
+
+  // --- Host lifecycle handlers (registered before connect) ----------------------
+
+  app.ontoolinput = (params) => {
+    if (lifecycle.disposed || invocation.resultSeen || invocation.cancelled) return;
+    invocation.inputSeen = true;
+    invocation.args = params.arguments && typeof params.arguments === "object" ? { ...params.arguments } : {};
+    cancelPendingLoad();
+    if (view.adoptInputHandle(invocation.args.view_handle)) {
+      // Reopening an existing view: loading it can never mint a new one, so a
+      // host that never delivers the result is covered after a short grace.
+      cancelPendingLoad = lifecycle.schedule(() => void loadWithoutHostResult("input-handle"), INPUT_HANDLE_GRACE_MS);
+    } else {
+      // The launch call itself is minting this view's handle; its result is the
+      // only source of it. Never mint a second (orphan) view automatically.
+      cancelPendingLoad = lifecycle.schedule(() => {
+        if (hasData) return;
+        renderStatus("Still waiting for the dashboard result from the host.", support.serverTools
+          ? { label: "Load a new view now", run: () => void loadWithoutHostResult("user") }
+          : undefined);
+      }, RESULT_WAIT_NOTICE_MS);
+    }
+  };
+
+  app.ontoolresult = (result) => {
+    if (lifecycle.disposed) return;
+    invocation.resultSeen = true;
+    cancelPendingLoad();
+    // The host's result is authoritative: drop any fallback load still in flight.
+    lifecycle.supersede("data");
+    registry.adoptResult(result);
+    view.adoptResult(result);
+    if (result.isError === true || hasEmbeddedError(result)) {
+      const message = `The dashboard could not be opened: ${toolResultErrorMessage(result)}`;
+      if (hasData) {
+        setUiMessage(message, "error");
+        renderCurrent();
+      } else {
+        renderStatus(message, support.serverTools
+          ? { label: "Open a new view", run: () => { view.forget(); void loadWithoutHostResult("user"); } }
+          : undefined);
+      }
+      return;
+    }
+    const data = extractDashboardData(result);
+    if (data && (data.weekly_calendar || data.dashboard || data.event_detail || data.email_detail)) {
+      currentData = mergeDashboardData(currentData, data);
+      hasData = true;
+    }
+    if (hasData) {
+      renderCurrent();
+      void loadCalendarsOnce();
+    } else {
+      renderStatus("The host delivered a dashboard result without dashboard data.");
+    }
+  };
+
+  app.ontoolcancelled = () => {
+    if (lifecycle.disposed || invocation.resultSeen) return;
+    invocation.cancelled = true;
+    cancelPendingLoad();
+    lifecycle.supersede("data");
+    if (hasData) {
+      setUiMessage("The dashboard request was cancelled; showing the last loaded data.", "notice");
+      renderCurrent();
+      return;
+    }
+    renderStatus("The dashboard request was cancelled.", support.serverTools
+      ? { label: "Load dashboard", run: () => void loadWithoutHostResult("user") }
+      : undefined);
+  };
+
+  const applyHostContext = (ctx: McpUiHostContext | undefined) => {
+    if (!ctx || lifecycle.disposed) return;
+    hostContext = { ...hostContext, ...ctx };
+    if (ctx.theme) ext.applyDocumentTheme(ctx.theme);
+    if (ctx.styles?.variables) ext.applyHostStyleVariables(ctx.styles.variables);
+    if (ctx.styles?.css?.fonts) ext.applyHostFonts(ctx.styles.css.fonts);
+    if (ctx.safeAreaInsets) {
+      const { top, right, bottom, left } = ctx.safeAreaInsets;
+      document.body.style.padding = `${top}px ${right}px ${bottom}px ${left}px`;
+    }
+    if (ctx.containerDimensions) applyContainerDimensions(ctx.containerDimensions);
+    if (hasData && (ctx.displayMode || ctx.availableDisplayModes)) renderCurrent();
+  };
+  app.onhostcontextchanged = applyHostContext;
+
+  app.onteardown = async () => {
+    teardown();
+    return {};
+  };
+
+  app.onerror = (error) => {
+    if (!lifecycle.disposed) console.warn("MCP Apps channel error:", error);
+  };
+
+  const teardown = () => {
+    if (lifecycle.disposed) return;
+    cancelPendingLoad();
+    lifecycle.dispose();
+    detachDashboardHandlers(root);
+    setActionHandler(() => {});
+  };
+
+  // --- User actions ------------------------------------------------------------------
+
+  const openExternal = async (rawUrl: string, kind: LinkKind) => {
+    const noun = kind === "attachment" ? "attachment" : "link";
+    // Re-validate at the adapter boundary; only the host navigates.
+    const url = safeExternalUrl(rawUrl, kind);
+    if (!url) {
+      setUiMessage(`Blocked an unsupported ${noun} URL.`, "error");
+      renderCurrent();
+      return;
+    }
+    if (!support.openLinks) {
+      showFallbackLink(`This host does not open links from the dashboard. Copy the ${noun} address instead.`, url, false);
+      return;
+    }
+    const request = lifecycle.request();
+    try {
+      const result = await app.openLink({ url }, { signal: request.signal });
+      if (lifecycle.disposed) return;
+      if (result?.isError) {
+        showFallbackLink(`The host declined to open the ${noun}. Copy the address instead.`, url, false);
+        return;
+      }
+      if (currentData.ui_fallback_link) {
+        currentData = { ...currentData, ui_fallback_link: undefined };
+        renderCurrent();
+      }
+    } catch (err) {
+      if (lifecycle.disposed) return;
+      showFallbackLink(`The host could not open the ${noun} (${describeFailure(classifyRejection(err))}). Copy the address instead.`, url, false);
+    } finally {
+      request.done();
+    }
+  };
+
+  const hostDownload = async (params: McpUiDownloadFileRequest["params"]): Promise<"started" | "declined"> => {
+    const request = lifecycle.request();
+    try {
+      const result = await app.downloadFile(params, { signal: request.signal });
+      return result?.isError ? "declined" : "started";
+    } finally {
+      request.done();
+    }
+  };
+
+  const downloadLinkedAttachment = async (rawUrl: string, name: string, mimeType?: string) => {
+    const url = safeExternalUrl(rawUrl, "attachment");
+    if (!url) {
+      setUiMessage("Blocked an unsupported attachment URL.", "error");
+      renderCurrent();
+      return;
+    }
+    if (!support.downloadFile) {
+      showFallbackLink("This host does not support downloads.", url, true);
+      return;
+    }
+    try {
+      const link: { type: "resource_link"; name: string; uri: string; mimeType?: string } = {
+        type: "resource_link",
+        name: name || "attachment",
+        uri: url,
+      };
+      if (mimeType) link.mimeType = mimeType;
+      const outcome = await hostDownload({ contents: [link] });
+      if (lifecycle.disposed) return;
+      if (outcome === "declined") {
+        // A denial is final: offer the user an explicit alternative, never force one.
+        showFallbackLink(`The host declined the download of ${name}.`, url, true);
+        return;
+      }
+      setUiMessage(`Download started: ${name}`, "notice");
+      renderCurrent();
+    } catch (err) {
+      reportFailure(classifyRejection(err), undefined, "Failed to download attachment");
+    }
+  };
+
+  const downloadEmailAttachment = async (action: Extract<UiAction, { type: "email_download_attachment" }>) => {
+    if (!support.downloadFile) {
+      setUiMessage("This host does not support downloads. Ask the assistant to save the attachment to Drive.", "notice");
+      renderCurrent();
+      return;
+    }
+    if (action.size !== undefined && action.size > MAX_INLINE_DOWNLOAD_BYTES) {
+      setUiMessage(
+        `${action.filename} is too large to download here (${formatBytes(action.size)}; limit ${formatBytes(MAX_INLINE_DOWNLOAD_BYTES)}). Ask the assistant to save it to Drive.`,
+        "error",
+      );
+      renderCurrent();
+      return;
+    }
+    const request = lifecycle.request();
+    try {
+      const payload = await callView(
+        "getEmailAttachment",
+        { message_id: action.messageId, attachment_id: action.attachmentId },
+        request.signal,
+      );
+      if (lifecycle.disposed) return;
+      const data = extractObjectPayload(payload);
+      if (!data || typeof data.blob_base64 !== "string") throw new Error("Attachment content is unavailable.");
+      if (base64DecodedLength(data.blob_base64) > MAX_INLINE_DOWNLOAD_BYTES) {
+        throw new Error(`the attachment exceeds the ${formatBytes(MAX_INLINE_DOWNLOAD_BYTES)} inline download limit`);
+      }
+      const fileName = action.filename || (typeof data.filename === "string" && data.filename) || "attachment";
+      const mimeType =
+        (typeof data.mime_type === "string" && data.mime_type) || action.mimeType || "application/octet-stream";
+      const safeName = ensureDownloadFilename(fileName, mimeType);
+      const outcome = await hostDownload({
+        contents: [
+          {
+            type: "resource",
+            resource: { uri: `file:///${encodeURIComponent(safeName)}`, mimeType, blob: data.blob_base64 },
           },
-          ui_notice: undefined,
-          ui_error: undefined,
-        };
+        ],
+      });
+      if (lifecycle.disposed) return;
+      if (outcome === "declined") {
+        setUiMessage(`The host declined the download of ${fileName}.`, "notice");
+      } else {
+        setUiMessage(`Download started: ${fileName}`, "notice");
+      }
+      renderCurrent();
+    } catch (err) {
+      reportFailure(err instanceof ToolCallError ? err : classifyRejection(err), undefined, "Failed to download email attachment");
+    } finally {
+      request.done();
+    }
+  };
+
+  const sendChatMessage = async (text: string) => {
+    if (!support.message || !text) return;
+    const request = lifecycle.request();
+    try {
+      const result = await app.sendMessage({ role: "user", content: [{ type: "text", text }] }, { signal: request.signal });
+      if (lifecycle.disposed) return;
+      setUiMessage(result?.isError ? "The host declined the chat message." : "Sent to the chat.", result?.isError ? "error" : "notice");
+      renderCurrent();
+    } catch (err) {
+      reportFailure(classifyRejection(err), undefined, "Failed to send the chat message");
+    } finally {
+      request.done();
+    }
+  };
+
+  /** Tell the model what the user is looking at (only when the host accepts it). */
+  const shareModelContext = (text: string) => {
+    if (!support.updateModelContext || lifecycle.disposed) return;
+    const request = lifecycle.request();
+    app
+      .updateModelContext({ content: [{ type: "text", text }] }, { signal: request.signal })
+      .catch((err: unknown) => console.warn("Model context update failed:", err))
+      .finally(request.done);
+  };
+
+  const toggleDisplayMode = async () => {
+    const modes = hostContext.availableDisplayModes ?? [];
+    const target = hostContext.displayMode === "fullscreen" ? "inline" : "fullscreen";
+    if (!modes.includes(target)) return;
+    const request = lifecycle.request();
+    try {
+      const result = await app.requestDisplayMode({ mode: target }, { signal: request.signal });
+      if (lifecycle.disposed) return;
+      hostContext = { ...hostContext, displayMode: result.mode };
+      pendingFocus = "[data-toggle-display-mode]";
+      renderCurrent();
+    } catch (err) {
+      reportFailure(classifyRejection(err), undefined, "Failed to change the display mode");
+    } finally {
+      request.done();
+    }
+  };
+
+  const updateStatePatch = async (patch: Record<string, unknown>) => {
+    try {
+      await callView("patchState", patch);
+    } catch (err) {
+      await recoverFromViewError(err);
+    }
+  };
+
+  /**
+   * Run a Google mutation. Optimistic state is applied first and restored on
+   * any failure (isError result, embedded error, or rejected call); the success
+   * notice is shown only after the server confirmed the action.
+   */
+  const runMutation = async (params: {
+    operation: Operation;
+    args: Record<string, unknown>;
+    optimistic?: (data: DashboardData) => DashboardData;
+    failureLabel: string;
+    successNotice: string;
+    after?: () => Promise<void>;
+  }) => {
+    if (!registry.available(params.operation)) {
+      setUiMessage(`${params.failureLabel}: this action is not available for your account here.`, "error");
+      renderCurrent();
+      return;
+    }
+    const previous = currentData;
+    if (params.optimistic) {
+      currentData = params.optimistic(currentData);
+      renderCurrent();
+    }
+    const request = lifecycle.request();
+    try {
+      await callTool(params.operation, params.args, request.signal);
+    } catch (err) {
+      reportFailure(err, previous, params.failureLabel);
+      return;
+    } finally {
+      request.done();
+    }
+    if (lifecycle.disposed) return;
+    try {
+      await params.after?.();
+    } catch (err) {
+      console.warn("Refresh after a completed action failed:", err);
+    }
+    setUiMessage(params.successNotice, "notice");
+    renderCurrent();
+  };
+
+  const startEditor = (mode: "create" | "edit", seedDate?: string) => {
+    const state = readDashboardState(currentData);
+    if (mode === "edit") {
+      const detail = currentData.event_detail;
+      if (!detail) {
+        setUiMessage("Open an event first to edit it.", "error");
         renderCurrent();
         return;
       }
-
-      const start = defaultStartLocal(seedDate);
-      const end = new Date(start.getTime() + 60 * 60_000);
-      const selectedCalendar = state.selected_calendar_ids[0] || "primary";
       currentData = {
         ...currentData,
         event_editor: {
-          mode: "create",
-          calendar_id: selectedCalendar,
-          summary: "",
-          start_local: toInputLocalString(start),
-          end_local: toInputLocalString(end),
-          timezone: state.timezone,
-          location: "",
-          description: "",
-          attendees_csv: "",
-          create_conference: true,
+          mode: "edit",
+          event_id: detail.event_id,
+          calendar_id: detail.calendar_id,
+          summary: detail.title,
+          start_local: toLocalInputValue(detail.start),
+          end_local: toLocalInputValue(detail.end),
+          timezone: detail.timezone || state.timezone,
+          location: detail.location || "",
+          description: detail.description || "",
+          attendees_csv: detail.attendees.map((item) => item.email).join(", "),
+          create_conference: !!detail.conference_link,
         },
         ui_notice: undefined,
         ui_error: undefined,
       };
       renderCurrent();
+      return;
+    }
+
+    const start = defaultStartLocal(seedDate);
+    const end = new Date(start.getTime() + 60 * 60_000);
+    const selectedCalendar = state.selected_calendar_ids[0] || "primary";
+    currentData = {
+      ...currentData,
+      event_editor: {
+        mode: "create",
+        calendar_id: selectedCalendar,
+        summary: "",
+        start_local: toInputLocalString(start),
+        end_local: toInputLocalString(end),
+        timezone: state.timezone,
+        location: "",
+        description: "",
+        attendees_csv: "",
+        create_conference: true,
+      },
+      ui_notice: undefined,
+      ui_error: undefined,
     };
+    renderCurrent();
+  };
 
-    const saveEventEditor = async (draft: EventEditorDraft) => {
-      const startIso = localInputToIso(draft.start_local);
-      const endIso = localInputToIso(draft.end_local);
-      const attendees = parseAttendeesCsv(draft.attendees_csv || "");
-
-      if (draft.mode === "create") {
-        const createTool = resolveTool(toolRegistry, "createEvent");
-        if (!createTool) {
-          throw new Error("Create event tool is unavailable.");
+  const saveEventEditor = async (draft: EventEditorDraft) => {
+    const startIso = localInputToIso(draft.start_local);
+    const endIso = localInputToIso(draft.end_local);
+    const attendees = parseAttendeesCsv(draft.attendees_csv || "");
+    const create = draft.mode === "create";
+    if (!create && !draft.event_id) {
+      setUiMessage("Failed to save event: missing event id for edit.", "error");
+      renderCurrent();
+      return;
+    }
+    const idempotencyKey = makeIdempotencyKey("create");
+    const args: Record<string, unknown> = create
+      ? {
+          calendar_id: draft.calendar_id,
+          idempotency_key: idempotencyKey,
+          summary: draft.summary,
+          start_datetime: startIso,
+          end_datetime: endIso,
+          timezone: draft.timezone,
+          description: draft.description || undefined,
+          location: draft.location || undefined,
+          attendees: attendees.map((email) => ({ email })),
+          conference_data: draft.create_conference
+            ? { createRequest: { requestId: idempotencyKey, conferenceSolutionKey: { type: "hangoutsMeet" } } }
+            : undefined,
+          send_updates: "all",
+          on_conflict: "suggest_next_slot",
         }
-        const idempotencyKey = makeIdempotencyKey("create");
-        await app.callServerTool({
-          name: createTool,
-          arguments: {
-            calendar_id: draft.calendar_id,
-            idempotency_key: idempotencyKey,
-            summary: draft.summary,
-            start_datetime: startIso,
-            end_datetime: endIso,
-            timezone: draft.timezone,
-            description: draft.description || undefined,
-            location: draft.location || undefined,
-            attendees: attendees.map((email) => ({ email })),
-            conference_data: draft.create_conference
-              ? {
-                  createRequest: {
-                    requestId: idempotencyKey,
-                    conferenceSolutionKey: { type: "hangoutsMeet" },
-                  },
-                }
-              : undefined,
-            send_updates: "all",
-            on_conflict: "suggest_next_slot",
-          },
-        });
-        currentData = { ...currentData, event_editor: undefined };
-        setUiMessage("Event created.", "notice");
-        await refreshWeekly();
-        return;
-      }
-
-      const eventId = draft.event_id;
-      if (!eventId) {
-        throw new Error("Missing event id for edit.");
-      }
-      const updateTool = resolveTool(toolRegistry, "updateEvent");
-      if (!updateTool) {
-        throw new Error("Update event tool is unavailable.");
-      }
-      await app.callServerTool({
-        name: updateTool,
-        arguments: {
-          event_id: eventId,
+      : {
+          event_id: draft.event_id,
           calendar_id: draft.calendar_id,
           summary: draft.summary,
           start_datetime: startIso,
@@ -638,653 +1044,434 @@ async function initMcpMode() {
           attendees: attendees.map((email) => ({ email })),
           send_updates: "all",
           on_conflict: "suggest_next_slot",
-        },
-      });
-      currentData = { ...currentData, event_editor: undefined };
-      setUiMessage("Event updated.", "notice");
-      await refreshWeekly();
-    };
+        };
+    // Keep the typed draft: a failure re-renders the open editor with it.
+    currentData = { ...currentData, event_editor: draft };
+    await runMutation({
+      operation: create ? "createEvent" : "updateEvent",
+      args,
+      failureLabel: "Failed to save event",
+      successNotice: create ? "Event created." : "Event updated.",
+      after: async () => {
+        currentData = { ...currentData, event_editor: undefined };
+        await refresh("weekly");
+      },
+    });
+  };
 
-    const refreshEmailDetailIfOpen = async (messageId: string) => {
-      if (currentData.email_detail?.message_id !== messageId) {
-        return;
-      }
-      const result = await callView("getEmailDetail", {
-        message_id: messageId,
-      });
+  const refreshEmailDetailIfOpen = async (messageId: string) => {
+    if (currentData.email_detail?.message_id !== messageId) return;
+    const ticket = lifecycle.begin("detail");
+    try {
+      const result = await callView("getEmailDetail", { message_id: messageId }, ticket.signal);
+      if (!ticket.current) return;
       const parsed = extractDashboardData(result);
       if (parsed?.email_detail) {
-        currentData = syncInboxMessageFromEmailDetail({
-          ...currentData,
-          email_detail: parsed.email_detail,
-        }, parsed.email_detail);
-      }
-    };
-
-    const runEmailMutation = async (params: {
-      toolOperation: ToolOperation;
-      messageId: string;
-      argumentsBuilder: () => Record<string, unknown>;
-      successNotice: string;
-      patch?: {
-        addLabels?: string[];
-        removeLabels?: string[];
-        isUnread?: boolean;
-      };
-    }) => {
-      const patch = params.patch || {};
-      currentData = optimisticPatchEmail(currentData, params.messageId, patch);
-      renderCurrent();
-
-      await callToolForOperation(params.toolOperation, params.argumentsBuilder());
-      await refreshFull();
-      try {
-        await refreshEmailDetailIfOpen(params.messageId);
-      } catch {
-        // Keep optimistic state when immediate post-mutation detail fetch is stale/unavailable.
-      }
-      currentData = optimisticPatchEmailDetail(currentData, params.messageId, patch);
-      setUiMessage(params.successNotice, "notice");
-      renderCurrent();
-    };
-
-    setActionHandler((action: UiAction) => {
-      if (action.type === "close_event_detail") {
-        currentData = { ...currentData, event_detail: undefined };
-        renderCurrent();
-        return;
-      }
-
-      if (action.type === "close_email_detail") {
-        currentData = { ...currentData, email_detail: undefined };
-        renderCurrent();
-        return;
-      }
-
-      if (action.type === "open_attachment" || action.type === "open_link") {
-        const kind = action.type === "open_link" ? action.kind : "attachment";
-        const noun = kind === "attachment" ? "attachment" : "link";
-        // Re-validate at the adapter boundary; only the host navigates.
-        const url = safeExternalUrl(action.url, kind);
-        if (!url) {
-          setUiMessage(`Blocked an unsupported ${noun} URL.`, "error");
-          renderCurrent();
-          return;
-        }
-        void withUiPending(async () => {
-          const result = await app.openLink({ url });
-          if (result?.isError) {
-            throw new Error(`Host could not open ${noun}.`);
-          }
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to open ${noun}: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "download_attachment") {
-        const url = safeExternalUrl(action.url, "attachment");
-        if (!url) {
-          setUiMessage("Blocked an unsupported attachment URL.", "error");
-          renderCurrent();
-          return;
-        }
-        void withUiPending(async () => {
-          const resourceLink: {
-            type: "resource_link";
-            name: string;
-            uri: string;
-            mimeType?: string;
-          } = {
-            type: "resource_link",
-            name: action.name || "attachment",
-            uri: url,
-          };
-          if (action.mimeType) {
-            resourceLink.mimeType = action.mimeType;
-          }
-          const result = await app.downloadFile({
-            contents: [resourceLink],
-          });
-          if (result?.isError) {
-            const openResult = await app.openLink({ url });
-            if (openResult?.isError) {
-              throw new Error("Host could not download or open attachment.");
-            }
-            setUiMessage(`Host denied direct download. Opened link for ${action.name}.`, "notice");
-            renderCurrent();
-            return;
-          }
-          setUiMessage(`Download started: ${action.name}`, "notice");
-          renderCurrent();
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to download attachment: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_download_attachment") {
-        void withUiPending(async () => {
-          const payload = await callView("getEmailAttachment", {
-            message_id: action.messageId,
-            attachment_id: action.attachmentId,
-          });
-          const data = extractObjectPayload(payload);
-          if (!data || typeof data.blob_base64 !== "string") {
-            throw new Error("Attachment content is unavailable.");
-          }
-          const fileName =
-            action.filename ||
-            (typeof data.filename === "string" && data.filename) ||
-            "attachment";
-          const mimeType =
-            (typeof data.mime_type === "string" && data.mime_type) || action.mimeType || "application/octet-stream";
-          const safeName = ensureDownloadFilename(fileName, mimeType);
-          const fileMetadata = {
-            name: safeName,
-            title: safeName,
-            filename: safeName,
-            fileName: safeName,
-            suggestedFilename: safeName,
-            suggestedName: safeName,
-          };
-          let result = await app.downloadFile({
-            contents: [
-              {
-                type: "resource",
-                resource: {
-                  uri: `attachment://${safeName}`,
-                  mimeType,
-                  blob: data.blob_base64,
-                  _meta: fileMetadata,
-                },
-                _meta: fileMetadata,
-              },
-            ],
-          });
-          if (result?.isError) {
-            result = await app.downloadFile({
-              contents: [
-                {
-                  type: "resource_link",
-                  name: safeName,
-                  title: safeName,
-                  uri: `data:${mimeType};base64,${data.blob_base64}`,
-                  mimeType,
-                  _meta: fileMetadata,
-                },
-              ],
-            });
-          }
-          if (result?.isError) {
-            throw new Error("Host could not download email attachment.");
-          }
-          setUiMessage(`Download started: ${fileName}`, "notice");
-          renderCurrent();
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to download email attachment: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "open_event_editor") {
-        startEditor(action.mode, action.seed_date);
-        return;
-      }
-
-      if (action.type === "close_event_editor") {
-        currentData = { ...currentData, event_editor: undefined };
-        renderCurrent();
-        return;
-      }
-
-      if (action.type === "save_event_editor") {
-        if (eventSaveInFlight) {
-          return;
-        }
-        eventSaveInFlight = true;
-        void withUiPending(async () => {
-          await saveEventEditor(action.draft);
-        })
-          .catch((err: unknown) => {
-            setUiMessage(`Failed to save event: ${String(err)}`, "error");
-            renderCurrent();
-          })
-          .finally(() => {
-            eventSaveInFlight = false;
-          });
-        return;
-      }
-
-      if (action.type === "toggle_weekend") {
-        const previousData = currentData;
-        currentData = patchDashboardState(currentData, {
-          include_weekend: action.include_weekend,
-        });
-        renderCurrent();
-        void withUiPending(async () => {
-          await updateStatePatch({ include_weekend: action.include_weekend });
-          await refreshWeekly();
-        }).catch((err: unknown) => {
-          reportViewActionFailure(err, previousData, "Failed to update weekend preference");
-        });
-        return;
-      }
-
-      if (action.type === "set_selected_calendars") {
-        const previousData = currentData;
-        currentData = patchDashboardState(currentData, {
-          selected_calendars: action.selected_calendar_ids,
-        });
-        renderCurrent();
-        void withUiPending(async () => {
-          await updateStatePatch({ selected_calendars: action.selected_calendar_ids });
-          await refreshFull();
-        }).catch((err: unknown) => {
-          reportViewActionFailure(err, previousData, "Failed to update selected calendars");
-        });
-        return;
-      }
-
-      if (action.type === "select_event") {
-        const toolName = resolveTool(toolRegistry, "getEventDetail");
-        if (!toolName) {
-          setUiMessage("Event detail tool is unavailable.", "error");
-          renderCurrent();
-          return;
-        }
-        void withUiPending(async () => {
-          const result = await callView("getEventDetail", {
-            calendar_id: action.calendarId,
-            event_id: action.eventId,
-          });
-          const parsed = extractDashboardData(result);
-          if (parsed?.event_detail) {
-            currentData = {
-              ...currentData,
-              event_detail: parsed.event_detail,
-              email_detail: undefined,
-            };
-            renderCurrent();
-          }
-        }).catch((err) => {
-          setUiMessage(`Failed to load event details: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "select_email") {
-        void withUiPending(async () => {
-          const result = await callView("getEmailDetail", {
-            message_id: action.messageId,
-          });
-          const parsed = extractDashboardData(result);
-          if (parsed?.email_detail) {
-            currentData = syncInboxMessageFromEmailDetail({
-              ...currentData,
-              email_detail: parsed.email_detail,
-              event_detail: undefined,
-            }, parsed.email_detail);
-            renderCurrent();
-          }
-        }).catch((err) => {
-          setUiMessage(`Failed to load email details: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_mark_read") {
-        void withUiPending(async () => {
-          await runEmailMutation({
-            toolOperation: "markEmailRead",
-            messageId: action.messageId,
-            argumentsBuilder: () => ({ message_id: action.messageId }),
-            successNotice: "Email marked as read.",
-            patch: { removeLabels: ["UNREAD"], isUnread: false },
-          });
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to mark as read: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_mark_unread") {
-        void withUiPending(async () => {
-          await runEmailMutation({
-            toolOperation: "markEmailUnread",
-            messageId: action.messageId,
-            argumentsBuilder: () => ({ message_id: action.messageId }),
-            successNotice: "Email marked as unread.",
-            patch: { addLabels: ["UNREAD"], isUnread: true },
-          });
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to mark as unread: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_archive") {
-        void withUiPending(async () => {
-          await runEmailMutation({
-            toolOperation: "moveEmail",
-            messageId: action.messageId,
-            argumentsBuilder: () => ({
-              message_id: action.messageId,
-              remove_label_ids: ["INBOX"],
-            }),
-            successNotice: "Email archived.",
-            patch: { removeLabels: ["INBOX"] },
-          });
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to archive email: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_trash") {
-        void withUiPending(async () => {
-          await runEmailMutation({
-            toolOperation: "deleteEmail",
-            messageId: action.messageId,
-            argumentsBuilder: () => ({
-              message_id: action.messageId,
-              permanent: false,
-            }),
-            successNotice: "Email moved to trash.",
-            patch: { addLabels: ["TRASH"], removeLabels: ["INBOX"] },
-          });
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to move email to trash: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_untrash") {
-        void withUiPending(async () => {
-          await runEmailMutation({
-            toolOperation: "untrashEmail",
-            messageId: action.messageId,
-            argumentsBuilder: () => ({ message_id: action.messageId }),
-            successNotice: "Email restored from trash.",
-            patch: { removeLabels: ["TRASH"], addLabels: ["INBOX"] },
-          });
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to restore email: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_mark_spam") {
-        void withUiPending(async () => {
-          await runEmailMutation({
-            toolOperation: "markEmailSpam",
-            messageId: action.messageId,
-            argumentsBuilder: () => ({ message_id: action.messageId }),
-            successNotice: "Email marked as spam.",
-            patch: { addLabels: ["SPAM"], removeLabels: ["INBOX"] },
-          });
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to mark email as spam: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "email_mark_not_spam") {
-        void withUiPending(async () => {
-          await runEmailMutation({
-            toolOperation: "markEmailNotSpam",
-            messageId: action.messageId,
-            argumentsBuilder: () => ({
-              message_id: action.messageId,
-              add_to_inbox: true,
-            }),
-            successNotice: "Email marked as not spam.",
-            patch: { removeLabels: ["SPAM"], addLabels: ["INBOX"] },
-          });
-        }).catch((err: unknown) => {
-          setUiMessage(`Failed to mark email as not spam: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "calendar_rsvp") {
-        const toolName = resolveTool(toolRegistry, "respondToEvent");
-        if (!toolName) {
-          setUiMessage("RSVP tool is unavailable.", "error");
-          renderCurrent();
-          return;
-        }
-        currentData = optimisticSetRsvp(
-          currentData,
-          action.calendarId,
-          action.eventId,
-          action.responseStatus
+        currentData = syncInboxMessageFromEmailDetail(
+          { ...currentData, email_detail: parsed.email_detail },
+          parsed.email_detail,
         );
-        renderCurrent();
-        void withUiPending(async () => {
-          await app.callServerTool({
-            name: toolName,
-            arguments: {
-              calendar_id: action.calendarId,
-              event_id: action.eventId,
-              response_status: action.responseStatus,
-              send_updates: "all",
-            },
-          });
-          await refreshWeekly();
-        }).catch((err) => {
-          setUiMessage(`Failed to update RSVP: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
       }
+    } finally {
+      ticket.done();
+    }
+  };
 
-      if (action.type === "calendar_reschedule") {
-        const updateTool = resolveTool(toolRegistry, "updateEvent");
-        if (!updateTool) {
-          setUiMessage("Reschedule tool is unavailable.", "error");
-          renderCurrent();
-          return;
+  const runEmailMutation = (params: {
+    operation: Operation;
+    messageId: string;
+    args: Record<string, unknown>;
+    successNotice: string;
+    failureLabel: string;
+    patch: { addLabels?: string[]; removeLabels?: string[]; isUnread?: boolean };
+  }) =>
+    runMutation({
+      operation: params.operation,
+      args: params.args,
+      optimistic: (data) => optimisticPatchEmail(data, params.messageId, params.patch),
+      failureLabel: params.failureLabel,
+      successNotice: params.successNotice,
+      after: async () => {
+        await refresh("full");
+        try {
+          await refreshEmailDetailIfOpen(params.messageId);
+        } catch {
+          // Keep optimistic state when the immediate post-mutation detail fetch is stale/unavailable.
         }
-        const nextStart = shiftIsoMinutes(action.start, action.shiftMinutes);
-        const nextEnd = shiftIsoMinutes(action.end, action.shiftMinutes);
-        currentData = optimisticRescheduleEvent(
-          currentData,
-          action.calendarId,
-          action.eventId,
-          nextStart,
-          nextEnd
-        );
-        renderCurrent();
-        void withUiPending(async () => {
-          await app.callServerTool({
-            name: updateTool,
-            arguments: {
-              event_id: action.eventId,
-              calendar_id: action.calendarId,
-              start_datetime: nextStart,
-              end_datetime: nextEnd,
-              timezone: action.timezone,
-              send_updates: "all",
-              on_conflict: "suggest_next_slot",
-            },
-          });
-          await refreshWeekly();
-        }).catch((err) => {
-          setUiMessage(`Failed to reschedule event: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "calendar_cancel") {
-        const deleteTool = resolveTool(toolRegistry, "deleteEvent");
-        if (!deleteTool) {
-          setUiMessage("Cancel/delete tool is unavailable.", "error");
-          renderCurrent();
-          return;
-        }
-        currentData = optimisticCancelEvent(currentData, action.calendarId, action.eventId);
-        renderCurrent();
-        void withUiPending(async () => {
-          await app.callServerTool({
-            name: deleteTool,
-            arguments: {
-              calendar_id: action.calendarId,
-              event_id: action.eventId,
-              force: true,
-              send_updates: "all",
-            },
-          });
-          await refreshWeekly();
-        }).catch((err) => {
-          setUiMessage(`Failed to cancel event: ${String(err)}`, "error");
-          renderCurrent();
-        });
-        return;
-      }
-
-      if (action.type === "week_nav") {
-        const operation: ViewOperation =
-          action.direction === "prev" ? "prevRange" : action.direction === "next" ? "nextRange" : "today";
-        if (!resolveTool(toolRegistry, operation)) {
-          setUiMessage("Navigation tool is unavailable.", "error");
-          renderCurrent();
-          return;
-        }
-        const previousData = currentData;
-        void withUiPending(async () => {
-          let result: unknown;
-          try {
-            result = await callView(operation);
-          } catch (err) {
-            await recoverFromViewError(err);
-          }
-          const nextState = extractObjectPayload(result)?.state;
-          if (nextState && typeof nextState === "object") {
-            currentData = replaceDashboardState(currentData, {
-              ...(currentData.dashboard?.state || {}),
-              ...(nextState as Record<string, unknown>),
-            });
-            renderCurrent();
-          }
-          await refreshWeekly();
-        }).catch((err) => {
-          reportViewActionFailure(err, previousData, "Failed to navigate week");
-        });
-        return;
-      }
-
-      void refreshFull().catch((err) => {
-        setUiMessage(`Failed to refresh dashboard: ${String(err)}`, "error");
-        renderCurrent();
-      });
+        currentData = optimisticPatchEmailDetail(currentData, params.messageId, params.patch);
+      },
     });
 
-    app.ontoolinput = (params) => {
-      // Reopening an existing view: the model passed its handle as input.
-      view.adoptInputHandle(params.arguments?.view_handle);
-    };
-
-    app.ontoolresult = (result) => {
-      // The invocation that launched this view carries its server-issued handle.
-      view.adoptResult(result);
-      const data = extractDashboardData(result);
-      if (data && (data.weekly_calendar || data.dashboard || data.event_detail || data.email_detail)) {
-        hasRenderedFromToolResult = true;
-        currentData = mergeDashboardData(currentData, data);
+  const openDetail = async (
+    operation: "getEventDetail" | "getEmailDetail",
+    args: Record<string, unknown>,
+    focusSelector: string,
+    failureLabel: string,
+  ) => {
+    const ticket = lifecycle.begin("detail");
+    try {
+      const result = await callView(operation, args, ticket.signal);
+      if (!ticket.current) return; // A newer selection won.
+      const parsed = extractDashboardData(result);
+      if (operation === "getEventDetail" && parsed?.event_detail) {
+        currentData = { ...currentData, event_detail: parsed.event_detail, email_detail: undefined };
+        returnFocus = focusSelector;
+        pendingFocus = ".event-panel [data-close-event]";
         renderCurrent();
+        shareModelContext(
+          `The user opened calendar event "${parsed.event_detail.title}" (${parsed.event_detail.start} to ${parsed.event_detail.end}; event_id ${parsed.event_detail.event_id}, calendar_id ${parsed.event_detail.calendar_id}) in the Workspace dashboard.`,
+        );
+      } else if (operation === "getEmailDetail" && parsed?.email_detail) {
+        currentData = syncInboxMessageFromEmailDetail(
+          { ...currentData, email_detail: parsed.email_detail, event_detail: undefined },
+          parsed.email_detail,
+        );
+        returnFocus = focusSelector;
+        pendingFocus = ".email-panel [data-close-email]";
+        renderCurrent();
+        shareModelContext(
+          `The user opened the email "${parsed.email_detail.subject}" from ${parsed.email_detail.from_value} (message_id ${parsed.email_detail.message_id}) in the Workspace dashboard.`,
+        );
       }
-    };
+    } catch (err) {
+      if (ticket.current) reportFailure(err, undefined, failureLabel);
+    } finally {
+      ticket.done();
+    }
+  };
 
-    const applyHostContext = (ctx: McpUiHostContext | undefined) => {
-      if (!ctx) return;
-      if (ctx.theme) applyDocumentTheme(ctx.theme);
-      if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
-      if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
-      if (ctx.safeAreaInsets) {
-        const { top, right, bottom, left } = ctx.safeAreaInsets;
-        document.body.style.padding = `${top}px ${right}px ${bottom}px ${left}px`;
-      }
-    };
-    app.onhostcontextchanged = applyHostContext;
+  const closePanel = (patch: Partial<DashboardData>) => {
+    currentData = { ...currentData, ...patch };
+    pendingFocus = returnFocus;
+    returnFocus = undefined;
+    renderCurrent();
+  };
 
-    app.onteardown = async () => ({});
+  const emailMutations: Partial<Record<UiAction["type"], {
+    operation: Operation;
+    args: (messageId: string) => Record<string, unknown>;
+    successNotice: string;
+    failureLabel: string;
+    patch: { addLabels?: string[]; removeLabels?: string[]; isUnread?: boolean };
+  }>> = {
+    email_mark_read: {
+      operation: "markEmailRead",
+      args: (id) => ({ message_id: id }),
+      successNotice: "Email marked as read.",
+      failureLabel: "Failed to mark as read",
+      patch: { removeLabels: ["UNREAD"], isUnread: false },
+    },
+    email_mark_unread: {
+      operation: "markEmailUnread",
+      args: (id) => ({ message_id: id }),
+      successNotice: "Email marked as unread.",
+      failureLabel: "Failed to mark as unread",
+      patch: { addLabels: ["UNREAD"], isUnread: true },
+    },
+    email_archive: {
+      operation: "moveEmail",
+      args: (id) => ({ message_id: id, remove_label_ids: ["INBOX"] }),
+      successNotice: "Email archived.",
+      failureLabel: "Failed to archive email",
+      patch: { removeLabels: ["INBOX"] },
+    },
+    email_trash: {
+      operation: "deleteEmail",
+      args: (id) => ({ message_id: id, permanent: false }),
+      successNotice: "Email moved to trash.",
+      failureLabel: "Failed to move email to trash",
+      patch: { addLabels: ["TRASH"], removeLabels: ["INBOX"] },
+    },
+    email_untrash: {
+      operation: "untrashEmail",
+      args: (id) => ({ message_id: id }),
+      successNotice: "Email restored from trash.",
+      failureLabel: "Failed to restore email",
+      patch: { removeLabels: ["TRASH"], addLabels: ["INBOX"] },
+    },
+    email_mark_spam: {
+      operation: "markEmailSpam",
+      args: (id) => ({ message_id: id }),
+      successNotice: "Email marked as spam.",
+      failureLabel: "Failed to mark email as spam",
+      patch: { addLabels: ["SPAM"], removeLabels: ["INBOX"] },
+    },
+    email_mark_not_spam: {
+      operation: "markEmailNotSpam",
+      args: (id) => ({ message_id: id, add_to_inbox: true }),
+      successNotice: "Email marked as not spam.",
+      failureLabel: "Failed to mark email as not spam",
+      patch: { removeLabels: ["SPAM"], addLabels: ["INBOX"] },
+    },
+  };
 
-    await app.connect();
-    applyHostContext(app.getHostContext());
-    toolRegistry = await discoverToolRegistry(app);
-    currentData.tool_capabilities = computeToolCapabilities(toolRegistry);
-    renderOptions.tool_capabilities = currentData.tool_capabilities;
+  setActionHandler((action: UiAction) => {
+    if (lifecycle.disposed) return;
 
-    window.setTimeout(async () => {
-      if (hasRenderedFromToolResult) {
+    if (action.type === "close_event_detail") {
+      closePanel({ event_detail: undefined });
+      return;
+    }
+    if (action.type === "close_email_detail") {
+      closePanel({ email_detail: undefined });
+      return;
+    }
+    if (action.type === "close_event_editor") {
+      closePanel({ event_editor: undefined });
+      return;
+    }
+
+    if (action.type === "open_attachment") {
+      void withUiPending(() => openExternal(action.url, "attachment"));
+      return;
+    }
+    if (action.type === "open_link") {
+      void withUiPending(() => openExternal(action.url, action.kind));
+      return;
+    }
+    if (action.type === "download_attachment") {
+      void withUiPending(() => downloadLinkedAttachment(action.url, action.name, action.mimeType));
+      return;
+    }
+    if (action.type === "email_download_attachment") {
+      void withUiPending(() => downloadEmailAttachment(action));
+      return;
+    }
+
+    if (action.type === "chat") {
+      void sendChatMessage(action.text);
+      return;
+    }
+    if (action.type === "toggle_display_mode") {
+      void toggleDisplayMode();
+      return;
+    }
+
+    if (action.type === "open_event_editor") {
+      startEditor(action.mode, action.seed_date);
+      return;
+    }
+
+    if (action.type === "save_event_editor") {
+      if (eventSaveInFlight) return;
+      eventSaveInFlight = true;
+      void withUiPending(() => saveEventEditor(action.draft)).finally(() => {
+        eventSaveInFlight = false;
+      });
+      return;
+    }
+
+    if (action.type === "toggle_weekend") {
+      const previousData = currentData;
+      currentData = patchDashboardState(currentData, { include_weekend: action.include_weekend });
+      renderCurrent();
+      void withUiPending(async () => {
+        await updateStatePatch({ include_weekend: action.include_weekend });
+        await refresh("weekly");
+      }).catch((err: unknown) => reportFailure(err, previousData, "Failed to update weekend preference"));
+      return;
+    }
+
+    if (action.type === "set_selected_calendars") {
+      const previousData = currentData;
+      currentData = patchDashboardState(currentData, { selected_calendars: action.selected_calendar_ids });
+      renderCurrent();
+      void withUiPending(async () => {
+        await updateStatePatch({ selected_calendars: action.selected_calendar_ids });
+        await refresh("full");
+      }).catch((err: unknown) => reportFailure(err, previousData, "Failed to update selected calendars"));
+      return;
+    }
+
+    if (action.type === "select_event") {
+      const selector = `[data-open-event][data-calendar-id="${CSS.escape(action.calendarId)}"][data-event-id="${CSS.escape(action.eventId)}"]`;
+      void withUiPending(() =>
+        openDetail("getEventDetail", { calendar_id: action.calendarId, event_id: action.eventId }, selector, "Failed to load event details"),
+      );
+      return;
+    }
+
+    if (action.type === "select_email") {
+      const selector = `[data-open-email][data-message-id="${CSS.escape(action.messageId)}"]`;
+      void withUiPending(() =>
+        openDetail("getEmailDetail", { message_id: action.messageId }, selector, "Failed to load email details"),
+      );
+      return;
+    }
+
+    const emailMutation = emailMutations[action.type];
+    if (emailMutation && "messageId" in action) {
+      const messageId = action.messageId;
+      void withUiPending(() =>
+        runEmailMutation({
+          operation: emailMutation.operation,
+          messageId,
+          args: emailMutation.args(messageId),
+          successNotice: emailMutation.successNotice,
+          failureLabel: emailMutation.failureLabel,
+          patch: emailMutation.patch,
+        }),
+      );
+      return;
+    }
+
+    if (action.type === "calendar_rsvp") {
+      void withUiPending(() =>
+        runMutation({
+          operation: "respondToEvent",
+          args: {
+            calendar_id: action.calendarId,
+            event_id: action.eventId,
+            response_status: action.responseStatus,
+            send_updates: "all",
+          },
+          optimistic: (data) => optimisticSetRsvp(data, action.calendarId, action.eventId, action.responseStatus),
+          failureLabel: "Failed to update RSVP",
+          successNotice: "Response sent.",
+          after: () => refresh("weekly").then(() => undefined),
+        }),
+      );
+      return;
+    }
+
+    if (action.type === "calendar_reschedule") {
+      const nextStart = shiftIsoMinutes(action.start, action.shiftMinutes);
+      const nextEnd = shiftIsoMinutes(action.end, action.shiftMinutes);
+      void withUiPending(() =>
+        runMutation({
+          operation: "updateEvent",
+          args: {
+            event_id: action.eventId,
+            calendar_id: action.calendarId,
+            start_datetime: nextStart,
+            end_datetime: nextEnd,
+            timezone: action.timezone,
+            send_updates: "all",
+            on_conflict: "suggest_next_slot",
+          },
+          optimistic: (data) => optimisticRescheduleEvent(data, action.calendarId, action.eventId, nextStart, nextEnd),
+          failureLabel: "Failed to reschedule event",
+          successNotice: "Event rescheduled.",
+          after: () => refresh("weekly").then(() => undefined),
+        }),
+      );
+      return;
+    }
+
+    if (action.type === "calendar_cancel") {
+      void withUiPending(() =>
+        runMutation({
+          operation: "deleteEvent",
+          args: { calendar_id: action.calendarId, event_id: action.eventId, force: true, send_updates: "all" },
+          optimistic: (data) => optimisticCancelEvent(data, action.calendarId, action.eventId),
+          failureLabel: "Failed to cancel event",
+          successNotice: "Event cancelled.",
+          after: () => refresh("weekly").then(() => undefined),
+        }),
+      );
+      return;
+    }
+
+    if (action.type === "week_nav") {
+      const operation: ViewOperation =
+        action.direction === "prev" ? "prevRange" : action.direction === "next" ? "nextRange" : "today";
+      if (!registry.available(operation)) {
+        setUiMessage("Navigation is not available here.", "error");
+        renderCurrent();
         return;
       }
-      try {
-        await Promise.all([refreshFull(), loadCalendars()]);
-        renderCurrent();
-      } catch (err) {
-        setUiMessage(`Initial load failed: ${String(err)}`, "error");
-        renderCurrent();
-      }
-    }, 300);
+      // One state write at a time: a second click would carry the same
+      // expected_revision and could only conflict.
+      if (navigationInFlight) return;
+      navigationInFlight = true;
+      const previousData = currentData;
+      void withUiPending(async () => {
+        let result: unknown;
+        try {
+          result = await callView(operation);
+        } catch (err) {
+          await recoverFromViewError(err);
+        }
+        if (lifecycle.disposed) return;
+        const nextState = extractObjectPayload(result)?.state;
+        if (nextState && typeof nextState === "object") {
+          currentData = replaceDashboardState(currentData, {
+            ...(currentData.dashboard?.state || {}),
+            ...(nextState as Record<string, unknown>),
+          });
+          renderCurrent();
+        }
+        await refresh("weekly");
+      })
+        .catch((err: unknown) => reportFailure(err, previousData, "Failed to navigate week"))
+        .finally(() => {
+          navigationInFlight = false;
+        });
+      return;
+    }
+
+    void refresh("full").catch((err: unknown) => reportFailure(err, undefined, "Failed to refresh dashboard"));
+  });
+
+  // --- Connect ---------------------------------------------------------------------
+
+  try {
+    await app.connect();
   } catch (err) {
-    console.warn("MCP ext-apps not available:", err);
+    console.warn("MCP Apps connection failed:", err);
+    teardown();
     renderStatusMessage("MCP app connection failed.");
+    return;
+  }
+  if (lifecycle.disposed) return;
+
+  support = readHostSupport(app.getHostCapabilities());
+  applyHostContext(app.getHostContext());
+  if (!support.serverTools) {
+    // Render only what the host pushes; no operation can be offered.
+    if (!hasData && !invocation.cancelled) renderStatus("Waiting for dashboard data from the host.");
+    return;
+  }
+
+  await discoverTools(app, registry, lifecycle);
+  if (lifecycle.disposed) return;
+  if (hasData) renderCurrent(); // Capabilities may have changed with discovery.
+
+  if (!invocation.inputSeen && !invocation.resultSeen && !invocation.cancelled) {
+    // The host announced no invocation at all (a conforming host sends
+    // ui/notifications/tool-input right after initialization). Load a view of
+    // our own after a grace period, unless the host catches up meanwhile.
+    cancelPendingLoad = lifecycle.schedule(() => {
+      if (!invocation.inputSeen && !invocation.resultSeen && !invocation.cancelled) {
+        void loadWithoutHostResult("no-invocation");
+      }
+    }, NO_INVOCATION_GRACE_MS);
   }
 }
 
-async function fetchAndRenderDashboardData(
-  callView: ViewCaller,
-  current: DashboardData,
-  mode: "full" | "weekly",
-  registry: ToolRegistry
-): Promise<DashboardData> {
-  const merged: DashboardData = {
-    ...current,
-    ui_error: undefined,
-    ui_notice: undefined,
-  };
-  const weeklyTool = resolveTool(registry, "getWeeklyCalendar");
-  const dashboardTool = resolveTool(registry, "getDashboard");
-  if (mode === "weekly") {
-    if (weeklyTool) {
-      const weeklyResult = await callView("getWeeklyCalendar");
-      const parsed = extractDashboardData(weeklyResult);
-      if (parsed?.weekly_calendar) {
-        merged.weekly_calendar = parsed.weekly_calendar;
-      }
-      return merged;
-    }
-    if (!dashboardTool) {
-      throw new Error("No weekly/full dashboard tool available.");
+/** Best-effort, bounded `tools/list` walk; partial catalogs are kept. */
+async function discoverTools(app: App, registry: OperationRegistry, lifecycle: ViewLifecycle) {
+  const names = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_DISCOVERY_PAGES && !lifecycle.disposed; page += 1) {
+    const request = lifecycle.request();
+    try {
+      const result = await app.request(
+        { method: "tools/list", params: cursor ? { cursor } : {} },
+        { signal: request.signal },
+      );
+      for (const tool of result.tools) names.add(tool.name);
+      if (!result.nextCursor) break;
+      cursor = result.nextCursor;
+    } catch (err) {
+      // Discovery is optional: hosts may only forward tools/call.
+      console.warn("Tool discovery unavailable or partial; using known read tool names:", err);
+      break;
+    } finally {
+      request.done();
     }
   }
-
-  if (!dashboardTool) {
-    throw new Error("Dashboard tool is unavailable.");
-  }
-
-  const dashboardResult = await callView("getDashboard");
-  const parsed = extractDashboardData(dashboardResult);
-  if (parsed) {
-    if (parsed.dashboard) merged.dashboard = parsed.dashboard;
-    if (parsed.weekly_calendar) merged.weekly_calendar = parsed.weekly_calendar;
-  }
-  return merged;
+  if (names.size) registry.setDiscovered(names);
 }
 
 function mergeDashboardData(base: DashboardData, incoming: DashboardData): DashboardData {
@@ -1298,6 +1485,7 @@ function mergeDashboardData(base: DashboardData, incoming: DashboardData): Dashb
     ui_notice: incoming.ui_notice ?? base.ui_notice,
     ui_error: incoming.ui_error ?? base.ui_error,
     tool_capabilities: incoming.tool_capabilities ?? base.tool_capabilities,
+    ui_fallback_link: incoming.ui_fallback_link ?? base.ui_fallback_link,
     generated_at: incoming.generated_at ?? base.generated_at,
   };
 }
@@ -1721,60 +1909,6 @@ function normalizeDashboardData(raw: unknown): DashboardData | null {
   return null;
 }
 
-async function discoverToolRegistry(app: Pick<App, "request">): Promise<ToolRegistry> {
-  const names = new Set<string>();
-  let cursor: string | undefined;
-
-  try {
-    for (let page = 0; page < 5; page += 1) {
-      const result = await app.request(
-        { method: "tools/list", params: cursor ? { cursor } : {} },
-        ListToolsResultSchema,
-      );
-      for (const tool of result.tools) {
-        names.add(tool.name);
-      }
-      if (!result.nextCursor) break;
-      cursor = result.nextCursor;
-    }
-  } catch (err) {
-    // Discovery is optional: AppBridge hosts may only forward tools/call.
-    console.warn("Tool discovery unavailable; using known Workspace tool names:", err);
-  }
-
-  const registry: ToolRegistry = {};
-  for (const [operation, candidates] of Object.entries(TOOL_CANDIDATES) as Array<
-    [ToolOperation, string[]]
-  >) {
-    registry[operation] = candidates.find((candidate) => names.has(candidate)) ?? candidates[0];
-  }
-  return registry;
-}
-
-function resolveTool(registry: ToolRegistry, operation: ToolOperation): string | undefined {
-  return registry[operation] ?? TOOL_CANDIDATES[operation]?.[0];
-}
-
-function computeToolCapabilities(registry: ToolRegistry): UiToolCapabilities {
-  const has = (operation: ToolOperation) => !!resolveTool(registry, operation);
-  return {
-    can_create_event: has("createEvent"),
-    can_edit_event: has("updateEvent"),
-    can_delete_event: has("deleteEvent"),
-    can_rsvp: has("respondToEvent"),
-    can_reschedule_event: has("updateEvent"),
-    can_toggle_weekend: has("patchState"),
-    can_select_calendars: has("patchState") && has("listCalendars"),
-    can_mark_email_read: has("markEmailRead"),
-    can_mark_email_unread: has("markEmailUnread"),
-    can_archive_email: has("moveEmail"),
-    can_trash_email: has("deleteEmail"),
-    can_untrash_email: has("untrashEmail"),
-    can_mark_email_spam: has("markEmailSpam"),
-    can_mark_email_not_spam: has("markEmailNotSpam"),
-  };
-}
-
 function extractObjectPayload(result: unknown): Record<string, unknown> | null {
   if (!result || typeof result !== "object") {
     return null;
@@ -1923,5 +2057,37 @@ function parseAttendeesCsv(value: string): string[] {
     .filter(Boolean);
 }
 
+function makeIdempotencyKey(prefix: string): string {
+  const random = new Uint8Array(12);
+  crypto.getRandomValues(random);
+  const suffix = Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${prefix}-${Date.now()}-${suffix}`;
+}
 
+function shiftIsoMinutes(iso: string, minutes: number): string {
+  const dt = new Date(iso);
+  return new Date(dt.getTime() + minutes * 60_000).toISOString();
+}
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Honor the host's container sizing. Fixed dimensions: fill exactly that box and
+ * scroll inside it. Flexible (max*) or unbounded: size to content; the SDK's
+ * auto-resize reports it through ui/notifications/size-changed.
+ */
+function applyContainerDimensions(dimensions: NonNullable<McpUiHostContext["containerDimensions"]>) {
+  const html = document.documentElement;
+  const fixedHeight = "height" in dimensions && typeof dimensions.height === "number" ? dimensions.height : undefined;
+  const fixedWidth = "width" in dimensions && typeof dimensions.width === "number" ? dimensions.width : undefined;
+  const maxHeight = "maxHeight" in dimensions && typeof dimensions.maxHeight === "number" ? dimensions.maxHeight : undefined;
+  const maxWidth = "maxWidth" in dimensions && typeof dimensions.maxWidth === "number" ? dimensions.maxWidth : undefined;
+  html.dataset.sizing = fixedHeight !== undefined ? "fixed" : maxHeight !== undefined || maxWidth !== undefined ? "flexible" : "unbounded";
+  html.style.height = fixedHeight !== undefined ? `${fixedHeight}px` : "";
+  html.style.width = fixedWidth !== undefined ? `${fixedWidth}px` : "";
+  html.style.maxWidth = maxWidth !== undefined ? `${maxWidth}px` : "";
+}

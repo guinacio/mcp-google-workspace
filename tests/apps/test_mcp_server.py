@@ -48,23 +48,59 @@ async def _call(name: str, arguments: dict | None = None, **options):
         return await client.call_tool(name, arguments or {}, raise_on_error=False)
 
 
-@pytest.mark.parametrize("namespace", [None, "apps"])
-def test_dashboard_ui_metadata_reaches_client(namespace: str | None) -> None:
-    server = apps_mcp
+@pytest.mark.parametrize(
+    ("namespace", "expected_uri"),
+    [(None, "ui://dashboard-ui"), ("apps", "ui://apps/dashboard-ui"), ("board", "ui://board/dashboard-ui")],
+)
+def test_dashboard_ui_metadata_resolves_in_each_composition(
+    namespace: str | None, expected_uri: str
+) -> None:
+    from mcp_google_workspace.apps.server import create_apps_server, mount_apps_dashboard
+
+    server = create_apps_server()
     if namespace:
-        server = FastMCP("dashboard-metadata-test")
-        server.mount(apps_mcp, namespace=namespace)
+        root = FastMCP("dashboard-metadata-test")
+        mount_apps_dashboard(root, server, namespace=namespace)
+        server = root
 
     async def catalog():
         async with Client(server) as client:
-            return {tool.name: tool.model_dump(by_alias=True) for tool in await client.list_tools()}
+            tools = {tool.name: tool.model_dump(by_alias=True) for tool in await client.list_tools()}
+            resources = {str(resource.uri): resource for resource in await client.list_resources()}
+            html = await client.read_resource(expected_uri)
+            return tools, resources, html
 
-    tools = anyio.run(catalog)
+    tools, resources, html = anyio.run(catalog)
     prefix = f"{namespace}_" if namespace else ""
     for name in ("get_dashboard", "get_weekly_calendar_view"):
         metadata = tools[f"{prefix}{name}"]["_meta"]
-        assert metadata["ui"]["resourceUri"] == "ui://apps/dashboard-ui"
-        assert metadata["ui/resourceUri"] == "ui://apps/dashboard-ui"
+        # Canonical nested key only: no flat alias.
+        assert metadata["ui"] == {"resourceUri": expected_uri, "visibility": ["model", "app"]}
+        assert "ui/resourceUri" not in metadata
+    # Exactly one Apps UI resource, at the URI the tools declare; no legacy aliases.
+    ui_resources = sorted(uri for uri in resources if uri.startswith("ui://"))
+    assert ui_resources == [expected_uri]
+    assert resources[expected_uri].mime_type == "text/html;profile=mcp-app"
+    assert not any(uri.endswith("dashboard/ui") for uri in resources)
+    assert html[0].text.lstrip().lower().startswith("<!doctype html>")
+
+
+def test_plain_mount_would_not_resolve_the_dashboard_uri() -> None:
+    """Documents why mount_apps_dashboard exists: tool metadata is not namespaced by mount()."""
+    from mcp_google_workspace.apps.server import create_apps_server
+
+    root = FastMCP("plain-mount")
+    root.mount(create_apps_server(), namespace="apps")
+
+    async def catalog():
+        async with Client(root) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            resources = {str(resource.uri) for resource in await client.list_resources()}
+            return tools, resources
+
+    tools, resources = anyio.run(catalog)
+    assert tools["apps_get_dashboard"].meta["ui"]["resourceUri"] == "ui://dashboard-ui"
+    assert "ui://dashboard-ui" not in resources
 
 
 def test_detail_tool_output_schemas_accept_complete_ui_payloads() -> None:

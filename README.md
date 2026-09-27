@@ -482,8 +482,7 @@ Use `files_delete_file` to remove an upload before its TTL expires.
 Use `files_list_files_page` with `limit` and `cursor` when a principal has many uploads.
 `get_mcp_apps_diagnostics` reports the UI resource, renderer mode, generated hidden callback addresses, and can run a temporary store/delete self-test with `run_self_test=true`.
 
-The MCPB manifest forces Prefab's self-contained bundled renderer, avoiding a
-runtime CDN dependency inside the host iframe.
+The picker always serves the self-contained renderer bundled in the locked `prefab-ui` version (every transport, not only the MCPB), so its resource declares no CSP domains and loads nothing from a CDN. `files_list_files`, `files_list_files_page` and `files_read_file` are model-only; `files_store_files` is the picker's app-only upload callback.
 
 **Requires:** an MCP client with MCP Apps/iframe rendering support. Clients without Apps support can still use Google Drive file IDs or trusted local/stdio paths.
 
@@ -514,9 +513,18 @@ Drive, Calendar, and Gemini Drive-media downloads stream through bounded tempora
 
 ### MCP Apps (UI Dashboard)
 
-When `ENABLE_APPS_DASHBOARD=true`, the `apps_get_dashboard` and `apps_get_weekly_calendar_view` tools carry `_meta.ui.resourceUri` metadata pointing to `ui://apps/dashboard-ui` (with `ui/resourceUri` retained for older hosts). MCP clients that support the Apps rendering protocol (e.g. Claude Desktop) will embed an interactive workspace dashboard UI alongside the tool response. The dashboard applies the host's initial theme, colors, and fonts, and uses known Workspace tool names when the host does not support `tools/list`.
+When `ENABLE_APPS_DASHBOARD=true`, the `apps_get_dashboard` and `apps_get_weekly_calendar_view` tools carry `_meta.ui.resourceUri` pointing to `ui://apps/dashboard-ui` (the nested key only; the flat `ui/resourceUri` alias and the old `ui://dashboard-ui`/`apps://dashboard/ui` addresses were removed). MCP clients that support the stable MCP Apps protocol (2026-01-26), such as Claude Desktop, embed an interactive workspace dashboard alongside the tool response. The dashboard applies the host's theme, colors, fonts, safe area and container size, and loads nothing from the network (no web fonts, no CDN), so the host's default CSP applies.
 
-The UI is a TypeScript web component that communicates with the server via PostMessage. It renders:
+The UI is a vanilla TypeScript view built on MCP Apps SDK 2 (`@modelcontextprotocol/ext-apps` 2.0.3 with the split `@modelcontextprotocol/client`/`core` 2.1.0). It talks only to the host through the Apps `ui/*` channel and:
+
+- takes the host's tool input/result as the invocation context and never opens a second view while the launch call is opening one; it handles cancellation and teardown and ignores stale or late responses;
+- checks the host's capabilities before optional actions: links, downloads (draft `ui/download-file`, bounded to 10 MiB inline), "Reply in chat" (`ui/message`), model context updates and full screen are offered only when supported, and a declined action is reported with a usable alternative instead of forcing another path;
+- offers a write only when the server's operation manifest (`_meta["mcp-google-workspace/operations"]` on launch results) lists it for your account; without a manifest it only reads;
+- reports tool failures by their typed code and undoes optimistic changes when an action fails.
+
+The two launch tools are visible to the model and the view; the dashboard callbacks (`apps_get_state`, `apps_set_state`, `apps_patch_state`, `apps_next_range`, `apps_prev_range`, `apps_today`, `apps_get_event_detail`, `apps_get_email_detail`, `apps_get_email_attachment`) are app-only. The server still authorizes every call. Details, the capability matrix and the manifest format: [docs/RICH_OUTPUTS.md](docs/RICH_OUTPUTS.md#mcp-apps-outputs).
+
+It renders:
 
 - A weekly calendar view (all-day events + timed event columns)
 - An inbox summary with email detail drill-down

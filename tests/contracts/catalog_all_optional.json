@@ -2,7 +2,7 @@
   "counts": {
     "prompts": 7,
     "resource_templates": 9,
-    "resources": 14,
+    "resources": 12,
     "tools": 192
   },
   "discovery_view": [
@@ -300,19 +300,6 @@
           "tags": []
         }
       },
-      "mimeType": "text/html",
-      "name": "apps_dashboard_ui",
-      "title": null,
-      "uri": "apps://apps/dashboard/ui"
-    },
-    {
-      "annotations": null,
-      "description": null,
-      "meta": {
-        "fastmcp": {
-          "tags": []
-        }
-      },
       "mimeType": "text/plain",
       "name": "calendar_today",
       "title": null,
@@ -433,19 +420,6 @@
       "mimeType": "text/html;profile=mcp-app",
       "name": "apps_dashboard_ui_mcp",
       "title": null,
-      "uri": "ui://apps/apps/dashboard-ui"
-    },
-    {
-      "annotations": null,
-      "description": null,
-      "meta": {
-        "fastmcp": {
-          "tags": []
-        }
-      },
-      "mimeType": "text/html;profile=mcp-app",
-      "name": "apps_dashboard_ui_mcp_legacy",
-      "title": null,
       "uri": "ui://apps/dashboard-ui"
     },
     {
@@ -455,13 +429,7 @@
         "fastmcp": {
           "tags": []
         },
-        "ui": {
-          "csp": {
-            "resourceDomains": [
-              "https://cdn.jsdelivr.net"
-            ]
-          }
-        }
+        "ui": {}
       },
       "mimeType": "text/html;profile=mcp-app",
       "name": "Prefab Renderer (file_manager)",
@@ -527,9 +495,12 @@
           ]
         },
         "ui": {
-          "resourceUri": "ui://apps/dashboard-ui"
-        },
-        "ui/resourceUri": "ui://apps/dashboard-ui"
+          "resourceUri": "ui://apps/dashboard-ui",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
       },
       "name": "apps_get_dashboard",
       "outputSchema": {
@@ -887,6 +858,11 @@
             "google-workspace",
             "workspace-ui"
           ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
+          ]
         }
       },
       "name": "apps_get_email_detail",
@@ -1100,6 +1076,11 @@
             "google-workspace",
             "workspace-ui"
           ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
+          ]
         }
       },
       "name": "apps_get_event_detail",
@@ -1296,6 +1277,11 @@
             "state",
             "workspace-ui"
           ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
+          ]
         }
       },
       "name": "apps_get_state",
@@ -1468,9 +1454,12 @@
           ]
         },
         "ui": {
-          "resourceUri": "ui://apps/dashboard-ui"
-        },
-        "ui/resourceUri": "ui://apps/dashboard-ui"
+          "resourceUri": "ui://apps/dashboard-ui",
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
       },
       "name": "apps_get_weekly_calendar_view",
       "outputSchema": {
@@ -1662,6 +1651,11 @@
             "next-range",
             "range",
             "workspace-ui"
+          ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
           ]
         }
       },
@@ -1900,6 +1894,11 @@
             "state",
             "workspace-ui"
           ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
+          ]
         }
       },
       "name": "apps_patch_state",
@@ -2048,6 +2047,11 @@
             "prev-range",
             "range",
             "workspace-ui"
+          ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
           ]
         }
       },
@@ -2286,6 +2290,11 @@
             "state",
             "workspace-ui"
           ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
+          ]
         }
       },
       "name": "apps_set_state",
@@ -2432,6 +2441,11 @@
             "google-workspace",
             "today",
             "workspace-ui"
+          ]
+        },
+        "ui": {
+          "visibility": [
+            "app"
           ]
         }
       },
@@ -12366,8 +12380,7 @@
           "visibility": [
             "model"
           ]
-        },
-        "ui/resourceUri": "ui://prefab/tool/872d2c9e20b2/renderer.html"
+        }
       },
       "name": "files_file_manager",
       "outputSchema": {
@@ -12443,7 +12456,6 @@
         },
         "ui": {
           "visibility": [
-            "app",
             "model"
           ]
         }
@@ -12556,7 +12568,6 @@
         },
         "ui": {
           "visibility": [
-            "app",
             "model"
           ]
         }
@@ -12725,7 +12736,6 @@
         },
         "ui": {
           "visibility": [
-            "app",
             "model"
           ]
         }

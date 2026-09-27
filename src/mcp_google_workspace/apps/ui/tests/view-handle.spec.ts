@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { appFrame, blockExternalNetwork, viewFrame } from "./helpers";
 
 type Call = { name: string; arguments: Record<string, unknown> };
 
@@ -7,7 +8,7 @@ const handle = (n: number) => `wsv_${String(n).padStart(43, "0")}`;
 const EVENT = "Open event: AppBridge regression meeting";
 
 test.beforeEach(async ({ page }) => {
-  await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
+  await blockExternalNetwork(page);
 });
 
 const callLog = (page: Page) => page.evaluate(() => (window as any).callLog as Call[]);
@@ -20,7 +21,7 @@ test("uses the server-issued handle on every callback and never mints an id", as
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/host.html?discovery=unsupported");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: EVENT, exact: true })).toBeVisible();
 
   await app.getByRole("button", { name: "Next week" }).click();
@@ -38,7 +39,7 @@ test("uses the server-issued handle on every callback and never mints an id", as
   const next = calls.find((call) => call.name === "apps_next_range")!;
   expect(next.arguments).toEqual({ view_handle: handle(1), expected_revision: 1 });
 
-  const storage = await page.frames()[1].evaluate(() => {
+  const storage = await (await viewFrame(page)).evaluate(() => {
     try {
       return Object.keys(window.localStorage);
     } catch {
@@ -51,7 +52,7 @@ test("uses the server-issued handle on every callback and never mints an id", as
 
 test("adopts the handle carried by the host-pushed tool result", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported&pushResult&pushHandle");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: EVENT, exact: true })).toBeVisible();
 
   await app.getByRole("button", { name: "Next week" }).click();
@@ -68,7 +69,7 @@ test("adopts the handle carried by the host-pushed tool result", async ({ page }
 
 test("reopens the view whose handle arrives as tool input", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported&inputHandle");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: EVENT, exact: true })).toBeVisible();
   const calls = await viewCalls(page);
   expect(calls[0]).toEqual({ name: "apps_get_dashboard", arguments: { view_handle: handle(1) } });
@@ -77,7 +78,7 @@ test("reopens the view whose handle arrives as tool input", async ({ page }) => 
 
 test("re-requests a fresh view once when the handle expired", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported&view=expired");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: EVENT, exact: true })).toBeVisible();
 
   await app.getByRole("button", { name: "Next week" }).click();
@@ -99,7 +100,7 @@ test("re-requests a fresh view once when the handle expired", async ({ page }) =
 
 test("stops after a single fresh-view retry when the handle keeps failing", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported&view=expired-always");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: EVENT, exact: true })).toBeVisible();
 
   await app.getByRole("button", { name: "Next week" }).click();
@@ -111,7 +112,7 @@ test("stops after a single fresh-view retry when the handle keeps failing", asyn
 
 test("refetches instead of overwriting after a stale-revision conflict", async ({ page }) => {
   await page.goto("/tests/host.html?discovery=unsupported&view=conflict");
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await expect(app.getByRole("button", { name: EVENT, exact: true })).toBeVisible();
 
   // click(), not uncheck(): without a dashboard state the view re-renders the

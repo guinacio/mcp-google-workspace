@@ -181,7 +181,8 @@ def test_bundle_stdio_lists_and_calls_prefab_file_manager(tmp_path) -> None:
     assert "files_file_manager" in names
     assert len(names) <= 16
     assert {"search_tools", "call_tool"} <= names
-    assert meta["ui/resourceUri"] == uri
+    assert meta["ui"]["resourceUri"] == uri
+    assert "ui/resourceUri" not in meta  # W6: flat alias removed
     assert contents[0].mime_type == "text/html;profile=mcp-app"
     assert result.is_error is False
     assert action_tool in json.dumps(result.structured_content)

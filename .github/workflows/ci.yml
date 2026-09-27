@@ -45,12 +45,17 @@ jobs:
       - name: Audit frontend dependencies
         working-directory: src/mcp_google_workspace/apps/ui
         run: npm audit --audit-level=moderate
+      - name: Type-check MCP Apps UI and its host tests
+        working-directory: src/mcp_google_workspace/apps/ui
+        run: npm run typecheck
       - name: Build MCP Apps UI
         working-directory: src/mcp_google_workspace/apps/ui
         run: npm run build
       - name: Install browser for MCP Apps tests
         working-directory: src/mcp_google_workspace/apps/ui
         run: npx playwright install --with-deps chromium
+      # Different-origin sandbox proxy + CSP-enforcing host; global setup exports
+      # the real server's Apps metadata through the locked uv environment.
       - name: Test MCP Apps host integration
         working-directory: src/mcp_google_workspace/apps/ui
         run: npm test

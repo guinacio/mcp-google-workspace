@@ -24,7 +24,6 @@ from cryptography.fernet import InvalidToken
 from fastmcp import Context
 from fastmcp.apps.file_upload import FileUpload
 from fastmcp.server.dependencies import get_access_token
-from fastmcp.server.providers.addressing import hashed_resource_uri
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,6 +35,26 @@ from .common.component_annotations import apply_structural_input_limits
 from .runtime import get_token_storage_settings
 
 AUDIT_LOGGER = logging.getLogger("mcp_google_workspace.audit")
+
+
+def configure_prefab_renderer() -> str:
+    """Serve the self-contained Prefab renderer bundled in the pinned prefab-ui.
+
+    prefab-ui 0.20.2 otherwise emits a stub that loads its renderer from
+    jsDelivr and declares ``https://cdn.jsdelivr.net`` in the resource CSP,
+    which would let the picker load any npm package from that CDN. The bundled
+    renderer is the exact locked version, makes no external requests and
+    needs no ``_meta.ui.csp`` domains, so the host's restrictive default CSP
+    applies. ``PREFAB_RENDERER_URL`` (prefab's development override pointing at
+    a local renderer build) is left untouched. Returns the effective mode.
+    """
+    if os.environ.get("PREFAB_RENDERER_URL", "").strip():
+        return "external"
+    os.environ["PREFAB_BUNDLED_RENDERER"] = "1"
+    return "bundled"
+
+
+configure_prefab_renderer()
 
 
 @dataclass(frozen=True, slots=True)
@@ -673,11 +692,12 @@ class WorkspaceFileUpload(FileUpload):
                 idempotent_hint=component.name != "store_files",
                 open_world_hint=False,
             )
-            if component.name == "file_manager":
-                component.meta = {
-                    **(component.meta or {}),
-                    "ui/resourceUri": hashed_resource_uri(self.name, component.name),
-                }
+            if component.name in _MODEL_ONLY_FILE_TOOLS:
+                # The Prefab picker only ever calls store_files; these are the
+                # model's tools for using and cleaning up uploads.
+                meta = dict(component.meta or {})
+                meta["ui"] = {**(meta.get("ui") or {}), "visibility": ["model"]}
+                component.meta = meta
             if component.name == "store_files":
                 # FastMCP 4 lists this app-only callback in tools/list (hosts
                 # filter by _meta.ui.visibility), so its input is now part of
@@ -895,6 +915,13 @@ _PICKER_OUTPUT_SCHEMA: dict[str, Any] = {
     "required": ["$prefab", "view", "state"],
     "additionalProperties": False,
 }
+
+
+# Exposure of the Workspace Files tools (docs/RICH_OUTPUTS.md, "Tool visibility").
+# file_manager (launch) is model-only and store_files (upload callback) is
+# app-only by FastMCP's FileUpload defaults; delete_file stays model + app because
+# get_mcp_apps_diagnostics exercises its hashed app callback address.
+_MODEL_ONLY_FILE_TOOLS = frozenset({"list_files", "list_files_page", "read_file"})
 
 
 def _store_files_input_schema(max_file_size: int) -> dict[str, Any]:

@@ -13,3 +13,4 @@ tmp
 *.egg-info
 *.mcpb
 src/mcp_google_workspace/apps/ui/node_modules
+src/mcp_google_workspace/apps/ui/tests/generated

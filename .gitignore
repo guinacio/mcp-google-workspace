@@ -38,3 +38,6 @@ wheels/
 # Local AI-assistant settings and generated bundle archives
 .claude/
 *.mcpb
+
+# MCP Apps browser-test fixtures exported from the server (large, generated)
+src/mcp_google_workspace/apps/ui/tests/generated/

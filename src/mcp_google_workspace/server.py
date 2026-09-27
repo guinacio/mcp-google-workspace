@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
 
-from .apps import apps_mcp
+from .apps import apps_mcp, mount_apps_dashboard
 from .common.component_annotations import apply_default_tool_annotations
 from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
 from .common.errors import StructuredToolErrorMiddleware
@@ -136,7 +136,7 @@ workspace_mcp.mount(people_mcp, namespace="people")
 workspace_mcp.mount(forms_mcp, namespace="forms")
 workspace_mcp.mount(slides_mcp, namespace="slides")
 if is_apps_dashboard_enabled():
-    workspace_mcp.mount(apps_mcp, namespace="apps")
+    mount_apps_dashboard(workspace_mcp, apps_mcp, namespace="apps")
 if is_chat_enabled():
     workspace_mcp.mount(chat_mcp, namespace="chat")
 if is_gemini_enabled():

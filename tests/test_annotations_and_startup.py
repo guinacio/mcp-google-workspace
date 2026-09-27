@@ -300,8 +300,9 @@ def test_apps_tools_preserve_ui_metadata_and_local_hints() -> None:
     assert tools["set_state"].annotations.open_world_hint is False
     assert tools["set_state"].annotations.idempotent_hint is True
     assert "respond_to_event" not in tools
+    # W6: canonical nested metadata only (subserver-local URI; a mount rewrites it
+    # to ui://apps/dashboard-ui), launch tools visible to the model and the view.
     for name in ("get_dashboard", "get_weekly_calendar_view"):
         assert tools[name].meta == {
-            "ui": {"resourceUri": "ui://apps/dashboard-ui"},
-            "ui/resourceUri": "ui://apps/dashboard-ui",
+            "ui": {"resourceUri": "ui://dashboard-ui", "visibility": ["model", "app"]},
         }
