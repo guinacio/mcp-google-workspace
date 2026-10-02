@@ -115,7 +115,10 @@ def load_or_create_local_key() -> str:
             raise LocalKeychainUnavailable(
                 _UNAVAILABLE.format(reason=type(exc).__name__)
             ) from exc
-        assert stored is not None
+        if stored is None:
+            raise LocalKeychainUnavailable(
+                _UNAVAILABLE.format(reason="the keychain did not persist the key")
+            )
         _cached = stored
         return stored
 
