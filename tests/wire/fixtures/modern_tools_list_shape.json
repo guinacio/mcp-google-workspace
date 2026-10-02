@@ -1,0 +1,251 @@
+{
+  "actual_tool_count_over_100": true,
+  "cacheScope": "private",
+  "named_tools": {
+    "files_file_manager": {
+      "_meta": {
+        "fastmcp": {
+          "app": "Workspace Files",
+          "tags": [
+            "files",
+            "mcp-app",
+            "upload"
+          ],
+          "tool_hash": "872d2c9e20b2"
+        },
+        "ui": {
+          "resourceUri": "ui://prefab/tool/872d2c9e20b2/renderer.html",
+          "visibility": [
+            "model"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Upload and manage files. Drop files here to send them to the server.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "maxProperties": 10000,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "files_file_manager",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "$prefab": {
+            "description": "Prefab protocol metadata.",
+            "type": "object"
+          },
+          "_meta": {
+            "additionalProperties": false,
+            "description": "FastMCP renderer metadata for the Prefab payload.",
+            "properties": {
+              "fastmcp": {
+                "additionalProperties": false,
+                "description": "FastMCP-owned Prefab addressing metadata.",
+                "properties": {
+                  "toolNames": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Map from each backend tool name used in the UI tree to its stable <hash>_<name> address.",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "state": {
+            "description": "Initial picker UI state.",
+            "type": "object"
+          },
+          "view": {
+            "description": "Declarative picker UI tree.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "$prefab",
+          "view",
+          "state"
+        ],
+        "type": "object"
+      },
+      "title": "Files File Manager"
+    },
+    "get_workspace_capabilities": {
+      "_meta": {
+        "fastmcp": {
+          "tags": [
+            "capabilities",
+            "get",
+            "get-workspace-capabilities",
+            "google-workspace",
+            "workspace"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Describe available namespaces, consent capabilities, and file-transfer choices.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "maxProperties": 10000,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "get_workspace_capabilities",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "Structured response returned by this MCP tool.",
+        "properties": {
+          "discovery": {
+            "description": "Response field: discovery.",
+            "type": "string"
+          },
+          "enabled_namespaces": {
+            "description": "Response field: enabled namespaces.",
+            "items": {},
+            "type": "array"
+          },
+          "file_inputs": {
+            "additionalProperties": false,
+            "description": "Response field: file inputs.",
+            "properties": {
+              "drive": {
+                "description": "Response field: drive.",
+                "type": "string"
+              },
+              "local": {
+                "description": "Response field: local.",
+                "type": "string"
+              },
+              "remote": {
+                "description": "Response field: remote.",
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "oauth_capabilities": {
+            "description": "Response field: oauth capabilities.",
+            "items": {},
+            "type": "array"
+          },
+          "optional_namespaces": {
+            "additionalProperties": false,
+            "description": "Response field: optional namespaces.",
+            "properties": {
+              "apps": {
+                "description": "Response field: apps.",
+                "type": "boolean"
+              },
+              "chat": {
+                "description": "Response field: chat.",
+                "type": "boolean"
+              },
+              "gemini": {
+                "description": "Response field: gemini.",
+                "type": "boolean"
+              },
+              "keep": {
+                "description": "Response field: keep.",
+                "type": "boolean"
+              },
+              "meet": {
+                "description": "Response field: meet.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "resource": {
+            "additionalProperties": false,
+            "description": "Stable cross-tool Workspace resource handle when applicable.",
+            "properties": {
+              "etag": {
+                "description": "Provider entity tag.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "Provider resource identifier.",
+                "type": "string"
+              },
+              "kind": {
+                "description": "Workspace resource kind.",
+                "type": "string"
+              },
+              "mime_type": {
+                "description": "MIME type when applicable.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "modified_at": {
+                "description": "Last modification time.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "Human-readable name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "uri": {
+                "description": "Stable Workspace resource URI.",
+                "type": "string"
+              },
+              "web_url": {
+                "description": "Provider web URL.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "uri"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "title": "Get Workspace Capabilities response",
+        "type": "object"
+      },
+      "title": "Get Workspace Capabilities"
+    }
+  },
+  "resultType": "complete",
+  "tool_count_at_least": 100,
+  "ttlMs": 0
+}

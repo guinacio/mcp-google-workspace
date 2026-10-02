@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
-from ..common.errors import tool_error_payload
+from ..common.errors import provider_tool_error
 from .client import slides_service
 from .schemas import (
     BatchUpdatePresentationRequest,
@@ -97,7 +97,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return get_presentation_payload(GetPresentationRequest(presentation_id=presentation_id))
         except HttpError as exc:
-            return tool_error_payload(exc, presentation_id=presentation_id)
+            raise provider_tool_error(exc, presentation_id=presentation_id) from exc
 
     @server.tool(name="create_presentation")
     def create_presentation(title: str) -> dict[str, Any]:
@@ -110,7 +110,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return create_presentation_payload(CreatePresentationRequest(title=title))
         except HttpError as exc:
-            return tool_error_payload(exc, title=title)
+            raise provider_tool_error(exc, title=title) from exc
 
     @server.tool(name="replace_text_in_presentation")
     def replace_text_in_presentation(
@@ -135,7 +135,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, presentation_id=presentation_id)
+            raise provider_tool_error(exc, presentation_id=presentation_id) from exc
 
     @server.tool(name="get_slide_page")
     def get_slide_page(presentation_id: str, page_object_id: str) -> dict[str, Any]:
@@ -149,7 +149,7 @@ def register_tools(server: FastMCP) -> None:
                 GetSlidePageRequest(presentation_id=presentation_id, page_object_id=page_object_id)
             )
         except HttpError as exc:
-            return tool_error_payload(exc, presentation_id=presentation_id, page_object_id=page_object_id)
+            raise provider_tool_error(exc, presentation_id=presentation_id, page_object_id=page_object_id) from exc
 
     @server.tool(name="get_slide_thumbnail")
     def get_slide_thumbnail(
@@ -177,7 +177,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, presentation_id=presentation_id, page_object_id=page_object_id)
+            raise provider_tool_error(exc, presentation_id=presentation_id, page_object_id=page_object_id) from exc
 
     @server.tool(name="batch_update_presentation", task=True)
     async def batch_update_presentation(
@@ -203,4 +203,4 @@ def register_tools(server: FastMCP) -> None:
                 BatchUpdatePresentationRequest(presentation_id=presentation_id, requests=requests)
             )
         except HttpError as exc:
-            return tool_error_payload(exc, presentation_id=presentation_id)
+            raise provider_tool_error(exc, presentation_id=presentation_id) from exc

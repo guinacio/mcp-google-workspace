@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
-from ..common.errors import tool_error_payload
+from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
 from .client import forms_service
 from .presentation import question_titles, response_envelope
@@ -124,7 +124,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return get_form_payload(GetFormRequest(form_id=form_id))
         except HttpError as exc:
-            return tool_error_payload(exc, form_id=form_id)
+            raise provider_tool_error(exc, form_id=form_id) from exc
 
     @server.tool(name="create_form")
     def create_form(
@@ -145,7 +145,7 @@ def register_tools(server: FastMCP) -> None:
                 CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
             )
         except HttpError as exc:
-            return tool_error_payload(exc, title=title)
+            raise provider_tool_error(exc, title=title) from exc
 
     @server.tool(name="batch_update_form", task=True)
     async def batch_update_form(
@@ -178,7 +178,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, form_id=form_id)
+            raise provider_tool_error(exc, form_id=form_id) from exc
 
     @server.tool(name="set_form_publish_settings")
     def set_form_publish_settings(
@@ -210,7 +210,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, form_id=form_id)
+            raise provider_tool_error(exc, form_id=form_id) from exc
 
     @server.tool(name="list_form_responses")
     async def list_form_responses(
@@ -247,7 +247,7 @@ def register_tools(server: FastMCP) -> None:
                 else {}
             )
         except HttpError as exc:
-            return tool_error_payload(exc, form_id=form_id)
+            raise provider_tool_error(exc, form_id=form_id) from exc
         responses = result.get("responses", [])
         return {
             "form_id": form_id,
@@ -280,5 +280,5 @@ def register_tools(server: FastMCP) -> None:
                 else {}
             )
         except HttpError as exc:
-            return tool_error_payload(exc, form_id=form_id, response_id=response_id)
+            raise provider_tool_error(exc, form_id=form_id, response_id=response_id) from exc
         return response_envelope(response, titles, account_timezone=account_timezone)

@@ -1,23 +1,51 @@
-"""Durable one-time prepare/commit records for consequential actions."""
+"""Prepare/commit for consequential actions, backed by operation records.
+
+``prepare_workspace_action`` opens a ``prepared`` operation record
+(``common/operations.py``) that binds the exact tool and arguments to a
+one-time, principal-scoped commit token. ``commit_workspace_action`` claims it
+(``executing``), runs the bound call once, and the confirmation guard settles
+the record: ``awaiting_input`` when the bound tool asked a confirmation
+question, back to ``prepared`` when nothing non-repeatable reached Google, or
+``succeeded`` / ``failed`` / ``outcome_unknown``. A repeated commit of a
+finished operation returns its saved result instead of executing again (W4b).
+Tokens are never consumed destructively and never stored raw (records are
+keyed by a SHA-256 of the token).
+"""
 
 from __future__ import annotations
 
 from contextvars import ContextVar
-import json
 import os
-from pathlib import Path
 import secrets
-import sqlite3
-import tempfile
-import time
-from typing import Any
-
-import redis
+from typing import Any, Final
 
 from ..auth.identity import current_principal
-from ..runtime import get_token_storage_settings
 
 COMMIT_ACTIVE: ContextVar[bool] = ContextVar("mcp_commit_active", default=False)
+
+INVALID_COMMIT = "Commit token is invalid, expired, or belongs to another principal."
+
+# Structured error codes that this server raises strictly *before* a Google
+# mutation is attempted: confirmation gates, admission control, revocation,
+# credential/scope checks, and provider rejections that execute nothing (401
+# reauth, 429). A commit whose nested call fails with one of these releases its
+# operation (back to ``prepared``/``awaiting_input``) for a later retry. Other
+# failures are settled from what the Google calls actually did (see
+# ``operations.settle_after_failure``).
+PRE_EXECUTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
+    {
+        "confirmation_required",
+        "confirmation_invalid",
+        "prepare_required",
+        "rate_limited",
+        "server_draining",
+        "principal_revoked",
+        "authorization_backend_unavailable",
+        "reauth_required",
+        "missing_capability",
+    }
+)
+
 
 CONSEQUENTIAL_TOOLS = {
     "gmail_send_email",
@@ -66,112 +94,30 @@ def impact_preview(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return preview
 
 
-class ApprovalStore:
-    def __init__(self, path: Path | None = None, *, ttl_seconds: int = 300) -> None:
-        configured = os.getenv("MCP_APPROVAL_DB", "").strip()
-        self.path = path or (
-            Path(configured).expanduser().resolve()
-            if configured
-            else Path(tempfile.gettempdir()) / "mcp-google-workspace-approvals.sqlite3"
-        )
-        self.ttl_seconds = ttl_seconds
+def commit_token_ttl_seconds() -> int:
+    """Commit tokens follow ``MCP_CONFIRMATION_TTL_SECONDS`` (default 600 s)."""
+    from .operations import pending_ttl_seconds
 
-    def _connect(self) -> sqlite3.Connection:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=10, isolation_level=None)
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute(
-            "CREATE TABLE IF NOT EXISTS approvals ("
-            "token TEXT PRIMARY KEY, scope TEXT NOT NULL, payload BLOB NOT NULL, expires_at INTEGER NOT NULL)"
-        )
-        return connection
-
-    def prepare(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if tool not in CONSEQUENTIAL_TOOLS:
-            raise ValueError("This tool does not use the consequential-action prepare protocol.")
-        scope = current_principal().storage_key
-        token = "cmt_" + secrets.token_urlsafe(32)
-        expires_at = int(time.time()) + self.ttl_seconds
-        payload = json.dumps({"tool": tool, "arguments": arguments}, separators=(",", ":")).encode()
-        encrypted = get_token_storage_settings().keyring.encrypt(payload)
-        with self._connect() as connection:
-            connection.execute("DELETE FROM approvals WHERE expires_at < ?", (int(time.time()),))
-            connection.execute(
-                "INSERT INTO approvals(token,scope,payload,expires_at) VALUES(?,?,?,?)",
-                (token, scope, encrypted, expires_at),
-            )
-        return {
-            "status": "prepared",
-            "commit_token": token,
-            "expires_at": expires_at,
-            "impact": impact_preview(tool, arguments),
-            "next_action": {
-                "tool": "commit_workspace_action",
-                "arguments": {"commit_token": token},
-            },
-        }
-
-    def consume(self, token: str) -> tuple[str, dict[str, Any]]:
-        scope = current_principal().storage_key
-        now = int(time.time())
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT payload,expires_at FROM approvals WHERE token=? AND scope=?",
-                (token, scope),
-            ).fetchone()
-            connection.execute("DELETE FROM approvals WHERE token=? AND scope=?", (token, scope))
-        if row is None or int(row[1]) < now:
-            raise ValueError("Commit token is invalid, expired, already used, or belongs to another principal.")
-        payload = json.loads(get_token_storage_settings().keyring.decrypt(row[0]).plaintext)
-        if not isinstance(payload, dict) or not isinstance(payload.get("arguments"), dict):
-            raise ValueError("Commit token payload is invalid.")
-        return str(payload["tool"]), payload["arguments"]
+    return pending_ttl_seconds()
 
 
-class RedisApprovalStore:
-    """One-time principal-bound commit tokens shared across replicas."""
+async def prepare_action(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Open a ``prepared`` operation record and return its commit token."""
+    from .confirmation import arguments_digest
+    from .operations import get_operation_store, operation_key
 
-    _CONSUME = """
-    local value = redis.call('GET', KEYS[1])
-    if value then redis.call('DEL', KEYS[1]) end
-    return value
-    """
-
-    def __init__(self, url: str, *, ttl_seconds: int = 300) -> None:
-        self.client = redis.Redis.from_url(url)
-        self.ttl_seconds = ttl_seconds
-
-    def prepare(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if tool not in CONSEQUENTIAL_TOOLS:
-            raise ValueError("This tool does not use the consequential-action prepare protocol.")
-        scope = current_principal().storage_key
-        token = "cmt_" + secrets.token_urlsafe(32)
-        expires_at = int(time.time()) + self.ttl_seconds
-        payload = get_token_storage_settings().keyring.encrypt(
-            json.dumps({"tool": tool, "arguments": arguments}, separators=(",", ":")).encode()
-        )
-        self.client.set(f"mcp:approval:{scope}:{token}", payload, ex=self.ttl_seconds, nx=True)
-        return {
-            "status": "prepared",
-            "commit_token": token,
-            "expires_at": expires_at,
-            "impact": impact_preview(tool, arguments),
-            "next_action": {"tool": "commit_workspace_action", "arguments": {"commit_token": token}},
-        }
-
-    def consume(self, token: str) -> tuple[str, dict[str, Any]]:
-        scope = current_principal().storage_key
-        value = self.client.eval(self._CONSUME, 1, f"mcp:approval:{scope}:{token}")
-        if value is None:
-            raise ValueError("Commit token is invalid, expired, already used, or belongs to another principal.")
-        payload = json.loads(get_token_storage_settings().keyring.decrypt(value).plaintext)
-        if not isinstance(payload, dict) or not isinstance(payload.get("arguments"), dict):
-            raise ValueError("Commit token payload is invalid.")
-        return str(payload["tool"]), payload["arguments"]
-
-
-_REDIS_URL = os.getenv("MCP_REDIS_URL", "").strip()
-APPROVAL_STORE: ApprovalStore | RedisApprovalStore = (
-    RedisApprovalStore(_REDIS_URL) if _REDIS_URL else ApprovalStore()
-)
+    if tool not in CONSEQUENTIAL_TOOLS:
+        raise ValueError("This tool does not use the consequential-action prepare protocol.")
+    token = "cmt_" + secrets.token_urlsafe(32)
+    key = operation_key(current_principal().storage_key, token)
+    expires_at = await get_operation_store().open_commit(key, tool, arguments, arguments_digest(arguments))
+    return {
+        "status": "prepared",
+        "commit_token": token,
+        "expires_at": int(expires_at),
+        "impact": impact_preview(tool, arguments),
+        "next_action": {
+            "tool": "commit_workspace_action",
+            "arguments": {"commit_token": token},
+        },
+    }

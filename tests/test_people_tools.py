@@ -183,9 +183,9 @@ def test_people_tool_annotations():
     update_tool = anyio.run(_get_tool, people_mcp, "update_contact")
     delete_tool = anyio.run(_get_tool, people_mcp, "delete_contact")
 
-    assert list_tool.annotations.readOnlyHint is True
-    assert update_tool.annotations.idempotentHint is True
-    assert delete_tool.annotations.destructiveHint is True
+    assert list_tool.annotations.read_only_hint is True
+    assert update_tool.annotations.idempotent_hint is True
+    assert delete_tool.annotations.destructive_hint is True
 
 
 class _FailingExec:
@@ -206,10 +206,16 @@ def test_search_contacts_tool_returns_structured_error(monkeypatch):
 
     async def scenario():
         async with Client(people_mcp) as client:
-            result = await client.call_tool("search_contacts", {"query": "Ada"})
-            return result.structured_content or result.data
+            result = await client.call_tool(
+                "search_contacts", {"query": "Ada"}, raise_on_error=False
+            )
+            assert result.is_error is True
+            return result.structured_content
 
+    # W5: a Google API failure is an isError tool result with the error envelope
+    # (was a successful result carrying an "error" dict).
     result = anyio.run(scenario)
-    assert "403" in result["error"]
+    assert "403" in result["message"]
+    assert result["code"] == "permission_denied"
     assert result["provider_status"] == 403
-    assert result["context"]["query"] == "Ada"
+    assert result["details"]["context"]["query"] == "Ada"

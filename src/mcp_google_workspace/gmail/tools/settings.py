@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import confirm_destructive_action, execute_google_request
+from ...common.async_ops import execute_google_request
+from ...common.confirmation import confirm_destructive_action
 from ..client import gmail_service
 from ..schemas import ForwardingAddressRequest, UpdateVacationSettingsRequest
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
@@ -16,7 +21,7 @@ def register(server: FastMCP) -> None:
     async def list_forwarding_addresses(ctx: Context) -> dict[str, Any]:
         """List forwarding addresses configured in Gmail settings."""
         service = gmail_service()
-        await ctx.info("Listing Gmail forwarding addresses.")
+        LOGGER.debug("Listing Gmail forwarding addresses.")
         result = await execute_google_request(
             service.users().settings().forwardingAddresses().list(userId="me")
         )
@@ -31,8 +36,7 @@ def register(server: FastMCP) -> None:
         """Get forwarding address status/details for a specific email."""
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Fetching forwarding address {request.forwarding_email}.")
+        LOGGER.debug(f"Fetching forwarding address {request.forwarding_email}.")
         address = await execute_google_request(
             service.users()
             .settings()
@@ -49,8 +53,7 @@ def register(server: FastMCP) -> None:
         """Create a forwarding address entry in Gmail settings."""
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Creating forwarding address {request.forwarding_email}.")
+        LOGGER.debug(f"Creating forwarding address {request.forwarding_email}.")
         created = await execute_google_request(
             service.users()
             .settings()
@@ -73,8 +76,7 @@ def register(server: FastMCP) -> None:
         ):
             return {"status": "cancelled", "forwarding_email": str(request.forwarding_email)}
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Deleting forwarding address {request.forwarding_email}.")
+        LOGGER.debug(f"Deleting forwarding address {request.forwarding_email}.")
         await execute_google_request(
             service.users().settings().forwardingAddresses().delete(
                 userId="me",
@@ -87,7 +89,7 @@ def register(server: FastMCP) -> None:
     async def get_vacation_settings(ctx: Context) -> dict[str, Any]:
         """Read current vacation responder (auto-reply) settings."""
         service = gmail_service()
-        await ctx.info("Getting Gmail vacation settings.")
+        LOGGER.debug("Getting Gmail vacation settings.")
         settings = await execute_google_request(service.users().settings().getVacation(userId="me"))
         return {"vacation": settings}
 
@@ -121,8 +123,7 @@ def register(server: FastMCP) -> None:
             end_time=end_time,
         )
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info("Updating Gmail vacation settings.")
+        LOGGER.debug("Updating Gmail vacation settings.")
         payload: dict[str, Any] = {
             "enableAutoReply": request.enable_auto_reply,
             "restrictToContacts": request.restrict_to_contacts,

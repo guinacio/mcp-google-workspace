@@ -28,14 +28,19 @@ The entrypoint adds:
 - the complete tool catalog for Claude Desktop's current MCP Apps router
 - clearer startup errors when bundle configuration is invalid
 
+## Token encryption
+
+The bundle asks for no encryption key. On first use it generates a Fernet key and stores it in the OS keychain (service `mcp-google-workspace`, account `token-encryption-key`) through `keyring`: Windows Credential Manager, macOS Keychain, or the Linux Secret Service. Encrypted Google tokens stay in `user_token_dir`; the key never touches disk. Without a secure keychain backend the server refuses to start and asks for `MCP_TOKEN_ENCRYPTION_KEY` in its environment. Deleting the keychain entry forces a one-time Google reconnect.
+
 ## User Configuration Mapped By The Manifest
 
 The MCPB manifest exposes these settings through the host UI and passes them into the local process as environment variables:
 
 - `credentials_dir` -> `MCP_CREDENTIALS_DIR`
 - `user_token_dir` -> `MCP_USER_TOKEN_DIR`
-- `token_encryption_key` -> `MCP_TOKEN_ENCRYPTION_KEY`
-- `local_principal` -> `MCP_LOCAL_PRINCIPAL`
+- `local_principal` -> `MCP_LOCAL_PRINCIPAL` (the one trusted-local principal that owns this
+  process's Google grant, picker uploads, and dashboard views; it is a single-user trust
+  boundary, not multitenant isolation — see "Local stdio trust boundary" in the README)
 - `enable_apps_dashboard` -> `ENABLE_APPS_DASHBOARD`
 - `enable_chat` -> `ENABLE_CHAT`
 - `enable_gemini` -> `ENABLE_GEMINI`
@@ -72,14 +77,29 @@ The command first runs `npm ci` and `npm run build` for the Apps UI, then writes
 `dist/mcp-google-workspace-<version>.mcpb`. Packaging fails when the locked UI
 cannot be rebuilt.
 
+## Automated Validation (CI)
+
+The `mcpb-lifecycle` job in `.github/workflows/ci.yml` runs
+`uv run python scripts/verify_mcpb_bundle.py` on every push/PR from a clean
+checkout: it builds the `.mcpb`, extracts it into an isolated directory
+(proving the packaged artifact is self-sufficient, not just the repo
+checkout), and drives the extracted copy's stdio entrypoint through a real
+MCP client — start, list tools, call a safe tool, the Workspace Files
+picker's store/list/read/delete callbacks across independent MCP 2026-07-28
+requests, close, and reconnect to the same kept-alive subprocess. Run it
+locally the same way: `uv run python scripts/verify_mcpb_bundle.py`
+(add `--bundle path/to/existing.mcpb` to reuse an already-built archive).
+
 ## Manual Validation
 
-1. Run `pytest tests/test_bundle_manifest.py tests/test_bundle_runtime.py tests/test_auth_scopes.py tests/test_composition.py`.
+1. Run `pytest tests/test_bundle_manifest.py tests/test_bundle_runtime.py tests/test_auth_scopes.py tests/test_composition.py tests/test_prefab_render_cache.py`.
 2. Run `uv run python scripts/build_mcpb.py`.
 3. Inspect the archive and confirm it contains `manifest.json`, `pyproject.toml`, and `src/`, but not credentials or `node_modules`.
 4. Start the bundle entrypoint locally with `uv run python -m mcp_google_workspace.bundle_entry`.
 5. Install the resulting `.mcpb` in an MCPB-capable host and verify that the host reads the manifest settings and can list tools over stdio.
 6. Call `get_mcp_apps_diagnostics` with `run_self_test=true`, then open `files_file_manager` and upload a real file.
+
+Steps 2–5 are also covered automatically; see "Automated Validation" above. Manual validation with a real host remains necessary for anything the CI's mock host cannot exercise — see `docs/migration/W7_MANUAL_QUALIFICATION.md`.
 
 ## Notes
 

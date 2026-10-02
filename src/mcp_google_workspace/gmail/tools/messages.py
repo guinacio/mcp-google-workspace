@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+
 from email.utils import getaddresses
 import re
 from typing import Annotated, Any, Literal
@@ -10,7 +11,9 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
-from ...common.async_ops import execute_google_request, require_elicitation_context
+from ...common.async_ops import execute_google_request
+from ...common.confirmation import confirm_destructive_action
+from ...common.repeat_safety import note_reconciliation
 from ...common.timezone import resolve_user_timezone
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
@@ -19,6 +22,7 @@ from ..mime_utils import (
     decode_rfc2047,
     email_to_gmail_raw,
     extract_message_bodies,
+    stamp_message_id,
 )
 from ..helpers import recipient_set
 from ..presentation import clean_message_content, envelope, header_map, message_attachments
@@ -29,6 +33,8 @@ from ..schemas import (
     ReadEmailsRequest,
     SendEmailRequest,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 _MESSAGE_ID_PATTERN = re.compile(r"<[^<>\s]+>")
@@ -185,29 +191,20 @@ def register(server: FastMCP) -> None:
         )
         service = gmail_service()
         if request.confirm_send:
-            confirm_ctx = require_elicitation_context(ctx, "send_email")
-
-            @dataclass
-            class Confirmation:
-                confirm: bool
-
-            response = await confirm_ctx.elicit(
+            if not await confirm_destructive_action(
+                ctx,
+                "send_email",
                 (
                     f"Send email?\n"
                     f"To: {', '.join(str(v) for v in request.recipients.to)}\n"
                     f"Subject: {request.subject}\n"
                     f"Attachments: {len(request.attachments)}"
                 ),
-                response_type=Confirmation,  # type: ignore[arg-type]
-            )
-            if response.action != "accept":
-                return {"status": "cancelled", "message": "User cancelled send."}
-            confirmed = bool(getattr(response.data, "confirm", False))
-            if not confirmed:
+                explicit_confirm_field=True,
+            ):
                 return {"status": "cancelled", "message": "User cancelled send."}
 
-        if ctx is not None:
-            await ctx.info("Building MIME email payload.")
+        LOGGER.debug("Building MIME email payload.")
         attachment_payloads = await _prepare_attachment_payloads(
             request.attachments, ctx
         )
@@ -221,9 +218,13 @@ def register(server: FastMCP) -> None:
             html_body=request.html_body,
             attachments=attachment_payloads,
         )
+        # users.messages.send is not repeat safe: register the Message-ID so
+        # an unknown outcome can be checked in Sent instead of resent.
+        note_reconciliation(
+            {"kind": "gmail_sent", "rfc822_message_id": stamp_message_id(email_message)}
+        )
         raw = email_to_gmail_raw(email_message)
-        if ctx is not None:
-            await ctx.info("Sending email through Gmail API.")
+        LOGGER.debug("Sending email through Gmail API.")
         sent = await execute_google_request(
             service.users().messages().send(userId="me", body={"raw": raw})
         )
@@ -245,8 +246,7 @@ def register(server: FastMCP) -> None:
         ctx: Context | None,
     ) -> dict[str, Any]:
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Loading Gmail reply context for message {message_id}.")
+        LOGGER.debug(f"Loading Gmail reply context for message {message_id}.")
         source = await execute_google_request(
             service.users()
             .messages()
@@ -285,15 +285,9 @@ def register(server: FastMCP) -> None:
         )
 
         if confirm_send:
-            confirm_ctx = require_elicitation_context(
-                ctx, "reply_all_email" if reply_all else "reply_email"
-            )
-
-            @dataclass
-            class Confirmation:
-                confirm: bool
-
-            response = await confirm_ctx.elicit(
+            if not await confirm_destructive_action(
+                ctx,
+                "reply_all_email" if reply_all else "reply_email",
                 (
                     f"{'Reply all' if reply_all else 'Reply'} to email?\n"
                     f"To: {', '.join(to)}\n"
@@ -301,10 +295,7 @@ def register(server: FastMCP) -> None:
                     f"Subject: {subject}\n"
                     f"Attachments: {len(attachments)}"
                 ),
-                response_type=Confirmation,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(
-                getattr(response.data, "confirm", False)
+                explicit_confirm_field=True,
             ):
                 return {"status": "cancelled", "message": "User cancelled reply."}
 
@@ -320,11 +311,13 @@ def register(server: FastMCP) -> None:
             in_reply_to=source_message_id,
             references=references,
         )
+        note_reconciliation(
+            {"kind": "gmail_sent", "rfc822_message_id": stamp_message_id(email_message)}
+        )
         raw = email_to_gmail_raw(email_message)
-        if ctx is not None:
-            await ctx.info(
-                f"Sending {'reply-all' if reply_all else 'reply'} through Gmail API."
-            )
+        LOGGER.debug(
+            f"Sending {'reply-all' if reply_all else 'reply'} through Gmail API."
+        )
         sent = await execute_google_request(
             service.users()
             .messages()
@@ -477,7 +470,7 @@ def register(server: FastMCP) -> None:
     async def mark_as_read(message_id: str, ctx: Context) -> dict[str, Any]:
         """Remove the UNREAD label from a message."""
         service = gmail_service()
-        await ctx.info(f"Marking {message_id} as read.")
+        LOGGER.debug(f"Marking {message_id} as read.")
         await execute_google_request(
             service.users().messages().modify(
                 userId="me",
@@ -491,7 +484,7 @@ def register(server: FastMCP) -> None:
     async def mark_as_unread(message_id: str, ctx: Context) -> dict[str, Any]:
         """Add the UNREAD label to a message."""
         service = gmail_service()
-        await ctx.info(f"Marking {message_id} as unread.")
+        LOGGER.debug(f"Marking {message_id} as unread.")
         await execute_google_request(
             service.users().messages().modify(
                 userId="me",
@@ -517,8 +510,7 @@ def register(server: FastMCP) -> None:
         if not request.add_label_ids and not request.remove_label_ids:
             raise ValueError("At least one of add_label_ids/remove_label_ids must be provided.")
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Moving message {request.message_id}.")
+        LOGGER.debug(f"Moving message {request.message_id}.")
         result = await execute_google_request(
             service.users().messages().modify(
                 userId="me",
@@ -541,12 +533,11 @@ def register(server: FastMCP) -> None:
         request = DeleteMessageRequest(message_id=message_id, permanent=permanent)
         service = gmail_service()
         if request.permanent:
-            confirm_ctx = require_elicitation_context(ctx, "delete_email")
-            response = await confirm_ctx.elicit(
+            if not await confirm_destructive_action(
+                ctx,
+                "delete_email",
                 "Permanently delete this email? This cannot be undone.",
-                response_type=bool,  # type: ignore[arg-type]
-            )
-            if response.action != "accept" or not bool(response.data):
+            ):
                 return {"status": "cancelled"}
             await execute_google_request(
                 service.users().messages().delete(userId="me", id=request.message_id)

@@ -8,15 +8,19 @@ import os
 import secrets
 from typing import Annotated
 from fastmcp import FastMCP
+from fastmcp.tools import InputRequiredToolResult, ToolResult
+import mcp_types
 from fastmcp.server.providers.addressing import hash_tool, hashed_resource_uri
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
 
-from .apps import apps_mcp
+from .apps import apps_mcp, mount_apps_dashboard
 from .common.component_annotations import apply_default_tool_annotations
-from .common.errors import StructuredToolErrorMiddleware
+from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
+from .common.errors import RecoverableToolError, StructuredToolErrorMiddleware
+from .common.task_backend import install_tasks_extension
 from .common.production import (
     CapabilityCatalogMiddleware,
     ConsequentialActionMiddleware,
@@ -34,6 +38,7 @@ from .auth import (
     is_meet_enabled,
 )
 from .auth.google_oauth import register_connection_tools
+from .auth.identity import current_principal
 from .auth.google_auth import (
     CAPABILITY_SCOPES,
     build_drive_service,
@@ -42,7 +47,20 @@ from .auth.google_auth import (
 )
 from .common.async_ops import execute_google_request
 from .common.resources import ResourceHandleMiddleware, parse_resource_uri, resource_handle
-from .common.approvals import APPROVAL_STORE, COMMIT_ACTIVE, CONSEQUENTIAL_TOOLS
+from .common.approvals import (
+    COMMIT_ACTIVE,
+    CONSEQUENTIAL_TOOLS,
+    INVALID_COMMIT,
+    prepare_action,
+)
+from .common.operations import (
+    OperationOutcomeMiddleware,
+    get_operation_store,
+    operation_key,
+    operation_ref,
+    resolve_claim,
+)
+from .common.repeat_safety import current_tracker
 from .calendar import calendar_mcp
 from .chat import chat_mcp
 from .docs import docs_mcp
@@ -65,8 +83,18 @@ workspace_mcp = FastMCP(
         "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations."
     ),
     lifespan=production_lifespan,
+    # Seals multi-round-trip continuation state (confirmations). Shared across
+    # replicas via MCP_REQUEST_STATE_KEYS; ephemeral per process otherwise.
+    request_state_security=build_request_state_security(audience=REQUEST_STATE_AUDIENCE),
 )
+# One root-managed Tasks extension (and therefore one queue/worker) for every
+# runnable entrypoint: HTTP, stdio bundle, and out-of-process task workers all
+# serve this object. Mounted namespaces defer to the root's extension.
+install_tasks_extension(workspace_mcp)
 workspace_mcp.add_middleware(StructuredToolErrorMiddleware())
+# Between the error envelope and the deadline: a deadline or failure while a
+# non-repeatable Google call may have been applied becomes outcome_unknown.
+workspace_mcp.add_middleware(OperationOutcomeMiddleware())
 workspace_mcp.add_middleware(ProductionControlMiddleware())
 workspace_mcp.add_middleware(CapabilityCatalogMiddleware())
 workspace_mcp.add_middleware(ConsequentialActionMiddleware())
@@ -108,7 +136,7 @@ workspace_mcp.mount(people_mcp, namespace="people")
 workspace_mcp.mount(forms_mcp, namespace="forms")
 workspace_mcp.mount(slides_mcp, namespace="slides")
 if is_apps_dashboard_enabled():
-    workspace_mcp.mount(apps_mcp, namespace="apps")
+    mount_apps_dashboard(workspace_mcp, apps_mcp, namespace="apps")
 if is_chat_enabled():
     workspace_mcp.mount(chat_mcp, namespace="chat")
 if is_gemini_enabled():
@@ -398,6 +426,18 @@ async def search_workspace(
     async with anyio.create_task_group() as task_group:
         for service_name in selected:
             task_group.start_soon(searchers[service_name])
+    if errors and len(errors) == len(set(selected)):
+        # Partial-success policy: some services answered -> a successful
+        # "partial" result listing per-service errors; none answered -> a tool
+        # execution error, never an empty "ok"-shaped success.
+        raise RecoverableToolError(
+            "provider_unavailable",
+            "No Workspace service could be searched.",
+            required_action={"action": "retry", "after_seconds": 5},
+            retryable=True,
+            retry_after=5,
+            details={"errors": dict(sorted(errors.items()))},
+        )
     return {
         "status": "ok" if not errors else "partial",
         "query": query,
@@ -454,7 +494,7 @@ async def resolve_workspace_resource(
 
 
 @workspace_mcp.tool(name="prepare_workspace_action")
-def prepare_workspace_action(
+async def prepare_workspace_action(
     tool_name: Annotated[
         str,
         (
@@ -468,7 +508,7 @@ def prepare_workspace_action(
     ],
 ) -> dict[str, object]:
     """Preview and bind one consequential action to a short-lived one-time commit token."""
-    return APPROVAL_STORE.prepare(tool_name, arguments)
+    return await prepare_action(tool_name, arguments)
 
 
 @workspace_mcp.tool(name="commit_workspace_action")
@@ -477,24 +517,51 @@ async def commit_workspace_action(
         str,
         (
             "One-time, principal-bound token from prepare_workspace_action's response; "
-            "expires 5 minutes after issuance and is consumed on first use."
+            "expires 10 minutes after issuance by default (MCP_CONFIRMATION_TTL_SECONDS). "
+            "The bound action runs at most once: repeating a commit that already ran returns "
+            "its saved result, and a confirmation question keeps the token valid for the "
+            "answering call."
         ),
     ],
-) -> dict[str, object]:
-    """Atomically consume a prepared action token and execute its exact bound arguments."""
-    tool_name, arguments = APPROVAL_STORE.consume(commit_token)
+) -> dict[str, object] | ToolResult | mcp_types.InputRequiredResult:
+    """Claim a prepared action token and execute its exact bound arguments once."""
+    store = get_operation_store()
+    ref = operation_ref(commit_token)
+    outcome = await store.claim(
+        operation_key(current_principal().storage_key, commit_token), kind="commit", ref=ref
+    )
+    if outcome.status in ("missing", "answer_changed", "payload_changed"):
+        raise ValueError(INVALID_COMMIT)
+    if outcome.status != "claimed" or outcome.handle is None or outcome.record is None:
+        # Already ran (saved result), running elsewhere, failed, or unknown:
+        # never execute the bound call a second time.
+        return await resolve_claim(outcome, tool=str((outcome.record or {}).get("tool", "")), ref=ref)
+    tracker = current_tracker()
+    if tracker is not None:
+        # The confirmation guard around this tool settles the claim.
+        tracker.operation = outcome.handle
+    tool = str(outcome.record["tool"])
+    arguments = outcome.record.get("arguments")
+    if not isinstance(arguments, dict):
+        raise ValueError(INVALID_COMMIT)
     active_token = COMMIT_ACTIVE.set(True)
     try:
         # Re-enter the complete middleware chain so revocation, admission,
         # deadlines, input limits, handle resolution, telemetry, and structured
         # errors still apply at commit time. COMMIT_ACTIVE bypasses only the
         # consequential-action gate for this exact bound invocation.
-        result = await workspace_mcp.call_tool(tool_name, arguments)
+        result = await workspace_mcp.call_tool(tool, arguments)
     finally:
         COMMIT_ACTIVE.reset(active_token)
+    if isinstance(result, InputRequiredToolResult):
+        # The bound tool asked a confirmation question: nothing ran yet. The
+        # guard parks the operation (awaiting_input) for the answering call.
+        return result.input_required
+    if result.is_error:
+        return result
     return {
         "status": "committed",
-        "tool": tool_name,
+        "tool": tool,
         "result": result.structured_content or {
             "content": [item.model_dump() for item in result.content]
         },

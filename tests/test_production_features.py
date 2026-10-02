@@ -11,22 +11,26 @@ import mcp.types as mt
 import pytest
 from types import SimpleNamespace
 from fastmcp.server.middleware import MiddlewareContext
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools import ToolResult
 
 import mcp_google_workspace
 from mcp_google_workspace.common.approvals import (
     COMMIT_ACTIVE,
     impact_preview,
+    prepare_action,
     requires_prepare,
 )
 from mcp_google_workspace.common.crypto import FernetKeyring
 from mcp_google_workspace.common.resources import parse_resource_uri, resource_handle
 from mcp_google_workspace.common.errors import (
+    RPC_RATE_LIMITED,
+    ConfirmationRequiredError,
     RecoverableToolError,
     StructuredToolErrorMiddleware,
     _error_envelope,
 )
 from mcp_google_workspace.common.production import (
+    AdmissionError,
     CapabilityCatalogMiddleware,
     ProductionControlMiddleware,
     _validate_payload_shape,
@@ -99,11 +103,22 @@ def test_consequential_action_policy_is_cost_and_impact_aware() -> None:
 def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
     monkeypatch,
 ) -> None:
-    observed: dict[str, object] = {}
+    from mcp_google_workspace.auth.identity import current_principal
+    from mcp_google_workspace.common.operations import (
+        memory_operation_store,
+        operation_key,
+        set_operation_store,
+    )
 
-    async def exercise() -> dict[str, object]:
+    observed: dict[str, object] = {}
+    store = memory_operation_store()
+    set_operation_store(store)
+
+    async def exercise() -> tuple[dict[str, object], object]:
         tool = await workspace_mcp.get_tool("commit_workspace_action")
         assert tool is not None
+        prepared = await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10})
+        token = str(prepared["commit_token"])
 
         async def dispatch(name, arguments, **kwargs):
             observed.update(
@@ -115,16 +130,17 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
             return ToolResult(structured_content={"ok": True})
 
         monkeypatch.setattr(
-            "mcp_google_workspace.server.APPROVAL_STORE.consume",
-            lambda _token: ("gmail_batch_modify", {"message_ids": ["m"] * 10}),
-        )
-        monkeypatch.setattr(
             "mcp_google_workspace.server.workspace_mcp",
             SimpleNamespace(call_tool=dispatch),
         )
-        return await tool.fn("cmt_test")
+        result = await tool.fn(token)
+        record = await store.get(operation_key(current_principal().storage_key, token))
+        return result, (record or {}).get("state")
 
-    result = anyio.run(exercise)
+    try:
+        result, state = anyio.run(exercise)
+    finally:
+        set_operation_store(None)
     assert observed == {
         "name": "gmail_batch_modify",
         "arguments": {"message_ids": ["m"] * 10},
@@ -132,6 +148,8 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
         "commit_active": True,
     }
     assert result["status"] == "committed"
+    # W4b: the operation record finishes as succeeded (was: token consumed).
+    assert state == "succeeded"
     assert COMMIT_ACTIVE.get() is False
 
 
@@ -167,7 +185,33 @@ def test_commit_context_does_not_bypass_revocation_admission(monkeypatch) -> Non
 def test_version_payload_advertises_streamable_http_and_current_protocol() -> None:
     payload = build_version_payload()
     assert payload["protocol_transport"] == "streamable-http"
-    assert payload["mcp_protocol_version"] == "2025-11-25"
+    # W2: was "2025-11-25" under FastMCP 3 / SDK 1. The preferred revision is now
+    # the stateless 2026-07-28 era; tested legacy support is reported separately
+    # and never conflated with the package version.
+    assert payload["mcp_protocol_version"] == "2026-07-28"
+    versions = payload["mcp_protocol_versions"]
+    assert versions["preferred"] == "2026-07-28"
+    assert versions["modern"] == ["2026-07-28"]
+    assert versions["tested"] == ["2025-11-25", "2026-07-28"]
+    assert set(versions["tested"]) <= set(versions["modern"]) | set(versions["legacy"])
+    assert payload["version"] not in versions["tested"]
+
+
+def test_tested_protocol_versions_are_actually_negotiated() -> None:
+    from fastmcp import Client
+
+    from mcp_google_workspace.server import workspace_mcp
+
+    async def negotiate(mode: str) -> tuple[str | None, int]:
+        async with Client(workspace_mcp, mode=mode) as client:  # type: ignore[arg-type]
+            tools = await client.list_tools()
+            return client.protocol_version, len(tools)
+
+    modern_version, modern_tools = anyio.run(negotiate, "auto")
+    legacy_version, legacy_tools = anyio.run(negotiate, "legacy")
+    assert modern_version == "2026-07-28"
+    assert legacy_version == "2025-11-25"
+    assert modern_tools == legacy_tools
 
 
 def test_exported_package_version_matches_installed_metadata() -> None:
@@ -182,6 +226,46 @@ def test_structural_admission_limits_are_enforced() -> None:
         assert "10,000" in str(exc)
     else:  # pragma: no cover - policy invariant
         raise AssertionError("Oversized input was accepted")
+
+
+def test_string_limit_is_raised_only_where_the_tool_declares_it() -> None:
+    upload_schema = {
+        "type": "object",
+        "properties": {
+            "files": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "maxLength": 1024},
+                        "data": {"type": "string", "maxLength": 5_000_000},
+                    },
+                },
+            }
+        },
+    }
+    big = "A" * 3_000_000
+    _validate_payload_shape({"files": [{"name": "photo.jpg", "data": big}]}, schema=upload_schema)
+
+    # Undeclared fields, other fields of the same tool, and schema-less calls keep the default.
+    for arguments, schema in (
+        ({"files": [{"name": big, "data": "YQ=="}]}, upload_schema),
+        ({"files": [{"name": "a", "data": "YQ==", "extra": big}]}, upload_schema),
+        ({"body": big}, None),
+    ):
+        with pytest.raises(ValueError, match="1,000,000 character limit"):
+            _validate_payload_shape(arguments, schema=schema)
+    with pytest.raises(ValueError, match=r"arguments\.files\[0\]\.data exceeds the 5,000,000"):
+        _validate_payload_shape({"files": [{"data": "A" * 5_000_001}]}, schema=upload_schema)
+
+
+def test_default_request_limit_fits_one_max_size_picker_upload() -> None:
+    from mcp_google_workspace.server_http import DEFAULT_MAX_REQUEST_BYTES
+
+    max_file = 25 * 1024 * 1024
+    encoded = 4 * ((max_file + 2) // 3)
+    envelope_allowance = 64 * 1024
+    assert DEFAULT_MAX_REQUEST_BYTES >= encoded + envelope_allowance
 
 
 def test_principal_admission_state_is_bounded_and_evicts_idle_entries(
@@ -262,7 +346,12 @@ def test_multi_worker_readiness_requires_distributed_oauth_state(
     monkeypatch.setenv("MCP_WORKERS", "2")
     monkeypatch.setenv("MCP_REDIS_URL", "redis://example")
     monkeypatch.setenv("MCP_UPLOAD_S3_BUCKET", "uploads")
-    monkeypatch.setenv("MCP_SESSION_AFFINITY", "true")
+    monkeypatch.setenv("MCP_REQUEST_STATE_KEYS", "k" * 64)
+    monkeypatch.setenv("FASTMCP_TASKS_ENCRYPTION_KEY", "t" * 40)
+    # W5: modern traffic needs no affinity, so MCP_SESSION_AFFINITY is no
+    # longer required for readiness (it is reported for legacy sessions only).
+    monkeypatch.delenv("MCP_SESSION_AFFINITY", raising=False)
+    monkeypatch.delenv("MCP_RUNTIME_MODE", raising=False)  # set by bundle tests earlier in the run
 
     class Backend:
         backend_name = "redis"
@@ -289,9 +378,21 @@ def test_multi_worker_readiness_requires_distributed_oauth_state(
 
     ready, payload = readiness_report()
 
-    assert ready
+    assert ready, json.dumps(payload["checks"])
     assert payload["checks"]["token_storage"]["backend"] == "redis"
-    assert payload["checks"]["multi_worker_storage"]["ok"]
+    assert payload["checks"]["fleet_storage"]["ok"]
+    assert payload["checks"]["continuation_keys"]["ok"]
+    assert payload["checks"]["app_state"] == {"backend": "redis", "ok": True}
+    assert payload["checks"]["task_queue"]["ok"] and payload["checks"]["task_queue"]["backend"] == "redis"
+    assert payload["checks"]["legacy_session_affinity"]["required"] is False
+    assert payload["warnings"] == ["legacy_session_affinity"]
+
+    # Without a shared continuation key ring a replica fleet is not ready:
+    # a confirmation asked on one replica could not be answered on another.
+    monkeypatch.delenv("MCP_REQUEST_STATE_KEYS")
+    ready, payload = readiness_report()
+    assert not ready
+    assert payload["checks"]["continuation_keys"]["ok"] is False
 
 
 def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:
@@ -310,12 +411,19 @@ def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:
         by_name = {tool.name: tool for tool in visible}
         return set(by_name), by_name["gmail_send_email"].parameters
 
+    from mcp_google_workspace.auth.grants import GrantSnapshot
+
     monkeypatch.setattr(
         "mcp_google_workspace.common.production.get_access_token", lambda: object()
     )
+    # W5: the catalog reads the caller's current grant (auth.grants) per request.
     monkeypatch.setattr(
-        "mcp_google_workspace.auth.google_oauth.google_connection_status",
-        lambda: {"granted_capabilities": ["gmail"]},
+        "mcp_google_workspace.auth.grants.read_grant",
+        lambda principal=None: GrantSnapshot("p", "rev-1", frozenset({"gmail"})),
+    )
+    monkeypatch.setattr(
+        "mcp_google_workspace.auth.grants.current_principal",
+        lambda: SimpleNamespace(storage_key="p"),
     )
     names, parameters = anyio.run(exercise)
     assert "gmail_send_email" in names
@@ -323,3 +431,67 @@ def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:
     assert "gmail_download_attachment" not in names
     attachment_items = parameters["properties"]["attachments"]["anyOf"][0]["items"]
     assert "file_path" not in attachment_items["properties"]
+
+
+def _run_error_middleware(error: Exception):
+    async def exercise():
+        middleware = StructuredToolErrorMiddleware()
+        context = MiddlewareContext(
+            message=mt.CallToolRequestParams(name="gmail_read_emails", arguments={}),
+            method="tools/call",
+        )
+
+        async def call_next(_context):
+            raise error
+
+        return await middleware.on_call_tool(context, call_next)
+
+    return anyio.run(exercise)
+
+
+def test_rate_limit_uses_implementation_defined_code_and_structured_data() -> None:
+    # W2: the FastMCP 3 code -32029 sat in the range MCP 2026-07-28 reserves for
+    # spec-defined codes; -32005 is in the implementation-defined band and does
+    # not collide with the SDK's -32020/-32021/-32022.
+    assert -32019 <= RPC_RATE_LIMITED <= -32000
+    assert RPC_RATE_LIMITED not in {-32000, -32001, -32020, -32021, -32022}
+    # W5: an *admission* rate limit is a protocol rejection (AdmissionError);
+    # a Google 429 is a tool execution error instead.
+    error = AdmissionError("rate_limited", "Per-principal request rate exceeded.", retry_after=3)
+    with pytest.raises(McpError) as raised:
+        _run_error_middleware(error)
+    assert raised.value.code == RPC_RATE_LIMITED
+    envelope = raised.value.data
+    assert envelope["code"] == "rate_limited"
+    assert envelope["retryable"] is True
+    assert envelope["required_action"] == {"action": "retry", "after_seconds": 3}
+    # Human-readable message, not a JSON document; still names code and next step.
+    assert not raised.value.message.startswith("{")
+    assert "[code: rate_limited]" in raised.value.message
+
+
+def test_framework_wrapped_errors_keep_their_recovery_envelope() -> None:
+    from fastmcp.exceptions import ToolError
+
+    cause = RecoverableToolError(
+        "picker_required",
+        "Use the Workspace Files picker.",
+        required_action={"tool": "files_file_manager", "arguments": {}},
+    )
+    try:
+        raise ToolError("Error calling tool 'upload_file': Use the picker") from cause
+    except ToolError as wrapped:
+        error = wrapped
+    # W5: a recoverable tool failure is an isError result, not a JSON-RPC error.
+    result = _run_error_middleware(error)
+    assert isinstance(result, ToolResult) and result.is_error is True
+    assert result.structured_content["code"] == "picker_required"
+    assert result.structured_content["required_action"] == {"tool": "files_file_manager", "arguments": {}}
+
+
+def test_confirmation_required_is_an_error_tool_result_not_a_protocol_error() -> None:
+    result = _run_error_middleware(ConfirmationRequiredError("delete_task", "Delete task t1?"))
+    assert isinstance(result, ToolResult)
+    assert result.is_error is True
+    assert result.structured_content["code"] == "confirmation_required"
+    assert result.structured_content["required_action"]["prompt"] == "Delete task t1?"

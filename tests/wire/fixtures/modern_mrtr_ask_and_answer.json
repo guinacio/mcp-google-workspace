@@ -1,0 +1,53 @@
+{
+  "answer": {
+    "_meta": {
+      "io.modelcontextprotocol/serverInfo": {
+        "name": "google-workspace-mcp",
+        "version": "4.0.10"
+      }
+    },
+    "content": [
+      {
+        "text": "{\"status\":\"deleted\",\"person_name\":\"people/c-wire\"}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "resultType": "complete",
+    "structuredContent": {
+      "person_name": "people/c-wire",
+      "status": "deleted"
+    }
+  },
+  "ask": {
+    "_meta": {
+      "io.modelcontextprotocol/serverInfo": {
+        "name": "google-workspace-mcp",
+        "version": "4.0.10"
+      }
+    },
+    "inputRequests": {
+      "confirm": {
+        "method": "elicitation/create",
+        "params": {
+          "message": "Permanently delete contact people/c-wire?",
+          "mode": "form",
+          "requestedSchema": {
+            "properties": {
+              "value": {
+                "title": "Value",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    },
+    "requestState": "<SEALED_STATE>",
+    "resultType": "input_required"
+  }
+}

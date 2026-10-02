@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
@@ -14,6 +16,8 @@ from ..client import gmail_service
 from ..helpers import gather_in_order
 from ..presentation import envelope, mail_feed_envelope
 from ..schemas import DigestRequest, SearchEmailRequest
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _quote_search_value(value: str) -> str:
@@ -125,8 +129,7 @@ def register(server: FastMCP) -> None:
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         query_str = _build_search_query(request)
-        if ctx is not None:
-            await ctx.info("Running Gmail search query.")
+        LOGGER.debug("Running Gmail search query.")
         result = await execute_google_request(
             service.users()
             .messages()

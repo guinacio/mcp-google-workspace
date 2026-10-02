@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
+import copy
 import inspect
 import textwrap
 from types import UnionType
@@ -13,18 +14,18 @@ from typing import Annotated, Any, Union, get_args, get_origin
 _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
     "prepare_workspace_action": ("status", "commit_token", "expires_at", "impact", "next_action"),
     "commit_workspace_action": ("status", "tool", "result"),
-    "get_dashboard": ("title", "generated_at_utc", "state", "sections", "warnings", "section_errors", "weekly_calendar"),
-    "get_weekly_calendar_view": ("state", "week_start", "week_end", "timezone", "total_events", "days", "fallback_text"),
+    "get_dashboard": ("title", "generated_at_utc", "state", "sections", "warnings", "section_errors", "weekly_calendar", "view"),
+    "get_weekly_calendar_view": ("state", "week_start", "week_end", "timezone", "total_events", "days", "fallback_text", "view"),
     "get_event_detail": (
         "event_id", "calendar_id", "title", "start", "end", "timezone", "status",
         "location", "description", "conference_link", "conference_provider",
         "organizer_email", "organizer_name", "self_response_status", "attendees",
-        "attachments", "error",
+        "attachments",
     ),
     "get_email_detail": (
         "message_id", "thread_id", "subject", "from_value", "to", "cc", "bcc",
         "date", "date_timezone", "source_date", "snippet", "text_body", "html_body",
-        "attachments", "labels", "is_unread", "error",
+        "attachments", "labels", "is_unread",
     ),
     "list_calendars": ("kind", "etag", "nextPageToken", "nextSyncToken", "items"),
     "check_time_availability": ("kind", "timeMin", "timeMax", "groups", "calendars"),
@@ -66,23 +67,47 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
-# Every tool may return the shared in-tool error envelope instead of its
-# documented payload (see common.errors.tool_error_payload); "error" also
-# accepts an object for tools that embed structured error details.
-_ERROR_ENVELOPE_PROPERTIES: dict[str, dict[str, Any]] = {
-    "error": {
-        "type": ["object", "string"],
-        "description": "Error message or structured error details when the call failed.",
+# Server-issued MCP App view descriptor (see apps.state). Launch tools return it
+# as ``view`` in structuredContent and under ``_meta["mcp-google-workspace/view"]``.
+VIEW_DESCRIPTOR_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "Server-issued dashboard view handle and its current state revision.",
+    "properties": {
+        "handle": {
+            "type": "string",
+            "description": "Opaque view handle; pass it as view_handle on every call for this view.",
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Current state revision; pass it as expected_revision to reject stale updates.",
+        },
+        "expires_at": {
+            "type": "integer",
+            "description": "Unix time (seconds) when the view expires unless it is used again.",
+        },
+        "ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sliding idle lifetime of the view in seconds.",
+        },
     },
-    "provider_status": {
-        "type": "integer",
-        "description": "HTTP status code returned by the Google API for a failed call.",
-    },
-    "context": {
-        "type": "object",
-        "description": "Identifying request arguments echoed back with an error.",
-    },
+    "required": ["handle", "revision", "expires_at", "ttl_seconds"],
+    "additionalProperties": False,
 }
+
+# Registered fields whose documented schema is more specific than the
+# name-based heuristic in ``_named_field_schema``.
+_REGISTERED_FIELD_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
+    "get_dashboard": {"view": VIEW_DESCRIPTOR_SCHEMA},
+    "get_weekly_calendar_view": {"view": VIEW_DESCRIPTOR_SCHEMA},
+}
+
+
+# Output schemas describe successful results only. A failed call is an
+# ``isError`` result whose structuredContent is the shared error envelope
+# (common.errors.classify_error); clients do not validate it against the
+# tool's outputSchema.
 
 
 def _registered_schema(tool_name: str) -> dict[str, Any] | None:
@@ -90,7 +115,8 @@ def _registered_schema(tool_name: str) -> dict[str, Any] | None:
     if fields is None:
         return None
     properties = {name: _named_field_schema(name) for name in fields}
-    properties.update(_ERROR_ENVELOPE_PROPERTIES)
+    for name, schema in _REGISTERED_FIELD_SCHEMAS.get(tool_name, {}).items():
+        properties[name] = copy.deepcopy(schema)
     return {
         "type": "object",
         "title": f"{tool_name.replace('_', ' ').title()} response",

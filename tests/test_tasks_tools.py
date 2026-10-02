@@ -163,9 +163,9 @@ def test_tasks_tool_annotations():
     complete_tool = anyio.run(_get_tool, tasks_mcp, "complete_task")
     delete_tool = anyio.run(_get_tool, tasks_mcp, "delete_task")
 
-    assert list_tool.annotations.readOnlyHint is True
-    assert complete_tool.annotations.idempotentHint is True
-    assert delete_tool.annotations.destructiveHint is True
+    assert list_tool.annotations.read_only_hint is True
+    assert complete_tool.annotations.idempotent_hint is True
+    assert delete_tool.annotations.destructive_hint is True
 
 
 def test_task_envelope_and_digest_surface_actionable_state():
@@ -213,10 +213,16 @@ def test_get_tasklist_tool_returns_structured_error(monkeypatch):
 
     async def scenario():
         async with Client(tasks_mcp) as client:
-            result = await client.call_tool("get_tasklist", {"tasklist_id": "list-1"})
-            return result.structured_content or result.data
+            result = await client.call_tool(
+                "get_tasklist", {"tasklist_id": "list-1"}, raise_on_error=False
+            )
+            assert result.is_error is True
+            return result.structured_content
 
+    # W5: a Google API failure is an isError tool result with the error envelope
+    # (was a successful result carrying an "error" dict).
     result = anyio.run(scenario)
-    assert "404" in result["error"]
+    assert "404" in result["message"]
+    assert result["code"] == "not_found"
     assert result["provider_status"] == 404
-    assert result["context"]["tasklist_id"] == "list-1"
+    assert result["details"]["context"]["tasklist_id"] == "list-1"

@@ -2,3 +2,4 @@
 *.html linguist-generated
 src/mcp_google_workspace/apps/ui/index.html text eol=lf
 src/mcp_google_workspace/apps/ui/dist/index.html text eol=lf
+tests/contracts/*.json text eol=lf

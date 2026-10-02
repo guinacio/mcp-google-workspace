@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import json
 
 from fastmcp import Context, FastMCP
@@ -9,6 +11,8 @@ from fastmcp import Context, FastMCP
 from ..common.async_ops import execute_google_request
 from .client import gmail_service
 from .mime_utils import decode_rfc2047
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register_resources(server: FastMCP) -> None:
@@ -39,7 +43,7 @@ def register_resources(server: FastMCP) -> None:
                     "date": headers.get("date"),
                 }
             )
-        await ctx.info("Built inbox summary resource.")
+        LOGGER.debug("Built inbox summary resource.")
         return json.dumps({"unread_count": unread, "latest_messages": items}, indent=2)
 
     @server.resource("gmail://labels", name="gmail_labels")

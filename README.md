@@ -13,8 +13,9 @@ Production-oriented Google Workspace MCP package with:
 - Google Slides MCP: presentations, slide pages, thumbnails, text replacement, and raw batch updates.
 - MCP Apps Dashboard: workspace dashboard app-layer tools/resources with interactive UI.
 - Optional Google Keep MCP, Google Chat MCP, Google Meet MCP, and Gemini media integrations behind feature flags.
-- FastMCP advanced features: Context logging, progress updates, user elicitation, sampling, resources, and prompts.
+- FastMCP advanced features: progress updates, background tasks, resources, and prompts on MCP 2026-07-28.
 - Composed server architecture: Gmail + Calendar + Drive + Sheets + Docs + Tasks + People + Forms + Slides mounted by default, with optional Apps/Keep/Chat/Meet/Gemini namespaces.
+- Protocol support: MCP **2026-07-28** (modern, no session) plus legacy handshake-era connectivity for **2024-11-05 through 2025-11-25**, over both stdio and Streamable HTTP.
 
 ## Requirements
 
@@ -47,7 +48,11 @@ Place the Google OAuth client `credentials.json` in one of:
 - project root: `./credentials.json`
 - package credentials folder: `./src/credentials/credentials.json`
 
-Configure a versioned Fernet key ring before first use. Production deployments should mount a secret-manager document through `MCP_SECRET_FILE`; `MCP_TOKEN_ENCRYPTION_KEY` remains a single-key development option. The MCP encrypts each user's refresh token separately and never writes a shared `token.json`.
+Each user's Google refresh token is encrypted separately with Fernet; the MCP never writes a shared `token.json`.
+
+**Local stdio / MCPB:** nothing to configure. On first use the server generates the encryption key and keeps it in the OS keychain (Windows Credential Manager, macOS Keychain, or the Secret Service on Linux), never in a file or in the host's extension settings. If no secure keychain is available (for example headless Linux), startup stops and asks you to set `MCP_TOKEN_ENCRYPTION_KEY` instead. Losing the keychain entry (new machine, OS reinstall) only means reconnecting Google once.
+
+**HTTP deployments:** configure a versioned key ring from your secret manager. Mount a secret-manager document through `MCP_SECRET_FILE`; `MCP_TOKEN_ENCRYPTION_KEY` remains a single-key development option. The keychain is never used over HTTP.
 
 Generate a key once and store it in your secret manager:
 
@@ -135,6 +140,20 @@ $env:ENABLE_APPS_DASHBOARD="true"
 uv run python -m mcp_google_workspace
 ```
 
+### Local stdio trust boundary
+
+A local stdio server (including the MCPB bundle) serves exactly one trusted user: the
+person running it. There is no bearer token, so every request runs as one explicit
+trusted-local principal (`MCP_LOCAL_PRINCIPAL`, default `local-user`). That principal owns
+the Google grant, the picker uploads, and the dashboard views of this process.
+
+Dashboard view handles and upload IDs are still unguessable (256-bit and 192-bit random
+values) and are checked on every call, but over stdio they only keep one view's state
+apart from another view's. They are **not** multitenant isolation: anything that can talk
+to this stdio process already acts as that user. Serve more than one user only through
+the authenticated Streamable HTTP entrypoint, where every handle and upload is bound to
+the verified `(issuer, subject)` of the bearer token.
+
 ## MCP Bundle (MCPB)
 
 This repository now includes a native `uv`-based MCP Bundle manifest and packaging assets.
@@ -166,7 +185,7 @@ Bundle-specific documentation, runtime settings, and validation steps live in `d
 
 ## Run (Streamable HTTP)
 
-The remote server uses session-aware MCP Streamable HTTP and requires an OIDC bearer-token issuer. Session mode enables progress, cancellation, and `tools/list_changed` notifications; durable long-running work remains Redis-backed. The server refuses to start without this configuration:
+The remote server speaks MCP Streamable HTTP for protocol **2026-07-28** and keeps FastMCP's built-in compatibility path for every handshake-era (legacy) client version: **2024-11-05, 2025-03-26, 2025-06-18, and 2025-11-25**. `/version` reports both the full supported set and the pair this repository's suite actively tests (2025-11-25 and 2026-07-28). Modern requests are self-contained POSTs with no session: a response is JSON unless the tool reports progress or runs long, in which case it becomes a request-scoped SSE stream, and closing that stream cancels the tool. Legacy requests keep the `initialize` handshake and an `Mcp-Session-Id` session. Durable long-running work runs as MCP Tasks on the Redis queue. It requires an OIDC bearer-token issuer and refuses to start without this configuration:
 
 ```powershell
 $env:MCP_HOST="0.0.0.0"
@@ -181,7 +200,7 @@ $env:MCP_SECRET_FILE="/run/secrets/mcp-google-workspace.json"
 uv run python -m mcp_google_workspace.server_http
 ```
 
-Clients connect with an OIDC bearer JWT. FastMCP validates its issuer, audience, signature, and expiry; the verified `iss` + `sub` selects an isolated encrypted Google token. Each user calls `connect_google_workspace`, opens its returned URL, completes Google consent, and calls `refresh_workspace_catalog`. The callback is PKCE-protected and one-time; it cannot connect Google credentials to a different MCP principal.
+Clients connect with an OIDC bearer JWT. The server validates its signature (JWKS), issuer, audience and expiry, and requires `iss`, `sub` and `exp`; the verified `iss` + `sub` selects an isolated encrypted Google token. MCP bearer tokens are never forwarded to Google. A request without a valid token gets `401` with a `WWW-Authenticate` challenge whose `resource_metadata` points to the RFC 9728 document served at `/.well-known/oauth-protected-resource<base path>/mcp`, which names the issuer as the authorization server (the server does not implement an authorization server or dynamic client registration). Each user calls `connect_google_workspace`, opens its returned URL and completes Google consent; `tools/list` reflects the caller's current grants on every request (`refresh_workspace_catalog` only reports them). The callback is PKCE-protected, one-time, checks the RFC 9207 `iss` parameter when present, and cannot connect Google credentials to a different MCP principal.
 
 ### Docker / GHCR
 
@@ -190,7 +209,7 @@ Every GitHub release publishes a signed multi-architecture image for
 
 ```bash
 docker pull ghcr.io/guinacio/mcp-google-workspace:latest
-docker pull ghcr.io/guinacio/mcp-google-workspace:0.3.13
+docker pull ghcr.io/guinacio/mcp-google-workspace:1.0.0
 ```
 
 The image runs the authenticated Streamable HTTP entrypoint on port 8000. It
@@ -214,7 +233,7 @@ Release images include signed GitHub build provenance. Verify a tag with:
 
 ```bash
 gh attestation verify \
-  oci://ghcr.io/guinacio/mcp-google-workspace:0.3.13 \
+  oci://ghcr.io/guinacio/mcp-google-workspace:1.0.0 \
   -R guinacio/mcp-google-workspace
 ```
 
@@ -332,7 +351,6 @@ Keep (namespaced as `keep_*`):
 
 - `create_note`, `get_note`, `list_notes`, `delete_note`
 - `share_note`, `unshare_note`
-- `summarize_note` (sampling-powered)
 - compatibility stubs for unsupported Keep v1 operations:
   - `update_note`
   - `archive_note`, `unarchive_note`
@@ -346,7 +364,6 @@ Chat (namespaced as `chat_*`):
 - `list_spaces`, `get_space`
 - `list_messages`, `get_message`
 - `create_message`, `update_message`, `delete_message`
-- `summarize_space_messages` (sampling-powered)
 
 Note: Chat tools/resources are mounted only when `ENABLE_CHAT=true`.
 
@@ -396,12 +413,12 @@ Chat resources:
 - `chat://users/{user_ref}`
 - `chat://users/me`
 
-Apps resources (mounted when `ENABLE_APPS_DASHBOARD=true`):
+Apps resources (mounted when `ENABLE_APPS_DASHBOARD=true`; the root composition adds the `apps` namespace prefix, matching the mounted `ui://apps/dashboard-ui` address below):
 
-- `apps://dashboard/current`
-- `apps://dashboard/day/{ymd}`
-- `apps://dashboard/week/{ymd}`
-- `apps://calendar/week/{ymd}`
+- `apps://apps/dashboard/current`
+- `apps://apps/dashboard/day/{ymd}`
+- `apps://apps/dashboard/week/{ymd}`
+- `apps://apps/calendar/week/{ymd}`
 
 Prompts:
 
@@ -418,29 +435,36 @@ Prompts:
 The remote runtime exposes unauthenticated minimal operational endpoints:
 
 - `/health/live` — event-loop/process liveness
-- `/health/ready` — draining, encryption, token storage, Redis, S3, and multi-worker dependency readiness
+- `/health/ready` — draining, encryption, token storage, Redis, S3, app state, task queue, operation records, operation lease and (for a fleet) continuation keys and shared storage; advisory checks are listed under `warnings`
 - `/version` — package/build/MCP protocol versions without secrets
 - `/metrics` — Prometheus/OpenTelemetry-compatible low-cardinality metrics
 
-Admission control is principal- and tool-cost-aware:
+Admission control is principal- and tool-cost-aware. Per-principal limits are fleet-wide (enforced in Redis) whenever `MCP_REDIS_URL` is set, and process-local otherwise (`MCP_ADMISSION_BACKEND=auto|local|redis`); process limits always apply per process. Background-task executions take the same concurrency slots as foreground calls and count toward draining; the request rate is charged once, at submission. Rejections are JSON-RPC errors (`-32005` rate limited, `-32006` draining/unavailable); the deadline and every Google or validation failure are `isError` tool results with a stable error envelope.
 
-| Variable | Default | Purpose |
-| --- | ---: | --- |
-| `MCP_RATE_LIMIT_PER_MINUTE` | `120` | Per-principal request rate |
-| `MCP_GLOBAL_CONCURRENCY` | `64` | Server-wide active tool calls |
-| `MCP_PRINCIPAL_CONCURRENCY` | `8` | Active calls per principal |
-| `MCP_PRINCIPAL_STATE_LIMIT` | `10000` | Maximum retained admission-state identities |
-| `MCP_PRINCIPAL_STATE_TTL_SECONDS` | `900` | Idle admission-state retention |
-| `MCP_EXPENSIVE_CONCURRENCY` | `4` | Gemini/download/export/batch calls |
-| `MCP_TOOL_DEADLINE_SECONDS` | `120` | Standard end-to-end deadline |
-| `MCP_EXPENSIVE_DEADLINE_SECONDS` | `600` | Expensive-tool deadline |
-| `MCP_SHUTDOWN_GRACE_SECONDS` | `30` | In-flight drain interval |
+| Variable | Default | Scope | Purpose |
+| --- | ---: | --- | --- |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `120` | principal (fleet) | Sliding one-minute request rate |
+| `MCP_PRINCIPAL_CONCURRENCY` | `8` | principal (fleet) | Active calls and task executions per principal |
+| `MCP_PRINCIPAL_QUEUE_SECONDS` | `10` | principal (fleet) | Wait for a fleet concurrency slot before refusing |
+| `MCP_GLOBAL_CONCURRENCY` | `64` | process | Active tool calls and task executions in this process |
+| `MCP_PRINCIPAL_STATE_LIMIT` | `10000` | process | Maximum retained process-local admission identities |
+| `MCP_PRINCIPAL_STATE_TTL_SECONDS` | `900` | process | Idle admission-state retention |
+| `MCP_EXPENSIVE_CONCURRENCY` | `4` | process | Gemini/download/export/batch calls |
+| `MCP_TOOL_DEADLINE_SECONDS` | `120` | call | Standard deadline (also bounds a task's runtime) |
+| `MCP_EXPENSIVE_DEADLINE_SECONDS` | `600` | call | Expensive-tool deadline; must stay below `MCP_OPERATION_LEASE_SECONDS` |
+| `MCP_SHUTDOWN_GRACE_SECONDS` | `30` | process | In-flight request and task drain interval |
 
-Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, or recipient lists.
+Google provider calls have a failure-window circuit breaker and expose logical-call versus HTTP-attempt metrics so retries are measurable. Logs include hashed principals and correlation IDs, never tokens, message bodies, prompts, filenames, recipient lists or continuation state. A valid W3C `traceparent`/`tracestate` in the request `_meta` parents the tool span; malformed values are ignored and baggage is never accepted. A multi-round-trip question is recorded as outcome `input_required` (a round, span attribute `mcp.tool.round`), separately from completed logical operations (`mcp_workspace_logical_operations_total`).
 
-For more than one HTTP process/replica, set `MCP_WORKERS`, `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, and configure load-balancer affinity on `Mcp-Session-Id`; set `MCP_SESSION_AFFINITY=true` only after that routing is active. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, approval tokens, and upload metadata. Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. The HTTP entrypoint uses `MCP_REDIS_URL` as `FASTMCP_DOCKET_URL` when the latter is not set. FastMCP native task-enabled tools use the standard MCP task protocol for operation IDs, progress polling, cancellation, expiry, and partial/error results. Additional workers can run with `uv run fastmcp tasks worker src/mcp_google_workspace/server.py:workspace_mcp` using the same `FASTMCP_DOCKET_URL` and queue name.
+The HTTP boundary validates `Host` and `Origin` (defaults derived from `MCP_HTTP_BASE_URL`; `MCP_ALLOWED_HOSTS`, `MCP_ALLOWED_ORIGINS`), bounds request bodies while they stream (`MCP_MAX_REQUEST_BYTES`, 36 MiB, enough for one 25 MiB picker upload after base64 encoding; chunked bodies are refused with `413` before being buffered) and lets the SDK reject `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` mismatches (`-32020`) and unsupported versions (`-32022`) before any tool runs. `MCP_HTTP_RESPONSE_MODE=json` disables request-scoped SSE for intermediaries that cannot pass it (no progress, and disconnects no longer cancel tools). Change subscriptions (`subscriptions/listen`) are not advertised.
 
-High-impact reversible writes use `prepare_workspace_action` and `commit_workspace_action`. The encrypted one-time token is principal-bound, argument-bound, expires after five minutes, and returns an impact preview before commit. Stable `resource` handles (`gdrive:///...`, `gmail-message:///...`, and related schemes) are included where applicable and can be refreshed through `resolve_workspace_resource`.
+### Deployment
+
+A single stdio (MCPB) process or a single-process Streamable HTTP deployment needs none of the distributed infrastructure below: app state, uploads, operation records and the task queue all use in-memory backends, and Redis is not required. Redis (and S3-compatible object storage for uploads) becomes required only when you run more than one HTTP process or replica behind a load balancer, as described next. For a dedicated walkthrough of that fleet topology (Redis/S3 contract, reverse proxy, and running workers), see the [multi-replica runbook](docs/DEPLOYMENT_FLEET.md).
+
+For more than one HTTP process or replica, declare the fleet (`MCP_WORKERS` for processes per replica, `MCP_REPLICAS` for single-worker replicas; setting `MCP_REDIS_URL` implies a fleet too) and set `MCP_REDIS_URL`, `MCP_UPLOAD_S3_BUCKET`, `MCP_REQUEST_STATE_KEYS` and `FASTMCP_TASKS_ENCRYPTION_KEY` identically on every replica and worker. Redis then stores encrypted Google credentials, one-time PKCE state, distributed refresh locks, operation records, upload metadata, dashboard view state (encrypted with the same key ring), fleet admission counters and the task queue. Modern (2026-07-28) clients need **no session affinity**: every request is independent, and views, uploads, confirmations and tasks are addressed by server-issued handles or sealed continuations that any replica can verify. Only handshake-era (legacy) clients hold an `Mcp-Session-Id` session in one process; if you serve them behind several replicas, pin them to one replica at the load balancer (a hash of that header does not work; see the [multi-replica runbook](docs/DEPLOYMENT_FLEET.md)) and set `MCP_SESSION_AFFINITY=true` (readiness reports it as an advisory `legacy_session_affinity` check). Set `MCP_TOKEN_REDIS_URL` only when OAuth state must use a separate Redis deployment. Readiness fails unless OAuth state is Redis-backed and the complete distributed contract is reachable. Task-enabled tools run through the MCP Tasks extension (`io.modelcontextprotocol/tasks`), registered once on the root server by one shared factory for HTTP, stdio, and workers: the queue is `FASTMCP_DOCKET_URL` when set, otherwise `MCP_REDIS_URL` (except in the local stdio bundle), otherwise an in-process `memory://` queue; the queue name defaults to `mcp-google-workspace` (`FASTMCP_DOCKET_NAME` overrides it). Set the same `FASTMCP_TASKS_ENCRYPTION_KEY` on every server and worker so queued caller-credential snapshots are encrypted (tool arguments and results are not). Additional workers run with `uv run mcp-google-workspace-worker` against the same Redis queue.
+
+High-impact reversible writes use `prepare_workspace_action` and `commit_workspace_action`. The one-time token is principal-bound and argument-bound, expires after `MCP_CONFIRMATION_TTL_SECONDS` (10 minutes by default), and returns an impact preview before commit. The bound action runs at most once: repeating a commit that already ran returns its saved result, and a call whose outcome is uncertain after a timeout or disconnect returns `outcome_unknown` with verification steps instead of being retried (see `docs/migration/W4_CONFIRMATION_POLICY.md`). Stable `resource` handles (`gdrive:///...`, `gmail-message:///...`, and related schemes) are included where applicable and can be refreshed through `resolve_workspace_resource`.
 
 Emergency principal invalidation accepts hashed principal storage keys through `MCP_REVOKED_PRINCIPALS` or the Redis set `mcp:revoked_principals`. Redis-backed validation fails closed if revocation state cannot be checked.
 
@@ -464,20 +488,19 @@ Typical flow:
 - Drive `upload_file` and `update_file_content`
 - Gemini `edit_image`, `describe_video`, and `analyze_audio`
 
-Local/stdio uploads are session-scoped in memory. A single remote instance can use encrypted filesystem objects plus SQLite metadata through `MCP_UPLOAD_DB`. Multi-worker production uses Redis metadata and S3-compatible encrypted object storage by configuring `MCP_REDIS_URL` and `MCP_UPLOAD_S3_BUCKET` (plus optional `MCP_UPLOAD_S3_ENDPOINT` and `MCP_UPLOAD_S3_PREFIX`). Remote files use opaque handles, expire after one hour, and have a 250 MiB per-principal aggregate quota by default. Configure `MCP_UPLOAD_TTL_SECONDS` and `MCP_UPLOAD_QUOTA_BYTES` as needed. Uploads are MIME-sniffed, archive expansion is bounded, checksums are verified, and `MCP_REQUIRE_MALWARE_SCAN=true` enforces ClamAV through `MCP_CLAMAV_HOST`/`MCP_CLAMAV_PORT`. Raw host paths are absent from the remote catalog and rejected at runtime.
+Local/stdio uploads live in process memory, scoped to the trusted-local principal (not to an MCP connection, so they survive across requests) and use the same `upl_...` handles, TTL, quota, and content checks as remote uploads; see [Local stdio trust boundary](#local-stdio-trust-boundary). A single remote instance can use encrypted filesystem objects plus SQLite metadata through `MCP_UPLOAD_DB`. Multi-worker production uses Redis metadata and S3-compatible encrypted object storage by configuring `MCP_REDIS_URL` and `MCP_UPLOAD_S3_BUCKET` (plus optional `MCP_UPLOAD_S3_ENDPOINT` and `MCP_UPLOAD_S3_PREFIX`). Uploads use opaque handles, expire after one hour, and have a 250 MiB per-principal aggregate quota by default. Configure `MCP_UPLOAD_TTL_SECONDS` and `MCP_UPLOAD_QUOTA_BYTES` as needed. Uploads are MIME-sniffed, archive expansion is bounded, checksums are verified, and `MCP_REQUIRE_MALWARE_SCAN=true` enforces ClamAV through `MCP_CLAMAV_HOST`/`MCP_CLAMAV_PORT`. Raw host paths are absent from the remote catalog and rejected at runtime.
 
 Use `files_delete_file` to remove an upload before its TTL expires.
 Use `files_list_files_page` with `limit` and `cursor` when a principal has many uploads.
 `get_mcp_apps_diagnostics` reports the UI resource, renderer mode, generated hidden callback addresses, and can run a temporary store/delete self-test with `run_self_test=true`.
 
-The MCPB manifest forces Prefab's self-contained bundled renderer, avoiding a
-runtime CDN dependency inside the host iframe.
+The picker always serves the self-contained renderer bundled in the locked `prefab-ui` version (every transport, not only the MCPB), so its resource declares no CSP domains and loads nothing from a CDN. `files_list_files`, `files_list_files_page` and `files_read_file` are model-only; `files_store_files` is the picker's app-only upload callback.
 
 **Requires:** an MCP client with MCP Apps/iframe rendering support. Clients without Apps support can still use Google Drive file IDs or trusted local/stdio paths.
 
 ### Progressive Tool Discovery
 
-Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to workflow/discovery entry points plus `search_tools` and `call_tool`; hidden tools remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. `refresh_workspace_catalog` sends `tools/list_changed` after incremental consent.
+Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to workflow/discovery entry points plus `search_tools` and `call_tool`; hidden tools remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. The catalog is sorted and evaluated against the caller's current grants on every request (and re-checked when a tool is called, so a stale catalog cannot run a revoked capability); `refresh_workspace_catalog` reports the grants and sends no notification.
 
 Configuration:
 
@@ -502,15 +525,29 @@ Drive, Calendar, and Gemini Drive-media downloads stream through bounded tempora
 
 ### MCP Apps (UI Dashboard)
 
-When `ENABLE_APPS_DASHBOARD=true`, the `apps_get_dashboard` and `apps_get_weekly_calendar_view` tools carry `_meta.ui.resourceUri` metadata pointing to `ui://apps/dashboard-ui` (with `ui/resourceUri` retained for older hosts). MCP clients that support the Apps rendering protocol (e.g. Claude Desktop) will embed an interactive workspace dashboard UI alongside the tool response. The dashboard applies the host's initial theme, colors, and fonts, and uses known Workspace tool names when the host does not support `tools/list`.
+When `ENABLE_APPS_DASHBOARD=true`, the `apps_get_dashboard` and `apps_get_weekly_calendar_view` tools carry `_meta.ui.resourceUri` pointing to `ui://apps/dashboard-ui` (the nested key only; the flat `ui/resourceUri` alias and the old `ui://dashboard-ui`/`apps://dashboard/ui` addresses were removed). MCP clients that support the stable MCP Apps protocol (2026-01-26), such as Claude Desktop, embed an interactive workspace dashboard alongside the tool response. The dashboard applies the host's theme, colors, fonts, safe area and container size, and loads nothing from the network (no web fonts, no CDN), so the host's default CSP applies.
 
-The UI is a TypeScript web component that communicates with the server via PostMessage. It renders:
+The UI is a vanilla TypeScript view built on MCP Apps SDK 2 (`@modelcontextprotocol/ext-apps` 2.0.3 with the split `@modelcontextprotocol/client`/`core` 2.1.0). It talks only to the host through the Apps `ui/*` channel and:
+
+- takes the host's tool input/result as the invocation context and never opens a second view while the launch call is opening one; it handles cancellation and teardown and ignores stale or late responses;
+- checks the host's capabilities before optional actions: links, downloads (draft `ui/download-file`, bounded to 10 MiB inline), "Reply in chat" (`ui/message`), model context updates and full screen are offered only when supported, and a declined action is reported with a usable alternative instead of forcing another path;
+- offers a write only when the server's operation manifest (`_meta["mcp-google-workspace/operations"]` on launch results) lists it for your account; without a manifest it only reads;
+- reports tool failures by their typed code and undoes optimistic changes when an action fails.
+
+The two launch tools are visible to the model and the view; the dashboard callbacks (`apps_get_state`, `apps_set_state`, `apps_patch_state`, `apps_next_range`, `apps_prev_range`, `apps_today`, `apps_get_event_detail`, `apps_get_email_detail`, `apps_get_email_attachment`) are app-only. The server still authorizes every call. Details, the capability matrix and the manifest format: [docs/RICH_OUTPUTS.md](docs/RICH_OUTPUTS.md#mcp-apps-outputs).
+
+It renders:
 
 - A weekly calendar view (all-day events + timed event columns)
 - An inbox summary with email detail drill-down
 - Scheduling action buttons (RSVP, reschedule, cancel)
 
-Session-scoped state (current view, anchor date, selected calendars, inbox query) is stored server-side per session and managed through `apps_get_state` / `apps_set_state` / `apps_patch_state`.
+Each dashboard view has its own server-side state (current view, anchor date, selected calendars, inbox query, weekend visibility), addressed by a server-issued view handle:
+
+- `apps_get_dashboard` or `apps_get_weekly_calendar_view` called without `view_handle` opens a new view. The result carries `{handle, revision, expires_at, ttl_seconds}` in `_meta["mcp-google-workspace/view"]` (what the Apps UI reads) and as `view` in the structured content. Pass `view_handle` to reopen an existing view.
+- `apps_get_state`, `apps_set_state`, `apps_patch_state`, `apps_next_range`, `apps_prev_range`, and `apps_today` require `view_handle`. Writes accept `expected_revision`; if the view changed since that revision nothing is written and the call returns a `view_state_conflict` tool error with the current state (the UI refetches). Without it, the change is applied atomically on top of the latest state.
+- Unknown, expired, malformed, or another user's handles return a `view_handle_invalid` tool error; the UI then opens one fresh view and retries once.
+- Views expire after `MCP_APP_VIEW_TTL_SECONDS` of inactivity (default 86400, sliding). State lives in process memory over stdio and in Redis (`MCP_REDIS_URL`) for the HTTP fleet. Each view is isolated from every other view, including other views of the same user.
 
 **Requires:** MCP client with App/iframe rendering support.
 
@@ -527,17 +564,6 @@ Tools that emit progress:
 | Chat | `list_spaces`, `list_messages` |
 
 **Requires:** MCP client that handles `notifications/progress`.
-
-### Sampling
-
-Optional tools use MCP sampling (`ctx.sample()`) to generate LLM-powered summaries within the tool response, using the host client's configured model for inference.
-
-Sampling-powered tools:
-
-- `keep_summarize_note` — summarizes a Keep note
-- `chat_summarize_space_messages` — summarizes recent messages in a Chat space
-
-**Requires:** MCP client with `sampling/createMessage` support (e.g. Claude Desktop). Without sampling support these tools will fail or return an empty summary.
 
 ## Tool Input Contract
 
@@ -631,6 +657,19 @@ Replace `c:/path/to/mcp-google-workspace` with your local repo path.
 
 ```powershell
 uv run pytest -q
+```
+
+This includes the golden wire-contract fixtures (`tests/wire/`, raw JSON-RPC over HTTP and the
+in-memory stdio-equivalent transport, modern and legacy) and the feature-flag matrix
+(`tests/test_feature_flag_matrix.py`, startup + list + one safe call per optional integration,
+independently and together). Regenerate the wire fixtures deliberately after a reviewed
+protocol/behavior change with `UPDATE_WIRE_FIXTURES=1 uv run pytest tests/wire`.
+
+Verify the packaged MCPB bundle actually runs standalone (build, extract, stdio lifecycle: start,
+list, a safe call, picker store/list/read/delete, close, reconnect):
+
+```powershell
+uv run python scripts/verify_mcpb_bundle.py
 ```
 
 Dashboard browser regression tests (from `src/mcp_google_workspace/apps/ui`):

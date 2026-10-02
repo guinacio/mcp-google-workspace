@@ -197,8 +197,8 @@ def test_meet_tool_annotations():
     get_tool = anyio.run(_get_tool, meet_mcp, "get_space")
     end_tool = anyio.run(_get_tool, meet_mcp, "end_active_conference")
 
-    assert get_tool.annotations.readOnlyHint is True
-    assert end_tool.annotations.destructiveHint is True
+    assert get_tool.annotations.read_only_hint is True
+    assert end_tool.annotations.destructive_hint is True
 
 
 def test_participant_envelope_uses_human_identity():
@@ -233,9 +233,15 @@ def test_meet_tool_returns_structured_provider_error(monkeypatch):
 
     async def scenario():
         async with Client(meet_mcp) as client:
-            result = await client.call_tool("get_space", {"space_name": "denied"})
-            return result.structured_content or result.data
+            result = await client.call_tool(
+                "get_space", {"space_name": "denied"}, raise_on_error=False
+            )
+            assert result.is_error is True
+            return result.structured_content
 
+    # W5: a Google API failure is an isError tool result with the error envelope
+    # (was a successful result carrying an "error" dict).
     result = anyio.run(scenario)
+    assert result["code"] == "permission_denied"
     assert result["provider_status"] == 403
-    assert result["context"]["space_name"] == "spaces/denied"
+    assert result["details"]["context"]["space_name"] == "spaces/denied"

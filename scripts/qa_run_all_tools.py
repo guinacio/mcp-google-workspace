@@ -176,7 +176,6 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
         tools.append(("keep_create_note", {"title": "QA test note", "confirm_create": False}))
         tools.append(("keep_get_note", None))  # note_name from state
         tools.append(("keep_delete_note", None))  # note_name, confirm_delete=False
-        tools.append(("keep_summarize_note", None))  # note name
 
     # ---- Chat (optional) ----
     if ENABLE_CHAT:
@@ -394,8 +393,6 @@ def _tool_args(name: str, state: dict) -> dict | None:
         return {"note_name": state["note_name"]}
     if name == "keep_delete_note" and state.get("note_name"):
         return {"note_name": state["note_name"], "confirm_delete": False}
-    if name == "keep_summarize_note" and state.get("note_name"):
-        return {"note_name": state["note_name"]}
     if name == "chat_get_space" and state.get("space_name"):
         return {"space_name": state["space_name"]}
     if name == "chat_list_messages" and state.get("space_name"):
