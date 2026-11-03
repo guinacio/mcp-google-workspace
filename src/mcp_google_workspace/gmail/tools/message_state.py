@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -9,6 +11,8 @@ from fastmcp import Context, FastMCP
 from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..schemas import MarkNotSpamRequest, MessageIdRequest
+
+LOGGER = logging.getLogger(__name__)
 
 
 def register(server: FastMCP) -> None:
@@ -20,8 +24,7 @@ def register(server: FastMCP) -> None:
         """Restore a previously trashed message."""
         request = MessageIdRequest(message_id=message_id)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Restoring message {request.message_id} from trash.")
+        LOGGER.debug(f"Restoring message {request.message_id} from trash.")
         restored = await execute_google_request(
             service.users().messages().untrash(
                 userId="me",
@@ -38,8 +41,7 @@ def register(server: FastMCP) -> None:
         """Mark a message as spam (adds SPAM label, removes INBOX)."""
         request = MessageIdRequest(message_id=message_id)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Marking message {request.message_id} as spam.")
+        LOGGER.debug(f"Marking message {request.message_id} as spam.")
         result = await execute_google_request(
             service.users().messages().modify(
                 userId="me",
@@ -61,8 +63,7 @@ def register(server: FastMCP) -> None:
         """Remove SPAM label and optionally add message back to INBOX."""
         request = MarkNotSpamRequest(message_id=message_id, add_to_inbox=add_to_inbox)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Marking message {request.message_id} as not spam.")
+        LOGGER.debug(f"Marking message {request.message_id} as not spam.")
         add_label_ids = ["INBOX"] if request.add_to_inbox else []
         result = await execute_google_request(
             service.users().messages().modify(

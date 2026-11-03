@@ -1,0 +1,17 @@
+{
+  "first_page": {
+    "has_next_cursor": true,
+    "resultType": "complete",
+    "tool_names": [
+      "alpha",
+      "bravo"
+    ]
+  },
+  "second_page": {
+    "has_next_cursor": false,
+    "resultType": "complete",
+    "tool_names": [
+      "charlie"
+    ]
+  }
+}

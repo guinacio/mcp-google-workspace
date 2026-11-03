@@ -129,8 +129,8 @@ def test_forms_tool_annotations():
     get_tool = anyio.run(_get_tool, forms_mcp, "get_form")
     publish_tool = anyio.run(_get_tool, forms_mcp, "set_form_publish_settings")
 
-    assert get_tool.annotations.readOnlyHint is True
-    assert publish_tool.annotations.idempotentHint is True
+    assert get_tool.annotations.read_only_hint is True
+    assert publish_tool.annotations.idempotent_hint is True
 
 
 def test_response_envelope_resolves_question_ids_to_titles():

@@ -13,7 +13,7 @@ from mcp_google_workspace.apps.view_models import (
 
 def test_dashboard_view_model_includes_required_sections():
     state = DashboardState(
-        session_id="vm-test", anchor_date=date(2026, 3, 1), view="week"
+        anchor_date=date(2026, 3, 1), view="week"
     )
     events = [
         {
@@ -112,7 +112,7 @@ def test_email_detail_includes_attachment_metadata():
 
 def test_dashboard_inbox_unread_infers_from_labels():
     state = DashboardState(
-        session_id="vm-test", anchor_date=date(2026, 3, 1), view="week"
+        anchor_date=date(2026, 3, 1), view="week"
     )
     model = build_dashboard_view_model(
         state=state,
@@ -139,7 +139,7 @@ def test_dashboard_inbox_unread_infers_from_labels():
 
 def test_dashboard_inbox_unread_infers_from_unread_ids():
     state = DashboardState(
-        session_id="vm-test", anchor_date=date(2026, 3, 1), view="week"
+        anchor_date=date(2026, 3, 1), view="week"
     )
     model = build_dashboard_view_model(
         state=state,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import base64
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,8 @@ from ..client import gmail_service
 from ..mime_utils import flatten_parts
 from ..schemas import DownloadAttachmentRequest, ListAttachmentsRequest
 
+LOGGER = logging.getLogger(__name__)
+
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_attachments")
@@ -24,8 +28,7 @@ def register(server: FastMCP) -> None:
         """List attachment metadata for a given Gmail message."""
         request = ListAttachmentsRequest(message_id=message_id)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Reading attachment metadata for {request.message_id}.")
+        LOGGER.debug(f"Reading attachment metadata for {request.message_id}.")
         message = await execute_google_request(
             service.users()
             .messages()
@@ -63,8 +66,7 @@ def register(server: FastMCP) -> None:
         )
         require_local_filesystem("Gmail attachment download")
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Downloading attachment {request.attachment_id}.")
+        LOGGER.debug(f"Downloading attachment {request.attachment_id}.")
         response = await execute_google_request(
             service.users()
             .messages()

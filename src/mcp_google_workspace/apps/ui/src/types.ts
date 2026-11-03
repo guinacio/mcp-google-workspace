@@ -118,12 +118,14 @@ export interface EventEditorDraft {
   create_conference: boolean;
 }
 
+/** Server operations the view may call (from the server's operation manifest). */
 export interface UiToolCapabilities {
   can_create_event: boolean;
   can_edit_event: boolean;
   can_delete_event: boolean;
   can_rsvp: boolean;
   can_reschedule_event: boolean;
+  can_navigate?: boolean;
   can_toggle_weekend: boolean;
   can_select_calendars: boolean;
   can_mark_email_read: boolean;
@@ -133,6 +135,23 @@ export interface UiToolCapabilities {
   can_untrash_email: boolean;
   can_mark_email_spam: boolean;
   can_mark_email_not_spam: boolean;
+  can_open_event_detail?: boolean;
+  can_open_email_detail?: boolean;
+  can_fetch_email_attachment?: boolean;
+}
+
+/** Host actions the view may request (from the host's negotiated capabilities). */
+export interface UiHostFeatures {
+  /** `ui/open-link` (stable `openLinks`). */
+  open_links: boolean;
+  /** `ui/download-file` (draft `downloadFile`). */
+  download_files: boolean;
+  /** `ui/message` with text content (`message.text`). */
+  send_messages: boolean;
+  /** Fullscreen is among the host's available display modes. */
+  fullscreen_available: boolean;
+  /** Current display mode reported by the host. */
+  display_mode?: "inline" | "fullscreen" | "pip";
 }
 
 /** Matches DashboardViewModel from Python schemas */
@@ -173,7 +192,16 @@ export interface DashboardData {
   ui_error?: string;
   ui_notice?: string;
   tool_capabilities?: UiToolCapabilities;
+  ui_fallback_link?: UiFallbackLink;
   generated_at?: string;
+}
+
+/** A blocked or unsupported host action, with the address the user can use instead. */
+export interface UiFallbackLink {
+  message: string;
+  url: string;
+  /** Offer opening the URL through the host as the user's explicit alternative. */
+  offer_open?: boolean;
 }
 
 /** PostMessage types from parent to iframe */

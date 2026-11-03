@@ -1,0 +1,207 @@
+# Fleet qualification stack (TEST ONLY). Start it with
+#   uv run python deploy/fleet-test/fleet.py up
+# which generates .runtime/ (throwaway CA, keys, passwords) and builds the
+# images first; docker compose alone does not work without that directory.
+#
+# Topology: nginx (TLS, /gw prefix, round robin) -> replica-1, replica-2
+# (production image entrypoint mcp-google-workspace-http, submit-only task
+# queue) ; worker (mcp-google-workspace-worker) ; Redis 8 (TLS, ACL, AOF,
+# noeviction) ; versitygw (S3 API). Every Python container runs on the
+# internal "fleet" network: no route to the internet, only the test CA trusted.
+
+x-server-env-base: &server-env-base
+  MCP_FLEET_FAKE_GOOGLE: ${FLEET_FAKE_GOOGLE}
+  MCP_HOST: 0.0.0.0
+  MCP_PORT: "8000"
+  MCP_GOOGLE_LOG_LEVEL: INFO
+  MCP_HTTP_BASE_URL: ${FLEET_BASE_URL}
+  MCP_GOOGLE_OAUTH_REDIRECT_URL: ${FLEET_BASE_URL}/google/oauth/callback
+  MCP_HTTP_JWT_ISSUER: ${FLEET_ISSUER}
+  MCP_HTTP_JWT_AUDIENCE: ${FLEET_AUDIENCE}
+  MCP_HTTP_JWKS_URI: ${FLEET_ISSUER}/jwks.json
+  MCP_SECRET_FILE: /run/fleet/secrets/mcp-secret.json
+  MCP_CREDENTIALS_DIR: /run/fleet/secrets
+  MCP_REDIS_URL: rediss://mcp:${FLEET_REDIS_PASSWORD}@redis:6379/0
+  MCP_UPLOAD_S3_BUCKET: fleet-uploads
+  MCP_UPLOAD_S3_ENDPOINT: http://s3:7070
+  AWS_ACCESS_KEY_ID: ${FLEET_S3_ACCESS_KEY}
+  AWS_SECRET_ACCESS_KEY: ${FLEET_S3_SECRET_KEY}
+  AWS_DEFAULT_REGION: us-east-1
+  FASTMCP_TASKS_ENCRYPTION_KEY: ${FLEET_TASKS_ENCRYPTION_KEY}
+  MCP_REPLICAS: "2"
+  ENABLE_APPS_DASHBOARD: "true"
+  MCP_MAX_REQUEST_BYTES: "1048576"
+  MCP_RATE_LIMIT_PER_MINUTE: "120"
+  MCP_SHUTDOWN_GRACE_SECONDS: "20"
+  # Only the throwaway CA is trusted: JWKS over TLS, Redis TLS, and nothing else.
+  SSL_CERT_FILE: /run/fleet/ca.pem
+
+x-server-env: &server-env
+  <<: *server-env-base
+  MCP_REQUEST_STATE_KEYS: ${FLEET_REQUEST_STATE_KEYS}
+
+x-server: &server
+  image: ${FLEET_IMAGE}
+  depends_on:
+    fleet-init:
+      condition: service_completed_successfully
+  networks: [fleet]
+  volumes:
+    - ./.runtime/ca.pem:/run/fleet/ca.pem:ro
+    - ./.runtime/secrets:/run/fleet/secrets:ro
+  stop_grace_period: 45s
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).status == 200 else 1)"
+    interval: 2s
+    timeout: 5s
+    start_period: 60s
+    start_interval: 1s
+    retries: 3
+
+services:
+  redis:
+    image: redis:8.6.7-alpine@sha256:ac2da09bc822f325a9f68f533120b86fa39c1b8db46b3aa7c1bbea7fdfd4fcba
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    environment:
+      REDISCLI_AUTH: ${FLEET_REDIS_ADMIN_PASSWORD}
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./.runtime/redis/users.acl:/usr/local/etc/redis/users.acl:ro
+      - ./.runtime/tls:/tls:ro
+      - redis-data:/data
+    networks: [fleet]
+    healthcheck:
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/tls/ca.pem", "--user", "fleetadmin", "--no-auth-warning", "ping"]
+      interval: 2s
+      timeout: 3s
+      start_period: 20s
+      start_interval: 1s
+      retries: 5
+
+  s3:
+    image: versity/versitygw:v1.8.0@sha256:30292fc2eeacc67a36993b01f7a7a5e3361a19cced0e80c1d71cfa2a4b0a2499
+    command: ["--port", ":7070", "--quiet", "posix", "/data"]
+    environment:
+      ROOT_ACCESS_KEY_ID: ${FLEET_S3_ACCESS_KEY}
+      ROOT_SECRET_ACCESS_KEY: ${FLEET_S3_SECRET_KEY}
+    volumes:
+      - s3-data:/data
+    networks: [fleet]
+
+  fleet-init:
+    image: ${FLEET_IMAGE}
+    command: ["python", "-m", "fleet_fake_google.init"]
+    environment: *server-env
+    volumes:
+      - ./.runtime/ca.pem:/run/fleet/ca.pem:ro
+      - ./.runtime/secrets:/run/fleet/secrets:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      s3:
+        condition: service_started
+    networks: [fleet]
+    restart: "no"
+
+  replica-1:
+    <<: *server
+    hostname: replica-1
+    environment:
+      <<: *server-env
+      # Submit-only: the HTTP replicas enqueue and serve tasks/get, the worker
+      # container executes (fastmcp-tasks starts an in-process worker otherwise).
+      FASTMCP_DOCKET_CONCURRENCY: "0"
+
+  replica-2:
+    <<: *server
+    hostname: replica-2
+    environment:
+      <<: *server-env
+      FASTMCP_DOCKET_CONCURRENCY: "0"
+
+  # Negative cases: identical replicas, one without the shared continuation
+  # key ring (variable absent), one with an empty task snapshot key (an
+  # unpopulated secret). Not behind the load balancer; readiness must be red.
+  replica-nokeys:
+    <<: *server
+    hostname: replica-nokeys
+    environment:
+      <<: *server-env-base
+      FASTMCP_DOCKET_CONCURRENCY: "0"
+    healthcheck: &live-only
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"]
+      interval: 2s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 1s
+      retries: 3
+
+  replica-notaskkey:
+    <<: *server
+    hostname: replica-notaskkey
+    environment:
+      <<: *server-env
+      FASTMCP_TASKS_ENCRYPTION_KEY: ""
+      FASTMCP_DOCKET_CONCURRENCY: "0"
+    healthcheck: *live-only
+
+  worker:
+    image: ${FLEET_IMAGE}
+    hostname: worker
+    command: ["mcp-google-workspace-worker"]
+    environment:
+      <<: *server-env
+      FASTMCP_DOCKET_CONCURRENCY: "4"
+      FASTMCP_DOCKET_REDELIVERY_TIMEOUT: "PT20S"
+    volumes:
+      - ./.runtime/ca.pem:/run/fleet/ca.pem:ro
+      - ./.runtime/secrets:/run/fleet/secrets:ro
+    depends_on:
+      fleet-init:
+        condition: service_completed_successfully
+    networks: [fleet]
+    stop_grace_period: 45s
+    healthcheck:
+      # No HTTP listener: healthy once this host's Docket worker heartbeats.
+      test: ["CMD", "python", "-m", "fleet_fake_google.worker_health"]
+      interval: 3s
+      timeout: 10s
+      start_period: 60s
+      start_interval: 1s
+      retries: 3
+
+  nginx:
+    image: nginx:1.30.5-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    ports:
+      - "127.0.0.1:${FLEET_HTTPS_PORT}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.runtime/tls:/etc/nginx/tls:ro
+      - ./.runtime/issuer:/srv/issuer:ro
+    depends_on:
+      replica-1:
+        condition: service_started
+      replica-2:
+        condition: service_started
+    networks:
+      edge: {}
+      fleet:
+        aliases: [issuer.fleet.test]
+    healthcheck:
+      test: ["CMD", "nginx", "-t", "-q"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+networks:
+  fleet:
+    internal: true
+  edge: {}
+
+volumes:
+  redis-data:
+  s3-data:

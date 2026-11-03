@@ -28,6 +28,22 @@ class Principal:
         return sha256(f"{self.issuer}\x00{self.subject}".encode("utf-8")).hexdigest()
 
 
+UNAUTHENTICATED_ISSUER = "unauthenticated"
+
+
+def remote_identity_required() -> bool:
+    """Whether this process serves remote, bearer-authenticated users.
+
+    True for the authenticated HTTP entrypoint and any task worker sharing its
+    configuration (``MCP_GOOGLE_OAUTH_REDIRECT_URL`` selects remote Google
+    OAuth; ``MCP_HTTP_JWT_ISSUER`` configures MCP bearer verification).
+    """
+    return bool(
+        os.getenv("MCP_GOOGLE_OAUTH_REDIRECT_URL", "").strip()
+        or os.getenv("MCP_HTTP_JWT_ISSUER", "").strip()
+    )
+
+
 def current_principal(*, require_authenticated: bool = True) -> Principal:
     """Return the verified bearer-token subject for the active MCP request.
 
@@ -45,6 +61,15 @@ def current_principal(*, require_authenticated: bool = True) -> Principal:
             return Principal(issuer=issuer, subject=subject, client_id=token.client_id)
         raise PrincipalRequiredError("Authenticated access token must contain non-empty iss and sub claims.")
 
+    if remote_identity_required():
+        # Remote HTTP (and its task workers) never fall back to the trusted
+        # local principal: a request or a background task whose bearer token
+        # is missing or expired has no identity at all.
+        if not require_authenticated:
+            return Principal(issuer=UNAUTHENTICATED_ISSUER, subject="anonymous")
+        raise PrincipalRequiredError(
+            "An authenticated MCP bearer token is required to access Google Workspace data."
+        )
     local_subject = os.getenv("MCP_LOCAL_PRINCIPAL", "local-user").strip()
     if local_subject:
         return Principal(issuer="local", subject=local_subject)

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from ...common.async_ops import confirm_destructive_action, execute_google_request
+from ...common.async_ops import execute_google_request
+from ...common.confirmation import confirm_destructive_action
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
 from ..mime_utils import build_email_message, email_to_gmail_raw
@@ -20,6 +23,8 @@ from ..schemas import (
     SendDraftRequest,
     UpdateDraftRequest,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _build_raw_message_payload(
@@ -85,8 +90,7 @@ def register(server: FastMCP) -> None:
             include_spam_trash=include_spam_trash,
         )
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info("Listing Gmail drafts.")
+        LOGGER.debug("Listing Gmail drafts.")
         result = await execute_google_request(
             service.users()
             .drafts()
@@ -120,8 +124,7 @@ def register(server: FastMCP) -> None:
             metadata_headers=metadata_headers or [],
         )
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Reading draft {request.draft_id}.")
+        LOGGER.debug(f"Reading draft {request.draft_id}.")
         draft = await execute_google_request(
             service.users()
             .drafts()
@@ -163,8 +166,7 @@ def register(server: FastMCP) -> None:
             thread_id=thread_id,
         )
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info("Creating Gmail draft.")
+        LOGGER.debug("Creating Gmail draft.")
         raw = _build_raw_message_payload(
             subject=request.subject,
             to=[str(v) for v in request.recipients.to],
@@ -208,8 +210,7 @@ def register(server: FastMCP) -> None:
             thread_id=thread_id,
         )
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Updating Gmail draft {request.draft_id}.")
+        LOGGER.debug(f"Updating Gmail draft {request.draft_id}.")
         raw = _build_raw_message_payload(
             subject=request.subject,
             to=[str(v) for v in request.recipients.to],
@@ -245,8 +246,7 @@ def register(server: FastMCP) -> None:
         ):
             return {"status": "cancelled", "draft_id": request.draft_id}
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Deleting Gmail draft {request.draft_id}.")
+        LOGGER.debug(f"Deleting Gmail draft {request.draft_id}.")
         await execute_google_request(service.users().drafts().delete(userId="me", id=request.draft_id))
         return {"status": "ok", "draft_id": request.draft_id}
 
@@ -258,8 +258,7 @@ def register(server: FastMCP) -> None:
         """Send a previously created Gmail draft."""
         request = SendDraftRequest(draft_id=draft_id)
         service = gmail_service()
-        if ctx is not None:
-            await ctx.info(f"Sending Gmail draft {request.draft_id}.")
+        LOGGER.debug(f"Sending Gmail draft {request.draft_id}.")
         sent = await execute_google_request(
             service.users()
             .drafts()

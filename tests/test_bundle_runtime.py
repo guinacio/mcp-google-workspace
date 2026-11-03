@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import json
 import subprocess
@@ -139,15 +140,27 @@ async def _call_picker_over_bundle_stdio(tmp_path: Path):
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["UV_CACHE_DIR"] = str(tmp_path / "uv-cache")
+    # --no-sync/--frozen keep this subprocess from re-resolving or syncing the
+    # shared project .venv (uv otherwise performs a package-check/sync pass on
+    # every `uv run`, mutating the same environment the outer pytest process
+    # is running from). The environment is already synced by the test runner,
+    # so this only *runs* the bundle entrypoint without touching packages.
     transport = StdioTransport(
         command="uv",
-        args=["run", "src/mcp_google_workspace/bundle_entry.py"],
+        args=[
+            "run",
+            "--no-sync",
+            "--frozen",
+            "src/mcp_google_workspace/bundle_entry.py",
+        ],
         cwd=str(ROOT),
         env=env,
         keep_alive=False,
         log_file=tmp_path / "bundle-stderr.log",
     )
     async with Client(transport) as client:
+        # The stdio bundle serves MCP 2026-07-28 without an initialize handshake.
+        assert client.protocol_version == "2026-07-28"
         tools = await client.list_tools()
         names = {tool.name for tool in tools}
         picker = next(tool for tool in tools if tool.name == "files_file_manager")
@@ -168,12 +181,73 @@ def test_bundle_stdio_lists_and_calls_prefab_file_manager(tmp_path) -> None:
     assert "files_file_manager" in names
     assert len(names) <= 16
     assert {"search_tools", "call_tool"} <= names
-    assert meta["ui/resourceUri"] == uri
-    assert contents[0].mimeType == "text/html;profile=mcp-app"
+    assert meta["ui"]["resourceUri"] == uri
+    assert "ui/resourceUri" not in meta  # W6: flat alias removed
+    assert contents[0].mime_type == "text/html;profile=mcp-app"
     assert result.is_error is False
     assert action_tool in json.dumps(result.structured_content)
     assert backend.is_error is False
     assert diagnostics.structured_content["hidden_callbacks"]["store_files"] == action_tool
+
+
+def _bundle_transport(tmp_path: Path) -> StdioTransport:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["UV_CACHE_DIR"] = str(tmp_path / "uv-cache")
+    return StdioTransport(
+        command="uv",
+        args=["run", "--no-sync", "--frozen", "src/mcp_google_workspace/bundle_entry.py"],
+        cwd=str(ROOT),
+        env=env,
+        keep_alive=False,
+        log_file=tmp_path / "bundle-stderr.log",
+    )
+
+
+async def _upload_lifecycle_over_bundle_stdio(tmp_path: Path):
+    store_tool = f"{hash_tool('Workspace Files', 'store_files')}_store_files"
+    delete_tool = f"{hash_tool('Workspace Files', 'delete_file')}_delete_file"
+    content = b"bundle upload persists"
+    async with Client(_bundle_transport(tmp_path)) as client:
+        assert client.protocol_version == "2026-07-28"
+        # Request 1: store. Every later call is its own MCP 2026-07-28 request
+        # with a fresh server-side session; nothing may rely on connection scope.
+        stored = await client.call_tool(
+            store_tool,
+            {
+                "files": [
+                    {
+                        "name": "bundle.txt",
+                        "size": len(content),
+                        "type": "text/plain",
+                        "data": base64.b64encode(content).decode("ascii"),
+                    }
+                ]
+            },
+        )
+        upload_id = stored.structured_content["result"][0]["upload_id"]
+        listed = await client.call_tool("files_list_files", {})
+        page = await client.call_tool("files_list_files_page", {"limit": 10})
+        read = await client.call_tool(
+            "call_tool", {"name": "files_read_file", "arguments": {"name": upload_id}}
+        )
+        deleted = await client.call_tool(delete_tool, {"name": upload_id})
+        after = await client.call_tool("files_list_files", {})
+    return upload_id, listed, page, read, deleted, after
+
+
+def test_bundle_stdio_uploads_persist_across_requests(tmp_path) -> None:
+    upload_id, listed, page, read, deleted, after = anyio.run(
+        _upload_lifecycle_over_bundle_stdio, tmp_path
+    )
+
+    assert upload_id.startswith("upl_")
+    assert [item["upload_id"] for item in listed.structured_content["result"]] == [upload_id]
+    assert listed.structured_content["result"][0]["display_name"] == "bundle.txt"
+    assert page.structured_content["count"] == 1
+    assert "bundle upload persists" in json.dumps(read.structured_content)
+    assert deleted.structured_content == {"status": "deleted", "name": upload_id}
+    assert after.structured_content["result"] == []
 
 
 def test_google_service_builder_uses_runtime_timeout_and_retry(monkeypatch) -> None:

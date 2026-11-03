@@ -1,0 +1,2 @@
+# Test-time secrets (throwaway CA, keys, passwords): never commit.
+.runtime/

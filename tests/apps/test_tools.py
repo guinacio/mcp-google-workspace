@@ -9,7 +9,6 @@ from mcp_google_workspace.apps.tools import _compute_window, _fetch_email_attach
 
 def test_compute_window_for_week_with_weekend_uses_sunday_start() -> None:
     state = DashboardState(
-        session_id="apps-tools-test",
         view="week",
         anchor_date=date(2026, 3, 4),
         timezone="UTC",
@@ -24,7 +23,6 @@ def test_compute_window_for_week_with_weekend_uses_sunday_start() -> None:
 
 def test_compute_window_for_weekday_only_uses_monday_start() -> None:
     state = DashboardState(
-        session_id="apps-tools-test",
         view="week",
         anchor_date=date(2026, 3, 4),
         timezone="UTC",

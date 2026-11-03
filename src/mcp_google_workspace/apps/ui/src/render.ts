@@ -8,6 +8,7 @@ import type {
   EmailDetail,
   EventEditorDraft,
   UiToolCapabilities,
+  UiHostFeatures,
   CalendarCatalogItem,
 } from "./types";
 import { sanitizeEmailHtml } from "./email-html";
@@ -154,6 +155,7 @@ function hash(text: string): number {
 
 export type UiAction =
   | { type: "chat"; text: string }
+  | { type: "toggle_display_mode" }
   | { type: "week_nav"; direction: "prev" | "today" | "next" }
   | { type: "open_event_editor"; mode: "create" | "edit"; seed_date?: string }
   | { type: "close_event_editor" }
@@ -198,6 +200,7 @@ export type UiAction =
       attachmentId: string;
       filename: string;
       mimeType?: string;
+      size?: number;
     }
   | {
       type: "open_attachment";
@@ -244,6 +247,48 @@ export interface RenderOptions {
   selected_calendar_ids?: string[];
   calendar_catalog?: CalendarCatalogItem[];
   tool_capabilities?: UiToolCapabilities;
+  /** Host actions available to the view; absent means none (gate everything off). */
+  host_features?: UiHostFeatures;
+  /** Element to focus after this render (keyboard focus management). */
+  focus_selector?: string;
+}
+
+/** Stop routing DOM events to the action handler (teardown). */
+export function detachDashboardHandlers(root: HTMLElement) {
+  _onAction = () => {};
+  root.onclick = null;
+  root.onauxclick = null;
+  root.onkeydown = null;
+  root.onchange = null;
+  root.onsubmit = null;
+  root.onmouseover = null;
+  root.onmousemove = null;
+  root.onmouseout = null;
+  root.onmouseleave = null;
+  hideEventTooltipLayer();
+}
+
+/** A CSS selector that finds the "same" control after a re-render, if it has a stable identity. */
+function focusSelectorFor(element: Element | null): string | null {
+  if (!(element instanceof HTMLElement)) return null;
+  const attr = (name: string, value: string | undefined) =>
+    value === undefined ? `[${name}]` : `[${name}="${CSS.escape(value)}"]`;
+  if (element.dataset.weekNav) return attr("data-week-nav", element.dataset.weekNav);
+  if (element.matches("[data-open-event]")) {
+    return `[data-open-event]${attr("data-calendar-id", element.dataset.calendarId ?? "")}${attr("data-event-id", element.dataset.eventId ?? "")}`;
+  }
+  if (element.matches("[data-open-email]")) return `[data-open-email]${attr("data-message-id", element.dataset.messageId ?? "")}`;
+  if (element.matches("[data-toggle-weekend]")) return "[data-toggle-weekend]";
+  if (element.matches("input[data-calendar-id]")) return `input${attr("data-calendar-id", element.dataset.calendarId ?? "")}`;
+  if (element.dataset.emailAction) return attr("data-email-action", element.dataset.emailAction);
+  if (element.matches("[data-toggle-display-mode]")) return "[data-toggle-display-mode]";
+  return null;
+}
+
+function restoreFocus(root: HTMLElement, selector: string | null) {
+  if (!selector) return;
+  const target = root.querySelector<HTMLElement>(selector);
+  if (target && document.activeElement !== target) target.focus({ preventScroll: true });
 }
 
 export function setActionHandler(handler: ActionHandler) {
@@ -1074,6 +1119,69 @@ export const RENDER_CSS = `
   font-size: 0.76rem;
 }
 
+/* Messages stay visible (and usable) above an open detail panel. */
+.message-region {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: grid;
+  gap: 6px;
+}
+
+.message-region .banner {
+  box-shadow: var(--md-sys-elevation-1);
+}
+
+.banner.fallback-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.fallback-link-row {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.fallback-link-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: var(--md-sys-color-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--radius-xs);
+  padding: 4px 6px;
+}
+
+.email-attachment-note {
+  font-size: 0.72rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+html[data-sizing="fixed"],
+html[data-sizing="fixed"] body {
+  height: 100%;
+}
+
+html[data-sizing="fixed"] body {
+  overflow: auto;
+}
+
 .banner.error {
   border-color: color-mix(in srgb, var(--md-sys-color-error) 70%, transparent);
   color: var(--md-sys-color-error);
@@ -1842,13 +1950,19 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
   const selectedCalendarIds = options.selected_calendar_ids ?? [];
   const includeWeekend = options.include_weekend ?? true;
 
+  const features = options.host_features;
+  const keepFocus = root.contains(document.activeElement) ? focusSelectorFor(document.activeElement) : null;
+
   hideEventTooltipLayer();
 
   setHtml(root, html`
     <div class="dashboard">
-      ${data.ui_error ? html`<div class="banner error">${data.ui_error}</div>` : ""}
-      ${data.ui_notice ? html`<div class="banner">${data.ui_notice}</div>` : ""}
-      ${renderTopBar(eventsCount, hasDashboard ? inboxData.unreadCount : undefined)}
+      ${data.ui_error || data.ui_notice || data.ui_fallback_link ? html`<div class="message-region">
+        ${data.ui_error ? html`<div class="banner error" role="alert">${data.ui_error}</div>` : ""}
+        ${data.ui_notice ? html`<div class="banner" role="status">${data.ui_notice}</div>` : ""}
+        ${renderFallbackLink(data, features)}
+      </div>` : ""}
+      ${renderTopBar(eventsCount, hasDashboard ? inboxData.unreadCount : undefined, features)}
       <div class="main-grid${hasDashboard ? "" : " main-grid-full"}">
         ${renderCalendarArea(
           data.weekly_calendar,
@@ -1857,20 +1971,22 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
             selected_calendar_ids: selectedCalendarIds,
             calendar_catalog: options.calendar_catalog ?? [],
             tool_capabilities: options.tool_capabilities,
+            host_features: features,
           }
         )}
         ${hasDashboard ? html`<div class="sidebar">${renderInboxPanel(inboxData.messages, inboxData.unreadCount)}</div>` : ""}
       </div>
-      ${renderEventDetailPanel(data.event_detail, options.tool_capabilities)}
+      ${renderEventDetailPanel(data.event_detail, options.tool_capabilities, features)}
       ${renderEventEditorPanel(
         data.event_editor,
         options.calendar_catalog ?? [],
         data.weekly_calendar?.timezone ?? "UTC"
       )}
-      ${renderEmailDetailPanel(data.email_detail, options.tool_capabilities)}
+      ${renderEmailDetailPanel(data.email_detail, options.tool_capabilities, features)}
     </div>
   `);
   mountEmailHtml(root, data.email_detail);
+  restoreFocus(root, options.focus_selector ?? keepFocus);
 
   root.onmouseover = (event) => {
     const target = event.target as HTMLElement;
@@ -1924,6 +2040,12 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     }
     if (event.key !== "Enter" && event.key !== " ") return;
     if (target.closest("button, a, input, select, textarea")) return;
+    const emailRow = target.closest<HTMLElement>("[data-open-email]");
+    if (emailRow?.dataset.messageId) {
+      event.preventDefault();
+      _onAction({ type: "select_email", messageId: emailRow.dataset.messageId });
+      return;
+    }
     const eventCard = target.closest<HTMLElement>("[data-open-event]");
     if (!eventCard) return;
     const calendarId = eventCard.dataset.calendarId;
@@ -1946,6 +2068,20 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     if (chat) {
       event.preventDefault();
       _onAction({ type: "chat", text: chat.dataset.actionMsg || "" });
+      return;
+    }
+
+    if (target.closest("[data-toggle-display-mode]")) {
+      event.preventDefault();
+      _onAction({ type: "toggle_display_mode" });
+      return;
+    }
+
+    const fallbackOpen = target.closest<HTMLElement>("[data-fallback-open-url]");
+    if (fallbackOpen) {
+      event.preventDefault();
+      const url = safeExternalUrl(fallbackOpen.dataset.fallbackOpenUrl, "attachment");
+      if (url) _onAction({ type: "open_attachment", url });
       return;
     }
 
@@ -2072,6 +2208,8 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       const attachmentId = downloadEmailAttachment.dataset.attachmentId;
       const filename = downloadEmailAttachment.dataset.filename || "attachment";
       const mimeType = downloadEmailAttachment.dataset.mimeType || undefined;
+      const sizeRaw = downloadEmailAttachment.dataset.size ? Number(downloadEmailAttachment.dataset.size) : Number.NaN;
+      const size = Number.isFinite(sizeRaw) && sizeRaw >= 0 ? sizeRaw : undefined;
       if (messageId && attachmentId) {
         _onAction({
           type: "email_download_attachment",
@@ -2079,6 +2217,7 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
           attachmentId,
           filename,
           mimeType,
+          size,
         });
       }
       return;
@@ -2166,8 +2305,28 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
   };
 }
 
-function renderTopBar(eventsCount: number, unreadCount?: number): SafeHtml {
+function renderFallbackLink(data: DashboardData, features?: UiHostFeatures): SafeHtml {
+  const fallback = data.ui_fallback_link;
+  if (!fallback) return html``;
+  const openable = fallback.offer_open && features?.open_links;
+  return html`
+    <div class="banner fallback-link" role="status">
+      <span>${fallback.message}</span>
+      <label class="fallback-link-row">
+        <span>Address</span>
+        <input type="text" readonly value="${fallback.url}" data-fallback-url="1" />
+      </label>
+      ${openable ? html`<button type="button" class="chip-btn" data-fallback-open-url="${fallback.url}">Open link instead</button>` : ""}
+    </div>
+  `;
+}
+
+function renderTopBar(eventsCount: number, unreadCount?: number, features?: UiHostFeatures): SafeHtml {
   const unreadChip = unreadCount !== undefined ? html`<span class="stat-chip stat-chip-mail"><span class="stat-dot"></span>${unreadCount} unread</span>` : "";
+  const fullscreen = features?.display_mode === "fullscreen";
+  const displayToggle = features?.fullscreen_available
+    ? html`<button type="button" class="nav-btn" data-toggle-display-mode="1" aria-pressed="${fullscreen ? "true" : "false"}">${fullscreen ? "Exit full screen" : "Full screen"}</button>`
+    : "";
   return html`
     <div class="top-bar surface">
       <div class="top-brand">
@@ -2181,6 +2340,7 @@ function renderTopBar(eventsCount: number, unreadCount?: number): SafeHtml {
       <div class="quick-stats">
         <span class="stat-chip stat-chip-calendar"><span class="stat-dot"></span>${eventsCount} events</span>
         ${unreadChip}
+        ${displayToggle}
       </div>
     </div>
   `;
@@ -2193,6 +2353,7 @@ function renderCalendarArea(
     selected_calendar_ids: string[];
     calendar_catalog: CalendarCatalogItem[];
     tool_capabilities?: UiToolCapabilities;
+    host_features?: UiHostFeatures;
   }
 ): SafeHtml {
   if (!weekly) {
@@ -2202,6 +2363,7 @@ function renderCalendarArea(
   const canCreate = options.tool_capabilities?.can_create_event ?? false;
   const canToggleWeekend = options.tool_capabilities?.can_toggle_weekend ?? false;
   const canSelectCalendars = options.tool_capabilities?.can_select_calendars ?? false;
+  const navDisabled = options.tool_capabilities?.can_navigate ? "" : "disabled";
   return html`
     <section class="calendar-shell surface">
       <div class="calendar-header">
@@ -2215,9 +2377,9 @@ function renderCalendarArea(
         </div>
         <div class="calendar-actions">
           <div class="week-nav">
-            <button type="button" class="nav-btn nav-icon" data-week-nav="prev" aria-label="Previous week" title="Previous week">‹</button>
-            <button type="button" class="nav-btn nav-today" data-week-nav="today" title="Return to the current week">Today</button>
-            <button type="button" class="nav-btn nav-icon" data-week-nav="next" aria-label="Next week" title="Next week">›</button>
+            <button type="button" class="nav-btn nav-icon" data-week-nav="prev" aria-label="Previous week" title="Previous week" ${navDisabled}>‹</button>
+            <button type="button" class="nav-btn nav-today" data-week-nav="today" title="Return to the current week" ${navDisabled}>Today</button>
+            <button type="button" class="nav-btn nav-icon" data-week-nav="next" aria-label="Next week" title="Next week" ${navDisabled}>›</button>
           </div>
           ${canToggleWeekend ? html`
             <label class="inline-toggle" title="Include Saturday and Sunday in the calendar">
@@ -2356,7 +2518,7 @@ function renderInboxPanel(messages: InboxMessage[], unreadCount: number): SafeHt
       const isUnread = !!msg.is_unread || labels.includes("UNREAD");
       const unreadClass = isUnread ? "unread" : "";
       return html`
-        <div class="inbox-row ${unreadClass}" data-open-email="1" data-message-id="${msg.id || ""}">
+        <div class="inbox-row ${unreadClass}" data-open-email="1" data-message-id="${msg.id || ""}" role="button" tabindex="0" aria-label="${`Open email: ${msg.subject || "(No subject)"}`}">
           <div class="avatar mail-avatar">${initials(msg.from || "")}</div>
           <div class="mail-content">
             <div class="mail-from">${(msg.from || "Unknown sender").replace(/<.*?>/g, "").trim()}</div>
@@ -2380,8 +2542,13 @@ function renderInboxPanel(messages: InboxMessage[], unreadCount: number): SafeHt
   `;
 }
 
-function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: UiToolCapabilities): SafeHtml {
+function renderEventDetailPanel(
+  detail: EventDetail | undefined,
+  capabilities?: UiToolCapabilities,
+  features?: UiHostFeatures,
+): SafeHtml {
   if (!detail) return html``;
+  const canDownload = features?.download_files ?? false;
   const canEdit = capabilities?.can_edit_event ?? false;
   const canRsvp = capabilities?.can_rsvp ?? false;
   const canReschedule = capabilities?.can_reschedule_event ?? false;
@@ -2405,14 +2572,14 @@ function renderEventDetailPanel(detail: EventDetail | undefined, capabilities?: 
         <div class="event-attachment">
           <span class="event-attachment-label">${label}</span>
           <button type="button" class="chip-btn" data-open-attachment-url="${fileUrl}">Open</button>
-          <button
+          ${canDownload ? html`<button
             type="button"
             class="chip-btn"
             data-download-attachment-url="${fileUrl}"
             data-download-attachment-name="${attachment.title}"
             data-download-attachment-mime="${attachment.mime_type || ""}">
             Download
-          </button>
+          </button>` : ""}
         </div>
       `;
     }
@@ -2550,7 +2717,11 @@ function renderEventEditorPanel(
   `;
 }
 
-function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: UiToolCapabilities): SafeHtml {
+function renderEmailDetailPanel(
+  detail: EmailDetail | undefined,
+  capabilities?: UiToolCapabilities,
+  features?: UiHostFeatures,
+): SafeHtml {
   if (!detail) return html``;
   const bodyHtml = renderEmailBody(detail);
   const bodyMode = detail.html_body?.trim()
@@ -2570,6 +2741,8 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
   const canUntrash = capabilities?.can_untrash_email ?? false;
   const canSpam = capabilities?.can_mark_email_spam ?? false;
   const canNotSpam = capabilities?.can_mark_email_not_spam ?? false;
+  const canDownload = (features?.download_files ?? false) && (capabilities?.can_fetch_email_attachment ?? false);
+  const canChat = features?.send_messages ?? false;
   const statusChips = [
     isUnread ? html`<span class="status-chip">Unread</span>` : html`<span class="status-chip">Read</span>`,
     inInbox ? html`<span class="status-chip">Inbox</span>` : "",
@@ -2584,16 +2757,17 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
       <li>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           <span>${label}</span>
-          <button
+          ${canDownload ? html`<button
             type="button"
             class="email-chip"
             data-email-attachment-download="1"
             data-message-id="${detail.message_id}"
             data-attachment-id="${attachment.attachment_id}"
             data-filename="${attachment.filename}"
-            data-mime-type="${attachment.mime_type || ""}">
+            data-mime-type="${attachment.mime_type || ""}"
+            data-size="${typeof attachment.size === "number" ? String(attachment.size) : ""}">
             Download
-          </button>
+          </button>` : html`<span class="email-attachment-note">Download unavailable in this host; ask the assistant to save it to Drive.</span>`}
         </div>
       </li>
     `;
@@ -2636,7 +2810,7 @@ function renderEmailDetailPanel(detail: EmailDetail | undefined, capabilities?: 
               ${canUntrash && inTrash ? html`<button type="button" class="email-chip" data-email-action="untrash" data-message-id="${detail.message_id}">Restore</button>` : ""}
               ${canSpam ? html`<button type="button" class="email-chip ${inSpam ? "active" : ""}" data-email-action="spam" data-message-id="${detail.message_id}">Spam</button>` : ""}
               ${canNotSpam && inSpam ? html`<button type="button" class="email-chip" data-email-action="not_spam" data-message-id="${detail.message_id}">Not spam</button>` : ""}
-              <button type="button" class="email-chip" data-action-msg="${`Reply to ${detail.from_value} about: ${detail.subject}`}">Reply in chat</button>
+              ${canChat ? html`<button type="button" class="email-chip" data-action-msg="${`Reply to ${detail.from_value} about: ${detail.subject}`}">Reply in chat</button>` : ""}
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ from email.header import Header, decode_header, make_header
 from email.message import EmailMessage
 from email.parser import BytesParser
 from pathlib import Path
+import secrets
 from typing import Any
 
 
@@ -65,6 +66,28 @@ def build_email_message(
         msg.add_attachment(payload, maintype=maintype, subtype=subtype, filename=file_name)
 
     return msg
+
+
+#: Right-hand side of the Message-IDs this server generates. A fixed value
+#: avoids publishing the server's host name in every email.
+MESSAGE_ID_DOMAIN = "mcp-google-workspace.local"
+
+
+def stamp_message_id(message: EmailMessage) -> str:
+    """Give an outgoing message a fresh RFC 822 ``Message-ID`` and return it.
+
+    The id lets a send whose outcome is unknown be reconciled by searching
+    the mailbox for ``rfc822msgid:<id>`` (``common/reconciliation.py``).
+
+    The id is 128 random bits with a fixed length, so the header always fits
+    on one line (``make_msgid`` embeds the timestamp and PID, which can push
+    it past the 78-character fold limit on some hosts) and reveals nothing
+    about the server process.
+    """
+    message_id = f"<{secrets.token_hex(16)}@{MESSAGE_ID_DOMAIN}>"
+    del message["Message-ID"]
+    message["Message-ID"] = message_id
+    return message_id
 
 
 def email_to_gmail_raw(message: EmailMessage) -> str:

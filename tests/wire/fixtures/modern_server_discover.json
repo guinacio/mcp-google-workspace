@@ -1,0 +1,23 @@
+{
+  "result": {
+    "cacheScope": "private",
+    "capabilities_keys": [
+      "extensions",
+      "logging",
+      "prompts",
+      "resources",
+      "tools"
+    ],
+    "extensions_keys": [
+      "io.modelcontextprotocol/tasks",
+      "io.modelcontextprotocol/ui"
+    ],
+    "logging_capability_present": true,
+    "resultType": "complete",
+    "supportedVersions": [
+      "2026-07-28"
+    ],
+    "ttlMs": 0
+  },
+  "status_code": 200
+}

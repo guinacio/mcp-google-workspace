@@ -10,7 +10,6 @@ import time
 from typing import Any, TypeVar
 
 import anyio
-from fastmcp import Context
 
 T = TypeVar("T")
 LOGGER = logging.getLogger("mcp_google_workspace.google_api")
@@ -60,30 +59,6 @@ class _CircuitBreaker:
 
 
 _CIRCUITS = _CircuitBreaker()
-
-
-def require_elicitation_context(ctx: Context | None, action_name: str) -> Context:
-    """Validate that *ctx* is not ``None`` before an elicitation call.
-
-    Returns the narrowed ``Context`` so callers can use it directly.
-    """
-    if ctx is None:
-        raise RuntimeError(f"{action_name} requires MCP context for user confirmation.")
-    return ctx
-
-
-async def confirm_destructive_action(
-    ctx: Context | None,
-    action_name: str,
-    message: str,
-) -> bool:
-    """Require an explicit host-mediated confirmation for an irreversible action."""
-    confirm_ctx = require_elicitation_context(ctx, action_name)
-    response = await confirm_ctx.elicit(
-        message,
-        response_type=bool,  # type: ignore[arg-type]
-    )
-    return response.action == "accept" and bool(response.data)
 
 
 async def run_blocking(

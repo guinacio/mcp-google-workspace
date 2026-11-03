@@ -1,0 +1,11 @@
+{
+  "is_error": false,
+  "prompts": [
+    "Permanently delete contact people/c-wire-legacy?"
+  ],
+  "protocol_version": "2025-11-25",
+  "structured_content": {
+    "person_name": "people/c-wire-legacy",
+    "status": "cancelled"
+  }
+}

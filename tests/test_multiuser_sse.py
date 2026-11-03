@@ -93,8 +93,11 @@ def test_http_requires_complete_oidc_and_encrypted_store_configuration(monkeypat
     auth = build_http_auth()
 
     assert settings.user_token_dir == (tmp_path / "tokens").resolve()
-    assert auth.issuer == "https://issuer.example.test"
-    assert auth.audience == "workspace-mcp"
+    # W5: the JWT verifier is wrapped in RemoteAuthProvider (protected-resource
+    # discovery); issuer/audience validation lives on the wrapped verifier.
+    assert auth.token_verifier.issuer == "https://issuer.example.test"
+    assert auth.token_verifier.audience == "workspace-mcp"
+    assert [str(server) for server in auth.authorization_servers] == ["https://issuer.example.test/"]
 
 
 def test_per_principal_credentials_are_encrypted_and_isolated(tmp_path) -> None:
@@ -386,7 +389,10 @@ def test_remote_entrypoint_uses_stateless_streamable_http(monkeypatch) -> None:
     monkeypatch.setenv("MCP_PORT", "8123")
     monkeypatch.setattr(remote_entry, "configure_logging", lambda: None)
     monkeypatch.setattr(remote_entry, "configure_remote_tool_search", lambda: None)
-    monkeypatch.setattr(remote_entry, "build_http_auth", lambda: object())
+    monkeypatch.setattr(remote_entry, "build_http_auth", lambda _settings=None: object())
+    # main() assigns workspace_mcp.auth; restore it so later tests that build
+    # an app from the shared server are not left with the stub provider.
+    monkeypatch.setattr(remote_entry.workspace_mcp, "auth", remote_entry.workspace_mcp.auth)
     monkeypatch.setattr(
         remote_entry,
         "get_remote_security_settings",
@@ -405,7 +411,11 @@ def test_remote_entrypoint_uses_stateless_streamable_http(monkeypatch) -> None:
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 8123
     assert captured["stateless_http"] is False
-    assert captured["json_response"] is True
+    # W5: request-scoped SSE (progress, disconnect-cancellation) replaces the
+    # blanket JSON-response mode; Host/Origin checks are always on.
+    assert captured["json_response"] is False
+    assert captured["host_origin_protection"] is True
+    assert captured["path"] == "/mcp"
     assert captured["allowed_hosts"] == ["mcp.example.test"]
     assert captured["allowed_origins"] == ["https://mcp.example.test"]
     assert len(captured["middleware"]) == 1

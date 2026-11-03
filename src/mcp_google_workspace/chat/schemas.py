@@ -51,7 +51,14 @@ class CreateMessageRequest(ToolRequestModel):
     space_name: str = Field(description="Chat space resource name.")
     text: str = Field(description="Message text content.")
     thread_key: str | None = Field(default=None, description="Client-generated thread key for thread affinity.")
-    request_id: str | None = Field(default=None, description="Idempotency key for message creation.")
+    request_id: str | None = Field(
+        default=None,
+        description=(
+            "Idempotency key for message creation: Google Chat returns the existing message "
+            "instead of posting again when the same request_id is reused, so reuse it when "
+            "retrying after an unknown outcome."
+        ),
+    )
     message_id: str | None = Field(default=None, description="Custom message ID when supported.")
     message_reply_option: str | None = Field(default=None, description="Reply mode for thread/message handling.")
     private_message_viewer: str | None = Field(default=None, description="User resource for private message visibility.")

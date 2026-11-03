@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
-from ..common.errors import tool_error_payload
+from ..common.errors import provider_tool_error
 from .client import docs_service
 from .schemas import (
     AppendDocumentTextRequest,
@@ -110,7 +110,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, document_id=document_id)
+            raise provider_tool_error(exc, document_id=document_id) from exc
 
     @server.tool(name="create_document")
     def create_document(title: str) -> dict[str, Any]:
@@ -122,7 +122,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return create_document_payload(CreateDocumentRequest(title=title))
         except HttpError as exc:
-            return tool_error_payload(exc, title=title)
+            raise provider_tool_error(exc, title=title) from exc
 
     @server.tool(name="append_document_text")
     def append_document_text(
@@ -138,7 +138,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return append_document_text_payload(AppendDocumentTextRequest(document_id=document_id, text=text))
         except HttpError as exc:
-            return tool_error_payload(exc, document_id=document_id)
+            raise provider_tool_error(exc, document_id=document_id) from exc
 
     @server.tool(name="replace_document_text")
     def replace_document_text(
@@ -163,7 +163,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, document_id=document_id)
+            raise provider_tool_error(exc, document_id=document_id) from exc
 
     @server.tool(name="batch_update_document", task=True)
     async def batch_update_document(
@@ -197,4 +197,4 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, document_id=document_id)
+            raise provider_tool_error(exc, document_id=document_id) from exc

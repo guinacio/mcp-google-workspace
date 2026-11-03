@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import secrets
 import json
+import logging
+import secrets
+
 import requests
 from typing import Annotated, Any
 
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from starlette.requests import Request
@@ -25,6 +27,7 @@ from .google_auth import (
 )
 from .identity import Principal, current_principal
 
+LOGGER = logging.getLogger("mcp_google_workspace.oauth")
 _REGISTERED_CALLBACK_SERVERS: set[int] = set()
 
 
@@ -51,11 +54,13 @@ def _flow(
     return flow
 
 
-def create_google_authorization(capabilities: list[str] | None = None) -> dict[str, Any]:
+def create_google_authorization(
+    capabilities: list[str] | None = None, *, principal: Principal | None = None
+) -> dict[str, Any]:
     """Create a one-time, PKCE-protected Google consent URL for the MCP caller."""
     if not is_remote_oauth_mode():
         raise RuntimeError("Remote Google authorization requires the HTTP OAuth callback mode.")
-    principal = current_principal()
+    principal = principal or current_principal()
     # RFC 7636 permits 43–128 characters. token_urlsafe(72) is about 96.
     code_verifier = secrets.token_urlsafe(72)
     selected_capabilities = capabilities or ["gmail"]
@@ -117,8 +122,10 @@ def _cumulative_authorization_scopes(
     return sorted(set(newly_requested_scopes) | set(existing.scopes or []))
 
 
-def google_connection_status(capability: str | None = None) -> dict[str, Any]:
-    principal = current_principal()
+def google_connection_status(
+    capability: str | None = None, *, principal: Principal | None = None
+) -> dict[str, Any]:
+    principal = principal or current_principal()
     credentials_json = get_token_store().load_credentials_json(principal)
     if credentials_json is None:
         return {
@@ -221,7 +228,8 @@ def register_connection_tools(server: FastMCP) -> None:
         """Connect locally with loopback OAuth or return a remote incremental-consent URL."""
         if not is_remote_oauth_mode():
             return await run_blocking(connect_local_google_account, capabilities)
-        return create_google_authorization(capabilities)
+        principal = current_principal()
+        return await run_blocking(create_google_authorization, capabilities, principal=principal)
 
     @server.tool(name="get_google_connection_status")
     async def get_google_connection_status(
@@ -234,7 +242,7 @@ def register_connection_tools(server: FastMCP) -> None:
         ] = None,
     ) -> dict[str, Any]:
         """Report whether the authenticated MCP user has connected Google Workspace."""
-        return google_connection_status(capability)
+        return await run_blocking(google_connection_status, capability)
 
     @server.tool(name="disconnect_google_workspace")
     async def disconnect_google_workspace_tool(confirm: bool = False) -> dict[str, Any]:
@@ -242,15 +250,81 @@ def register_connection_tools(server: FastMCP) -> None:
         return await run_blocking(disconnect_google_account, confirm=confirm)
 
     @server.tool(name="refresh_workspace_catalog")
-    async def refresh_workspace_catalog(ctx: Context) -> dict[str, Any]:
-        """Refresh capability-aware tools after Google consent or disconnection."""
-        await ctx.reset_visibility()
-        status = google_connection_status()
+    async def refresh_workspace_catalog() -> dict[str, Any]:
+        """Report the caller's current Google grants after consent or disconnection.
+
+        tools/list is evaluated against the caller's current grants on every
+        request, so no refresh is needed for the catalog to change: list tools
+        again. No tools/list_changed notification is sent.
+        """
+        from .grants import read_grant_async
+
+        grant = await read_grant_async()
         return {
-            "status": "catalog_refreshed",
-            "granted_capabilities": status.get("granted_capabilities", []),
-            "notification_sent": "tools/list_changed",
+            "status": "catalog_current",
+            "connected": grant.connected,
+            "granted_capabilities": sorted(grant.capabilities),
+            "grant_revision": grant.revision,
+            "notification_sent": False,
+            "next_action": "Call tools/list again; it reflects these grants on every request.",
         }
+
+
+#: Authorization-response issuers accepted from Google (RFC 9207). Google is
+#: the only authorization server this callback ever redirects to, so a
+#: different ``iss`` indicates a mix-up or forged response and is refused.
+GOOGLE_AUTHORIZATION_ISSUERS = frozenset({"https://accounts.google.com", "accounts.google.com"})
+
+_CALLBACK_MESSAGES = {
+    "invalid_state": "Invalid or expired OAuth state. Start the connection again from MCP.",
+    "not_completed": "Google authorization was not completed. You may close this window and try again.",
+    "issuer_mismatch": "The authorization response came from an unexpected issuer. Start the connection again from MCP.",
+    "failed": "Google authorization could not be completed. Return to MCP and try again.",
+}
+
+
+def complete_google_authorization(
+    state: str, code: str | None, error: str | None, issuer: str | None
+) -> str:
+    """Finish one Google authorization response (blocking I/O; run off the loop).
+
+    Returns ``"connected"`` or one of the ``_CALLBACK_MESSAGES`` keys. The
+    opaque one-time state is consumed first, whatever the outcome, so a
+    response can never be replayed. The code is exchanged directly (with the
+    PKCE verifier bound to that state) rather than by re-parsing the callback
+    URL, whose scheme and host are the proxy-internal ones behind TLS
+    termination. The exchange result is stored only under the principal that
+    created the state; the MCP bearer token is never involved.
+    """
+    store = get_token_store()
+    pending = store.consume_oauth_state(state) if state else None
+    if pending is None:
+        return "invalid_state"
+    if error or not code:
+        return "not_completed"
+    if issuer is not None and issuer not in GOOGLE_AUTHORIZATION_ISSUERS:
+        LOGGER.warning("Google OAuth callback rejected: unexpected authorization issuer.")
+        return "issuer_mismatch"
+    try:
+        previous_json = store.load_credentials_json(pending.principal)
+        flow = _flow(
+            state=state,
+            code_verifier=pending.code_verifier,
+            scopes=list(pending.scopes),
+        )
+        flow.fetch_token(code=code)
+        if not flow.credentials.has_scopes(list(pending.scopes)):
+            raise RuntimeError("Google did not preserve all previously granted scopes.")
+        payload = json.loads(flow.credentials.to_json())
+        if not payload.get("refresh_token") and previous_json is not None:
+            previous = json.loads(previous_json)
+            if previous.get("refresh_token"):
+                payload["refresh_token"] = previous["refresh_token"]
+        store.save_credentials_json(pending.principal, json.dumps(payload, separators=(",", ":")))
+    except Exception as exc:  # noqa: BLE001 - provider error shape varies
+        LOGGER.warning("Google OAuth code exchange failed (%s).", type(exc).__name__)
+        return "failed"
+    return "connected"
 
 
 def register_oauth_callback_route(server: FastMCP) -> None:
@@ -262,32 +336,16 @@ def register_oauth_callback_route(server: FastMCP) -> None:
 
     @server.custom_route("/google/oauth/callback", methods=["GET"], include_in_schema=False)
     async def google_oauth_callback(request: Request) -> HTMLResponse:
-        state = request.query_params.get("state", "")
-        pending = get_token_store().consume_oauth_state(state)
-        if pending is None:
-            return HTMLResponse("Invalid or expired OAuth state. Start the connection again from MCP.", status_code=400)
-        if request.query_params.get("error"):
-            return HTMLResponse("Google authorization was not completed. You may close this window and try again.", status_code=400)
-        try:
-            previous_json = get_token_store().load_credentials_json(pending.principal)
-            flow = _flow(
-                state=state,
-                code_verifier=pending.code_verifier,
-                scopes=list(pending.scopes),
-            )
-            flow.fetch_token(authorization_response=str(request.url))
-            if not flow.credentials.has_scopes(list(pending.scopes)):
-                raise RuntimeError("Google did not preserve all previously granted scopes.")
-            payload = json.loads(flow.credentials.to_json())
-            if not payload.get("refresh_token") and previous_json is not None:
-                previous = json.loads(previous_json)
-                if previous.get("refresh_token"):
-                    payload["refresh_token"] = previous["refresh_token"]
-            get_token_store().save_credentials_json(
-                pending.principal, json.dumps(payload, separators=(",", ":"))
-            )
-        except Exception:  # pragma: no cover - provider error shape varies
-            return HTMLResponse("Google authorization could not be completed. Return to MCP and try again.", status_code=400)
+        params = request.query_params
+        outcome = await run_blocking(
+            complete_google_authorization,
+            params.get("state", ""),
+            params.get("code"),
+            params.get("error"),
+            params.get("iss"),
+        )
+        if outcome != "connected":
+            return HTMLResponse(_CALLBACK_MESSAGES[outcome], status_code=400)
         return HTMLResponse(
             "<html><body><h2>Google Workspace connected</h2>"
             "<p>You can close this window and return to your MCP client.</p></body></html>"

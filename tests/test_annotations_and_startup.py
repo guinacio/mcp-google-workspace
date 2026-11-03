@@ -80,15 +80,15 @@ def test_workspace_tools_include_safety_annotations() -> None:
 
     assert tools
     assert all(tool.annotations is not None for tool in tools.values())
-    assert tools["gmail_read_emails"].annotations.readOnlyHint is True
-    assert tools["gmail_send_email"].annotations.readOnlyHint is False
-    assert tools["gmail_send_email"].annotations.idempotentHint is False
-    assert tools["gmail_reply_email"].annotations.readOnlyHint is False
-    assert tools["gmail_reply_all_email"].annotations.readOnlyHint is False
-    assert tools["drive_delete_file"].annotations.destructiveHint is True
-    assert tools["calendar_get_calendar_context"].annotations.openWorldHint is False
-    assert tools["sheets_get_spreadsheet"].annotations.readOnlyHint is True
-    assert tools["tasks_delete_task"].annotations.destructiveHint is True
+    assert tools["gmail_read_emails"].annotations.read_only_hint is True
+    assert tools["gmail_send_email"].annotations.read_only_hint is False
+    assert tools["gmail_send_email"].annotations.idempotent_hint is False
+    assert tools["gmail_reply_email"].annotations.read_only_hint is False
+    assert tools["gmail_reply_all_email"].annotations.read_only_hint is False
+    assert tools["drive_delete_file"].annotations.destructive_hint is True
+    assert tools["calendar_get_calendar_context"].annotations.open_world_hint is False
+    assert tools["sheets_get_spreadsheet"].annotations.read_only_hint is True
+    assert tools["tasks_delete_task"].annotations.destructive_hint is True
     assert tools["drive_list_files"].title == "Drive List Files"
     assert "drive" in tools["drive_list_files"].tags
     assert "browse" in tools["drive_list_files"].tags
@@ -273,7 +273,7 @@ def test_headline_parameter_descriptions_document_real_semantics() -> None:
         ("gmail_get_mail_digest", "window", ["3d"]),
         ("search_workspace", "services", ["drive", "people", "gmail"]),
         ("prepare_workspace_action", "tool_name", ["gmail_send_email"]),
-        ("commit_workspace_action", "commit_token", ["one-time", "5 minutes"]),
+        ("commit_workspace_action", "commit_token", ["one-time", "10 minutes", "saved result"]),
         ("gmail_read_emails", "offset", ["character offset"]),
         ("calendar_check_time_availability", "items", ["calendar"]),
     ]
@@ -296,12 +296,13 @@ def test_apps_tools_preserve_ui_metadata_and_local_hints() -> None:
     tools = anyio.run(_list_server_tools, apps_mcp)
 
     assert all(tool.annotations is not None for tool in tools.values())
-    assert tools["get_dashboard"].annotations.readOnlyHint is True
-    assert tools["set_state"].annotations.openWorldHint is False
-    assert tools["set_state"].annotations.idempotentHint is True
+    assert tools["get_dashboard"].annotations.read_only_hint is True
+    assert tools["set_state"].annotations.open_world_hint is False
+    assert tools["set_state"].annotations.idempotent_hint is True
     assert "respond_to_event" not in tools
+    # W6: canonical nested metadata only (subserver-local URI; a mount rewrites it
+    # to ui://apps/dashboard-ui), launch tools visible to the model and the view.
     for name in ("get_dashboard", "get_weekly_calendar_view"):
         assert tools[name].meta == {
-            "ui": {"resourceUri": "ui://apps/dashboard-ui"},
-            "ui/resourceUri": "ui://apps/dashboard-ui",
+            "ui": {"resourceUri": "ui://dashboard-ui", "visibility": ["model", "app"]},
         }

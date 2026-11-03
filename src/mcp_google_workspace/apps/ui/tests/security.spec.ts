@@ -11,12 +11,18 @@ import {
   SAFE_EMAIL_LINK,
   UNSAFE_URLS,
 } from "./fixtures";
+import { appFrame, blockExternalNetwork, viewFrame } from "./helpers";
 
 const ADVERSARIAL_HOST = "/tests/host.html?discovery=unsupported&fixture=adversarial";
 const HOSTILE_HOSTS = /tracker\.example|evil\.example/;
 
+let external: string[] = [];
 test.beforeEach(async ({ page }) => {
-  await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
+  external = await blockExternalNetwork(page);
+});
+test.afterEach(() => {
+  // Hostile hosts are tracked separately; nothing else may leave the test origins either.
+  expect(external.filter((url) => !/tracker\.example|evil\.example/.test(url))).toEqual([]);
 });
 
 function trackHostileRequests(page: Page): string[] {
@@ -56,7 +62,14 @@ async function auditDom(frame: Frame) {
       oddAttributeNames,
       javascriptUrls,
       pwned: (window as unknown as { __pwned?: unknown }).__pwned,
-      parentPwned: (window.parent as unknown as { __pwned?: unknown }).__pwned,
+      // The parent is the different-origin sandbox proxy: any access throws.
+      parentPwned: (() => {
+        try {
+          return (window.parent as unknown as { __pwned?: unknown }).__pwned;
+        } catch {
+          return undefined;
+        }
+      })(),
     };
   });
 }
@@ -77,7 +90,7 @@ test("renders adversarial calendar and inbox strings as inert text", async ({ pa
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(ADVERSARIAL_HOST);
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   const eventCard = app.getByRole("button", { name: `Open event: ${EVENT_TITLE}`, exact: true });
   await expect(eventCard).toBeVisible();
   await expect(app.locator(".event-title", { hasText: "Fixture baseline meeting" })).toBeVisible();
@@ -97,7 +110,7 @@ test("renders adversarial calendar and inbox strings as inert text", async ({ pa
   await expect(app.locator(".event-tooltip-layer")).toContainText(`Snippet ${PAYLOAD}`);
   await expect(app.locator(".event-tooltip-layer img")).toHaveCount(0);
 
-  const frame = await dashboardFrame(page, "/dist/index.html");
+  const frame = await viewFrame(page);
   await expectCleanDom(frame);
   expect(hostile).toEqual([]);
   expect(errors).toEqual([]);
@@ -106,7 +119,7 @@ test("renders adversarial calendar and inbox strings as inert text", async ({ pa
 test("event detail blocks unsafe URLs and opens safe ones through the host", async ({ page }) => {
   const hostile = trackHostileRequests(page);
   await page.goto(ADVERSARIAL_HOST);
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await app.getByRole("button", { name: `Open event: ${EVENT_TITLE}`, exact: true }).click();
   const panel = app.locator(".event-panel");
   await expect(panel.getByRole("heading", { name: EVENT_TITLE })).toBeVisible();
@@ -137,7 +150,7 @@ test("event detail blocks unsafe URLs and opens safe ones through the host", asy
     `Description ${PAYLOAD} ${ENCODED_QUOTES.join(" ")}`,
   );
 
-  const frame = await dashboardFrame(page, "/dist/index.html");
+  const frame = await viewFrame(page);
   await expectCleanDom(frame);
   expect(page.context().pages()).toHaveLength(1);
   expect(hostile).toEqual([]);
@@ -145,15 +158,15 @@ test("event detail blocks unsafe URLs and opens safe ones through the host", asy
 
 test("conference links are https-only and host-mediated", async ({ page }) => {
   await page.goto(`${ADVERSARIAL_HOST}&safeConference`);
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await app.getByRole("button", { name: `Open event: ${EVENT_TITLE}`, exact: true }).click();
   const link = app.locator('.event-panel a[data-open-link="conference"]');
   await expect(link).toHaveAttribute("href", SAFE_CONFERENCE_LINK);
   await expect(link).toHaveAttribute("rel", "noopener noreferrer");
   await link.click();
   await expect.poll(() => page.evaluate(() => (window as any).openedLinks)).toEqual([SAFE_CONFERENCE_LINK]);
-  const frame = await dashboardFrame(page, "/dist/index.html");
-  expect(frame.url()).toContain("/dist/index.html");
+  const frame = await viewFrame(page);
+  expect(frame.url()).toContain("/view/");
   expect(page.context().pages()).toHaveLength(1);
 });
 
@@ -162,7 +175,7 @@ test("sanitizes hostile email HTML without script, handlers, or remote loads", a
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(ADVERSARIAL_HOST);
-  const app = page.frameLocator("#dashboard");
+  const app = appFrame(page);
   await app.locator(".inbox-row").first().click();
   const panel = app.locator(".email-panel");
   await expect(panel.getByRole("heading", { name: `Subject ${PAYLOAD}` })).toBeVisible();
@@ -227,10 +240,10 @@ test("sanitizes hostile email HTML without script, handlers, or remote loads", a
   await expect.poll(() => page.evaluate(() => (window as any).openedLinks)).toEqual([SAFE_EMAIL_LINK, SAFE_EMAIL_LINK]);
   expect(await page.evaluate(() => (window as any).calls.length)).toBe(callsBefore);
 
-  const frame = await dashboardFrame(page, "/dist/index.html");
+  const frame = await viewFrame(page);
   await page.waitForTimeout(500);
   await expectCleanDom(frame);
-  expect(frame.url()).toContain("/dist/index.html");
+  expect(frame.url()).toContain("/view/");
   expect(page.context().pages()).toHaveLength(1);
   expect(hostile).toEqual([]);
   expect(errors).toEqual([]);

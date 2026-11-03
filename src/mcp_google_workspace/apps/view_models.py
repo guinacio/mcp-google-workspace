@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Literal, cast
 
+from pydantic import BaseModel, ConfigDict, Field
+
 import pytz
 
 from ..gmail.mime_utils import decode_rfc2047, extract_message_bodies, flatten_parts
@@ -453,3 +455,45 @@ def build_email_detail_view_model(message: dict[str, Any]) -> EmailDetailViewMod
         labels=labels,
         is_unread="UNREAD" in labels,
     )
+
+
+# --- Operation manifest ------------------------------------------------------
+#
+# UI metadata, not render data: the launch tools return it under
+# ``_meta[OPERATIONS_META_KEY]`` so the view never has to guess which server
+# tools exist or which of them this principal may use. It is a *hint* for the
+# UI; every call is still authorized by the server when it arrives.
+
+OPERATIONS_META_KEY = "mcp-google-workspace/operations"
+OPERATION_MANIFEST_VERSION: Literal[1] = 1
+
+
+class DashboardOperation(BaseModel):
+    """One dashboard operation the view may call right now."""
+
+    model_config = ConfigDict(extra="forbid")
+    tool: str = Field(description="Exact tool name to call through the host.")
+    mutates: bool = Field(
+        description="True when the tool changes state (Google data or dashboard view state)."
+    )
+
+
+class OperationManifest(BaseModel):
+    """Operations available to the calling principal in this composition."""
+
+    model_config = ConfigDict(extra="forbid")
+    version: Literal[1] = OPERATION_MANIFEST_VERSION
+    operations: dict[str, DashboardOperation] = Field(
+        default_factory=dict,
+        description=(
+            "Map from dashboard operation id (getDashboard, createEvent, ...) to its tool. "
+            "Operations missing here are unavailable: not registered, not callable by an "
+            "app, or not covered by the principal's granted Google scopes."
+        ),
+    )
+
+
+def build_operation_manifest(operations: dict[str, DashboardOperation]) -> dict[str, Any]:
+    """Wire form of the manifest, with deterministic key order."""
+    manifest = OperationManifest(operations=dict(sorted(operations.items())))
+    return manifest.model_dump(mode="json")

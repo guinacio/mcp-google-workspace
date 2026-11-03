@@ -38,10 +38,13 @@ def _is_ok_response(payload: Any, required_keys: list[str]) -> tuple[bool, str]:
 
 
 def _extract_data(result: Any) -> Any:
+    structured = getattr(result, "structured_content", None)
+    if isinstance(structured, dict):
+        return structured
     return result.data if hasattr(result, "data") else result
 
 
-async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, str]]:
+async def _run_smoke(client: Client) -> list[tuple[str, bool, str]]:
     checks: list[tuple[str, bool, str]] = []
 
     tools = await client.list_tools()
@@ -51,7 +54,6 @@ async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, s
         "apps_today",
         "apps_get_dashboard",
         "apps_get_weekly_calendar_view",
-        "apps_get_morning_briefing",
         "calendar_find_common_free_slots",
         "calendar_respond_to_event",
     }
@@ -60,35 +62,32 @@ async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, s
     if missing:
         return checks
 
-    state = _extract_data(await client.call_tool("apps_get_state", {"session_id": session_id}))
-    ok, msg = _is_ok_response(state, ["session_id", "view", "anchor_date", "timezone"])
+    # Opening a dashboard without a handle mints a new server-issued view handle;
+    # every later dashboard call passes it back.
+    dashboard = _extract_data(await client.call_tool("apps_get_dashboard", {}))
+    ok, msg = _is_ok_response(dashboard, ["title", "state", "sections", "view"])
+    checks.append(("tool:apps_get_dashboard", ok, msg))
+    view_handle = dashboard.get("view", {}).get("handle") if isinstance(dashboard, dict) else None
+    if not view_handle:
+        checks.append(("view:handle_issued", False, "apps_get_dashboard returned no view handle"))
+        return checks
+
+    state = _extract_data(await client.call_tool("apps_get_state", {"view_handle": view_handle}))
+    ok, msg = _is_ok_response(state, ["state", "view"])
     checks.append(("tool:apps_get_state", ok, msg))
 
-    today_state = _extract_data(await client.call_tool("apps_today", {"session_id": session_id}))
-    ok, msg = _is_ok_response(today_state, ["session_id", "anchor_date", "timezone"])
+    today_state = _extract_data(await client.call_tool("apps_today", {"view_handle": view_handle}))
+    ok, msg = _is_ok_response(today_state, ["state", "view"])
     checks.append(("tool:apps_today", ok, msg))
-
-    dashboard = _extract_data(await client.call_tool("apps_get_dashboard", {"session_id": session_id}))
-    ok, msg = _is_ok_response(dashboard, ["title", "state", "sections"])
-    checks.append(("tool:apps_get_dashboard", ok, msg))
 
     weekly = _extract_data(
         await client.call_tool(
             "apps_get_weekly_calendar_view",
-            {"session_id": session_id, "include_weekend": True},
+            {"view_handle": view_handle, "include_weekend": True},
         )
     )
-    ok, msg = _is_ok_response(weekly, ["week_start", "week_end", "days", "total_events"])
+    ok, msg = _is_ok_response(weekly, ["week_start", "week_end", "days", "total_events", "view"])
     checks.append(("tool:apps_get_weekly_calendar_view", ok, msg))
-
-    briefing = _extract_data(
-        await client.call_tool(
-            "apps_get_morning_briefing",
-            {"request": {"session_id": session_id, "include_inbox": False}},
-        )
-    )
-    ok, msg = _is_ok_response(briefing, ["date", "summary", "priorities", "fallback_text"])
-    checks.append(("tool:apps_get_morning_briefing", ok, msg))
 
     start = datetime.now(timezone.utc)
     end = start + timedelta(hours=8)
@@ -114,7 +113,6 @@ async def _run_smoke(client: Client, session_id: str) -> list[tuple[str, bool, s
         "apps://apps/dashboard/current",
         f"apps://apps/dashboard/week/{today_ymd}",
         f"apps://apps/calendar/week/{today_ymd}",
-        f"apps://apps/briefing/morning/{today_ymd}",
     ]
     for uri in resources:
         try:
@@ -135,7 +133,6 @@ async def main() -> None:
         default=None,
         help="Optional Streamable HTTP URL (example: http://127.0.0.1:8001/mcp)",
     )
-    parser.add_argument("--session-id", type=str, default="qa-apps-smoke", help="Session identifier used for stateful app tools.")
     args = parser.parse_args()
 
     _ensure_project_root()
@@ -152,7 +149,7 @@ async def main() -> None:
         client = Client(workspace_mcp)
 
     async with client:
-        checks = await _run_smoke(client, args.session_id)
+        checks = await _run_smoke(client)
 
     passed = sum(1 for _, ok, _ in checks if ok)
     failed = sum(1 for _, ok, _ in checks if not ok)

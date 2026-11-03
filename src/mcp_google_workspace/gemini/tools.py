@@ -243,8 +243,7 @@ def analyze_audio_payload(
 
 
 async def _report_tool_start(ctx: Context | None, message: str) -> None:
-    if ctx is not None:
-        await ctx.info(message)
+    LOGGER.debug(message)
 
 
 async def _report_tool_progress(ctx: Context | None, current: int, total: int, message: str) -> None:

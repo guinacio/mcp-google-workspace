@@ -193,11 +193,11 @@ class DeleteEventRequest(ToolRequestModel):
     event_id: str = Field(description="Calendar event ID to delete.")
     send_updates: str | None = Field(default=None, description="Guest notification mode for deletion.")
     force: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "Skip interactive confirmation when true. Default is true so the tool "
-            "works on MCP clients that don't implement elicitation; set to false to "
-            "request an interactive confirmation prompt on supported clients."
+            "Skip the interactive confirmation when true. Default false: the deletion "
+            "is confirmed with the user first (clients that cannot confirm get a "
+            "confirmation_required result and nothing is deleted)."
         ),
     )
 

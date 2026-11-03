@@ -10,21 +10,20 @@ from fastmcp import FastMCP
 
 from ..common.async_ops import read_text_file, run_blocking
 from ..common.timezone import resolve_user_timezone, user_now
+from .addressing import DASHBOARD_UI_MIME, DASHBOARD_UI_URI
 from .schemas import DashboardState
 from .tools import build_dashboard_payload, build_weekly_calendar_payload
 
 _UI_HTML_PATH = Path(__file__).parent / "ui" / "dist" / "index.html"
-_MCP_APP_UI_URI = "ui://apps/dashboard-ui"
-_MCP_APP_UI_URI_LEGACY = "ui://dashboard-ui"
-_MCP_APP_UI_MIME = "text/html;profile=mcp-app"
 
 
 async def _resource_state(
     *, anchor_date: date | None = None, view: str = "week"
 ) -> DashboardState:
+    # Resources are pure reads: they build a transient default state and never
+    # create, read, or modify a dashboard view.
     timezone_name = await resolve_user_timezone()
     state = DashboardState(
-        session_id="resource-default",
         timezone=timezone_name,
         anchor_date=user_now(timezone_name).date(),
     )
@@ -68,26 +67,12 @@ def register_resources(server: FastMCP) -> None:
         )
         return json.dumps(payload, indent=2)
 
+    # No ``_meta.ui.csp``: the single-file dashboard makes no network requests,
+    # so the host's restrictive default CSP applies unchanged.
     @server.resource(
-        _MCP_APP_UI_URI,
+        DASHBOARD_UI_URI,
         name="apps_dashboard_ui_mcp",
-        mime_type=_MCP_APP_UI_MIME,
+        mime_type=DASHBOARD_UI_MIME,
     )
     async def apps_dashboard_ui_mcp() -> str:
-        return await read_text_file(_UI_HTML_PATH, encoding="utf-8")
-
-    @server.resource(
-        _MCP_APP_UI_URI_LEGACY,
-        name="apps_dashboard_ui_mcp_legacy",
-        mime_type=_MCP_APP_UI_MIME,
-    )
-    async def apps_dashboard_ui_mcp_legacy() -> str:
-        return await read_text_file(_UI_HTML_PATH, encoding="utf-8")
-
-    @server.resource(
-        "apps://dashboard/ui",
-        name="apps_dashboard_ui",
-        mime_type="text/html",
-    )
-    async def apps_dashboard_ui() -> str:
         return await read_text_file(_UI_HTML_PATH, encoding="utf-8")

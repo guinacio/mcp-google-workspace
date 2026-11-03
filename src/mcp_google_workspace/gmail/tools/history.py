@@ -120,10 +120,9 @@ def register(server: FastMCP) -> None:
                     "gmail_history_message_missing message_id=%s outcome=skipped",
                     message_id,
                 )
-                if ctx is not None:
-                    await ctx.warning(
-                        f"Skipped deleted Gmail message {message_id} while reading mailbox history."
-                    )
+                LOGGER.debug(
+                    f"Skipped deleted Gmail message {message_id} while reading mailbox history."
+                )
                 continue
             item = mail_feed_envelope(message, account_timezone=account_timezone)
             if item is not None:

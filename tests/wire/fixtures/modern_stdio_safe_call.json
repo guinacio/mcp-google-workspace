@@ -1,0 +1,45 @@
+{
+  "is_error": false,
+  "protocol_version": "2026-07-28",
+  "structured_content": {
+    "discovery": "FastMCP BM25 Tool Search is enabled by default for HTTP and stdio. Set MCP_CLIENT_MODEL=claude to disable it automatically in auto mode, or use MCP_TOOL_SEARCH=on|off explicitly.",
+    "enabled_namespaces": [
+      "calendar",
+      "docs",
+      "drive",
+      "forms",
+      "gmail",
+      "people",
+      "sheets",
+      "slides",
+      "tasks"
+    ],
+    "file_inputs": {
+      "drive": "Gemini media tools also accept drive_file_id.",
+      "local": "Trusted stdio clients may pass local filesystem paths.",
+      "remote": "Call files_file_manager, then pass uploaded_file."
+    },
+    "oauth_capabilities": [
+      "calendar",
+      "chat",
+      "docs",
+      "drive",
+      "forms",
+      "gmail",
+      "keep",
+      "meet",
+      "people",
+      "sheets",
+      "slides",
+      "tasks"
+    ],
+    "optional_namespaces": {
+      "apps": false,
+      "chat": false,
+      "gemini": false,
+      "keep": false,
+      "meet": false
+    },
+    "status": "ok"
+  }
+}

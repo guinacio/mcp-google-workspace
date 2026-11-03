@@ -136,5 +136,5 @@ def test_slides_tool_annotations():
     get_tool = anyio.run(_get_tool, slides_mcp, "get_presentation")
     replace_tool = anyio.run(_get_tool, slides_mcp, "replace_text_in_presentation")
 
-    assert get_tool.annotations.readOnlyHint is True
-    assert replace_tool.annotations.idempotentHint is True
+    assert get_tool.annotations.read_only_hint is True
+    assert replace_tool.annotations.idempotent_hint is True

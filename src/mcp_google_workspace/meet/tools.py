@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
-from ..common.errors import tool_error_payload
+from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
 from .client import meet_service, normalize_conference_record_name, normalize_space_name
 from .presentation import conference_envelope, participant_envelope, recording_envelope, transcript_envelope
@@ -104,7 +104,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return create_space_payload(CreateSpaceRequest(config=config))
         except HttpError as exc:
-            return tool_error_payload(exc, operation="create_space")
+            raise provider_tool_error(exc, operation="create_space") from exc
 
     @server.tool(name="get_space")
     def get_space(space_name: str) -> dict[str, Any]:
@@ -116,7 +116,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return get_space_payload(GetSpaceRequest(space_name=space_name))
         except HttpError as exc:
-            return tool_error_payload(exc, space_name=normalize_space_name(space_name))
+            raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="update_space")
     def update_space(space_name: str, config: dict[str, Any], update_mask: str | None = None) -> dict[str, Any]:
@@ -135,7 +135,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, space_name=normalize_space_name(space_name))
+            raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="end_active_conference")
     def end_active_conference(space_name: str) -> dict[str, Any]:
@@ -147,7 +147,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return end_active_conference_payload(EndActiveConferenceRequest(space_name=space_name))
         except HttpError as exc:
-            return tool_error_payload(exc, space_name=normalize_space_name(space_name))
+            raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="list_conference_records")
     async def list_conference_records(
@@ -182,7 +182,7 @@ def register_tools(server: FastMCP) -> None:
                 "account_timezone": account_timezone,
             }
         except HttpError as exc:
-            return tool_error_payload(exc, filter=filter, page_token=page_token)
+            raise provider_tool_error(exc, filter=filter, page_token=page_token) from exc
 
     @server.tool(name="get_conference_record")
     async def get_conference_record(conference_record_name: str) -> dict[str, Any]:
@@ -202,7 +202,7 @@ def register_tools(server: FastMCP) -> None:
                 account_timezone=account_timezone,
             )
         except HttpError as exc:
-            return tool_error_payload(exc, conference_record_name=record_name)
+            raise provider_tool_error(exc, conference_record_name=record_name) from exc
 
     @server.tool(name="list_conference_participants")
     async def list_conference_participants(
@@ -240,7 +240,7 @@ def register_tools(server: FastMCP) -> None:
                 "account_timezone": account_timezone,
             }
         except HttpError as exc:
-            return tool_error_payload(exc, conference_record_name=record_name)
+            raise provider_tool_error(exc, conference_record_name=record_name) from exc
 
     @server.tool(name="list_conference_recordings")
     async def list_conference_recordings(
@@ -276,7 +276,7 @@ def register_tools(server: FastMCP) -> None:
                 "account_timezone": account_timezone,
             }
         except HttpError as exc:
-            return tool_error_payload(exc, conference_record_name=record_name)
+            raise provider_tool_error(exc, conference_record_name=record_name) from exc
 
     @server.tool(name="list_conference_transcripts")
     async def list_conference_transcripts(
@@ -312,4 +312,4 @@ def register_tools(server: FastMCP) -> None:
                 "account_timezone": account_timezone,
             }
         except HttpError as exc:
-            return tool_error_payload(exc, conference_record_name=record_name)
+            raise provider_tool_error(exc, conference_record_name=record_name) from exc

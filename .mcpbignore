@@ -37,4 +37,5 @@ src/mcp_google_workspace/apps/ui/playwright.config.ts
 src/mcp_google_workspace/apps/ui/package-lock.json
 src/mcp_google_workspace/apps/ui/package.json
 src/mcp_google_workspace/apps/ui/tsconfig.json
+src/mcp_google_workspace/apps/ui/tsconfig.test.json
 src/mcp_google_workspace/apps/ui/vite.config.ts

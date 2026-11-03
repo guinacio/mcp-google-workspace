@@ -44,8 +44,15 @@ jobs:
       - name: Smoke-test HTTP container
         shell: bash
         run: |
-          test "$(docker image inspect --format '{{.Config.User}}' mcp-google-workspace-ci:pr)" = "mcp"
-          test "$(docker image inspect --format '{{index .Config.Labels "io.modelcontextprotocol.server.name"}}' mcp-google-workspace-ci:pr)" = "io.github.guinacio/mcp-google-workspace"
+          set -euo pipefail
+          image=mcp-google-workspace-ci:pr
+          label() { docker image inspect --format "{{index .Config.Labels \"$1\"}}" "$image"; }
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = "mcp"
+          test "$(label io.modelcontextprotocol.server.name)" = "io.github.guinacio/mcp-google-workspace"
+          test "$(label org.opencontainers.image.revision)" = "${{ github.sha }}"
+          test -n "$(label org.opencontainers.image.source)"
+          # Only the committed single-file UI build ships (no sources, tests or node tooling).
+          test "$(docker run --rm --entrypoint ls "$image" /app/src/mcp_google_workspace/apps/ui)" = "dist"
           encryption_key="$(python -c 'import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
           docker run --detach --name mcp-google-workspace-smoke \
             --publish 127.0.0.1:8000:8000 \
@@ -55,15 +62,29 @@ jobs:
             --env MCP_HTTP_JWKS_URI=https://issuer.example.com/.well-known/jwks.json \
             --env MCP_GOOGLE_OAUTH_REDIRECT_URL=http://127.0.0.1:8000/google/oauth/callback \
             --env MCP_TOKEN_ENCRYPTION_KEY="$encryption_key" \
-            mcp-google-workspace-ci:pr
+            "$image"
           trap 'docker logs mcp-google-workspace-smoke; docker rm --force mcp-google-workspace-smoke' EXIT
-          for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:8000/health/live; then
-              exit 0
-            fi
-            sleep 1
-          done
-          exit 1
+          # Bounded poll (30 x 1 s) instead of a fixed sleep.
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:8000/health/live
+          # One process, no Redis: not a fleet, so readiness is green (W5 policy).
+          curl --fail --silent --show-error http://127.0.0.1:8000/health/ready
+          test "$(curl --fail --silent http://127.0.0.1:8000/version | python -c 'import json,sys; print(json.load(sys.stdin)["commit"])')" = "${{ github.sha }}"
+          # Unauthenticated modern request: 401 with the RFC 9728 challenge.
+          status="$(curl --silent --output /dev/null --dump-header headers.txt --write-out '%{http_code}' \
+            --header 'Content-Type: application/json' \
+            --header 'Accept: application/json, text/event-stream' \
+            --header 'MCP-Protocol-Version: 2026-07-28' \
+            --header 'Mcp-Method: tools/list' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+            http://127.0.0.1:8000/mcp)"
+          test "$status" = "401"
+          grep -qi 'resource_metadata="http://127.0.0.1:8000/.well-known/oauth-protected-resource/mcp"' headers.txt
+          # The test-only fake Google switch is refused by the production image.
+          if docker run --rm --env MCP_FLEET_FAKE_GOOGLE=fleet-qualification-only "$image" 2>refused.txt; then
+            exit 1
+          fi
+          grep -q "test-only setting" refused.txt
 
   publish-container:
     name: Build and publish container

@@ -7,8 +7,9 @@ from typing import Annotated, Any
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
-from ..common.async_ops import confirm_destructive_action, run_blocking
-from ..common.errors import tool_error_payload
+from ..common.async_ops import run_blocking
+from ..common.confirmation import confirm_destructive_action
+from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone, user_now
 from .client import tasks_service
 from .schemas import (
@@ -132,7 +133,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             result = list_tasklists_payload(ListTasklistsRequest(max_results=max_results, page_token=page_token))
         except HttpError as exc:
-            return tool_error_payload(exc)
+            raise provider_tool_error(exc) from exc
         items = result.get("items", [])
         return {"tasklists": [tasklist_envelope(item) for item in items], "next_page_token": result.get("nextPageToken"), "count": len(items)}
 
@@ -145,7 +146,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return tasklist_envelope(get_tasklist_payload(GetTasklistRequest(tasklist_id=tasklist_id)))
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
 
     @server.tool(name="create_tasklist")
     def create_tasklist(title: str) -> dict[str, Any]:
@@ -157,7 +158,7 @@ def register_tools(server: FastMCP) -> None:
         try:
             return create_tasklist_payload(CreateTasklistRequest(title=title))
         except HttpError as exc:
-            return tool_error_payload(exc, title=title)
+            raise provider_tool_error(exc, title=title) from exc
 
     @server.tool(name="list_tasks")
     async def list_tasks(
@@ -212,7 +213,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
         items = result.get("items", [])
         return {
             "tasklist_id": tasklist_id,
@@ -239,7 +240,7 @@ def register_tools(server: FastMCP) -> None:
                 now=user_now(timezone_name),
             )
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
     @server.tool(name="tasks_digest")
     async def tasks_digest_tool(
@@ -261,7 +262,7 @@ def register_tools(server: FastMCP) -> None:
                 ListTasksRequest(tasklist_id=tasklist_id, max_results=max_results, show_completed=False)
             )
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
         digest = tasks_digest(
             result.get("items", []), now=user_now(timezone_name), days=days
         )
@@ -311,7 +312,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
 
     @server.tool(name="update_task")
     def update_task(
@@ -350,7 +351,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
     @server.tool(name="complete_task")
     async def complete_task(
@@ -372,7 +373,7 @@ def register_tools(server: FastMCP) -> None:
                 default_completed_at=_completed_now(timezone_name),
             )
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
     @server.tool(name="move_task")
     def move_task(
@@ -407,7 +408,7 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
     @server.tool(name="delete_task")
     async def delete_task(
@@ -432,4 +433,4 @@ def register_tools(server: FastMCP) -> None:
         try:
             return await run_blocking(delete_task_payload, request)
         except HttpError as exc:
-            return tool_error_payload(exc, tasklist_id=tasklist_id, task_id=task_id)
+            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc

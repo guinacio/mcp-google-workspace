@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import datetime as dt
 from typing import Any, Literal
-from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..common.request_model import ToolRequestModel
 
@@ -14,7 +13,10 @@ DashboardView = Literal["agenda", "day", "week", "month"]
 
 
 class DashboardState(BaseModel):
-    session_id: str = Field(default_factory=lambda: f"session-{uuid4()}")
+    """Per-view dashboard state persisted under a server-issued view handle."""
+
+    model_config = ConfigDict(extra="forbid")
+
     view: DashboardView = Field(default="week")
     anchor_date: dt.date = Field(default_factory=dt.date.today)
     timezone: str = Field(default="UTC")

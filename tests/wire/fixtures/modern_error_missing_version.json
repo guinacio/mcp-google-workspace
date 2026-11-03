@@ -1,0 +1,11 @@
+{
+  "body": {
+    "error": {
+      "code": -32600,
+      "message": "Bad Request: Missing session ID"
+    },
+    "id": null,
+    "jsonrpc": "2.0"
+  },
+  "status_code": 400
+}
