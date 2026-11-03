@@ -5,7 +5,7 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
-## 1.0.0 — 2026-09-27
+## 1.0.0 — 2026-11-03
 
 The first stable release. This version migrates the server from FastMCP
 3.4.4 / MCP SDK 1.28.1 (protocol `2025-11-25`) to **FastMCP 4.1.6 / MCP SDK
