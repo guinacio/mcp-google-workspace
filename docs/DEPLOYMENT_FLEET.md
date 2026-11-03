@@ -12,7 +12,8 @@ production image: two replicas and one worker in separate containers, Redis
 nginx 1.30.5 terminating TLS under a `/gw` path prefix. Google was answered by a
 test-only fake transport (see [Qualification stack](#qualification-stack)), so
 the Google APIs themselves are not part of that evidence. Library versions:
-FastMCP / fastmcp-tasks 4.0.10, MCP SDK 2.2.0, pydocket 0.25.2, redis-py 8.
+FastMCP / fastmcp-tasks 4.1.6, MCP SDK 2.3.0, pydocket 0.27.1, redis-py 8
+(re-qualified 2026-11-03; first qualified on 4.0.10, 2.2.0 and 0.25.2).
 
 ## Topology
 
