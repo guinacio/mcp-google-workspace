@@ -38,7 +38,7 @@ secret store, never baked into the image):
 | --- | --- |
 | `MCP_HTTP_BASE_URL` | Public URL including the proxy prefix, e.g. `https://mcp.example.com/gw`. The resource identifier is `<base>/mcp`; allowed `Host` / `Origin` default to its authority. |
 | `MCP_HTTP_JWT_ISSUER`, `MCP_HTTP_JWT_AUDIENCE`, `MCP_HTTP_JWKS_URI` | Bearer-token verification (JWKS over HTTPS). |
-| `MCP_GOOGLE_OAUTH_REDIRECT_URL`, `MCP_CREDENTIALS_DIR` | Google OAuth callback below the base URL, and the directory holding the server's Google OAuth client `credentials.json`. |
+| `MCP_GOOGLE_OAUTH_REDIRECT_URL`, `MCP_CREDENTIALS_DIR` | Google OAuth callback below the base URL, and the directory holding the server's Google OAuth client `credentials.json` (a Web application client marked **Use this client for an AI-powered agent**; see README "OAuth setup"). |
 | `MCP_SECRET_FILE` (or `MCP_TOKEN_ENCRYPTION_KEYS` / `MCP_TOKEN_ENCRYPTION_KEY`) | Token key ring. Encrypts Google grants, OAuth state, dashboard state, operation records and upload blobs. |
 | `MCP_REQUEST_STATE_KEYS` | Shared key ring sealing multi-round-trip confirmation continuations (each ≥ 32 bytes). |
 | `FASTMCP_TASKS_ENCRYPTION_KEY` | Encrypts the caller snapshot stored with each queued task (≥ 32 random characters). **Must not be empty**: an empty value is refused by fastmcp-tasks at the first submission, and readiness reports it (qualified). |

@@ -22,7 +22,7 @@ Production-oriented Google Workspace MCP package with:
 - Python 3.12+
 - UV package manager
 - Node.js 20+ and npm (required for MCP Apps UI in `src/mcp_google_workspace/apps/ui`)
-- Google Cloud OAuth desktop credentials (`credentials.json`)
+- Google Cloud OAuth client credentials (`credentials.json`) for a client marked **Use this client for an AI-powered agent** (see [OAuth setup](#oauth-setup))
 - Google APIs enabled in your Google Cloud project: Gmail, Calendar, Drive, Sheets, Docs, Tasks, People, Forms, and Slides
 - Optional APIs when enabling feature-flagged integrations: Google Keep, Google Chat, and Google Meet
 - Gemini Developer API key when enabling Gemini media tools
@@ -42,6 +42,16 @@ npm run build
 ```
 
 ## OAuth setup
+
+Create the server's OAuth client as an AI agent client:
+
+1. In the Google Cloud console, open **Google Auth Platform → Clients** and create a client: **Desktop app** for local stdio/MCPB, or **Web application** with `MCP_GOOGLE_OAUTH_REDIRECT_URL` as an authorized redirect URI for HTTP deployments.
+2. Select **Use this client for an AI-powered agent**.
+3. Download the client JSON as `credentials.json`.
+
+Google asks developers to mark every OAuth client that an AI agent uses, even one that only calls the Workspace REST APIs, and to keep agent and non-agent workflows on separate client IDs. Use a dedicated client for this server rather than one shared with other apps. The mark grants no extra scopes and does not replace user consent; it lets Workspace administrators apply agent-specific access controls. From November 11, 2026, Google's hosted Workspace MCP servers reject clients that are not marked. This server calls the Workspace REST APIs, not those hosted servers, so an unmarked client still works here. On November 12, 2026, the setting becomes permanent on existing clients: if yours is unmarked after that date, create a new client. See [Manage OAuth clients](https://support.google.com/cloud/answer/15549257).
+
+To switch an existing installation to a new client, replace `credentials.json`, then call `disconnect_google_workspace` with `confirm=true` and connect again (each user, over HTTP). Saved grants keep refreshing through the client that issued them until you reconnect.
 
 Place the Google OAuth client `credentials.json` in one of:
 
@@ -163,7 +173,7 @@ Install on Claude Desktop:
 1. Download the latest `.mcpb` from [GitHub Releases](https://github.com/guinacio/mcp-google-workspace/releases/latest).
 2. In Claude Desktop, open the MCP bundle install flow.
 3. Select the downloaded `mcp-google-workspace-*.mcpb` file.
-4. Choose the credentials directory that contains `credentials.json`, or leave it empty to use the repo defaults.
+4. Choose the credentials directory that contains `credentials.json` (a Desktop app client marked as an AI agent client; see [OAuth setup](#oauth-setup)), or leave it empty to use the repo defaults.
 5. Enable optional integrations only if your Google Workspace account and OAuth client support their scopes.
 6. Finish the install and authenticate in the browser on first launch.
 

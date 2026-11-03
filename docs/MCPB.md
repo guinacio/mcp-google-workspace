@@ -36,7 +36,8 @@ The bundle asks for no encryption key. On first use it generates a Fernet key an
 
 The MCPB manifest exposes these settings through the host UI and passes them into the local process as environment variables:
 
-- `credentials_dir` -> `MCP_CREDENTIALS_DIR`
+- `credentials_dir` -> `MCP_CREDENTIALS_DIR` (holds `credentials.json` for a Desktop app client marked
+  **Use this client for an AI-powered agent**; see "OAuth setup" in the README)
 - `user_token_dir` -> `MCP_USER_TOKEN_DIR`
 - `local_principal` -> `MCP_LOCAL_PRINCIPAL` (the one trusted-local principal that owns this
   process's Google grant, picker uploads, and dashboard views; it is a single-user trust

@@ -223,6 +223,13 @@ MCP Apps dashboard/picker to **Apps SDK 2.0.3**. See
   `sub` are mandatory, a future `nbf`/`iat` is refused, and an unknown JWKS
   `kid` triggers at most one refetch per 30 seconds. MCP bearer tokens are
   never reused as Google credentials (tested). (§9.6.)
+- **Dependency security updates.** Carries the 0.3.14 fixes onto the 1.0.0
+  line: pyjwt 2.15.1, urllib3 2.8.0, oauthlib 4.0.1, authlib 1.9.3,
+  joserfc 1.8.0, pyasn1 0.6.5, dnspython 2.9.1, certifi 2026.10.23 and
+  opentelemetry-api 1.45.2 (`pip-audit` clean). The Apps UI moves to
+  `@modelcontextprotocol/client`/`core` 2.4.0 (GHSA-6qxp-vccf-f47h,
+  GHSA-6prh-2h8m-c8cw), dompurify 3.4.17, zod 4.6.7 and vite 6.4.5
+  (`npm audit` clean).
 
 ### Operations
 
@@ -260,6 +267,13 @@ MCP Apps dashboard/picker to **Apps SDK 2.0.3**. See
 
 ### Upgrade notes
 
+- **Mark the Google OAuth client as an AI agent client.** Google asks that
+  every OAuth client used by an AI agent have **Use this client for an
+  AI-powered agent** selected (Google Auth Platform → Clients), on a client
+  not shared with non-agent apps. This server calls the Workspace REST APIs,
+  so an unmarked client keeps working, but the setting becomes permanent on
+  existing clients on 2026-11-12; after that, create a new client, replace
+  `credentials.json`, and reconnect Google. (README "OAuth setup".)
 - **Drain task queues before cutover.** Do not run the old (FastMCP 3 /
   pydocket) and new (FastMCP 4 / `fastmcp-tasks`) task queues side by side.
   Let in-flight FastMCP-3 tasks finish, then deploy 1.0.0; the new deployment
