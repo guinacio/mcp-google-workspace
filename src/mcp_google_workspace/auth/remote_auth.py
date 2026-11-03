@@ -49,22 +49,32 @@ class WorkspaceJWTVerifier(JWTVerifier):
         jwks_cache_ttl: int | None = None,
         **kwargs: Any,
     ) -> None:
+        interval = max(0.0, min_refresh_interval)
+        # FastMCP >= 4.1 bounds every JWKS fetch attempt (failures included)
+        # by ``jwks_refresh_interval``; use the same bound for both paths.
+        kwargs.setdefault("jwks_refresh_interval", interval)
         super().__init__(**kwargs)
-        self._min_refresh_interval = max(0.0, min_refresh_interval)
+        self._min_refresh_interval = interval
         self._last_forced_refresh = float("-inf")
         if jwks_cache_ttl is not None:
             self._cache_ttl = int(jwks_cache_ttl)
 
     async def _get_jwks_key(self, kid: str | None) -> str:
-        # FastMCP 4.0.10 refetches the whole JWKS whenever a token names a key id
-        # missing from a still-fresh cache. Allow that (it is how rotation is
-        # picked up) at most once per interval; otherwise reject the token.
-        now = time.time()
-        cache_fresh = now - self._jwks_cache_time < self._cache_ttl
+        # A token naming a key id missing from a fresh cache is how key rotation
+        # shows up. FastMCP's own bound also counts the routine fetch that filled
+        # the cache, so on its own a rotation seen within the interval after any
+        # fetch would be refused. Allow one such forced refetch per interval,
+        # independent of routine fetches, and refuse the rest without contacting
+        # the IdP. ``_jwks_cache_time`` is on FastMCP's monotonic clock; an empty
+        # cache was never filled and is not fresh.
+        now = time.monotonic()
+        cache_fresh = bool(self._jwks_cache) and now - self._jwks_cache_time < self._cache_ttl
         if cache_fresh and kid and kid not in self._jwks_cache:
             if now - self._last_forced_refresh < self._min_refresh_interval:
                 raise ValueError("Unknown JWT key id; JWKS refresh is rate limited.")
             self._last_forced_refresh = now
+            # Exempt this one budgeted refetch from FastMCP's own bound.
+            self._jwks_last_refresh_attempt = None
         return await super()._get_jwks_key(kid)
 
     async def load_access_token(self, token: str) -> AccessToken | None:

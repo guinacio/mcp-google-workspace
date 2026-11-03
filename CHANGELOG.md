@@ -8,8 +8,8 @@ noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 ## 1.0.0 — 2026-09-27
 
 The first stable release. This version migrates the server from FastMCP
-3.4.4 / MCP SDK 1.28.1 (protocol `2025-11-25`) to **FastMCP 4.0.10 / MCP SDK
-2.2.0**, adds full support for **MCP 2026-07-28** while keeping legacy
+3.4.4 / MCP SDK 1.28.1 (protocol `2025-11-25`) to **FastMCP 4.1.6 / MCP SDK
+2.3.0** (migrated on 4.0.10 / 2.2.0; see Security fixes), adds full support for **MCP 2026-07-28** while keeping legacy
 protocol connectivity (`2024-11-05` through `2025-11-25`), and upgrades the
 MCP Apps dashboard/picker to **Apps SDK 2.0.3**. See
 `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` for the full plan and
@@ -223,6 +223,15 @@ MCP Apps dashboard/picker to **Apps SDK 2.0.3**. See
   `sub` are mandatory, a future `nbf`/`iat` is refused, and an unknown JWKS
   `kid` triggers at most one refetch per 30 seconds. MCP bearer tokens are
   never reused as Google credentials (tested). (§9.6.)
+- **FastMCP 4.1.6.** FastMCP 4.0.10 is affected by GHSA-7xgj-8392-5q4r
+  (post-transform component authorization skipped on direct calls) and
+  GHSA-vqqp-x5qm-5qp4 (M2M OAuth client wrappers without issuer binding),
+  both fixed in 4.1.2. The upgrade also brings MCP SDK 2.3.0 and pydocket
+  0.27.1. FastMCP 4.1 now bounds every JWKS fetch attempt itself and moved
+  its cache clock to `time.monotonic()`; `WorkspaceJWTVerifier` follows it,
+  so a rotated signing key is still accepted on first use while unknown key
+  ids still cannot force more than one refetch per interval. Only
+  `serverInfo.version` (FastMCP's version) changed on the wire.
 - **Dependency security updates.** Carries the 0.3.14 fixes onto the 1.0.0
   line: pyjwt 2.15.1, urllib3 2.8.0, oauthlib 4.0.1, authlib 1.9.3,
   joserfc 1.8.0, pyasn1 0.6.5, dnspython 2.9.1, certifi 2026.10.23 and

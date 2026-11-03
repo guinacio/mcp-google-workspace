@@ -3,7 +3,7 @@
     "_meta": {
       "io.modelcontextprotocol/serverInfo": {
         "name": "google-workspace-mcp",
-        "version": "4.0.10"
+        "version": "4.1.6"
       }
     },
     "content": [
@@ -23,7 +23,7 @@
     "_meta": {
       "io.modelcontextprotocol/serverInfo": {
         "name": "google-workspace-mcp",
-        "version": "4.0.10"
+        "version": "4.1.6"
       }
     },
     "inputRequests": {
