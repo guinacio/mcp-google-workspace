@@ -988,7 +988,7 @@
           },
           "max_results": {
             "default": 25,
-            "description": "Maximum events to return, 1 to 2500; this tool takes no page token, so narrow the window instead of paging.",
+            "description": "Maximum events per page, 1 to 2500; next_page_token continues the list.",
             "type": "integer"
           },
           "order_by": {
@@ -998,6 +998,10 @@
               "startTime",
               "updated"
             ],
+            "type": "string"
+          },
+          "page_token": {
+            "description": "The next_page_token from the previous response of this same call; omit for the first page. Keep every other argument the same; range_preset 'next_7_days' moves with the clock, so page with the effective_time_min/effective_time_max of the first response.",
             "type": "string"
           },
           "range_preset": {

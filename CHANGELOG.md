@@ -641,6 +641,12 @@ area:
 - `chat_list_messages` with `thread_name` failed on every call: it passed a
   `thread.name` keyword the Chat client does not accept. The thread is now a
   `filter` clause, combined with any `filter` given by AND.
+- `calendar_search_events` returned `next_page_token` but had no way to
+  pass it back; it gains `page_token`, and `max_results` is per page.
+- `calendar_find_free_time` applied working hours at the first day's UTC
+  offset on every later day of the window, so across a DST change the
+  suggested slots moved by an hour. Each day's hours are now local time in
+  `time_zone`.
 - The dashboard's event editor saved only through the form's `submit` event,
   which a sandbox without `allow-forms` blocks; it now saves from the submit
   button (and Enter in a field) in either sandbox.
