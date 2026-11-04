@@ -988,7 +988,8 @@ async function initMcpMode() {
           location: detail.location || "",
           description: detail.description || "",
           attendees_csv: detail.attendees.map((item) => item.email).join(", "),
-          create_conference: !!detail.conference_link,
+          create_conference: false,
+          has_conference: !!detail.conference_link,
         },
         ui_notice: undefined,
         ui_error: undefined,
@@ -1062,9 +1063,12 @@ async function initMcpMode() {
       });
       return;
     }
+    // calendar_update_event's add_meet_link replaces any conference the event has, so it is
+    // sent only to add a first Meet link; the editor offers the box only then.
+    const addMeet = draft.create_conference && !draft.has_conference;
     await runMutation({
       operation: "updateEvent",
-      args: { ...common, event_id: draft.event_id },
+      args: { ...common, event_id: draft.event_id, ...(addMeet ? { add_meet_link: true } : {}) },
       failureLabel: "Failed to save event",
       successNotice: "Event updated.",
       after,

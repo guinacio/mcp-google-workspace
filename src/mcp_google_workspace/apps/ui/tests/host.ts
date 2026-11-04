@@ -481,6 +481,8 @@ bridge.oncalltool = async ({ name, arguments: rawArgs }) => {
       structuredContent: {
         event_id: String(args.event_id), calendar_id: String(args.calendar_id), title: `Detail of ${args.event_id}`,
         start: "2026-09-21T10:00:00Z", end: "2026-09-21T11:00:00Z", status: "confirmed", attendees: [], attachments: [],
+        // `meet`: the event already has a Google Meet link.
+        ...(params.has("meet") ? { conference_link: "https://meet.google.com/abc-defg-hij", conference_provider: "Google Meet" } : {}),
       },
     };
   }

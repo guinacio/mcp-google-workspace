@@ -71,6 +71,12 @@ otherwise; no tool, parameter or dependency is added or removed.
 
 ### Fixed
 
+- **Apps dashboard: "Add Google Meet" when editing an event.** The box was
+  ignored on save because the update sent no `add_meet_link`. Editing an
+  event without a Meet link now offers the box unchecked and sends
+  `add_meet_link: true` when it is checked; an event that already has a link
+  shows it as already added (disabled), and its update never sends
+  `add_meet_link`, which would replace the existing conference.
 - **`dry_run` wording** on `gmail_modify_messages` and `gmail_delete`: the
   parameter said "no consent is asked" while the result carries
   `consent_required: true`. It now says a dry run sends nothing to Google and

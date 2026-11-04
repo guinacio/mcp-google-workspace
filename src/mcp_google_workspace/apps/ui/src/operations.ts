@@ -83,6 +83,7 @@ export const OPERATION_ARGUMENTS = {
     "description",
     "location",
     "attendees",
+    "add_meet_link",
     "send_updates",
     "on_conflict",
   ],
