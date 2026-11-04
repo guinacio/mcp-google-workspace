@@ -26,7 +26,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Upload and manage files. Drop files here to send them to the server.",
+      "description": "Open the Workspace Files picker so the user can upload files from their device to this MCP server's temporary upload area (not Google Drive), at most 25 MiB per file, kept for one hour by default. Use it when a tool needs a file the user has and the server cannot read local paths; after the user uploads, get the upl_... IDs from files_list_files and pass one as uploaded_file to a tool such as gmail_send_email (attachments), drive_upload_file or drive_update_file_content. Returns the picker UI for an MCP Apps host, whose state.stored lists uploads already staged.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -98,7 +98,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Describe available namespaces, consent capabilities, and file-transfer choices.",
+      "description": "Describe what this server offers without calling Google: enabled tool namespaces, which optional integrations are on, the capability names connect_google_workspace accepts, and how to pass files to tools. For the user's actual grants use get_google_connection_status instead. Returns enabled_namespaces, optional_namespaces, oauth_capabilities, file_inputs and discovery.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},

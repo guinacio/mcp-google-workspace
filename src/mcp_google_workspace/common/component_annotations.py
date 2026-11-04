@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from functools import wraps
 import inspect
+import re
 from typing import Any, Protocol, cast
 
 from fastmcp import FastMCP
@@ -362,6 +363,28 @@ def _enrich_parameters_schema(component: Any, *, namespace_hint: str | None) -> 
     simplify_optional_properties(component.parameters)
 
 
+def flow_description(text: str | None) -> str | None:
+    """Publish a docstring's paragraphs as flowing text.
+
+    Docstrings are wrapped for the source file; a client renders the
+    description itself, so line breaks inside a paragraph only cost tokens and
+    break sentences mid-way. Blank-line paragraph breaks and list items stay.
+    """
+    if not text:
+        return text
+    paragraphs = []
+    for paragraph in re.split(r"\n\s*\n", text.strip()):
+        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        flowed: list[str] = []
+        for line in lines:
+            if flowed and not line.startswith(("- ", "* ")):
+                flowed[-1] = f"{flowed[-1]} {line}"
+            else:
+                flowed.append(line)
+        paragraphs.append("\n".join(flowed))
+    return "\n\n".join(paragraphs)
+
+
 def _non_null_branches(schema: Mapping[str, Any]) -> list[Any] | None:
     branches = schema.get("anyOf")
     if not isinstance(branches, list):
@@ -461,6 +484,7 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
         base_title = _humanize_tool_title(_base_tool_name(tool_component.name), namespace_hint=None)
         if tool_component.title in {None, "", base_title}:
             tool_component.title = derived_title
+        tool_component.description = flow_description(tool_component.description)
         tool_component.tags.update(_tool_tags(tool_component.name, namespace_hint=namespace_hint))
         _enrich_parameters_schema(tool_component, namespace_hint=namespace_hint)
         namespace, base_name = _split_tool_name(

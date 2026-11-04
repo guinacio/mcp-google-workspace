@@ -32,11 +32,11 @@ def register(server: FastMCP) -> None:
     @server.tool(name="list_permissions")
     async def list_permissions(
         file_id: str,
-        page_size: int = 50,
+        page_size: Annotated[int, "Permissions per page, 1 to 200."] = 50,
         page_token: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List permissions on a Drive file."""
+        """List who has access to a Drive file or folder and at what level. Use it before drive_update_permission or drive_delete_permission to find the permission_id; for one known permission use drive_get_permission. Returns permissions (id, type, role, emailAddress, domain, displayName, allowFileDiscovery, pendingOwner, expirationTime, deleted), count and next_page_token."""
         request = ListPermissionsRequest(
             file_id=file_id,
             page_size=page_size,
@@ -70,7 +70,7 @@ def register(server: FastMCP) -> None:
         permission_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Get a specific permission on a Drive file."""
+        """Get one sharing permission on a Drive file by its permission ID. To see everyone with access use drive_list_permissions. Returns permission (id, type, role, emailAddress, domain, displayName, allowFileDiscovery, pendingOwner, expirationTime, deleted)."""
         request = GetPermissionRequest(
             file_id=file_id,
             permission_id=permission_id,
@@ -94,24 +94,37 @@ def register(server: FastMCP) -> None:
         file_id: str,
         type: Annotated[
             Literal["user", "group", "domain", "anyone"],
-            "Permission grantee type: user, group, domain, or anyone.",
+            (
+                "Who receives access: 'user' or 'group' (set email_address), 'domain' (everyone in a "
+                "Google Workspace domain; set domain), or 'anyone' (anyone with the link, no sign-in; "
+                "requires prepare_workspace_action first)."
+            ),
         ],
-        role: Annotated[
-            Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"],
-            "Access level granted to the grantee, from owner down to reader.",
-        ],
-        email_address: Annotated[str | None, "Email address for user/group permission types."] = None,
-        domain: Annotated[str | None, "Domain name for the domain permission type."] = None,
+        role: Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"],
+        email_address: Annotated[
+            str | None,
+            "Email address of the person or Google group to share with; required for type user or group.",
+        ] = None,
+        domain: Annotated[
+            str | None, "Domain to share with, e.g. 'example.com'; required for type 'domain'."
+        ] = None,
         allow_file_discovery: bool | None = None,
         expiration_time: str | None = None,
-        send_notification_email: bool | None = None,
+        send_notification_email: Annotated[
+            bool | None,
+            (
+                "For type user or group: false shares silently. Omitted, Google emails the grantee; it "
+                "cannot be false for an ownership transfer."
+            ),
+        ] = None,
         email_message: Annotated[
-            str | None, "Custom message included in the sharing notification email."
+            str | None,
+            "Plain-text message added to the sharing notification email sent to a user or group.",
         ] = None,
         transfer_ownership: bool | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a sharing permission for a Drive file."""
+        """Share a Drive file or folder with a person, group, domain or anyone with the link. To change an existing grant's role or expiry use drive_update_permission, and to revoke access drive_delete_permission. Returns status 'ok' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled'. It asks the user to confirm, Google emails user and group grantees by default, and type 'anyone' first requires prepare_workspace_action, then commit_workspace_action."""
         request = CreatePermissionRequest(
             file_id=file_id,
             type=type,
@@ -187,11 +200,13 @@ def register(server: FastMCP) -> None:
         role: Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"] | None = None,
         allow_file_discovery: bool | None = None,
         expiration_time: str | None = None,
-        remove_expiration: bool = False,
+        remove_expiration: Annotated[
+            bool, "True clears the grant's expiration so access no longer ends; overrides expiration_time."
+        ] = False,
         transfer_ownership: bool | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Update an existing Drive file permission."""
+        """Change an existing sharing grant on a Drive file: its role, expiry or discoverability. The grantee cannot be changed; to share with someone new use drive_create_permission and to revoke access drive_delete_permission, with permission_id from drive_list_permissions. Returns status 'ok' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled'. It asks the user to confirm first."""
         request = UpdatePermissionRequest(
             file_id=file_id,
             permission_id=permission_id,
@@ -262,7 +277,7 @@ def register(server: FastMCP) -> None:
         permission_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a file permission."""
+        """Revoke one person's, group's, domain's or link's access to a Drive file or folder. Find the permission_id with drive_list_permissions; to lower access instead of removing it use drive_update_permission. Returns status 'ok' with file_id and permission_id, or status 'cancelled'. It asks the user to confirm first; undo by granting access again with drive_create_permission."""
         request = DeletePermissionRequest(
             file_id=file_id,
             permission_id=permission_id,

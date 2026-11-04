@@ -20,14 +20,14 @@ class ListEventsRequest(ToolRequestModel):
     time_min: str | None = Field(
         default=None,
         description=(
-            "RFC3339 lower bound for event start time. Example: "
+            "RFC3339 lower bound for an event's end time (events ending after it). Example: "
             "'2026-03-01T00:00:00Z'."
         ),
     )
     time_max: str | None = Field(
         default=None,
         description=(
-            "RFC3339 upper bound for event start time. Example: "
+            "RFC3339 upper bound for an event's start time (events starting before it). Example: "
             "'2026-03-08T00:00:00Z'."
         ),
     )
@@ -82,11 +82,23 @@ class RespondToEventRequest(ToolRequestModel):
 
 
 class EventAttachmentInput(ToolRequestModel):
-    file_url: str = Field(description="Attachment file URL (for Drive use file alternateLink format).")
-    title: str | None = Field(default=None, description="Display title of the attachment.")
-    mime_type: str | None = Field(default=None, description="Attachment MIME type.")
-    icon_link: str | None = Field(default=None, description="Optional icon URL for the attachment.")
-    file_id: str | None = Field(default=None, description="Drive file ID if available.")
+    file_url: str = Field(
+        description=(
+            "Link to the file; for a Drive file use the same form as its Drive alternateLink, "
+            "e.g. 'https://drive.google.com/file/d/<file_id>/view'."
+        )
+    )
+    title: str | None = Field(default=None, description="Name shown for the attachment on the event.")
+    mime_type: str | None = Field(
+        default=None, description="MIME type of the file, e.g. 'application/pdf'."
+    )
+    icon_link: str | None = Field(
+        default=None, description="URL of an icon shown next to the attachment."
+    )
+    file_id: str | None = Field(
+        default=None,
+        description="Drive file ID of the file; lets calendar_remove_event_attachment and calendar_download_event_attachment match it.",
+    )
 
     def to_api(self) -> dict[str, str]:
         payload: dict[str, str] = {"fileUrl": self.file_url}
@@ -200,22 +212,33 @@ class DeleteEventRequest(ToolRequestModel):
         description=(
             "Skip the interactive confirmation when true. Default false: the deletion "
             "is confirmed with the user first (clients that cannot confirm get a "
-            "confirmation_required result and nothing is deleted)."
+            "confirmation_required error and nothing is deleted)."
         ),
     )
 
 
 class CalendarIdInput(ToolRequestModel):
-    id: str = Field(min_length=1, description="Calendar ID or attendee email address.")
+    id: str = Field(
+        min_length=1,
+        description="Calendar ID ('primary', or an ID from calendar_list_calendars) or a person's email address.",
+    )
 
 
 class EventAttendeeInput(ToolRequestModel):
-    email: EmailStr = Field(description="Attendee email address.")
-    display_name: str | None = Field(default=None, alias="displayName", description="Attendee display name.")
-    optional: bool = Field(default=False, description="Whether attendance is optional.")
-    comment: str | None = Field(default=None, description="Attendee response comment.")
+    email: EmailStr = Field(description="Guest's email address; the invitation goes here.")
+    display_name: str | None = Field(
+        default=None, alias="displayName", description="Name shown for the guest on the event."
+    )
+    optional: bool = Field(
+        default=False, description="True marks the guest as optional rather than required."
+    )
+    comment: str | None = Field(default=None, description="The guest's note accompanying their response.")
     additional_guests: int = Field(
-        default=0, alias="additionalGuests", ge=0, le=100, description="Additional unnamed guests."
+        default=0,
+        alias="additionalGuests",
+        ge=0,
+        le=100,
+        description="Number of extra people the guest brings, 0 to 100.",
     )
 
 

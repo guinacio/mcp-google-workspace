@@ -6,7 +6,7 @@ import anyio
 import base64
 import os
 import secrets
-from typing import Annotated
+from typing import Annotated, Literal, get_args
 from fastmcp import FastMCP
 from fastmcp.tools import InputRequiredToolResult, ToolResult
 import mcp_types
@@ -190,9 +190,20 @@ class McpAppsDiagnostics(BaseModel):
 
 @workspace_mcp.tool(name="get_mcp_apps_diagnostics")
 async def get_mcp_apps_diagnostics(
-    run_self_test: bool = False,
+    run_self_test: Annotated[
+        bool,
+        (
+            "When true, stores an empty mcp-app-self-test-<random>.txt upload in the caller's upload area "
+            "through the hidden store_files callback, then deletes it through delete_file, and reports "
+            "self_test status 'passed' with the handle and delete result. False (the default) touches no "
+            "storage and reports self_test status 'not_run'."
+        ),
+    ] = False,
 ) -> McpAppsDiagnostics:
-    """Describe the file-picker MCP Apps contract and optionally verify callbacks."""
+    """Report how the Workspace Files upload picker (files_file_manager) is wired for MCP Apps hosts, to
+    troubleshoot uploads that never arrive. Returns picker_tool, resource_uri, resource_mime_type, renderer_mode,
+    hidden_callbacks (the hashed addresses of the store_files and delete_file callbacks), max_file_bytes and self_test.
+    With run_self_test the call fails if the store callback returns no usable file handle."""
     picker_name = "files_file_manager"
     store_address = f"{hash_tool('Workspace Files', 'store_files')}_store_files"
     delete_address = f"{hash_tool('Workspace Files', 'delete_file')}_delete_file"
@@ -266,7 +277,10 @@ async def get_mcp_apps_diagnostics(
 
 @workspace_mcp.tool(name="get_workspace_capabilities")
 def get_workspace_capabilities() -> dict[str, object]:
-    """Describe available namespaces, consent capabilities, and file-transfer choices."""
+    """Describe what this server offers without calling Google: enabled tool namespaces, which optional integrations
+    are on, the capability names connect_google_workspace accepts, and how to pass files to tools. For the user's
+    actual grants use get_google_connection_status instead. Returns enabled_namespaces, optional_namespaces,
+    oauth_capabilities, file_inputs and discovery."""
     enabled = [
         "gmail",
         "calendar",
@@ -306,17 +320,31 @@ def get_workspace_capabilities() -> dict[str, object]:
 
 @workspace_mcp.tool(name="search_workspace")
 async def search_workspace(
-    query: str,
-    services: Annotated[
-        list[str] | None,
+    query: Annotated[
+        str,
         (
-            "Subset of services to search: any of 'drive', 'people', 'gmail'; "
+            "Search text, must not be blank. Drive matches it against file names (Drive's name contains, which "
+            "matches word prefixes), contacts by prefix of names, emails, phone numbers or organizations, and "
+            "Gmail treats it as a Gmail search query, e.g. 'from:alice invoice'."
+        ),
+    ],
+    services: Annotated[
+        list[Literal["drive", "people", "gmail"]] | None,
+        (
+            "Services to search: any of 'drive', 'people' (the user's saved contacts) and 'gmail'; "
             "omit to search all three."
         ),
     ] = None,
-    max_results_per_service: int = 5,
+    max_results_per_service: Annotated[
+        int, "Maximum hits from each searched service, 1 to 25."
+    ] = 5,
 ) -> dict[str, object]:
-    """Search Drive files, contacts, and Gmail IDs through one normalized entry point."""
+    """Run one query across Drive file names, the user's saved contacts and Gmail at once, for a first look when the
+    right service is unclear. Drive matches names only (not content, not shared drives) and Gmail hits carry only the
+    message ID (thread ID in name), so follow up with drive_list_files, people_search_contacts or gmail_search_emails for
+    full queries and details, or gmail_read_emails to open a hit. Returns matches (service, id, name, kind,
+    resource, plus url or email), count, and errors per failed service with status 'partial'; the call fails only
+    when every service fails."""
     selected = services or ["drive", "people", "gmail"]
     unknown = sorted(set(selected) - {"drive", "people", "gmail"})
     if unknown:
@@ -455,10 +483,16 @@ async def search_workspace(
 async def resolve_workspace_resource(
     uri: Annotated[
         str,
-        "Stable Workspace resource URI previously returned in a tool response's 'resource' field.",
+        (
+            "The uri of a resource handle from an earlier result, e.g. 'gdrive:///<file_id>' or "
+            "'gmail-message:///<message_id>'; other schemes are rejected."
+        ),
     ],
 ) -> dict[str, object]:
-    """Resolve a stable Workspace URI to fresh compact metadata."""
+    """Turn a resource URI from an earlier result's resource handle back into a handle with current metadata. Drive
+    files are re-read for a fresh name, mime_type, modified_at, web_url and etag, and Gmail messages are checked to
+    still exist; threads, events, contacts and tasks are only parsed, without a Google call. Returns status 'ok' (or
+    'resolved' for parsed-only kinds) with resource; pass resource.id to the matching service tool for content."""
     kind, resource_id = parse_resource_uri(uri)
     if kind == "drive_file":
         item = await execute_google_request(
@@ -496,21 +530,41 @@ async def resolve_workspace_resource(
     }
 
 
+#: Tools that use prepare/commit (common/approvals.py CONSEQUENTIAL_TOOLS).
+ConsequentialToolName = Literal[
+    "calendar_update_event",
+    "drive_create_permission",
+    "gmail_batch_modify",
+    "gmail_send_email",
+    "sheets_batch_update_spreadsheet",
+]
+if set(get_args(ConsequentialToolName)) != CONSEQUENTIAL_TOOLS:  # pragma: no cover - import-time guard
+    raise RuntimeError("ConsequentialToolName is out of sync with CONSEQUENTIAL_TOOLS.")
+
+
 @workspace_mcp.tool(name="prepare_workspace_action")
 async def prepare_workspace_action(
     tool_name: Annotated[
-        str,
+        ConsequentialToolName,
         (
-            "Full name of the consequential tool to prepare; must be one of "
-            f"{sorted(CONSEQUENTIAL_TOOLS)}. Other tools do not use the prepare/commit protocol."
+            "Published name of the tool to prepare: "
+            f"{', '.join(sorted(CONSEQUENTIAL_TOOLS))}. No other tool uses prepare/commit."
         ),
     ],
     arguments: Annotated[
         dict[str, object],
-        "Exact keyword arguments to bind and later execute unchanged for tool_name.",
+        (
+            "The keyword arguments for tool_name exactly as in a direct call. They are stored unchanged, "
+            "not validated until commit, and cannot be edited afterwards."
+        ),
     ],
 ) -> dict[str, object]:
-    """Preview and bind one consequential action to a short-lived one-time commit token."""
+    """Preview a high-impact action and bind its exact arguments to a one-time commit token, then run it with
+    commit_workspace_action. A direct call fails with prepare_required for gmail_send_email with 10 or more
+    recipients by default (to, cc and bcc together), drive_create_permission with type 'anyone', gmail_batch_modify
+    on 10 or more messages, calendar_update_event that sets recurrence, and sheets_batch_update_spreadsheet with 10
+    or more requests. Returns commit_token, expires_at (epoch seconds, 10 minutes ahead by default), impact (counts and
+    warnings) and next_action; nothing runs until commit."""
     return await prepare_action(tool_name, arguments)
 
 
@@ -527,7 +581,10 @@ async def commit_workspace_action(
         ),
     ],
 ) -> dict[str, object] | ToolResult | mcp_types.InputRequiredResult:
-    """Claim a prepared action token and execute its exact bound arguments once."""
+    """Run an action prepared with prepare_workspace_action, with exactly the bound arguments, at most once; the bound
+    tool's own checks and confirmation questions still apply. A token that is invalid, expired or another user's is
+    rejected. Returns status 'committed' with tool and the bound tool's result, that tool's error result if it
+    failed, or its confirmation question if it asks one."""
     store = get_operation_store()
     ref = operation_ref(commit_token)
     outcome = await store.claim(

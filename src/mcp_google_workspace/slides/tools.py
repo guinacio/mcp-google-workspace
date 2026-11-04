@@ -86,27 +86,17 @@ def batch_update_presentation_payload(request: BatchUpdatePresentationRequest) -
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_presentation")
     def get_presentation(presentation_id: str) -> dict[str, Any]:
-        """Fetch a presentation's full structure: slides, layouts, masters, and elements.
-
-        presentation_id is the file's Drive ID — there is no Slides-side lookup
-        tool, so obtain it via drive_list_files or search_workspace first.
-        Returns the Presentation resource (each slide's 'objectId' feeds
-        get_slide_page / get_slide_thumbnail), or {"error": ...} on API
-        failure.
-        """
+        """Read a Google Slides presentation's full structure: slides with their page elements and text, layouts and masters. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for one slide use slides_get_slide_page. Returns the Google Presentation resource: presentationId, title, pageSize and slides, where each slide's objectId is the page_object_id for slides_get_slide_page and slides_get_slide_thumbnail."""
         try:
             return get_presentation_payload(GetPresentationRequest(presentation_id=presentation_id))
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id) from exc
 
     @server.tool(name="create_presentation")
-    def create_presentation(title: str) -> dict[str, Any]:
-        """Create a new presentation with a single default title slide.
-
-        Returns the created Presentation resource (including its
-        'presentationId' for the other slides tools), or {"error": ...} on API
-        failure.
-        """
+    def create_presentation(
+        title: Annotated[str, "Title of the new presentation, also used as its Drive file name."],
+    ) -> dict[str, Any]:
+        """Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns the created Google Presentation resource: presentationId (the ID every other slides_ tool takes) and slides with each slide's objectId."""
         try:
             return create_presentation_payload(CreatePresentationRequest(title=title))
         except HttpError as exc:
@@ -117,14 +107,11 @@ def register_tools(server: FastMCP) -> None:
         presentation_id: str,
         contains_text: str,
         replace_text: str,
-        match_case: bool = False,
+        match_case: Annotated[
+            bool, "Match letter case exactly when true; by default matching ignores case."
+        ] = False,
     ) -> dict[str, Any]:
-        """Replace every occurrence of contains_text across all slides with replace_text.
-
-        presentation_id comes from create_presentation or Drive discovery
-        (drive_list_files / search_workspace). Returns the batchUpdate reply
-        (including occurrencesChanged), or {"error": ...} on API failure.
-        """
+        """Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns the Slides batchUpdate response: presentationId and replies[0].replaceAllText.occurrencesChanged, which is 0 or missing when nothing matched."""
         try:
             return replace_text_in_presentation_payload(
                 ReplaceTextInPresentationRequest(
@@ -139,11 +126,7 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="get_slide_page")
     def get_slide_page(presentation_id: str, page_object_id: str) -> dict[str, Any]:
-        """Fetch one slide (page) with its elements, by the slide's objectId.
-
-        page_object_id comes from get_presentation's slides list. Returns the
-        Page resource, or {"error": ...} on API failure.
-        """
+        """Read one slide of a Google Slides presentation with all its page elements: shapes, text, images and tables. For the whole deck use slides_get_presentation (which also supplies the presentation and slide IDs), and for a picture of the slide use slides_get_slide_thumbnail. Returns the Google Page resource: objectId, pageType, pageElements (each with its objectId, size, transform and content) and slideProperties."""
         try:
             return get_slide_page_payload(
                 GetSlidePageRequest(presentation_id=presentation_id, page_object_id=page_object_id)
@@ -155,18 +138,16 @@ def register_tools(server: FastMCP) -> None:
     def get_slide_thumbnail(
         presentation_id: str,
         page_object_id: str,
-        mime_type: Literal["PNG", "JPEG"] = "PNG",
+        mime_type: Annotated[Literal["PNG", "JPEG"], "Image format of the rendered thumbnail."] = "PNG",
         thumbnail_size: Annotated[
             Literal["THUMBNAIL_SIZE_UNSPECIFIED", "LARGE", "MEDIUM", "SMALL"],
-            "Requested thumbnail image resolution, from largest to smallest.",
+            (
+                "Image width: LARGE 1600 px, MEDIUM 800 px, SMALL 200 px; THUMBNAIL_SIZE_UNSPECIFIED "
+                "lets Google choose. The height follows the slide's aspect ratio."
+            ),
         ] = "LARGE",
     ) -> dict[str, Any]:
-        """Generate a thumbnail image of one slide and return its download URL.
-
-        page_object_id comes from get_presentation's slides list. Returns the
-        Thumbnail payload ('contentUrl' plus pixel dimensions; the URL is
-        short-lived), or {"error": ...} on API failure.
-        """
+        """Render one slide of a Google Slides presentation as an image and return a link to it. Use slides_get_slide_page instead to read the slide's text and elements; the presentation and slide IDs come from slides_get_presentation. Returns the Google Thumbnail: contentUrl, a temporary image URL (valid for about 30 minutes), plus width and height in pixels."""
         try:
             return get_slide_thumbnail_payload(
                 GetSlideThumbnailRequest(
@@ -185,18 +166,13 @@ def register_tools(server: FastMCP) -> None:
         requests: Annotated[
             list[dict[str, Any]],
             (
-                "Raw Slides API batchUpdate request objects, e.g. "
+                "Slides API batchUpdate request objects, applied in order, e.g. "
                 '[{"createSlide": {"insertionIndex": 1}}] or createShape/insertText/'
                 "deleteObject/updatePageElementTransform requests."
             ),
         ],
     ) -> dict[str, Any]:
-        """Apply raw Slides API batchUpdate requests (create slides, insert text/shapes, etc.).
-
-        presentation_id comes from create_presentation or Drive discovery
-        (drive_list_files / search_workspace). Returns the batchUpdate replies,
-        or {"error": ...} on API failure.
-        """
+        """Apply raw Google Slides API batchUpdate requests for edits beyond text replacement: creating or deleting slides, adding shapes, images and tables, inserting or styling text. To replace existing or placeholder text across the deck use slides_replace_text_in_presentation instead. Requests apply atomically: if one is invalid, none is applied. Returns the batchUpdate response: presentationId and replies, one per request in order (e.g. createSlide.objectId for a new slide)."""
         try:
             return await run_blocking(
                 batch_update_presentation_payload,

@@ -112,15 +112,16 @@ def get_form_response_payload(request: GetFormResponseRequest) -> dict[str, Any]
     return service.forms().responses().get(formId=request.form_id, responseId=request.response_id).execute()
 
 
+_ENRICH_QUESTIONS = (
+    "Label each answer with its question title, which costs one extra read of the form; when false, "
+    "question repeats the question_id."
+)
+
+
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_form")
     def get_form(form_id: str) -> dict[str, Any]:
-        """Fetch a form's full structure: info, settings, and question items.
-
-        form_id is the form's Drive file ID — there is no Forms-side lookup
-        tool, so obtain it via drive_list_files or search_workspace first.
-        Returns the Form resource, or {"error": ...} on API failure.
-        """
+        """Read a Google Form's structure: title, description, settings and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns the Google Form resource: formId, info (title, documentTitle, description), items (each with itemId, title and questionItem.question.questionId), responderUri, revisionId and publishSettings."""
         try:
             return get_form_payload(GetFormRequest(form_id=form_id))
         except HttpError as exc:
@@ -128,18 +129,19 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="create_form")
     def create_form(
-        title: str,
+        title: Annotated[str, "Form title shown to respondents at the top of the form."],
         document_title: Annotated[
             str | None, "Name for the form's underlying Drive file; defaults to title when omitted."
         ] = None,
-        unpublished: bool = False,
+        unpublished: Annotated[
+            bool,
+            (
+                "Create the form unpublished, so it accepts no responses until it is published with "
+                "forms_set_form_publish_settings. By default the new form is published and accepts responses."
+            ),
+        ] = False,
     ) -> dict[str, Any]:
-        """Create a new (initially empty) form; add questions with batch_update_form.
-
-        Set unpublished=true to create the form without publishing it. Returns
-        the created Form resource (including its 'formId' and responderUri),
-        or {"error": ...} on API failure.
-        """
+        """Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form. Returns the created Google Form resource: formId (the ID every other forms_ tool takes), responderUri (the link to share with respondents), info and revisionId. Unless unpublished is true, the form is published and accepting responses as soon as it exists."""
         try:
             return create_form_payload(
                 CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
@@ -153,21 +155,17 @@ def register_tools(server: FastMCP) -> None:
         requests: Annotated[
             list[dict[str, Any]],
             (
-                "Raw Forms API batchUpdate request objects, e.g. "
+                "Forms API batchUpdate request objects, applied in order, e.g. "
                 '[{"createItem": {"item": {"title": "Q1", "questionItem": {"question": '
                 '{"textQuestion": {}}}}, "location": {"index": 0}}}] or updateFormInfo/'
-                "updateItem/deleteItem/moveItem requests."
+                "updateSettings/updateItem/deleteItem/moveItem requests."
             ),
         ],
-        include_form_in_response: bool = False,
+        include_form_in_response: Annotated[
+            bool, "Also return the whole updated Form resource in the form field of the response."
+        ] = False,
     ) -> dict[str, Any]:
-        """Apply raw Forms API batchUpdate requests (add/edit/delete/move questions, update info).
-
-        form_id must come from create_form or Drive discovery
-        (drive_list_files / search_workspace). Returns the batchUpdate replies
-        (plus the updated form when include_form_in_response=true), or
-        {"error": ...} on API failure.
-        """
+        """Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. The form_id comes from drive_list_files, search_workspace or forms_create_form. Returns the batchUpdate response: replies, one per request in order (createItem gives itemId and questionId), writeControl.requiredRevisionId, and form when include_form_in_response is true."""
         try:
             return await run_blocking(
                 batch_update_form_payload,
@@ -186,21 +184,17 @@ def register_tools(server: FastMCP) -> None:
         publish_settings: Annotated[
             dict[str, Any],
             (
-                "Forms API publishSettings payload, e.g. {\"publishState\": "
-                '{"isPublished": true, "isAcceptingResponses": true}}.'
+                "Forms API publishSettings object, e.g. {\"publishState\": "
+                '{"isPublished": true, "isAcceptingResponses": true}}. Set both fields of publishState; '
+                "isAcceptingResponses true with isPublished false is rejected."
             ),
         ],
         update_mask: Annotated[
             str,
-            "Comma-separated field mask of publishSettings paths to update; default '*' updates all fields.",
+            "Which publishSettings fields to write: 'publishState' or '*' (all fields, the default).",
         ] = "*",
     ) -> dict[str, Any]:
-        """Publish/unpublish a form or toggle whether it accepts responses.
-
-        form_id is the form's Drive file ID (from create_form or Drive
-        discovery). Returns the applied publish settings, or {"error": ...} on
-        API failure.
-        """
+        """Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form; the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns the Google response: formId and publishSettings.publishState (isPublished, isAcceptingResponses). Legacy forms, whose forms_get_form result has no publishSettings, do not support this."""
         try:
             return set_form_publish_settings_payload(
                 SetFormPublishSettingsRequest(
@@ -215,21 +209,18 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_form_responses")
     async def list_form_responses(
         form_id: str,
-        page_size: int = 50,
+        page_size: Annotated[int, "Responses per page, 1 to 5000."] = 50,
         page_token: str | None = None,
         filter: Annotated[
             str | None,
-            "Forms API response filter query, e.g. \"timestamp >= '2026-01-01T00:00:00Z'\".",
+            (
+                "Only responses submitted after a time, in the only syntax the Forms API supports: "
+                "'timestamp > 2026-01-01T00:00:00Z' or 'timestamp >= ...' with an RFC3339 time."
+            ),
         ] = None,
-        enrich_questions: bool = True,
+        enrich_questions: Annotated[bool, _ENRICH_QUESTIONS] = True,
     ) -> dict[str, Any]:
-        """List submitted responses for a form, newest layout first.
-
-        form_id is the form's Drive file ID (obtain via drive_list_files or
-        search_workspace). When enrich_questions is true, each answer is
-        labeled with its question title. Returns {"responses": [...],
-        "next_page_token", "count"}, or {"error": ...} on API failure.
-        """
+        """List the submitted responses of a Google Form, one page at a time. The form_id comes from drive_list_files, search_workspace or forms_create_form; to re-read one response use forms_get_form_response. Returns form_id, count, next_page_token, account_timezone and responses, each with id (the response_id), created_at and submitted_at in the account time zone, respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads)."""
         try:
             result = await run_blocking(
                 list_form_responses_payload,
@@ -261,13 +252,12 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="get_form_response")
-    async def get_form_response(form_id: str, response_id: str, enrich_questions: bool = True) -> dict[str, Any]:
-        """Fetch one submitted form response by its response ID.
-
-        response_id comes from list_form_responses. When enrich_questions is
-        true, answers are labeled with question titles. Returns the response
-        envelope, or {"error": ...} on API failure.
-        """
+    async def get_form_response(
+        form_id: str,
+        response_id: str,
+        enrich_questions: Annotated[bool, _ENRICH_QUESTIONS] = True,
+    ) -> dict[str, Any]:
+        """Read one submitted response of a Google Form. To list or page through responses use forms_list_form_responses, which also supplies the response_id. Returns id, created_at and submitted_at in the account time zone, timezone, respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads)."""
         try:
             response = await run_blocking(
                 get_form_response_payload,

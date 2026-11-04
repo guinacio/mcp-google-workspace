@@ -19,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 def register(server: FastMCP) -> None:
     @server.tool(name="list_filters")
     async def list_filters(ctx: Context) -> dict[str, Any]:
-        """List Gmail server-side filters (rules)."""
+        """List the account's Gmail filters, the rules that label, archive or forward incoming mail. Returns filters, each with its id, criteria and action as Gmail stores them, and count. Pass a filter's id to gmail_delete_filter; filters cannot be edited, so replace one with gmail_create_filter."""
         service = gmail_service()
         LOGGER.debug("Listing Gmail filters.")
         result = await execute_google_request(service.users().settings().filters().list(userId="me"))
@@ -30,15 +30,15 @@ def register(server: FastMCP) -> None:
     async def create_filter(
         criteria: Annotated[
             FilterCriteriaInput,
-            "Match criteria block (from/to/subject/query/size/etc); at least one field must be set.",
+            "Which incoming messages the filter matches; set at least one field, and a message must match all of the fields given.",
         ],
         action: Annotated[
             FilterActionInput,
-            "Action block applied to matching messages: add/remove labels and/or forward.",
+            "What happens to matching messages; set at least one of add_label_ids, remove_label_ids or forward.",
         ],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a Gmail filter from criteria and action blocks."""
+        """Create a Gmail filter that acts on incoming mail matching criteria: label it, archive it (remove INBOX), mark it read (remove UNREAD) or forward it. It applies to mail that arrives afterwards; to change existing messages, find them with gmail_search_emails and use gmail_batch_modify. Returns the created Gmail filter under filter, including its id."""
         request = CreateFilterRequest(
             criteria=criteria,
             action=action,
@@ -65,7 +65,7 @@ def register(server: FastMCP) -> None:
         filter_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a Gmail filter by ID."""
+        """Delete one Gmail filter after asking the user to confirm; mail it already labeled or moved stays as it is. Returns status 'ok' with the filter_id, or status 'cancelled' if the user declines. Cannot be undone, but the filter can be recreated with gmail_create_filter from the criteria and action shown by gmail_list_filters."""
         request = DeleteFilterRequest(filter_id=filter_id)
         if not await confirm_destructive_action(
             ctx, "delete_filter", f"Permanently delete Gmail filter {request.filter_id}?"

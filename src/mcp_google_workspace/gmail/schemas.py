@@ -18,7 +18,7 @@ class AttachmentInput(ToolRequestModel):
         "json_schema_extra": {
             "description": (
                 "Email attachment. Provide exactly one source: uploaded_file for a file "
-                "selected with the Workspace Files MCP App, or file_path for local stdio use."
+                "selected with the Workspace Files MCP App (files_file_manager), or file_path for local stdio use."
             ),
             "oneOf": [
                 {
@@ -37,14 +37,23 @@ class AttachmentInput(ToolRequestModel):
 
     file_path: str | None = Field(
         default=None,
-        description="Local filesystem path (stdio/local use only).",
+        description="Path to a file on the server's machine; only for a local (stdio) server, refused over remote MCP.",
     )
     uploaded_file: str | None = Field(
         default=None,
-        description="Filename returned by the Workspace Files MCP App picker.",
+        description="Upload handle (upl_...) of a file the user picked in files_file_manager, as listed by files_list_files.",
     )
-    mime_type: str | None = Field(default=None, description="Optional MIME type override.")
-    filename: str | None = Field(default=None, description="Optional filename override in email.")
+    mime_type: str | None = Field(
+        default=None,
+        description=(
+            "MIME type to attach the file as, e.g. 'application/pdf'; defaults to the uploaded file's "
+            "type, or application/octet-stream for a file_path."
+        ),
+    )
+    filename: str | None = Field(
+        default=None,
+        description="File name recipients see; defaults to the uploaded file's original name or the file_path's base name.",
+    )
 
     @model_validator(mode="after")
     def _validate_source(self) -> "AttachmentInput":
@@ -174,15 +183,33 @@ class DownloadAttachmentRequest(ToolRequestModel):
 
 
 class FilterCriteriaInput(ToolRequestModel):
-    from_: str | None = Field(default=None, alias="from", description="Match sender address/name.")
-    to: str | None = Field(default=None, description="Match recipient address/name.")
-    subject: str | None = Field(default=None, description="Match phrase in subject.")
-    query: str | None = Field(default=None, description="Gmail advanced query expression.")
-    negated_query: str | None = Field(default=None, description="Query expression to exclude.")
-    has_attachment: bool | None = Field(default=None, description="Match only messages with attachments.")
-    exclude_chats: bool | None = Field(default=None, description="Exclude chat messages from matching.")
-    size: int | None = Field(default=None, ge=0, description="Message size in bytes for size matching.")
-    size_comparison: Literal["smaller", "larger"] | None = Field(default=None, description="Size comparison operator.")
+    from_: str | None = Field(
+        default=None, alias="from", description="Sender email address or display name to match, e.g. 'ana@example.com'."
+    )
+    to: str | None = Field(
+        default=None,
+        description="Recipient email address or display name to match, in the To, Cc or Bcc headers.",
+    )
+    subject: str | None = Field(default=None, description="Case-insensitive phrase that must appear in the subject.")
+    query: str | None = Field(
+        default=None,
+        description="Gmail search-box query the message must match, e.g. 'has:attachment larger:5M'.",
+    )
+    negated_query: str | None = Field(
+        default=None, description="Gmail search-box query the message must not match, e.g. 'from:boss@example.com'."
+    )
+    has_attachment: bool | None = Field(
+        default=None, description="When true, only messages with attachments match; omit to ignore attachments."
+    )
+    exclude_chats: bool | None = Field(default=None, description="When true, chat messages never match the filter.")
+    size: int | None = Field(
+        default=None,
+        ge=0,
+        description="Message size in bytes (whole message, headers and attachments included), compared using size_comparison.",
+    )
+    size_comparison: Literal["smaller", "larger"] | None = Field(
+        default=None, description="Whether matching messages are 'smaller' or 'larger' than size."
+    )
 
     model_config = {
         "populate_by_name": True,
@@ -212,9 +239,21 @@ class FilterCriteriaInput(ToolRequestModel):
 
 
 class FilterActionInput(ToolRequestModel):
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add when criteria match.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove when criteria match.")
-    forward: str | None = Field(default=None, description="Forwarding email destination.")
+    add_label_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Label IDs to add to matching mail: system labels such as STARRED or IMPORTANT, or user "
+            "label IDs (Label_...) from gmail_list_labels. Label names are not accepted."
+        ),
+    )
+    remove_label_ids: list[str] = Field(
+        default_factory=list,
+        description="Label IDs to remove from matching mail, e.g. INBOX to archive it or UNREAD to mark it read.",
+    )
+    forward: str | None = Field(
+        default=None,
+        description="Email address to forward matching mail to; it must be an 'accepted' address from gmail_list_forwarding_addresses.",
+    )
 
     def to_api(self) -> dict[str, object]:
         payload: dict[str, object] = {}

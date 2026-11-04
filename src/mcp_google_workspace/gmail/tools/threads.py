@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
 
@@ -21,14 +21,29 @@ LOGGER = logging.getLogger(__name__)
 def register(server: FastMCP) -> None:
     @server.tool(name="list_threads")
     async def list_threads(
-        query: str | None = None,
-        label_ids: list[str] | None = None,
-        max_results: int = 25,
+        query: Annotated[
+            str | None,
+            (
+                "Gmail search query in the same syntax as the Gmail search box, e.g. "
+                "'from:ana@example.com is:unread'; omit to list all threads outside Spam and Trash."
+            ),
+        ] = None,
+        label_ids: Annotated[
+            list[str] | None,
+            (
+                "Only threads that carry every one of these label IDs: system labels such as INBOX or "
+                "UNREAD, or user label IDs (Label_...) from gmail_list_labels. Label names are not accepted."
+            ),
+        ] = None,
+        max_results: Annotated[
+            int,
+            "Threads per page, 1 to 500 (default 25); each thread is fetched in full one after another, so large pages are slow.",
+        ] = 25,
         page_token: str | None = None,
         include_spam_trash: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List conversation threads with optional query/label filters."""
+        """List Gmail conversations matching an optional Gmail query and labels, a page at a time, each summarized by its newest message. Use gmail_get_thread to read one conversation, and gmail_search_emails when individual messages rather than threads are wanted. Returns threads (the newest message's id, thread_id, from, subject, date, snippet, unread and has_attachments, plus message_count), next_page_token and result_size_estimate."""
         request = ListThreadsRequest(
             query=query,
             label_ids=label_ids or [],
@@ -76,10 +91,19 @@ def register(server: FastMCP) -> None:
     @server.tool(name="get_thread")
     async def get_thread(
         thread_id: str,
-        format: Literal["full", "metadata", "minimal", "clean"] = "clean",
+        format: Annotated[
+            Literal["full", "metadata", "minimal", "clean"],
+            (
+                "'clean' (default): latest is the newest message's summary plus its cleaned body text, paged "
+                "at about 8,000 characters (continue with gmail_read_emails and offset=next_offset), and "
+                "prior_messages gives from, date, subject and snippet of each earlier message. The others "
+                "return Gmail's raw thread resource under thread: 'full' with every message's headers and "
+                "base64url-encoded body parts, 'metadata' with headers only, 'minimal' with IDs and labels only."
+            ),
+        ] = "clean",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Fetch a thread cleanly: latest full message plus compact prior-message lines."""
+        """Read one Gmail conversation by thread ID. The default format 'clean' gives the newest message with its cleaned body plus a one-line summary of each earlier message; 'full', 'metadata' and 'minimal' return Gmail's raw thread resource instead. Use gmail_read_emails to read particular messages in full or continue a truncated body, and gmail_list_threads or gmail_search_emails to find threads. Returns thread_id, history_id, message_count and either latest and prior_messages ('clean') or thread (the other formats)."""
         api_format: Literal["full", "metadata", "minimal"] = "full" if format == "clean" else format
         request = GetThreadRequest(
             thread_id=thread_id,
@@ -129,7 +153,7 @@ def register(server: FastMCP) -> None:
         remove_label_ids: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply label changes to all messages in a thread."""
+        """Change labels on every message of one Gmail conversation: archive it (remove INBOX), mark it all read (remove UNREAD) or unread, star it, or file it under a user label. Use gmail_apply_labels or gmail_move_email for one message and gmail_batch_modify for messages from different threads; at least one label list is required. Returns status 'ok' and the updated Gmail thread resource under thread."""
         request = ModifyThreadRequest(
             thread_id=thread_id,
             add_label_ids=add_label_ids or [],
@@ -158,7 +182,7 @@ def register(server: FastMCP) -> None:
         thread_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Move an entire thread to trash."""
+        """Move every message of one Gmail conversation to Trash, where Gmail deletes them for good after 30 days. For one message use gmail_delete_email; gmail_delete_thread deletes a conversation permanently right away. Returns status 'ok' and the Gmail thread resource under thread. Reversible with gmail_untrash_thread while the messages are still in Trash."""
         request = ThreadIdRequest(thread_id=thread_id)
         service = gmail_service()
         LOGGER.debug(f"Moving thread {request.thread_id} to trash.")
@@ -172,7 +196,7 @@ def register(server: FastMCP) -> None:
         thread_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Restore a trashed thread back to mailbox flow."""
+        """Restore every message of one Gmail conversation from Trash, undoing gmail_trash_thread. For a single message use gmail_untrash_email; permanently deleted mail cannot be restored. Returns status 'ok' and the Gmail thread resource under thread."""
         request = ThreadIdRequest(thread_id=thread_id)
         service = gmail_service()
         LOGGER.debug(f"Restoring thread {request.thread_id} from trash.")
@@ -186,7 +210,7 @@ def register(server: FastMCP) -> None:
         thread_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Permanently delete a thread after mandatory interactive confirmation."""
+        """Permanently delete every message of one Gmail conversation, skipping Trash. It always asks the user to confirm first; for a reversible removal use gmail_trash_thread, and for one message gmail_delete_email. Returns status 'ok' with the thread_id, or status 'cancelled' if the user declines. Cannot be undone."""
         request = ThreadIdRequest(thread_id=thread_id)
         if not await confirm_destructive_action(
             ctx,

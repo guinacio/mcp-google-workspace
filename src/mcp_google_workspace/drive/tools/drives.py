@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -22,12 +22,18 @@ _DRIVE_FIELDS = "id,name,hidden,createdTime,orgUnitId,restrictions,capabilities"
 def register(server: FastMCP) -> None:
     @server.tool(name="list_drives")
     async def list_drives(
-        page_size: int = 25,
+        page_size: Annotated[int, "Shared drives per page, 1 to 100."] = 25,
         page_token: str | None = None,
-        query: str | None = None,
+        query: Annotated[
+            str | None,
+            (
+                "Filter in Drive's shared-drive search syntax, e.g. \"name contains 'Finance'\" or "
+                "\"hidden = true\"; omit to list every shared drive the user is a member of."
+            ),
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List Shared Drives visible to the authenticated account."""
+        """List the shared drives the user is a member of. Use it to get a drive_id for drive_list_files (corpora 'drive') or drive_get_drive; to search the files inside drives use drive_list_files. Returns drives (id, name, hidden, createdTime, restrictions, capabilities), count and next_page_token."""
         request = ListDrivesRequest(
             page_size=page_size,
             page_token=page_token,
@@ -59,7 +65,7 @@ def register(server: FastMCP) -> None:
         drive_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Get metadata for one Shared Drive."""
+        """Get the details of one shared drive. To find drive IDs use drive_list_drives. Returns drive (id, name, hidden, createdTime, orgUnitId, restrictions, capabilities), where capabilities says what the user may do in it."""
         request = GetDriveRequest(
             drive_id=drive_id,
         )
@@ -80,7 +86,7 @@ def register(server: FastMCP) -> None:
         drive_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Hide a Shared Drive from the Drive UI."""
+        """Hide a shared drive from the user's default Drive view; membership and content are unchanged. The change affects only this user. Returns status 'ok' and drive, the shared drive resource Google returns. Undo with drive_unhide_drive."""
         request = HideDriveRequest(
             drive_id=drive_id,
         )
@@ -99,7 +105,7 @@ def register(server: FastMCP) -> None:
         drive_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Unhide a Shared Drive in the Drive UI."""
+        """Show a previously hidden shared drive in the user's default Drive view again. It reverses drive_hide_drive and affects only this user. Returns status 'ok' and drive, the shared drive resource Google returns."""
         request = UnhideDriveRequest(
             drive_id=drive_id,
         )

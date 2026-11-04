@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
@@ -169,21 +169,32 @@ def modify_contact_group_members_payload(request: ModifyContactGroupMembersReque
     ).execute()
 
 
+_SOURCES = (
+    "Which data each returned person carries: READ_SOURCE_TYPE_CONTACT (the saved contact, the default "
+    "when omitted), READ_SOURCE_TYPE_PROFILE (the person's Google profile, merged in) and "
+    "READ_SOURCE_TYPE_DOMAIN_CONTACT (the organization's shared domain contacts)."
+)
+_DISPLAY_NAME = (
+    "Sent as the name's displayName, which the People API documents as output-only (Google formats it "
+    "from the structured name), so it is not expected to be stored; set given_name and family_name instead."
+)
+
+
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_contacts")
     def list_contacts(
-        page_size: int = 100,
+        page_size: Annotated[int, "Contacts per page, 1 to 1000."] = 100,
         page_token: str | None = None,
-        sort_order: SortOrder | None = None,
-        sources: list[ReadSourceType] | None = None,
+        sort_order: Annotated[
+            SortOrder | None,
+            (
+                "Order of the contacts: LAST_MODIFIED_ASCENDING (Google's default when omitted), "
+                "LAST_MODIFIED_DESCENDING, FIRST_NAME_ASCENDING or LAST_NAME_ASCENDING."
+            ),
+        ] = None,
+        sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Page through the account's saved contacts.
-
-        person_fields is a comma-separated People API field mask controlling
-        which contact fields are returned; page_token continues a previous page.
-        Returns the raw People connections.list payload ('connections' list plus
-        'nextPageToken'), or {"error": ...} on API failure.
-        """
+        """List the user's saved Google contacts, one page at a time. To find a contact by name, email or phone use people_search_contacts instead. Returns the Google connections.list response: connections (Person resources with resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies), nextPageToken and totalItems."""
         try:
             return list_contacts_payload(
                 ListContactsRequest(
@@ -198,17 +209,17 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="search_contacts")
     def search_contacts(
-        query: str,
-        page_size: int = 20,
-        sources: list[ReadSourceType] | None = None,
+        query: Annotated[
+            str,
+            (
+                "Text matched against the start of the words in contacts' names, email addresses, "
+                "phone numbers and organizations, e.g. 'jo' finds 'John Smith' but 'ohn' does not."
+            ),
+        ],
+        page_size: Annotated[int, "Maximum matches to return, 1 to 100; Google returns at most 30."] = 20,
+        sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Search saved contacts by name, email, phone, or organization text.
-
-        query matches prefixes of those fields; read_mask is a comma-separated
-        People API field mask for the returned contact data. Returns the raw
-        searchContacts payload ('results' list of {person} matches), or
-        {"error": ...} on API failure.
-        """
+        """Find the user's saved Google contacts whose name, email, phone or organization starts with the query text. To page through every contact use people_list_contacts; there is no paging here. Returns the Google searchContacts response: results, each with a person (resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies); results is missing when nothing matches."""
         try:
             return search_contacts_payload(
                 SearchContactsRequest(
@@ -223,14 +234,9 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_contact")
     def get_contact(
         person_name: str,
-        sources: list[ReadSourceType] | None = None,
+        sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Fetch one contact by resource name (e.g. 'people/c123'; bare IDs are normalized).
-
-        person_fields is a comma-separated People API field mask for the
-        returned data. Returns the Person resource, or {"error": ...} on API
-        failure (including unknown person_name).
-        """
+        """Read one Google contact by its resource name, found with people_search_contacts or people_list_contacts. Use it to fetch the current etag before people_update_contact. Returns the Google Person resource: resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies."""
         try:
             return get_contact_payload(
                 GetContactRequest(
@@ -245,18 +251,17 @@ def register_tools(server: FastMCP) -> None:
     def create_contact(
         given_name: str | None = None,
         family_name: str | None = None,
-        display_name: str | None = None,
-        email_addresses: list[str] | None = None,
-        phone_numbers: list[str] | None = None,
+        display_name: Annotated[str | None, _DISPLAY_NAME] = None,
+        email_addresses: Annotated[
+            list[str] | None, "Email addresses to store, in order; each must be a valid address."
+        ] = None,
+        phone_numbers: Annotated[
+            list[str] | None, "Phone numbers to store, in order, as written, e.g. '+1 650 555 0100'."
+        ] = None,
         organization: str | None = None,
         biography: str | None = None,
     ) -> dict[str, Any]:
-        """Create a new contact from the provided name/email/phone/organization fields.
-
-        At least one field must be supplied. Returns the created Person
-        resource (including its 'resourceName' for later get/update/delete),
-        or {"error": ...} on API failure.
-        """
+        """Create a new contact in the user's Google Contacts; at least one field must be set. To change an existing contact use people_update_contact. Returns the created Google Person resource: resourceName (the person_name other people_ tools take), etag, and the stored names, emailAddresses, phoneNumbers, organizations and biographies."""
         try:
             return create_contact_payload(
                 CreateContactRequest(
@@ -275,24 +280,43 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="update_contact")
     def update_contact(
         person_name: str,
-        etag: str | None = None,
-        given_name: str | None = None,
-        family_name: str | None = None,
-        display_name: str | None = None,
-        email_addresses: list[str] | None = None,
-        phone_numbers: list[str] | None = None,
-        organization: str | None = None,
-        biography: str | None = None,
-        sources: list[ReadSourceType] | None = None,
+        etag: Annotated[
+            str | None,
+            (
+                "The contact's current etag, from people_get_contact, people_list_contacts or "
+                "people_search_contacts. Google requires it to check that the contact has not changed "
+                "since it was read, and rejects a stale one."
+            ),
+        ] = None,
+        given_name: Annotated[
+            str | None,
+            (
+                "New given (first) name. given_name, family_name and display_name are written together as "
+                "the contact's one name, so a part left out is cleared; pass family_name too to keep it."
+            ),
+        ] = None,
+        family_name: Annotated[
+            str | None,
+            (
+                "New family (last) name. Written together with given_name as the contact's one name, so "
+                "pass given_name too to keep it."
+            ),
+        ] = None,
+        display_name: Annotated[str | None, _DISPLAY_NAME] = None,
+        email_addresses: Annotated[
+            list[str] | None,
+            "Replacement email addresses: replace every stored address, and [] removes them all; each must be valid.",
+        ] = None,
+        phone_numbers: Annotated[
+            list[str] | None, "Replacement phone numbers: replace every stored number, and [] removes them all."
+        ] = None,
+        organization: Annotated[
+            str | None, "Replacement company name; replaces the stored organization entry, job title included."
+        ] = None,
+        biography: Annotated[str | None, "Replacement notes; replaces the stored notes."] = None,
+        sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Update fields on an existing contact identified by person_name.
-
-        Only the supplied fields are patched (at least one is required); list
-        fields like email_addresses replace the stored list wholesale. Pass the
-        contact's current etag to guard against concurrent edits. Returns the
-        updated Person resource, or {"error": ...} on API failure (e.g. a stale
-        etag).
-        """
+        """Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns the updated Google Person resource, with its new etag, names, emailAddresses, phoneNumbers, organizations and biographies."""
         try:
             return update_contact_payload(
                 UpdateContactRequest(
@@ -316,12 +340,7 @@ def register_tools(server: FastMCP) -> None:
         person_name: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Permanently delete a contact after interactive host confirmation.
-
-        person_name is the contact resource name (e.g. 'people/c123'). Returns
-        {"status": "deleted"} on success, {"status": "cancelled"} if the user
-        declines, or {"error": ...} on API failure.
-        """
+        """Permanently delete one Google contact, found with people_search_contacts or people_list_contacts. The user is asked to confirm first: the call returns status 'cancelled' if declined, and fails with confirmation_required when the client cannot ask. Returns status 'deleted' with the person_name (people/...). These tools cannot restore a deleted contact."""
         request = DeleteContactRequest(person_name=person_name)
         if not await confirm_destructive_action(
             ctx, "delete_contact", f"Permanently delete contact {request.person_name}?"
@@ -334,15 +353,10 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="list_contact_groups")
     def list_contact_groups(
-        page_size: int = 100,
+        page_size: Annotated[int, "Contact groups per page, 1 to 1000."] = 100,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        """Page through the account's contact groups (labels).
-
-        group_fields is a comma-separated People API field mask for group data.
-        Returns the raw contactGroups.list payload ('contactGroups' list plus
-        'nextPageToken'), or {"error": ...} on API failure.
-        """
+        """List the user's contact groups (labels), including system groups such as myContacts and starred. To change a group's members use people_modify_contact_group_members, and to add a group use people_create_contact_group. Returns the Google contactGroups.list response: contactGroups (each with resourceName, etag, name, groupType and memberCount), nextPageToken and totalItems."""
         try:
             return list_contact_groups_payload(
                 ListContactGroupsRequest(page_size=page_size, page_token=page_token)
@@ -351,12 +365,10 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc) from exc
 
     @server.tool(name="create_contact_group")
-    def create_contact_group(name: str) -> dict[str, Any]:
-        """Create a new contact group (label) with the given display name.
-
-        Returns the created ContactGroup resource (including its
-        'resourceName'), or {"error": ...} on API failure.
-        """
+    def create_contact_group(
+        name: Annotated[str, "Name of the new group; Google rejects a name the user already has for a group."],
+    ) -> dict[str, Any]:
+        """Create a new, empty contact group (label) in the user's Google Contacts. Add contacts to it afterwards with people_modify_contact_group_members. Returns the created Google ContactGroup resource: resourceName (contactGroups/..., the group_name other people_ tools take), etag, name and groupType."""
         try:
             return create_contact_group_payload(CreateContactGroupRequest(name=name))
         except HttpError as exc:
@@ -368,13 +380,7 @@ def register_tools(server: FastMCP) -> None:
         resource_names_to_add: list[str] | None = None,
         resource_names_to_remove: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Add and/or remove contacts from a contact group.
-
-        group_name is the group resource name (e.g. 'contactGroups/abc'; bare
-        IDs are normalized), and the two lists hold contact resource names.
-        At least one addition or removal is required. Returns the raw
-        members.modify payload, or {"error": ...} on API failure.
-        """
+        """Add contacts to and remove contacts from one contact group in a single call; at least one of the two lists must be non-empty. Contact resource names come from people_search_contacts or people_list_contacts, group names from people_list_contact_groups. Returns the Google members.modify response: notFoundResourceNames and canNotRemoveLastContactGroupResourceNames list the contacts that were not changed, and both are missing when every change applied."""
         try:
             return modify_contact_group_members_payload(
                 ModifyContactGroupMembersRequest(

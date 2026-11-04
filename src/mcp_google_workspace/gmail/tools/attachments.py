@@ -6,7 +6,7 @@ import logging
 
 import base64
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -25,7 +25,7 @@ def register(server: FastMCP) -> None:
         message_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List attachment metadata for a given Gmail message."""
+        """List the attachments of one Gmail message without downloading them. Use it to get the download_id that gmail_download_attachment needs; gmail_read_emails lists attachments too, but without download IDs. Returns message_id and attachments, each with filename, mime_type, size in bytes and download_id."""
         request = ListAttachmentsRequest(message_id=message_id)
         service = gmail_service()
         LOGGER.debug(f"Reading attachment metadata for {request.message_id}.")
@@ -54,11 +54,16 @@ def register(server: FastMCP) -> None:
     @server.tool(name="download_attachment", task=True)
     async def download_attachment(
         message_id: str,
-        attachment_id: str,
-        output_path: str,
+        attachment_id: Annotated[
+            str, "The attachment's download_id from gmail_list_attachments for the same message_id."
+        ],
+        output_path: Annotated[
+            str,
+            "File path on the server's machine to write, e.g. '/tmp/invoice.pdf'; missing folders are created and an existing file is overwritten.",
+        ],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Download one Gmail attachment and save it to the local filesystem path."""
+        """Download one attachment of a Gmail message and save it to a file on the server's own filesystem. It works only when the server runs locally (stdio) and is refused over remote MCP; get the attachment ID from gmail_list_attachments first. Returns status 'ok', saved_to (the path written) and bytes_written. Creates missing parent folders and overwrites an existing file at output_path."""
         request = DownloadAttachmentRequest(
             message_id=message_id,
             attachment_id=attachment_id,
