@@ -87,10 +87,10 @@ async def _run_lifecycle(bundle_dir: Path) -> None:
         names = {tool.name for tool in tools}
         # The bundle entrypoint enables progressive (BM25) tool discovery, so
         # `tools/list` only advertises the always-visible subset (matching
-        # tests/test_bundle_runtime.py); hashed app-callback tools like
-        # store_tool/delete_tool are still directly callable by name below,
-        # just not listed.
-        for required in ("get_workspace_capabilities", "files_file_manager", "search_tools", "call_tool"):
+        # tests/test_bundle_runtime.py). The picker tools and hashed
+        # app-callback tools like store_tool/delete_tool are not listed but
+        # stay directly callable by name below.
+        for required in ("get_workspace_capabilities", "gmail_search_emails", "search_tools", "call_tool"):
             assert required in names, f"missing tool {required!r} in extracted bundle catalog"
 
         _log("Calling a safe tool (get_workspace_capabilities) ...")
