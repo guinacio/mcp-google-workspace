@@ -3031,7 +3031,7 @@
             "type": "string"
           },
           "if_exists": {
-            "description": "For a new upload, what to do when a non-trashed file with the same name exists: 'rename' (the default) uploads a new file with a timestamp before the extension, e.g. 'report (upload 20261103-142500).pdf', 'overwrite' replaces that file's content as a new revision, 'skip' uploads nothing and returns the existing file.",
+            "description": "For a new upload, what to do when a non-trashed file with the same name exists in the target folder: 'rename' (the default) uploads a new file with a timestamp before the extension, e.g. 'report (upload 20261103-142500).pdf', 'overwrite' replaces that file's content as a new revision, 'skip' uploads nothing and returns the existing file.",
             "enum": [
               "rename",
               "overwrite",
@@ -3056,7 +3056,7 @@
             "type": "string"
           },
           "parent_ids": {
-            "description": "One parent folder ID (Drive allows a single parent), or a shared drive ID for its top level; omit for the root of My Drive. The if_exists name check looks only in the first parent, or anywhere the user can access when omitted.",
+            "description": "One parent folder ID (Drive allows a single parent), or a shared drive ID for its top level; omit for the root of My Drive. The if_exists name check looks only in that folder (the root of My Drive when omitted).",
             "items": {
               "type": "string"
             },

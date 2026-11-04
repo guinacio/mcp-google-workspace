@@ -629,6 +629,11 @@ area:
   typed against it, and `tests/test_apps_ui_tool_contract.py` checks each
   operation's tool and argument names against the published catalog. The
   browser test host now rejects arguments the real input schema rejects.
+- `drive_upload_file` without `parent_ids` checked for a same-named file
+  across everything the user can access, including shared drives, so
+  `if_exists="overwrite"` could replace an unrelated file's content (and
+  `skip`/`rename` reacted to it). The check now looks only in the folder the
+  upload lands in: the first parent, or the root of My Drive.
 - The dashboard's event editor saved only through the form's `submit` event,
   which a sandbox without `allow-forms` blocks; it now saves from the submit
   button (and Enter in a field) in either sandbox.
