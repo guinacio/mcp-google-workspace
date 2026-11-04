@@ -87,7 +87,7 @@ def test_modern_requests_work_without_initialize_or_session(client: TestClient) 
     assert called.status_code == 200, called.text
     payload = called.json()["result"]
     assert payload.get("isError") in (None, False)
-    assert payload["structuredContent"]["status"] == "ok"
+    assert "gmail" in payload["structuredContent"]["enabled_namespaces"]
 
 
 def test_modern_routing_header_mismatch_is_rejected_before_execution(client: TestClient) -> None:

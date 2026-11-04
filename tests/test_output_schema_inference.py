@@ -225,15 +225,19 @@ def test_unlisted_plural_names_carry_no_type_claim() -> None:
     assert properties["items"]["type"] == "array"
 
 
-def test_catalog_publishes_open_schemas_and_none_for_raw_passthrough_tools() -> None:
-    from mcp_google_workspace.common.output_schemas import RAW_PASSTHROUGH_TOOLS
+def test_catalog_publishes_an_open_schema_for_every_normalized_response() -> None:
+    """Since 2.0.0 every tool returns a server-built response, so every tool,
+    the former raw Google passthroughs included, publishes an open schema."""
 
     async def catalog() -> list[Any]:
         return await workspace_mcp.list_tools(run_middleware=False)
 
     tools = {tool.name: tool for tool in anyio.run(catalog)}
-    assert len(RAW_PASSTHROUGH_TOOLS) == 37
-    assert [name for name in RAW_PASSTHROUGH_TOOLS if tools[name].output_schema is not None] == []
+    for name in ("docs_get_document", "docs_read_document", "sheets_get_spreadsheet", "slides_get_presentation",
+                 "forms_get_form", "people_list_contacts", "calendar_list_calendars", "tasks_move_task"):
+        schema = tools[name].output_schema
+        assert schema is not None and schema["additionalProperties"] is True, name
+        assert schema["properties"], name
     registered = [tools[name] for name in ("prepare_workspace_action", "commit_workspace_action")]
     assert all(tool.output_schema["additionalProperties"] is True for tool in registered)
 

@@ -33,7 +33,12 @@ from ..schemas import (
     UpdateFileMetadataRequest,
     UploadFileRequest,
 )
-from ..presentation import file_envelope
+from ..presentation import file_envelope, file_summary, files_page
+from ...common.errors import RecoverableToolError
+from ...common.resources import clean_web_url
+from ...common.text_paging import paged_text
+from ...common.timezone import in_account_timezone
+from ...gmail.presentation import html_to_text, remove_invisible_characters
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +52,77 @@ _UPLOADED_FILE_FIELDS = "id,name,mimeType,size,parents,driveId,webViewLink"
 _UPDATED_METADATA_FIELDS = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink"
 _UPDATED_CONTENT_FIELDS = "id,name,mimeType,size,parents,driveId,webViewLink,modifiedTime"
 _MOVED_FILE_FIELDS = "id,name,parents,driveId,webViewLink"
+
+
+_READ_FILE_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,shortcutDetails(targetId,targetMimeType)"
+_SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
+# Stored text files are read whole before paging; larger ones are refused.
+_READ_FILE_MAX_BYTES = 5 * 1024 * 1024
+_GOOGLE_EXPORTS = {
+    "application/vnd.google-apps.document": {"text": "text/plain", "markdown": "text/markdown"},
+    "application/vnd.google-apps.presentation": {"text": "text/plain", "markdown": "text/plain"},
+    # Google exports only the first sheet as CSV.
+    "application/vnd.google-apps.spreadsheet": {"text": "text/csv", "markdown": "text/csv"},
+}
+_TEXT_APPLICATION_TYPES = frozenset(
+    {
+        "application/csv",
+        "application/javascript",
+        "application/json",
+        "application/ld+json",
+        "application/sql",
+        "application/toml",
+        "application/x-javascript",
+        "application/x-ndjson",
+        "application/x-sh",
+        "application/x-yaml",
+        "application/xml",
+        "application/yaml",
+    }
+)
+
+
+def _export_type(mime_type: str, format: str) -> str | None:
+    exports = _GOOGLE_EXPORTS.get(mime_type)
+    return exports[format] if exports else None
+
+
+def _is_text_type(mime_type: str) -> bool:
+    base = mime_type.split(";", 1)[0].strip().lower()
+    return (
+        base.startswith("text/")
+        or base in _TEXT_APPLICATION_TYPES
+        or base.endswith(("+json", "+xml"))
+    )
+
+
+def _refusal_reason(mime_type: str) -> str:
+    if mime_type == "application/vnd.google-apps.folder":
+        return "it is a folder; list its files with drive_list_files"
+    if mime_type == "application/vnd.google-apps.form":
+        return "it is a Google Form; read it with forms_get_form"
+    if mime_type.startswith("application/vnd.google-apps."):
+        return f"Google files of type {mime_type} have no text export"
+    return f"it is a binary file ({mime_type or 'unknown type'}), not text"
+
+
+def _unreadable(metadata: dict[str, Any], reason: str) -> RecoverableToolError:
+    name = metadata.get("name") or metadata.get("id")
+    return RecoverableToolError(
+        "invalid_input",
+        f"drive_read_file cannot read '{name}': {reason}. It reads Google Docs, Sheets and Slides and "
+        "stored text files; drive_download_file saves other stored files on a locally running server.",
+        required_action={"tool": "drive_get_file_content_capabilities", "arguments": {"file_id": metadata.get("id")}},
+        details={"file_id": metadata.get("id"), "mime_type": metadata.get("mimeType")},
+    )
+
+
+def _file_text(raw: bytes, *, mime_type: str) -> str:
+    """Decode a downloaded or exported file into clean, pageable text."""
+    text = raw.decode("utf-8-sig", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    if mime_type.split(";", 1)[0].strip().lower() in {"text/html", "application/xhtml+xml"}:
+        return html_to_text(text).strip()
+    return remove_invisible_characters(text).strip("\n")
 
 
 def _build_metadata_body(request: CreateFileMetadataRequest) -> dict[str, Any]:
@@ -201,19 +277,14 @@ def register(server: FastMCP) -> None:
         files = result.get("files", [])
         if ctx is not None:
             await ctx.report_progress(len(files), request.page_size, "Drive files page loaded")
-        return {
-            "files": [file_envelope(file, account_timezone=account_timezone) for file in files],
-            "next_page_token": result.get("nextPageToken"),
-            "count": len(files),
-            "account_timezone": account_timezone,
-        }
+        return files_page(result, account_timezone=account_timezone)
 
     @server.tool(name="get_file")
     async def get_file(
         file_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Get the metadata of one Drive file or folder by ID. To find files by name or filter use drive_list_files; to read a file's content use drive_download_file, drive_export_google_file or the Docs, Sheets and Slides tools. Returns file (id, name, kind, mime_type, size, created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download)."""
+        """Get the metadata of one Drive file or folder by ID. To find files by name or filter use drive_list_files; to read a file's text use drive_read_file, and to save it drive_download_file or drive_export_google_file. Returns file (id, name, kind, mime_type, size, created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download)."""
         request = GetFileRequest(
             file_id=file_id,
         )
@@ -245,7 +316,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_create_file_metadata; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, mimeType, parents, driveId, webViewLink); use file.id as a parent ID in later calls."""
+        """Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_create_file_metadata; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it); use file.id as a parent ID in later calls."""
         request = CreateFolderRequest(
             name=name,
             parent_ids=parent_ids or [],
@@ -266,7 +337,7 @@ def register(server: FastMCP) -> None:
                 fields=_CREATED_FILE_FIELDS,
             )
         )
-        return {"status": "ok", "file": created}
+        return {"status": "ok", "file": file_summary(created)}
 
     @server.tool(name="create_file_metadata")
     async def create_file_metadata(
@@ -301,7 +372,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create an empty Drive file from metadata alone, with no uploaded content. Use it for a blank native Google file placed in a chosen folder, or a placeholder; to store bytes use drive_upload_file, for folders drive_create_folder, and docs_create_document, sheets_create_spreadsheet or slides_create_presentation when no folder is needed. Returns status 'ok' and file (id, name, mimeType, parents, driveId, webViewLink)."""
+        """Create an empty Drive file from metadata alone, with no uploaded content. Use it for a blank native Google file placed in a chosen folder, or a placeholder; to store bytes use drive_upload_file, for folders drive_create_folder, and docs_create_document, sheets_create_spreadsheet or slides_create_presentation when no folder is needed. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it)."""
         request = CreateFileMetadataRequest(
             name=name,
             mime_type=mime_type,
@@ -321,7 +392,7 @@ def register(server: FastMCP) -> None:
                 fields=_CREATED_FILE_FIELDS,
             )
         )
-        return {"status": "ok", "file": created}
+        return {"status": "ok", "file": file_summary(created)}
 
     @server.tool(name="upload_file", task=True)
     async def upload_file(
@@ -374,7 +445,7 @@ def register(server: FastMCP) -> None:
         ] = "rename",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Upload a file to Drive as a new file, from the Workspace Files picker or a local path. To replace the content of a file you already have the ID of use drive_update_file_content, and for an empty file or native Google file use drive_create_file_metadata. Returns status 'ok' with mode 'create' or 'overwrite' and file (id, name, mimeType, size, parents, driveId, webViewLink), or status 'skipped' with existing_file."""
+        """Upload a file to Drive as a new file, from the Workspace Files picker or a local path. To replace the content of a file you already have the ID of use drive_update_file_content, and for an empty file or native Google file use drive_create_file_metadata. Returns status 'ok' with mode 'create' or 'overwrite' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or status 'skipped' with existing_file."""
         request = UploadFileRequest(
             local_path=local_path,
             uploaded_file=uploaded_file,
@@ -447,7 +518,7 @@ def register(server: FastMCP) -> None:
                 updated = await execute_google_request(update_request)
                 if ctx is not None:
                     await ctx.report_progress(100, 100, "Overwriting Drive file completed")
-            return {"status": "ok", "mode": "overwrite", "file": updated}
+            return {"status": "ok", "mode": "overwrite", "file": file_summary(updated)}
         LOGGER.debug(f"Uploading file '{source_name}' to Drive.")
         create_request = (
             service.files()
@@ -468,7 +539,7 @@ def register(server: FastMCP) -> None:
             created = await execute_google_request(create_request)
             if ctx is not None:
                 await ctx.report_progress(100, 100, "Uploading Drive file completed")
-        return {"status": "ok", "mode": "create", "file": created}
+        return {"status": "ok", "mode": "create", "file": file_summary(created)}
 
     @server.tool(name="update_file_metadata")
     async def update_file_metadata(
@@ -496,7 +567,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_update_file_content. Returns status 'ok' and file (id, name, mimeType, parents, modifiedTime, size, driveId, webViewLink)."""
+        """Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_update_file_content. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it)."""
         request = UpdateFileMetadataRequest(
             file_id=file_id,
             name=name,
@@ -534,7 +605,7 @@ def register(server: FastMCP) -> None:
                 fields=_UPDATED_METADATA_FIELDS,
             )
         )
-        return {"status": "ok", "file": updated}
+        return {"status": "ok", "file": file_summary(updated)}
 
     @server.tool(name="update_file_content")
     async def update_file_content(
@@ -574,7 +645,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Replace the content of an existing Drive file, keeping its ID, name, folder and sharing. Use it to publish a new version of a file; to add a separate file use drive_upload_file, and to rename it use drive_update_file_metadata. Returns status 'ok' and file (id, name, mimeType, size, parents, driveId, webViewLink, modifiedTime). Drive stores the new content as a new revision of the file."""
+        """Replace the content of an existing Drive file, keeping its ID, name, folder and sharing. Use it to publish a new version of a file; to add a separate file use drive_upload_file, and to rename it use drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it). Drive stores the new content as a new revision of the file."""
         request = UpdateFileContentRequest(
             file_id=file_id,
             local_path=local_path,
@@ -615,7 +686,7 @@ def register(server: FastMCP) -> None:
             updated = await execute_google_request(update_request)
             if ctx is not None:
                 await ctx.report_progress(100, 100, "Uploading replacement Drive content completed")
-        return {"status": "ok", "file": updated}
+        return {"status": "ok", "file": file_summary(updated)}
 
     @server.tool(name="move_file")
     async def move_file(
@@ -630,7 +701,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, parents, driveId, webViewLink)."""
+        """Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it)."""
         request = MoveFileRequest(
             file_id=file_id,
             add_parent_ids=add_parent_ids or [],
@@ -648,7 +719,7 @@ def register(server: FastMCP) -> None:
                 fields=_MOVED_FILE_FIELDS,
             )
         )
-        return {"status": "ok", "file": updated}
+        return {"status": "ok", "file": file_summary(updated)}
 
     @server.tool(name="copy_file")
     async def copy_file(
@@ -664,7 +735,7 @@ def register(server: FastMCP) -> None:
         description: Annotated[str | None, "Optional description to set on the new copy."] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, mimeType, parents, driveId, webViewLink) of the new copy; the source file is unchanged."""
+        """Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it) of the new copy; the source file is unchanged."""
         request = CopyFileRequest(
             file_id=file_id,
             name=name,
@@ -689,7 +760,7 @@ def register(server: FastMCP) -> None:
                 fields=_CREATED_FILE_FIELDS,
             )
         )
-        return {"status": "ok", "file": copied}
+        return {"status": "ok", "file": file_summary(copied)}
 
     @server.tool(name="delete_file")
     async def delete_file(
@@ -710,7 +781,7 @@ def register(server: FastMCP) -> None:
         ] = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_delete_permission instead. Returns status 'ok' with mode 'trash' and file (id, name, trashed, driveId, webViewLink), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline."""
+        """Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_delete_permission instead. Returns status 'ok' with mode 'trash' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline."""
         request = DeleteFileRequest(
             file_id=file_id,
             delete_mode=delete_mode,
@@ -727,7 +798,7 @@ def register(server: FastMCP) -> None:
                     fields="id,name,trashed,driveId,webViewLink",
                 )
             )
-            return {"status": "ok", "mode": "trash", "file": updated}
+            return {"status": "ok", "mode": "trash", "file": file_summary(updated)}
         if not request.confirm_permanent:
             raise ValueError(
                 "Permanent deletion requires confirm_permanent=true and interactive confirmation."
@@ -825,7 +896,7 @@ def register(server: FastMCP) -> None:
         ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Export a Google Doc, Sheet, Slides deck or Drawing to a file format on the server's disk. For stored files such as PDFs or images use drive_download_file; to read a Doc or Sheet without saving a file use docs_get_document or sheets_get_sheet_values. Returns status 'ok', file_id, mime_type, saved_to and bytes_written. It writes to the server's filesystem, so it works only when the server runs locally and is rejected with picker_required over remote MCP; Google limits exports to 10 MB."""
+        """Export a Google Doc, Sheet, Slides deck or Drawing to a file format on the server's disk. For stored files such as PDFs or images use drive_download_file; to read a Doc, Sheet or text file without saving a file use drive_read_file, docs_read_document or sheets_get_sheet_values. Returns status 'ok', file_id, mime_type, saved_to and bytes_written. It writes to the server's filesystem, so it works only when the server runs locally and is rejected with picker_required over remote MCP; Google limits exports to 10 MB."""
         request = ExportGoogleFileRequest(
             file_id=file_id,
             mime_type=mime_type,
@@ -850,6 +921,73 @@ def register(server: FastMCP) -> None:
             "mime_type": request.mime_type,
             "saved_to": str(path),
             "bytes_written": size,
+        }
+
+    @server.tool(name="read_file")
+    async def read_file(
+        file_id: str,
+        format: Annotated[
+            Literal["text", "markdown"],
+            (
+                "'text' (default) returns plain text; 'markdown' returns a Google Doc as Markdown "
+                "(headings, lists, tables, links). Other files read the same in both formats."
+            ),
+        ] = "text",
+        offset: Annotated[
+            int,
+            (
+                "Character offset into the file's text to resume from: the next_offset of a truncated "
+                "result. Omit (0) for the first page."
+            ),
+        ] = 0,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes. Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text)."""
+        service = drive_service()
+        account_timezone = await resolve_user_timezone()
+        metadata = await execute_google_request(
+            service.files().get(fileId=file_id, supportsAllDrives=True, fields=_READ_FILE_FIELDS)
+        )
+        if metadata.get("mimeType") == _SHORTCUT_MIME:
+            target = (metadata.get("shortcutDetails") or {}).get("targetId")
+            if not target:
+                raise _unreadable(metadata, "it is a shortcut whose target is not available")
+            metadata = await execute_google_request(
+                service.files().get(fileId=target, supportsAllDrives=True, fields=_READ_FILE_FIELDS)
+            )
+        mime_type = str(metadata.get("mimeType") or "")
+        exported_as = _export_type(mime_type, format)
+        if exported_as is not None:
+            data = await execute_google_request(
+                service.files().export(fileId=metadata.get("id"), mimeType=exported_as)
+            )
+        elif _is_text_type(mime_type):
+            size = int(metadata.get("size") or 0)
+            if size > _READ_FILE_MAX_BYTES:
+                raise _unreadable(
+                    metadata,
+                    f"it is {size:,} bytes, above the {_READ_FILE_MAX_BYTES:,}-byte read limit",
+                )
+            data = await execute_google_request(
+                service.files().get_media(fileId=metadata.get("id"), supportsAllDrives=True)
+            )
+        else:
+            raise _unreadable(metadata, _refusal_reason(mime_type))
+        raw = data if isinstance(data, bytes) else str(data).encode("utf-8")
+        if b"\x00" in raw[:8192]:
+            raise _unreadable(metadata, "its content is binary, not text")
+        text = _file_text(raw, mime_type=exported_as or mime_type)
+        if ctx is not None:
+            await ctx.report_progress(1, 1, "Drive file read")
+        return {
+            "file_id": metadata.get("id"),
+            "name": metadata.get("name"),
+            "mime_type": mime_type,
+            "format": format,
+            "exported_as": exported_as,
+            "modified_at": in_account_timezone(metadata.get("modifiedTime"), account_timezone),
+            "web_url": clean_web_url(metadata.get("webViewLink")),
+            **paged_text(text, offset=offset),
         }
 
     @server.tool(name="get_file_content_capabilities")

@@ -8,7 +8,6 @@ from jsonschema import Draft202012Validator
 
 import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.apps.server import apps_mcp
-from mcp_google_workspace.common.output_schemas import RAW_PASSTHROUGH_TOOLS
 from mcp_google_workspace.server import workspace_mcp
 
 _PLACEHOLDER_PATTERNS = [
@@ -113,11 +112,6 @@ def test_workspace_tools_have_documented_open_output_schemas() -> None:
     failures: list[str] = []
     for tool in tools.values():
         schema = tool.output_schema
-        if tool.name in RAW_PASSTHROUGH_TOOLS:
-            # Google payloads returned unchanged publish no schema (2.0.0).
-            if schema is not None:
-                failures.append(f"{tool.name}:raw-passthrough-publishes-schema")
-            continue
         if not isinstance(schema, dict):
             failures.append(f"{tool.name}:missing")
             continue
@@ -136,11 +130,6 @@ def test_workspace_tools_have_documented_open_output_schemas() -> None:
             if description.startswith("Response field:"):
                 failures.append(f"{tool.name}:{field_name}:filler-description")
     assert failures == []
-
-
-def test_raw_passthrough_list_names_real_tools() -> None:
-    tools = anyio.run(_list_server_tools, workspace_mcp)
-    assert RAW_PASSTHROUGH_TOOLS <= set(tools)
 
 
 def test_gmail_attachment_inputs_publish_the_complete_closed_schema() -> None:

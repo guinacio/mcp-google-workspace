@@ -308,8 +308,9 @@ def test_envelope_classifies_and_cleans_a_message():
     assert result["is_newsletter"] is True
     assert result["is_automated"] is True
     assert result["date"] == "2026-07-09T07:00:00-03:00"
-    assert result["date_timezone"] == "America/Sao_Paulo"
-    assert result["source_date"] == "Wed, 9 Jul 2026 10:00:00 +0000"
+    # The account zone is stated once per response, and the raw Date header
+    # only under gmail_read_emails format=full (details.date_header).
+    assert "date_timezone" not in result and "source_date" not in result
 
 
 def test_clean_message_content_collapses_quote_and_truncates():
@@ -460,7 +461,7 @@ def test_check_mail_updates_skips_deleted_history_messages(monkeypatch: pytest.M
 
     result = asyncio.run(scenario())
 
-    assert result["new_count"] == 1
+    assert result["count"] == 1
     assert result["next_history_id"] == "200"
     assert result["skipped_deleted_count"] == 1
     assert result["skipped_deleted_message_ids"] == ["deleted"]
@@ -607,7 +608,7 @@ def test_check_mail_updates_returns_received_and_sent_messages_without_triage(
 
     result = asyncio.run(scenario())
 
-    assert result["new_count"] == 3
+    assert result["count"] == 3
     assert [item["id"] for item in result["messages"]] == ["sent-1", "linkedin-1", "direct-1"]
     assert {item["id"]: item["direction"] for item in result["messages"]} == {
         "sent-1": "sent",
@@ -768,7 +769,7 @@ def test_get_mail_digest_returns_received_and_sent_without_triage_or_thread_dedu
 
     result = asyncio.run(scenario())
 
-    assert result["message_count"] == 4
+    assert result["count"] == 4
     assert [item["id"] for item in result["messages"]] == ["sent-1", "linkedin-1", "person-1", "person-2"]
     assert {item["id"]: item["direction"] for item in result["messages"]} == {
         "sent-1": "sent",

@@ -22,7 +22,7 @@ from ..common.async_ops import (
 from ..common.confirmation import confirm_destructive_action
 from ..common.downloads import stream_google_download
 from ..common.errors import RecoverableToolError
-from .presentation import event_envelope
+from .presentation import calendars_page, event_detail, event_envelope, free_busy
 from ..common.timezone import resolve_user_timezone, user_now
 from .schemas import (
     SendUpdates,
@@ -408,7 +408,7 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Find events on one calendar in a time window, given as a range_preset or explicit time_min/time_max. For the user's upcoming week plus pending invitations use calendar_get_calendar_digest, and for full details of known events use calendar_read_events. Returns compact events (id, title, start and end in the account time zone, all_day, my_response, requires_response, meeting_url, is_recurring), count, and the effective_time_min/effective_time_max that were applied."""
+        """Find events on one calendar in a time window, given as a range_preset or explicit time_min/time_max. For the user's upcoming week plus pending invitations use calendar_get_calendar_digest, and for full details of known events use calendar_read_events. Returns compact events (id, title, start and end in the account time zone, all_day, status, organizer, my_response, requires_response, meeting_url, location, is_recurring, updated_at), count, next_page_token, account_timezone and the effective_time_min/effective_time_max that were applied."""
         request = ListEventsRequest(
             calendar_id=calendar_id,
             time_min=time_min,
@@ -448,6 +448,7 @@ def register_tools(server: FastMCP) -> None:
             "range_preset": request.range_preset,
             "effective_time_min": effective_time_min,
             "effective_time_max": effective_time_max,
+            "account_timezone": user_timezone,
         }
 
     @server.tool(name="read_events")
@@ -463,7 +464,7 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Read the full details of one to 100 events from one calendar by ID. Use it after calendar_search_events or calendar_get_calendar_digest when you need the description, guest list or attachments, which those compact results leave out. Returns events with the compact fields plus description, attendees (email, responseStatus, optional), attachments, recurrence, visibility and transparency; IDs that do not exist are listed in missing_event_ids instead of failing the call."""
+        """Read the full details of one to 100 events from one calendar by ID. Use it after calendar_search_events or calendar_get_calendar_digest when you need the description, guest list or attachments, which those compact results leave out. Returns events with the compact fields plus url, description, attendees (name, email, response_status, optional, organizer, is_self, is_resource), attachments (title, file_url, file_id, mime_type), recurrence, recurring_event_id, visibility and transparency, and account_timezone (the zone of start and end); IDs that do not exist are listed in missing_event_ids instead of failing the call."""
         request = ReadEventsRequest(
             calendar_id=calendar_id,
             event_ids=event_ids,
@@ -489,18 +490,7 @@ def register_tools(server: FastMCP) -> None:
                     raise
                 missing_event_ids.append(event_id)
                 continue
-            detail = event_envelope(event, account_timezone=effective_time_zone)
-            detail.update(
-                {
-                    "description": event.get("description"),
-                    "attendees": event.get("attendees", []),
-                    "attachments": event.get("attachments", []),
-                    "recurrence": event.get("recurrence", []),
-                    "visibility": event.get("visibility"),
-                    "transparency": event.get("transparency"),
-                }
-            )
-            events.append(detail)
+            events.append(event_detail(event, account_timezone=effective_time_zone))
             if ctx is not None:
                 await ctx.report_progress(index, len(request.event_ids), "Events loaded")
         return {
@@ -546,9 +536,9 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="list_calendars")
     async def list_calendars() -> dict[str, Any]:
-        """List the calendars in the user's calendar list: their own, shared and subscribed calendars. Use it to find a calendar_id other than 'primary' for the other calendar tools. Returns Google's CalendarList resource: items, each with id, summary, primary (true for the main calendar), accessRole (owner, writer, reader, freeBusyReader) and timeZone."""
+        """List the calendars in the user's calendar list: their own, shared and subscribed calendars. Use it to find a calendar_id other than 'primary' for the other calendar tools. Returns calendars, each with id (the calendar_id), name (the user's own name for it when set), description, primary (true for the main calendar), access_role (owner, writer, reader or freeBusyReader), time_zone and hidden, plus count and next_page_token."""
         service = build_calendar_service()
-        return await execute_google_request(service.calendarList().list())
+        return calendars_page(await execute_google_request(service.calendarList().list()))
 
     @server.tool(name="get_calendar_context")
     async def get_calendar_context() -> dict[str, Any]:
@@ -581,7 +571,7 @@ def register_tools(server: FastMCP) -> None:
             "IANA time zone name, e.g. 'Europe/Berlin', in which busy periods are returned; defaults to the account's calendar time zone.",
         ] = None,
     ) -> dict[str, Any]:
-        """Check whether one known time period is free on up to 50 calendars or people. To find open times instead of testing one, use calendar_find_common_free_slots. Returns Google's free/busy response: calendars, keyed by each requested id, with busy (a list of start/end periods; empty means free) and errors when that calendar's availability could not be read."""
+        """Check whether one known time period is free on up to 50 calendars or people. To find open times instead of testing one, use calendar_find_common_free_slots. Returns all_free, time_min, time_max, account_timezone (the zone of every time returned) and calendars in request order, each with id, free (null when it could not be read), busy (start/end periods; empty means free) and errors (Google's reasons, e.g. notFound)."""
         request = FreeBusyRequest(
             timeMin=time_min,
             timeMax=time_max,
@@ -590,10 +580,15 @@ def register_tools(server: FastMCP) -> None:
         )
         effective_time_zone = request.timeZone or await resolve_user_timezone()
         service = build_calendar_service()
-        return await execute_google_request(
+        response = await execute_google_request(
             service.freebusy().query(
                 body=request.model_copy(update={"timeZone": effective_time_zone}).model_dump()
             )
+        )
+        return free_busy(
+            response,
+            requested_ids=[item.id for item in request.items],
+            account_timezone=effective_time_zone,
         )
 
     @server.tool(name="find_common_free_slots")
@@ -823,7 +818,7 @@ def register_tools(server: FastMCP) -> None:
         ] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_common_free_slots first. Returns success, event (the Google Event: id, htmlLink, start, end, hangoutLink, attendees), deduplicated (true when idempotency_key matched an existing event) and warnings when the conflict check could not run. Guests receive invitations only as send_updates says."""
+        """Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_common_free_slots first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees, attachments, recurrence and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. Guests receive invitations only as send_updates says."""
         request = CreateEventRequest(
             calendar_id=calendar_id,
             idempotency_key=idempotency_key,
@@ -847,6 +842,8 @@ def register_tools(server: FastMCP) -> None:
         )
         service = build_calendar_service()
         timezone_val = request.timezone or await resolve_user_timezone()
+        # The result's times are shown in the zone the event was written in.
+        account_timezone = timezone_val
         start = _validate_and_fix_datetime(request.start_datetime, timezone_val)
         end = _validate_and_fix_datetime(request.end_datetime, timezone_val)
         if start is None:
@@ -875,7 +872,12 @@ def register_tools(server: FastMCP) -> None:
                         eventId=deterministic_event_id,
                     ).execute
                 )
-                return {"success": True, "event": existing, "deduplicated": True}
+                return {
+                    "status": "ok",
+                    "event": event_detail(existing, account_timezone=account_timezone),
+                    "deduplicated": True,
+                    "warnings": [],
+                }
             except HttpError as exc:
                 if getattr(exc.resp, "status", None) != 404:
                     raise
@@ -929,10 +931,12 @@ def register_tools(server: FastMCP) -> None:
                     conferenceDataVersion=1 if body.get("conferenceData") else 0,
                 )
             )
-            created: dict[str, Any] = {"success": True, "event": event, "deduplicated": False}
-            if warnings:
-                created["warnings"] = warnings
-            return created
+            return {
+                "status": "ok",
+                "event": event_detail(event, account_timezone=account_timezone),
+                "deduplicated": False,
+                "warnings": warnings,
+            }
         except HttpError as exc:
             if deterministic_event_id is None or getattr(exc.resp, "status", None) != 409:
                 raise
@@ -942,7 +946,12 @@ def register_tools(server: FastMCP) -> None:
                     eventId=deterministic_event_id,
                 )
             )
-            return {"success": True, "event": existing, "deduplicated": True}
+            return {
+                "status": "ok",
+                "event": event_detail(existing, account_timezone=account_timezone),
+                "deduplicated": True,
+                "warnings": warnings,
+            }
 
     @server.tool(name="update_event")
     async def update_event(
@@ -1049,7 +1058,7 @@ def register_tools(server: FastMCP) -> None:
         ] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Passing recurrence fails with prepare_required until the call goes through prepare_workspace_action and commit_workspace_action. Returns success and event (the updated Google Event), plus warnings when the conflict check could not run; guests are notified as send_updates says."""
+        """Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Passing recurrence fails with prepare_required until the call goes through prepare_workspace_action and commit_workspace_action. Returns status 'ok', event (the updated event in the calendar_read_events shape, times in timezone or else the account's zone) and warnings, non-empty when the conflict check could not run; guests are notified as send_updates says."""
         request = UpdateEventRequest(
             event_id=event_id,
             calendar_id=calendar_id,
@@ -1147,10 +1156,11 @@ def register_tools(server: FastMCP) -> None:
                 conferenceDataVersion=1 if patch_data.get("conferenceData") else 0,
             )
         )
-        updated: dict[str, Any] = {"success": True, "event": event}
-        if warnings:
-            updated["warnings"] = warnings
-        return updated
+        return {
+            "status": "ok",
+            "event": event_detail(event, account_timezone=timezone_val),
+            "warnings": warnings,
+        }
 
     @server.tool(name="respond_to_event")
     async def respond_to_event(
@@ -1163,7 +1173,7 @@ def register_tools(server: FastMCP) -> None:
         send_updates: Literal["all", "externalOnly", "none"] | None = "all",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Answer an event invitation as the signed-in user: accept, decline or mark tentative. Find unanswered invitations in the requires_response list of calendar_get_calendar_digest; the call fails if the user is not on the event's guest list. Returns success, event_id, response_status and event (the updated Google Event). With the default send_updates 'all', Google notifies the event's guests of the answer."""
+        """Answer an event invitation as the signed-in user: accept, decline or mark tentative. Find unanswered invitations in the requires_response list of calendar_get_calendar_digest; the call fails if the user is not on the event's guest list. Returns status 'ok', event_id, response_status and event (the updated event in the calendar_read_events shape). With the default send_updates 'all', Google notifies the event's guests of the answer."""
         request = RespondToEventRequest(
             calendar_id=calendar_id,
             event_id=event_id,
@@ -1197,10 +1207,10 @@ def register_tools(server: FastMCP) -> None:
         )
         LOGGER.debug(f"RSVP updated to {request.response_status}.")
         return {
-            "success": True,
+            "status": "ok",
             "event_id": request.event_id,
             "response_status": request.response_status,
-            "event": updated,
+            "event": event_detail(updated, account_timezone=await resolve_user_timezone()),
         }
 
     @server.tool(name="add_event_attachment")
@@ -1214,7 +1224,7 @@ def register_tools(server: FastMCP) -> None:
         send_updates: SendUpdates | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Attach one file to an existing event, keeping its current attachments. If an attachment with the same file_url is already there nothing is added; to replace the whole list use calendar_update_event. Returns event, the updated Google Event with its attachments list (Google allows at most 25 per event)."""
+        """Attach one file to an existing event, keeping its current attachments. If an attachment with the same file_url is already there nothing is added; to replace the whole list use calendar_update_event. Returns status 'ok' and event, the updated event in the calendar_read_events shape with its attachments (Google allows at most 25 per event)."""
         request = AddEventAttachmentRequest(
             calendar_id=calendar_id,
             event_id=event_id,
@@ -1241,7 +1251,10 @@ def register_tools(server: FastMCP) -> None:
                 supportsAttachments=True,
             )
         )
-        return {"event": updated}
+        return {
+            "status": "ok",
+            "event": event_detail(updated, account_timezone=await resolve_user_timezone()),
+        }
 
     @server.tool(name="remove_event_attachment")
     async def remove_event_attachment(
@@ -1257,7 +1270,7 @@ def register_tools(server: FastMCP) -> None:
         send_updates: SendUpdates | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Detach files from an event, matching by file_url or Drive file_id; the files themselves are not deleted. The user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed. Returns event (the updated Google Event) and removed_count, which is 0 when nothing matched."""
+        """Detach files from an event, matching by file_url or Drive file_id; the files themselves are not deleted. The user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed. Returns status 'ok', event (the updated event in the calendar_read_events shape) and removed_count, which is 0 when nothing matched."""
         request = RemoveEventAttachmentRequest(
             calendar_id=calendar_id,
             event_id=event_id,
@@ -1299,7 +1312,11 @@ def register_tools(server: FastMCP) -> None:
                 supportsAttachments=True,
             )
         )
-        return {"event": updated, "removed_count": len(attachments) - len(filtered)}
+        return {
+            "status": "ok",
+            "event": event_detail(updated, account_timezone=await resolve_user_timezone()),
+            "removed_count": len(attachments) - len(filtered),
+        }
 
     @server.tool(name="download_event_attachment", task=True)
     async def download_event_attachment(
@@ -1437,7 +1454,7 @@ def register_tools(server: FastMCP) -> None:
         ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete an event from a calendar. Unless force is true the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted. Returns success and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says."""
+        """Delete an event from a calendar. Unless force is true the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted. Returns status 'ok' and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says."""
         request = DeleteEventRequest(
             calendar_id=calendar_id,
             event_id=event_id,
@@ -1459,4 +1476,4 @@ def register_tools(server: FastMCP) -> None:
                 sendUpdates=request.send_updates,
             )
         )
-        return {"success": True, "event_id": request.event_id}
+        return {"status": "ok", "event_id": request.event_id}

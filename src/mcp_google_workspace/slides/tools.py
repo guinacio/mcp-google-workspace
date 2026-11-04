@@ -10,6 +10,14 @@ from googleapiclient.errors import HttpError
 from ..common.async_ops import run_blocking
 from ..common.errors import provider_tool_error
 from .client import slides_service
+from .presentation import (
+    batch_update_presentation_envelope,
+    created_presentation_envelope,
+    page_envelope,
+    presentation_envelope,
+    replace_text_envelope,
+    thumbnail_envelope,
+)
 from .schemas import (
     BatchUpdatePresentationRequest,
     CreatePresentationRequest,
@@ -86,9 +94,11 @@ def batch_update_presentation_payload(request: BatchUpdatePresentationRequest) -
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_presentation")
     def get_presentation(presentation_id: str) -> dict[str, Any]:
-        """Read a Google Slides presentation's full structure: slides with their page elements and text, layouts and masters. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for one slide use slides_get_slide_page. Returns the Google Presentation resource: presentationId, title, pageSize and slides, where each slide's objectId is the page_object_id for slides_get_slide_page and slides_get_slide_thumbnail."""
+        """Read a Google Slides presentation as an outline: every slide with its title, text, speaker notes and page elements. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for one slide's element sizes and positions use slides_get_slide_page. Returns presentation_id, title, revision_id, url, page_size (width_pt, height_pt), count and slides, each with object_id (the page_object_id other slides_ tools take), index, layout, title, text (one shape per line, in reading order), notes and elements (object_id, type, placeholder, text)."""
         try:
-            return get_presentation_payload(GetPresentationRequest(presentation_id=presentation_id))
+            return presentation_envelope(
+                get_presentation_payload(GetPresentationRequest(presentation_id=presentation_id))
+            )
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id) from exc
 
@@ -96,9 +106,11 @@ def register_tools(server: FastMCP) -> None:
     def create_presentation(
         title: Annotated[str, "Title of the new presentation, also used as its Drive file name."],
     ) -> dict[str, Any]:
-        """Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns the created Google Presentation resource: presentationId (the ID every other slides_ tool takes) and slides with each slide's objectId."""
+        """Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index."""
         try:
-            return create_presentation_payload(CreatePresentationRequest(title=title))
+            return created_presentation_envelope(
+                create_presentation_payload(CreatePresentationRequest(title=title))
+            )
         except HttpError as exc:
             raise provider_tool_error(exc, title=title) from exc
 
@@ -111,25 +123,30 @@ def register_tools(server: FastMCP) -> None:
             bool, "Match letter case exactly when true; by default matching ignores case."
         ] = False,
     ) -> dict[str, Any]:
-        """Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns the Slides batchUpdate response: presentationId and replies[0].replaceAllText.occurrencesChanged, which is 0 or missing when nothing matched."""
+        """Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched)."""
         try:
-            return replace_text_in_presentation_payload(
-                ReplaceTextInPresentationRequest(
-                    presentation_id=presentation_id,
-                    contains_text=contains_text,
-                    replace_text=replace_text,
-                    match_case=match_case,
-                )
+            return replace_text_envelope(
+                replace_text_in_presentation_payload(
+                    ReplaceTextInPresentationRequest(
+                        presentation_id=presentation_id,
+                        contains_text=contains_text,
+                        replace_text=replace_text,
+                        match_case=match_case,
+                    )
+                ),
+                presentation_id=presentation_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id) from exc
 
     @server.tool(name="get_slide_page")
     def get_slide_page(presentation_id: str, page_object_id: str) -> dict[str, Any]:
-        """Read one slide of a Google Slides presentation with all its page elements: shapes, text, images and tables. For the whole deck use slides_get_presentation (which also supplies the presentation and slide IDs), and for a picture of the slide use slides_get_slide_thumbnail. Returns the Google Page resource: objectId, pageType, pageElements (each with its objectId, size, transform and content) and slideProperties."""
+        """Read one slide of a Google Slides presentation with every page element's text, size and position, for layout-aware edits. For the whole deck use slides_get_presentation (which also supplies the presentation and slide IDs), and for a picture of the slide use slides_get_slide_thumbnail. Returns object_id, page_type, title, text, notes and elements in reading order, each with object_id, type (shape, image, table, video, line, group, sheets_chart, word_art), placeholder, text (table cells row by row), size (width_pt, height_pt) and position (x_pt, y_pt of the top-left corner)."""
         try:
-            return get_slide_page_payload(
-                GetSlidePageRequest(presentation_id=presentation_id, page_object_id=page_object_id)
+            return page_envelope(
+                get_slide_page_payload(
+                    GetSlidePageRequest(presentation_id=presentation_id, page_object_id=page_object_id)
+                )
             )
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id, page_object_id=page_object_id) from exc
@@ -147,15 +164,18 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = "LARGE",
     ) -> dict[str, Any]:
-        """Render one slide of a Google Slides presentation as an image and return a link to it. Use slides_get_slide_page instead to read the slide's text and elements; the presentation and slide IDs come from slides_get_presentation. Returns the Google Thumbnail: contentUrl, a temporary image URL (valid for about 30 minutes), plus width and height in pixels."""
+        """Render one slide of a Google Slides presentation as an image and return a link to it. Use slides_get_slide_page instead to read the slide's text and elements; the presentation and slide IDs come from slides_get_presentation. Returns content_url, a temporary image URL (valid for about 30 minutes), width and height in pixels, and mime_type."""
         try:
-            return get_slide_thumbnail_payload(
-                GetSlideThumbnailRequest(
-                    presentation_id=presentation_id,
-                    page_object_id=page_object_id,
-                    mime_type=mime_type,
-                    thumbnail_size=thumbnail_size,
-                )
+            return thumbnail_envelope(
+                get_slide_thumbnail_payload(
+                    GetSlideThumbnailRequest(
+                        presentation_id=presentation_id,
+                        page_object_id=page_object_id,
+                        mime_type=mime_type,
+                        thumbnail_size=thumbnail_size,
+                    )
+                ),
+                mime_type=mime_type,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id, page_object_id=page_object_id) from exc
@@ -172,11 +192,14 @@ def register_tools(server: FastMCP) -> None:
             ),
         ],
     ) -> dict[str, Any]:
-        """Apply raw Google Slides API batchUpdate requests for edits beyond text replacement: creating or deleting slides, adding shapes, images and tables, inserting or styling text. To replace existing or placeholder text across the deck use slides_replace_text_in_presentation instead. Requests apply atomically: if one is invalid, none is applied. Returns the batchUpdate response: presentationId and replies, one per request in order (e.g. createSlide.objectId for a new slide)."""
+        """Apply raw Google Slides API batchUpdate requests for edits beyond text replacement: creating or deleting slides, adding shapes, images and tables, inserting or styling text. To replace existing or placeholder text across the deck use slides_replace_text_in_presentation instead. Requests apply atomically: if one is invalid, none is applied. Returns status ok, presentation_id, revision_id (the revision after the update), replies (Google's, one per request in order, e.g. createSlide.objectId for a new slide) and count."""
         try:
-            return await run_blocking(
-                batch_update_presentation_payload,
-                BatchUpdatePresentationRequest(presentation_id=presentation_id, requests=requests)
+            return batch_update_presentation_envelope(
+                await run_blocking(
+                    batch_update_presentation_payload,
+                    BatchUpdatePresentationRequest(presentation_id=presentation_id, requests=requests),
+                ),
+                presentation_id=presentation_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id) from exc

@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "task": {
+    "completed_at": null,
+    "deleted": false,
+    "due_date": "2026-11-14",
+    "hidden": false,
+    "id": "ZmlsZV90YXhlczo3",
+    "is_overdue": false,
+    "notes_snippet": "Receipts are in the 2026 folder.",
+    "notes_truncated": false,
+    "parent_id": null,
+    "resource": {
+      "id": "ZmlsZV90YXhlczo3",
+      "kind": "task",
+      "uri": "gtask:///ZmlsZV90YXhlczo3"
+    },
+    "status": "needsAction",
+    "title": "File the tax return",
+    "updated_at": "2026-11-03T11:58:31-03:00",
+    "url": "https://tasks.google.com/task/ZmlsZV90YXhlczo3?sa=6"
+  }
+}

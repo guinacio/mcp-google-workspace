@@ -1,0 +1,71 @@
+{
+  "count": 2,
+  "replies": [
+    {
+      "addSheet": {
+        "properties": {
+          "gridProperties": {
+            "columnCount": 26,
+            "rowCount": 1000
+          },
+          "index": 2,
+          "sheetId": 1928374655,
+          "sheetType": "GRID",
+          "title": "Q2"
+        }
+      }
+    },
+    {}
+  ],
+  "spreadsheet": {
+    "locale": "en_US",
+    "named_ranges": [],
+    "sheets": [
+      {
+        "column_count": 26,
+        "frozen_column_count": 0,
+        "frozen_row_count": 1,
+        "hidden": false,
+        "index": 0,
+        "row_count": 1000,
+        "sheet_id": 0,
+        "title": "Summary",
+        "type": "GRID",
+        "values": null,
+        "values_start": null
+      },
+      {
+        "column_count": 12,
+        "frozen_column_count": 0,
+        "frozen_row_count": 0,
+        "hidden": false,
+        "index": 1,
+        "row_count": 200,
+        "sheet_id": 987654321,
+        "title": "Q1",
+        "type": "GRID",
+        "values": null,
+        "values_start": null
+      },
+      {
+        "column_count": 26,
+        "frozen_column_count": 0,
+        "frozen_row_count": 0,
+        "hidden": false,
+        "index": 2,
+        "row_count": 1000,
+        "sheet_id": 1928374655,
+        "title": "Q2",
+        "type": "GRID",
+        "values": null,
+        "values_start": null
+      }
+    ],
+    "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+    "spreadsheet_time_zone": "America/Sao_Paulo",
+    "title": "Budget 2026",
+    "url": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk/edit"
+  },
+  "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "status": "ok"
+}

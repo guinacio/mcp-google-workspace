@@ -1,0 +1,124 @@
+{
+  "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "replies": [
+    {
+      "addSheet": {
+        "properties": {
+          "sheetId": 1928374655,
+          "title": "Q2",
+          "index": 2,
+          "sheetType": "GRID",
+          "gridProperties": {
+            "rowCount": 1000,
+            "columnCount": 26
+          }
+        }
+      }
+    },
+    {}
+  ],
+  "updatedSpreadsheet": {
+    "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+    "properties": {
+      "title": "Budget 2026",
+      "locale": "en_US",
+      "autoRecalc": "ON_CHANGE",
+      "timeZone": "America/Sao_Paulo",
+      "defaultFormat": {
+        "backgroundColor": {
+          "red": 1,
+          "green": 1,
+          "blue": 1
+        },
+        "padding": {
+          "top": 2,
+          "right": 3,
+          "bottom": 2,
+          "left": 3
+        },
+        "verticalAlignment": "BOTTOM",
+        "wrapStrategy": "OVERFLOW_CELL",
+        "textFormat": {
+          "foregroundColor": {},
+          "fontFamily": "arial,sans,sans-serif",
+          "fontSize": 10,
+          "bold": false,
+          "italic": false,
+          "strikethrough": false,
+          "underline": false,
+          "foregroundColorStyle": {
+            "rgbColor": {}
+          }
+        },
+        "backgroundColorStyle": {
+          "rgbColor": {
+            "red": 1,
+            "green": 1,
+            "blue": 1
+          }
+        }
+      },
+      "spreadsheetTheme": {
+        "primaryFontFamily": "Arial",
+        "themeColors": [
+          {
+            "colorType": "TEXT",
+            "color": {
+              "rgbColor": {}
+            }
+          },
+          {
+            "colorType": "BACKGROUND",
+            "color": {
+              "rgbColor": {
+                "red": 1,
+                "green": 1,
+                "blue": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    "sheets": [
+      {
+        "properties": {
+          "sheetId": 0,
+          "title": "Summary",
+          "index": 0,
+          "sheetType": "GRID",
+          "gridProperties": {
+            "rowCount": 1000,
+            "columnCount": 26,
+            "frozenRowCount": 1
+          }
+        }
+      },
+      {
+        "properties": {
+          "sheetId": 987654321,
+          "title": "Q1",
+          "index": 1,
+          "sheetType": "GRID",
+          "gridProperties": {
+            "rowCount": 200,
+            "columnCount": 12
+          }
+        }
+      },
+      {
+        "properties": {
+          "sheetId": 1928374655,
+          "title": "Q2",
+          "index": 2,
+          "sheetType": "GRID",
+          "gridProperties": {
+            "rowCount": 1000,
+            "columnCount": 26
+          }
+        }
+      }
+    ],
+    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk/edit"
+  }
+}

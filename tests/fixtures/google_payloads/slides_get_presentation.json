@@ -1,40 +1,140 @@
 {
   "presentationId": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq",
-  "pageSize": {"width": {"magnitude": 9144000, "unit": "EMU"}, "height": {"magnitude": 5143500, "unit": "EMU"}},
+  "pageSize": {
+    "width": {
+      "magnitude": 9144000,
+      "unit": "EMU"
+    },
+    "height": {
+      "magnitude": 5143500,
+      "unit": "EMU"
+    }
+  },
   "slides": [
     {
       "objectId": "p",
       "pageElements": [
         {
           "objectId": "i0",
-          "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}},
-          "transform": {"scaleX": 2.8402, "scaleY": 0.5833, "translateX": 311700, "translateY": 744575, "unit": "EMU"},
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 2.8402,
+            "scaleY": 0.5833,
+            "translateX": 311700,
+            "translateY": 744575,
+            "unit": "EMU"
+          },
           "shape": {
             "shapeType": "TEXT_BOX",
             "text": {
               "textElements": [
-                {"endIndex": 16, "paragraphMarker": {"style": {"direction": "LEFT_TO_RIGHT"}}},
-                {"endIndex": 16, "textRun": {"content": "Quarterly review\n", "style": {"fontSize": {"magnitude": 48, "unit": "PT"}, "bold": true}}}
+                {
+                  "endIndex": 16,
+                  "paragraphMarker": {
+                    "style": {
+                      "direction": "LEFT_TO_RIGHT"
+                    }
+                  }
+                },
+                {
+                  "endIndex": 16,
+                  "textRun": {
+                    "content": "Quarterly review\n",
+                    "style": {
+                      "fontSize": {
+                        "magnitude": 48,
+                        "unit": "PT"
+                      },
+                      "bold": true
+                    }
+                  }
+                }
               ]
             },
-            "shapeProperties": {"shapeBackgroundFill": {"propertyState": "NOT_RENDERED"}, "outline": {"propertyState": "NOT_RENDERED"}, "shadow": {"propertyState": "NOT_RENDERED"}, "autofit": {"autofitType": "NONE"}},
-            "placeholder": {"type": "CENTERED_TITLE", "parentObjectId": "p1_i0"}
+            "shapeProperties": {
+              "shapeBackgroundFill": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "outline": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "shadow": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "autofit": {
+                "autofitType": "NONE"
+              }
+            },
+            "placeholder": {
+              "type": "CENTERED_TITLE",
+              "parentObjectId": "p1_i0"
+            }
           }
         },
         {
           "objectId": "i1",
-          "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}},
-          "transform": {"scaleX": 2.8402, "scaleY": 0.3333, "translateX": 311700, "translateY": 2300000, "unit": "EMU"},
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 2.8402,
+            "scaleY": 0.3333,
+            "translateX": 311700,
+            "translateY": 2300000,
+            "unit": "EMU"
+          },
           "shape": {
             "shapeType": "TEXT_BOX",
             "text": {
               "textElements": [
-                {"endIndex": 10, "paragraphMarker": {"style": {"direction": "LEFT_TO_RIGHT"}}},
-                {"endIndex": 10, "textRun": {"content": "June 2026\n", "style": {}}}
+                {
+                  "endIndex": 10,
+                  "paragraphMarker": {
+                    "style": {
+                      "direction": "LEFT_TO_RIGHT"
+                    }
+                  }
+                },
+                {
+                  "endIndex": 10,
+                  "textRun": {
+                    "content": "June 2026\n",
+                    "style": {}
+                  }
+                }
               ]
             },
-            "shapeProperties": {"shapeBackgroundFill": {"propertyState": "NOT_RENDERED"}, "outline": {"propertyState": "NOT_RENDERED"}, "shadow": {"propertyState": "NOT_RENDERED"}},
-            "placeholder": {"type": "SUBTITLE", "parentObjectId": "p1_i1"}
+            "shapeProperties": {
+              "shapeBackgroundFill": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "outline": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "shadow": {
+                "propertyState": "NOT_RENDERED"
+              }
+            },
+            "placeholder": {
+              "type": "SUBTITLE",
+              "parentObjectId": "p1_i1"
+            }
           }
         }
       ],
@@ -45,14 +145,1337 @@
           "objectId": "p:notes",
           "pageType": "NOTES",
           "pageElements": [
-            {"objectId": "p:notes:slide", "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}}, "transform": {"scaleX": 1.1, "scaleY": 0.6, "translateX": 380000, "translateY": 680000, "unit": "EMU"}, "shape": {"shapeType": "TEXT_BOX", "placeholder": {"type": "SLIDE_IMAGE", "parentObjectId": "n:slide"}}},
-            {"objectId": "p:notes:text", "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}}, "transform": {"scaleX": 1.8, "scaleY": 1.3, "translateX": 680000, "translateY": 4650000, "unit": "EMU"}, "shape": {"shapeType": "TEXT_BOX", "text": {"textElements": [{"endIndex": 20, "paragraphMarker": {"style": {}}}, {"endIndex": 20, "textRun": {"content": "Open with the win.\n", "style": {}}}]}, "placeholder": {"type": "BODY", "parentObjectId": "n:text"}}}
+            {
+              "objectId": "p:notes:slide",
+              "size": {
+                "width": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                },
+                "height": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                }
+              },
+              "transform": {
+                "scaleX": 1.1,
+                "scaleY": 0.6,
+                "translateX": 380000,
+                "translateY": 680000,
+                "unit": "EMU"
+              },
+              "shape": {
+                "shapeType": "TEXT_BOX",
+                "placeholder": {
+                  "type": "SLIDE_IMAGE",
+                  "parentObjectId": "n:slide"
+                }
+              }
+            },
+            {
+              "objectId": "p:notes:text",
+              "size": {
+                "width": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                },
+                "height": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                }
+              },
+              "transform": {
+                "scaleX": 1.8,
+                "scaleY": 1.3,
+                "translateX": 680000,
+                "translateY": 4650000,
+                "unit": "EMU"
+              },
+              "shape": {
+                "shapeType": "TEXT_BOX",
+                "text": {
+                  "textElements": [
+                    {
+                      "endIndex": 20,
+                      "paragraphMarker": {
+                        "style": {}
+                      }
+                    },
+                    {
+                      "endIndex": 20,
+                      "textRun": {
+                        "content": "Open with the win.\n",
+                        "style": {}
+                      }
+                    }
+                  ]
+                },
+                "placeholder": {
+                  "type": "BODY",
+                  "parentObjectId": "n:text"
+                }
+              }
+            }
           ],
-          "pageProperties": {"pageBackgroundFill": {"propertyState": "INHERIT"}},
-          "notesProperties": {"speakerNotesObjectId": "p:notes:text"}
+          "pageProperties": {
+            "pageBackgroundFill": {
+              "propertyState": "INHERIT"
+            }
+          },
+          "notesProperties": {
+            "speakerNotesObjectId": "p:notes:text"
+          }
         }
       },
-      "pageProperties": {"pageBackgroundFill": {"propertyState": "INHERIT"}}
+      "pageProperties": {
+        "pageBackgroundFill": {
+          "propertyState": "INHERIT"
+        }
+      }
+    },
+    {
+      "objectId": "g2a0b1c2d3e_0_8",
+      "pageElements": [
+        {
+          "objectId": "g2a0b1c2d3e_0_10",
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 2.8402,
+            "scaleY": 1.1,
+            "translateX": 311700,
+            "translateY": 1152475,
+            "unit": "EMU"
+          },
+          "shape": {
+            "shapeType": "TEXT_BOX",
+            "shapeProperties": {
+              "shapeBackgroundFill": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "outline": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "shadow": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "autofit": {
+                "fontScale": 1
+              }
+            },
+            "text": {
+              "textElements": [
+                {
+                  "endIndex": 30,
+                  "paragraphMarker": {
+                    "style": {
+                      "direction": "LEFT_TO_RIGHT"
+                    }
+                  }
+                },
+                {
+                  "startIndex": 0,
+                  "endIndex": 30,
+                  "textRun": {
+                    "content": "Revenue up 18% year over year\n",
+                    "style": {
+                      "fontFamily": "Arial",
+                      "fontSize": {
+                        "magnitude": 18,
+                        "unit": "PT"
+                      },
+                      "foregroundColor": {
+                        "opaqueColor": {
+                          "themeColor": "DARK1"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "endIndex": 60,
+                  "paragraphMarker": {
+                    "style": {
+                      "direction": "LEFT_TO_RIGHT",
+                      "indentStart": {
+                        "unit": "PT"
+                      }
+                    },
+                    "bullet": {
+                      "listId": "kix.list1",
+                      "glyph": "●"
+                    }
+                  }
+                },
+                {
+                  "startIndex": 30,
+                  "endIndex": 60,
+                  "textRun": {
+                    "content": "New markets: Chile and Peru\n",
+                    "style": {
+                      "fontFamily": "Arial",
+                      "fontSize": {
+                        "magnitude": 18,
+                        "unit": "PT"
+                      },
+                      "foregroundColor": {
+                        "opaqueColor": {
+                          "themeColor": "DARK1"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "endIndex": 81,
+                  "paragraphMarker": {
+                    "style": {
+                      "direction": "LEFT_TO_RIGHT",
+                      "indentStart": {
+                        "unit": "PT"
+                      }
+                    },
+                    "bullet": {
+                      "listId": "kix.list1",
+                      "glyph": "●"
+                    }
+                  }
+                },
+                {
+                  "startIndex": 60,
+                  "endIndex": 81,
+                  "textRun": {
+                    "content": "Churn down to 2.1%\n",
+                    "style": {
+                      "fontFamily": "Arial",
+                      "fontSize": {
+                        "magnitude": 18,
+                        "unit": "PT"
+                      },
+                      "foregroundColor": {
+                        "opaqueColor": {
+                          "themeColor": "DARK1"
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "lists": {
+                "kix.list1": {
+                  "listId": "kix.list1",
+                  "nestingLevel": {
+                    "0": {
+                      "bulletStyle": {
+                        "fontSize": {
+                          "magnitude": 18,
+                          "unit": "PT"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "placeholder": {
+              "type": "BODY",
+              "parentObjectId": "p2_i1"
+            }
+          }
+        },
+        {
+          "objectId": "g2a0b1c2d3e_0_9",
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 2.8402,
+            "scaleY": 0.19,
+            "translateX": 311700,
+            "translateY": 445025,
+            "unit": "EMU"
+          },
+          "shape": {
+            "shapeType": "TEXT_BOX",
+            "shapeProperties": {
+              "shapeBackgroundFill": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "outline": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "shadow": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "autofit": {
+                "fontScale": 1
+              }
+            },
+            "text": {
+              "textElements": [
+                {
+                  "endIndex": 11,
+                  "paragraphMarker": {
+                    "style": {
+                      "direction": "LEFT_TO_RIGHT"
+                    }
+                  }
+                },
+                {
+                  "startIndex": 0,
+                  "endIndex": 11,
+                  "textRun": {
+                    "content": "Highlights\n",
+                    "style": {
+                      "fontFamily": "Arial",
+                      "fontSize": {
+                        "magnitude": 18,
+                        "unit": "PT"
+                      },
+                      "foregroundColor": {
+                        "opaqueColor": {
+                          "themeColor": "DARK1"
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "lists": {
+                "kix.list1": {
+                  "listId": "kix.list1",
+                  "nestingLevel": {
+                    "0": {
+                      "bulletStyle": {
+                        "fontSize": {
+                          "magnitude": 18,
+                          "unit": "PT"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "placeholder": {
+              "type": "TITLE",
+              "parentObjectId": "p2_i0"
+            }
+          }
+        },
+        {
+          "objectId": "g2a0b1c2d3e_0_11",
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 1000000,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 1,
+            "translateX": 5100000,
+            "translateY": 3300000,
+            "unit": "EMU"
+          },
+          "table": {
+            "rows": 2,
+            "columns": 3,
+            "tableRows": [
+              {
+                "rowHeight": {
+                  "magnitude": 371475,
+                  "unit": "EMU"
+                },
+                "tableRowProperties": {
+                  "minRowHeight": {
+                    "magnitude": 371475,
+                    "unit": "EMU"
+                  }
+                },
+                "tableCells": [
+                  {
+                    "location": {},
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": {
+                      "textElements": [
+                        {
+                          "endIndex": 7,
+                          "paragraphMarker": {
+                            "style": {
+                              "direction": "LEFT_TO_RIGHT"
+                            }
+                          }
+                        },
+                        {
+                          "startIndex": 0,
+                          "endIndex": 7,
+                          "textRun": {
+                            "content": "Region\n",
+                            "style": {
+                              "fontFamily": "Arial",
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              },
+                              "foregroundColor": {
+                                "opaqueColor": {
+                                  "themeColor": "DARK1"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "lists": {
+                        "kix.list1": {
+                          "listId": "kix.list1",
+                          "nestingLevel": {
+                            "0": {
+                              "bulletStyle": {
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "tableCellProperties": {
+                      "tableCellBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "contentAlignment": "TOP"
+                    }
+                  },
+                  {
+                    "location": {
+                      "rowIndex": 0,
+                      "columnIndex": 1
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": {
+                      "textElements": [
+                        {
+                          "endIndex": 3,
+                          "paragraphMarker": {
+                            "style": {
+                              "direction": "LEFT_TO_RIGHT"
+                            }
+                          }
+                        },
+                        {
+                          "startIndex": 0,
+                          "endIndex": 3,
+                          "textRun": {
+                            "content": "Q1\n",
+                            "style": {
+                              "fontFamily": "Arial",
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              },
+                              "foregroundColor": {
+                                "opaqueColor": {
+                                  "themeColor": "DARK1"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "lists": {
+                        "kix.list1": {
+                          "listId": "kix.list1",
+                          "nestingLevel": {
+                            "0": {
+                              "bulletStyle": {
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "tableCellProperties": {
+                      "tableCellBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "contentAlignment": "TOP"
+                    }
+                  },
+                  {
+                    "location": {
+                      "rowIndex": 0,
+                      "columnIndex": 2
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": {
+                      "textElements": [
+                        {
+                          "endIndex": 3,
+                          "paragraphMarker": {
+                            "style": {
+                              "direction": "LEFT_TO_RIGHT"
+                            }
+                          }
+                        },
+                        {
+                          "startIndex": 0,
+                          "endIndex": 3,
+                          "textRun": {
+                            "content": "Q2\n",
+                            "style": {
+                              "fontFamily": "Arial",
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              },
+                              "foregroundColor": {
+                                "opaqueColor": {
+                                  "themeColor": "DARK1"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "lists": {
+                        "kix.list1": {
+                          "listId": "kix.list1",
+                          "nestingLevel": {
+                            "0": {
+                              "bulletStyle": {
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "tableCellProperties": {
+                      "tableCellBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "contentAlignment": "TOP"
+                    }
+                  }
+                ]
+              },
+              {
+                "rowHeight": {
+                  "magnitude": 371475,
+                  "unit": "EMU"
+                },
+                "tableRowProperties": {
+                  "minRowHeight": {
+                    "magnitude": 371475,
+                    "unit": "EMU"
+                  }
+                },
+                "tableCells": [
+                  {
+                    "location": {
+                      "rowIndex": 1,
+                      "columnIndex": 0
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": {
+                      "textElements": [
+                        {
+                          "endIndex": 6,
+                          "paragraphMarker": {
+                            "style": {
+                              "direction": "LEFT_TO_RIGHT"
+                            }
+                          }
+                        },
+                        {
+                          "startIndex": 0,
+                          "endIndex": 6,
+                          "textRun": {
+                            "content": "LATAM\n",
+                            "style": {
+                              "fontFamily": "Arial",
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              },
+                              "foregroundColor": {
+                                "opaqueColor": {
+                                  "themeColor": "DARK1"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "lists": {
+                        "kix.list1": {
+                          "listId": "kix.list1",
+                          "nestingLevel": {
+                            "0": {
+                              "bulletStyle": {
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "tableCellProperties": {
+                      "tableCellBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "contentAlignment": "TOP"
+                    }
+                  },
+                  {
+                    "location": {
+                      "rowIndex": 1,
+                      "columnIndex": 1
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": {
+                      "textElements": [
+                        {
+                          "endIndex": 5,
+                          "paragraphMarker": {
+                            "style": {
+                              "direction": "LEFT_TO_RIGHT"
+                            }
+                          }
+                        },
+                        {
+                          "startIndex": 0,
+                          "endIndex": 5,
+                          "textRun": {
+                            "content": "1.2M\n",
+                            "style": {
+                              "fontFamily": "Arial",
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              },
+                              "foregroundColor": {
+                                "opaqueColor": {
+                                  "themeColor": "DARK1"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "lists": {
+                        "kix.list1": {
+                          "listId": "kix.list1",
+                          "nestingLevel": {
+                            "0": {
+                              "bulletStyle": {
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "tableCellProperties": {
+                      "tableCellBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "contentAlignment": "TOP"
+                    }
+                  },
+                  {
+                    "location": {
+                      "rowIndex": 1,
+                      "columnIndex": 2
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": {},
+                    "tableCellProperties": {
+                      "tableCellBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "contentAlignment": "TOP"
+                    }
+                  }
+                ]
+              }
+            ],
+            "tableColumns": [
+              {
+                "columnWidth": {
+                  "magnitude": 1000000,
+                  "unit": "EMU"
+                }
+              },
+              {
+                "columnWidth": {
+                  "magnitude": 1000000,
+                  "unit": "EMU"
+                }
+              },
+              {
+                "columnWidth": {
+                  "magnitude": 1000000,
+                  "unit": "EMU"
+                }
+              }
+            ],
+            "horizontalBorderRows": [
+              {
+                "tableBorderCells": [
+                  {
+                    "location": {},
+                    "tableBorderProperties": {
+                      "tableBorderFill": {
+                        "solidFill": {
+                          "color": {
+                            "rgbColor": {}
+                          }
+                        }
+                      },
+                      "weight": {
+                        "magnitude": 12700,
+                        "unit": "EMU"
+                      },
+                      "dashStyle": "SOLID"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "objectId": "g2a0b1c2d3e_0_12",
+          "size": {
+            "width": {
+              "magnitude": 1828800,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 1371600,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 1,
+            "translateX": 311700,
+            "translateY": 3300000,
+            "unit": "EMU"
+          },
+          "title": "Team photo",
+          "description": "The regional team at the offsite",
+          "image": {
+            "contentUrl": "https://lh7-rt.googleusercontent.com/slidesz/AGV_vUexampleImageToken0123456789",
+            "sourceUrl": "https://images.example.org/team.jpg",
+            "imageProperties": {
+              "outline": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "shadow": {
+                "propertyState": "NOT_RENDERED"
+              }
+            }
+          }
+        },
+        {
+          "objectId": "g2a0b1c2d3e_0_13",
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 1,
+            "translateX": 2500000,
+            "translateY": 3300000,
+            "unit": "EMU"
+          },
+          "elementGroup": {
+            "children": [
+              {
+                "objectId": "g2a0b1c2d3e_0_14",
+                "size": {
+                  "width": {
+                    "magnitude": 1270000,
+                    "unit": "EMU"
+                  },
+                  "height": {
+                    "magnitude": 381000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1,
+                  "scaleY": 1,
+                  "translateX": 0,
+                  "translateY": 0,
+                  "unit": "EMU"
+                },
+                "shape": {
+                  "shapeType": "RECTANGLE",
+                  "shapeProperties": {
+                    "shapeBackgroundFill": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "outline": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shadow": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "autofit": {
+                      "fontScale": 1
+                    }
+                  },
+                  "text": {
+                    "textElements": [
+                      {
+                        "endIndex": 19,
+                        "paragraphMarker": {
+                          "style": {
+                            "direction": "LEFT_TO_RIGHT"
+                          }
+                        }
+                      },
+                      {
+                        "startIndex": 0,
+                        "endIndex": 19,
+                        "textRun": {
+                          "content": "Owner: Ana Example\n",
+                          "style": {
+                            "fontFamily": "Arial",
+                            "fontSize": {
+                              "magnitude": 18,
+                              "unit": "PT"
+                            },
+                            "foregroundColor": {
+                              "opaqueColor": {
+                                "themeColor": "DARK1"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "lists": {
+                      "kix.list1": {
+                        "listId": "kix.list1",
+                        "nestingLevel": {
+                          "0": {
+                            "bulletStyle": {
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "objectId": "g2a0b1c2d3e_0_15",
+                "size": {
+                  "width": {
+                    "magnitude": 1270000,
+                    "unit": "EMU"
+                  },
+                  "height": {
+                    "magnitude": 381000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1,
+                  "scaleY": 1,
+                  "translateX": 0,
+                  "translateY": 508000,
+                  "unit": "EMU"
+                },
+                "shape": {
+                  "shapeType": "RECTANGLE",
+                  "shapeProperties": {
+                    "shapeBackgroundFill": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "outline": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shadow": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "autofit": {
+                      "fontScale": 1
+                    }
+                  },
+                  "text": {
+                    "textElements": [
+                      {
+                        "endIndex": 8,
+                        "paragraphMarker": {
+                          "style": {
+                            "direction": "LEFT_TO_RIGHT"
+                          }
+                        }
+                      },
+                      {
+                        "startIndex": 0,
+                        "endIndex": 8,
+                        "textRun": {
+                          "content": "Due: Q3\n",
+                          "style": {
+                            "fontFamily": "Arial",
+                            "fontSize": {
+                              "magnitude": 18,
+                              "unit": "PT"
+                            },
+                            "foregroundColor": {
+                              "opaqueColor": {
+                                "themeColor": "DARK1"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "lists": {
+                      "kix.list1": {
+                        "listId": "kix.list1",
+                        "nestingLevel": {
+                          "0": {
+                            "bulletStyle": {
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "slideProperties": {
+        "layoutObjectId": "p2",
+        "masterObjectId": "simple-light-2",
+        "notesPage": {
+          "objectId": "g2a0b1c2d3e_0_8:notes_page",
+          "pageType": "NOTES",
+          "pageElements": [
+            {
+              "objectId": "g2a0b1c2d3e_0_8:notes_image",
+              "size": {
+                "width": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                },
+                "height": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                }
+              },
+              "transform": {
+                "scaleX": 1.1,
+                "scaleY": 0.6,
+                "translateX": 380000,
+                "translateY": 680000,
+                "unit": "EMU"
+              },
+              "shape": {
+                "shapeType": "TEXT_BOX",
+                "shapeProperties": {
+                  "shapeBackgroundFill": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "outline": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "shadow": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "autofit": {
+                    "fontScale": 1
+                  }
+                },
+                "placeholder": {
+                  "type": "SLIDE_IMAGE",
+                  "parentObjectId": "n:slide"
+                }
+              }
+            },
+            {
+              "objectId": "g2a0b1c2d3e_0_8:notes",
+              "size": {
+                "width": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                },
+                "height": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                }
+              },
+              "transform": {
+                "scaleX": 1.8,
+                "scaleY": 1.3,
+                "translateX": 680000,
+                "translateY": 4650000,
+                "unit": "EMU"
+              },
+              "shape": {
+                "shapeType": "TEXT_BOX",
+                "shapeProperties": {
+                  "shapeBackgroundFill": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "outline": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "shadow": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "autofit": {
+                    "fontScale": 1
+                  }
+                },
+                "text": {
+                  "textElements": [
+                    {
+                      "endIndex": 30,
+                      "paragraphMarker": {
+                        "style": {
+                          "direction": "LEFT_TO_RIGHT"
+                        }
+                      }
+                    },
+                    {
+                      "startIndex": 0,
+                      "endIndex": 30,
+                      "textRun": {
+                        "content": "Mention the Peru launch date.\n",
+                        "style": {
+                          "fontFamily": "Arial",
+                          "fontSize": {
+                            "magnitude": 18,
+                            "unit": "PT"
+                          },
+                          "foregroundColor": {
+                            "opaqueColor": {
+                              "themeColor": "DARK1"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "lists": {
+                    "kix.list1": {
+                      "listId": "kix.list1",
+                      "nestingLevel": {
+                        "0": {
+                          "bulletStyle": {
+                            "fontSize": {
+                              "magnitude": 18,
+                              "unit": "PT"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "placeholder": {
+                  "type": "BODY",
+                  "parentObjectId": "n:text"
+                }
+              }
+            }
+          ],
+          "pageProperties": {
+            "pageBackgroundFill": {
+              "propertyState": "INHERIT"
+            }
+          },
+          "notesProperties": {
+            "speakerNotesObjectId": "g2a0b1c2d3e_0_8:notes"
+          }
+        }
+      },
+      "pageProperties": {
+        "pageBackgroundFill": {
+          "propertyState": "INHERIT"
+        }
+      }
+    },
+    {
+      "objectId": "g2a0b1c2d3e_0_20",
+      "pageElements": [
+        {
+          "objectId": "g2a0b1c2d3e_0_21",
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1.2,
+            "scaleY": 1.2,
+            "translateX": 4000000,
+            "translateY": 1200000,
+            "unit": "EMU"
+          },
+          "sheetsChart": {
+            "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+            "chartId": 1122334455,
+            "contentUrl": "https://lh7-rt.googleusercontent.com/sheetsz/AGV_chartToken",
+            "sheetsChartProperties": {
+              "chartImageProperties": {}
+            }
+          }
+        },
+        {
+          "objectId": "g2a0b1c2d3e_0_22",
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 0.2,
+            "translateX": 311700,
+            "translateY": 400000,
+            "unit": "EMU"
+          },
+          "wordArt": {
+            "renderedText": "Thank you"
+          }
+        },
+        {
+          "objectId": "g2a0b1c2d3e_0_23",
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 0,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 1,
+            "translateX": 311700,
+            "translateY": 1100000,
+            "unit": "EMU"
+          },
+          "line": {
+            "lineType": "STRAIGHT_CONNECTOR_1",
+            "lineCategory": "STRAIGHT",
+            "lineProperties": {
+              "weight": {
+                "magnitude": 9525,
+                "unit": "EMU"
+              },
+              "dashStyle": "SOLID"
+            }
+          }
+        },
+        {
+          "objectId": "g2a0b1c2d3e_0_24",
+          "size": {
+            "width": {
+              "magnitude": 3000000,
+              "unit": "EMU"
+            },
+            "height": {
+              "magnitude": 1687500,
+              "unit": "EMU"
+            }
+          },
+          "transform": {
+            "scaleX": 1,
+            "scaleY": 1,
+            "translateX": 311700,
+            "translateY": 1300000,
+            "unit": "EMU"
+          },
+          "video": {
+            "url": "https://www.youtube.com/watch?v=exampleVid0",
+            "source": "YOUTUBE",
+            "id": "exampleVid0",
+            "videoProperties": {
+              "outline": {
+                "propertyState": "NOT_RENDERED"
+              },
+              "autoPlay": false
+            }
+          }
+        }
+      ],
+      "slideProperties": {
+        "layoutObjectId": "p3",
+        "masterObjectId": "simple-light-2",
+        "notesPage": {
+          "objectId": "g2a0b1c2d3e_0_20:notes_page",
+          "pageType": "NOTES",
+          "pageElements": [
+            {
+              "objectId": "g2a0b1c2d3e_0_20:notes_image",
+              "size": {
+                "width": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                },
+                "height": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                }
+              },
+              "transform": {
+                "scaleX": 1.1,
+                "scaleY": 0.6,
+                "translateX": 380000,
+                "translateY": 680000,
+                "unit": "EMU"
+              },
+              "shape": {
+                "shapeType": "TEXT_BOX",
+                "shapeProperties": {
+                  "shapeBackgroundFill": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "outline": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "shadow": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "autofit": {
+                    "fontScale": 1
+                  }
+                },
+                "placeholder": {
+                  "type": "SLIDE_IMAGE",
+                  "parentObjectId": "n:slide"
+                }
+              }
+            },
+            {
+              "objectId": "g2a0b1c2d3e_0_20:notes",
+              "size": {
+                "width": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                },
+                "height": {
+                  "magnitude": 3000000,
+                  "unit": "EMU"
+                }
+              },
+              "transform": {
+                "scaleX": 1.8,
+                "scaleY": 1.3,
+                "translateX": 680000,
+                "translateY": 4650000,
+                "unit": "EMU"
+              },
+              "shape": {
+                "shapeType": "TEXT_BOX",
+                "shapeProperties": {
+                  "shapeBackgroundFill": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "outline": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "shadow": {
+                    "propertyState": "NOT_RENDERED"
+                  },
+                  "autofit": {
+                    "fontScale": 1
+                  }
+                },
+                "placeholder": {
+                  "type": "BODY",
+                  "parentObjectId": "n:text"
+                }
+              }
+            }
+          ],
+          "pageProperties": {
+            "pageBackgroundFill": {
+              "propertyState": "INHERIT"
+            }
+          },
+          "notesProperties": {
+            "speakerNotesObjectId": "g2a0b1c2d3e_0_20:notes"
+          }
+        }
+      },
+      "pageProperties": {
+        "pageBackgroundFill": {
+          "propertyState": "INHERIT"
+        }
+      }
     }
   ],
   "title": "Quarterly review",
@@ -61,8 +1484,39 @@
       "objectId": "simple-light-2",
       "pageType": "MASTER",
       "pageElements": [],
-      "pageProperties": {"pageBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 1, "green": 1, "blue": 1}}, "alpha": 1}}, "colorScheme": {"colors": [{"type": "DARK1", "color": {}}, {"type": "LIGHT1", "color": {"red": 1, "green": 1, "blue": 1}}]}},
-      "masterProperties": {"displayName": "Simple Light"}
+      "pageProperties": {
+        "pageBackgroundFill": {
+          "solidFill": {
+            "color": {
+              "rgbColor": {
+                "red": 1,
+                "green": 1,
+                "blue": 1
+              }
+            },
+            "alpha": 1
+          }
+        },
+        "colorScheme": {
+          "colors": [
+            {
+              "type": "DARK1",
+              "color": {}
+            },
+            {
+              "type": "LIGHT1",
+              "color": {
+                "red": 1,
+                "green": 1,
+                "blue": 1
+              }
+            }
+          ]
+        }
+      },
+      "masterProperties": {
+        "displayName": "Simple Light"
+      }
     }
   ],
   "layouts": [
@@ -70,8 +1524,31 @@
       "objectId": "p1",
       "pageType": "LAYOUT",
       "pageElements": [],
-      "pageProperties": {"pageBackgroundFill": {"propertyState": "INHERIT"}},
-      "layoutProperties": {"masterObjectId": "simple-light-2", "name": "TITLE", "displayName": "Title slide"}
+      "pageProperties": {
+        "pageBackgroundFill": {
+          "propertyState": "INHERIT"
+        }
+      },
+      "layoutProperties": {
+        "masterObjectId": "simple-light-2",
+        "name": "TITLE",
+        "displayName": "Title slide"
+      }
+    },
+    {
+      "objectId": "p2",
+      "pageType": "LAYOUT",
+      "pageElements": [],
+      "pageProperties": {
+        "pageBackgroundFill": {
+          "propertyState": "INHERIT"
+        }
+      },
+      "layoutProperties": {
+        "masterObjectId": "simple-light-2",
+        "name": "TITLE_AND_BODY",
+        "displayName": "Title and body"
+      }
     }
   ],
   "locale": "en",
@@ -80,6 +1557,19 @@
     "objectId": "n",
     "pageType": "NOTES_MASTER",
     "pageElements": [],
-    "pageProperties": {"pageBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 1, "green": 1, "blue": 1}}, "alpha": 1}}}
+    "pageProperties": {
+      "pageBackgroundFill": {
+        "solidFill": {
+          "color": {
+            "rgbColor": {
+              "red": 1,
+              "green": 1,
+              "blue": 1
+            }
+          },
+          "alpha": 1
+        }
+      }
+    }
   }
 }

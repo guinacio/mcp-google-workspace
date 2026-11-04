@@ -193,7 +193,7 @@ def register_tools(server: FastMCP) -> None:
 
         Use the id of a record with meet_get_conference_record, meet_list_conference_participants,
         meet_list_conference_recordings or meet_list_conference_transcripts. Returns
-        conference_records (id, space_id, started_at, ended_at, expires_at, timezone), count,
+        conference_records (id, space_id, started_at, ended_at, expires_at), count,
         next_page_token and account_timezone.
         """
         try:
@@ -224,7 +224,7 @@ def register_tools(server: FastMCP) -> None:
         """Get one conference record by its ID or 'conferenceRecords/...' name.
 
         Find the name with meet_list_conference_records. Returns id, space_id, started_at,
-        ended_at, expires_at and timezone, with timestamps in the account time zone.
+        ended_at and expires_at, with timestamps in the account time zone.
         """
         record_name = normalize_conference_record_name(conference_record_name)
         try:
@@ -326,7 +326,7 @@ def register_tools(server: FastMCP) -> None:
 
         Find the record with meet_list_conference_records. Returns transcripts (id, started_at,
         ended_at, document_id, export_uri), count, next_page_token and account_timezone; read the
-        text with docs_get_document using document_id.
+        text with docs_read_document using document_id.
         """
         record_name = normalize_conference_record_name(conference_record_name)
         try:

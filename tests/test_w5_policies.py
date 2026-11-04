@@ -278,6 +278,11 @@ def test_partial_batch_success_versus_total_failure(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(server_module, "build_people_service", lambda: _Failing())
     monkeypatch.setattr(server_module, "build_drive_service", lambda: _Drive())
 
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    monkeypatch.setattr(server_module, "resolve_user_timezone", fake_timezone)
+
     async def call(services: list[str]) -> Any:
         async with Client(workspace_mcp) as client:
             return await client.call_tool(
@@ -286,7 +291,8 @@ def test_partial_batch_success_versus_total_failure(monkeypatch: pytest.MonkeyPa
 
     partial = anyio.run(call, ["drive", "gmail"])
     assert partial.is_error is False
-    assert partial.structured_content["status"] == "partial"
+    # Partial success is a non-empty errors map; reads carry no status field.
+    assert "status" not in partial.structured_content
     assert set(partial.structured_content["errors"]) == {"gmail"}
     assert partial.structured_content["count"] == 1
 

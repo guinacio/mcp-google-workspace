@@ -2,13 +2,13 @@
 
 Every schema produced here is *open* (``additionalProperties: true``): it
 documents the fields a client can rely on without claiming to be exhaustive.
-Most registered tools return a Google API payload unchanged, and the
-provider adds, omits and reshapes fields over time; a closed schema turned
-each such change into a client-side validation failure on conforming clients
-(the MCP specification asks clients to validate ``structuredContent`` against
-``outputSchema``). The same applies to inferred schemas: a return value
-assembled from a spread (``{**base, ...}``) or a helper the inference cannot
-see carries fields the literal dict does not.
+Every tool returns a response the server builds (2.0.0), but parts of it
+still come from Google (a batchUpdate's ``replies``, a raw document), and a
+return value assembled from a spread (``{**base, ...}``) or a helper the
+inference cannot see carries fields the literal dict does not; a closed
+schema would turn each such field into a client-side validation failure on
+conforming clients (the MCP specification asks clients to validate
+``structuredContent`` against ``outputSchema``).
 """
 
 from __future__ import annotations
@@ -20,53 +20,6 @@ import inspect
 import textwrap
 from types import UnionType
 from typing import Annotated, Any, Union, get_args, get_origin
-
-
-# Tools that return a Google API payload unchanged publish no outputSchema:
-# a schema would only restate Google's resource reference while turning every
-# field Google adds or reshapes into a client-side validation risk. Results
-# still arrive as structuredContent. Canonical (namespaced) tool names.
-RAW_PASSTHROUGH_TOOLS: frozenset[str] = frozenset(
-    {
-        "calendar_check_time_availability",
-        "calendar_list_calendars",
-        "docs_append_document_text",
-        "docs_batch_update_document",
-        "docs_create_document",
-        "docs_get_document",
-        "docs_replace_document_text",
-        "forms_batch_update_form",
-        "forms_create_form",
-        "forms_get_form",
-        "forms_set_form_publish_settings",
-        "people_create_contact",
-        "people_create_contact_group",
-        "people_get_contact",
-        "people_list_contact_groups",
-        "people_list_contacts",
-        "people_modify_contact_group_members",
-        "people_search_contacts",
-        "people_update_contact",
-        "sheets_append_sheet_values",
-        "sheets_batch_get_sheet_values",
-        "sheets_batch_update_spreadsheet",
-        "sheets_create_spreadsheet",
-        "sheets_get_sheet_values",
-        "sheets_get_spreadsheet",
-        "sheets_update_sheet_values",
-        "slides_batch_update_presentation",
-        "slides_create_presentation",
-        "slides_get_presentation",
-        "slides_get_slide_page",
-        "slides_get_slide_thumbnail",
-        "slides_replace_text_in_presentation",
-        "tasks_complete_task",
-        "tasks_create_task",
-        "tasks_create_tasklist",
-        "tasks_move_task",
-        "tasks_update_task",
-    }
-)
 
 
 # Server-built responses whose fields cannot be read from a literal return.

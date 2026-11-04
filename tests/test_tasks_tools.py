@@ -1,10 +1,15 @@
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import anyio
 import pytest
+import pytz
 from fastmcp import Client
 from googleapiclient.errors import HttpError
 from httplib2 import Response
+
+import mcp_google_workspace.auth.google_auth as google_auth
 
 from mcp_google_workspace.tasks.schemas import CreateTaskRequest, UpdateTaskRequest
 from mcp_google_workspace.tasks.server import tasks_mcp
@@ -28,7 +33,12 @@ from mcp_google_workspace.tasks.tools import (
     move_task_payload,
     update_task_payload,
 )
-from mcp_google_workspace.tasks.presentation import task_envelope, tasks_digest
+from mcp_google_workspace.tasks.presentation import task_envelope, tasks_digest, tasks_page
+from mcp_google_workspace.server import workspace_mcp
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "google_payloads"
+TIMEZONE = "America/Sao_Paulo"
+NOW = datetime(2026, 11, 3, 15, 0, tzinfo=UTC)
 
 
 async def _list_tool_names(server):
@@ -169,17 +179,150 @@ def test_tasks_tool_annotations():
 
 
 def test_task_envelope_and_digest_surface_actionable_state():
-    task = {"id": "task-1", "title": "Reply", "due": "2026-07-01T00:00:00Z", "notes": "Send a concise update."}
+    task = {
+        "id": "task-1",
+        "title": "Reply",
+        "due": "2026-07-01T00:00:00.000Z",
+        "notes": "Send a concise update.",
+        "updated": "2026-07-08T12:00:00.000Z",
+        "selfLink": "https://www.googleapis.com/tasks/v1/lists/list-real/tasks/task-1",
+    }
     now = datetime(2026, 7, 9, tzinfo=UTC)
 
-    envelope = task_envelope(task, now=now)
-    digest = tasks_digest([task, {"id": "task-2", "title": "Someday"}], now=now)
+    envelope = task_envelope(task, now=now, account_timezone=TIMEZONE)
+    digest = tasks_digest(
+        {"items": [task, {"id": "task-2", "title": "Someday"}]},
+        tasklist_id="@default",
+        now=now,
+        account_timezone=TIMEZONE,
+    )
 
     assert envelope["is_overdue"] is True
     assert envelope["due_date"] == "2026-07-01"
+    assert envelope["updated_at"] == "2026-07-08T09:00:00-03:00"
     assert envelope["notes_snippet"] == "Send a concise update."
+    assert "source_due" not in envelope and "due_is_date_only" not in envelope
     assert digest["overdue"][0]["id"] == "task-1"
     assert digest["unscheduled"][0]["id"] == "task-2"
+    assert digest["count"] == 2
+    # The real list ID is read from the tasks' selfLink when '@default' was asked for.
+    assert digest["tasklist_id"] == "list-real"
+
+
+def test_task_overdue_uses_the_account_date_not_utc():
+    # 01:00 UTC on Nov 4 is still Nov 3 in Sao Paulo: a task due Nov 3 is not overdue yet.
+    late_utc = datetime(2026, 11, 4, 1, 0, tzinfo=UTC)
+    task = {"id": "t", "due": "2026-11-03T00:00:00.000Z", "completed": "2026-11-04T00:30:00.000Z"}
+
+    envelope = task_envelope(task, now=late_utc, account_timezone=TIMEZONE)
+
+    assert envelope["is_overdue"] is False
+    assert envelope["completed_at"] == "2026-11-03T21:30:00-03:00"
+
+
+def test_tasks_page_echoes_the_requested_list_when_it_is_empty():
+    page = tasks_page({}, tasklist_id="@default", now=NOW, account_timezone=TIMEZONE)
+    assert page == {
+        "tasklist_id": "@default",
+        "tasks": [],
+        "count": 0,
+        "next_page_token": None,
+        "account_timezone": TIMEZONE,
+    }
+
+
+async def _fixed_timezone():
+    return TIMEZONE
+
+
+def _fixed_now(timezone_name):
+    return NOW.astimezone(pytz.timezone(timezone_name))
+
+
+@pytest.mark.parametrize("tool", ["list_tasks", "tasks_digest"])
+def test_omitted_tasklist_id_reads_the_default_list(tool, monkeypatch):
+    service = _TasksService()
+    monkeypatch.setattr("mcp_google_workspace.tasks.tools.tasks_service", lambda: service)
+    monkeypatch.setattr("mcp_google_workspace.tasks.tools.resolve_user_timezone", _fixed_timezone)
+
+    async def scenario():
+        async with Client(tasks_mcp) as client:
+            listed = {entry.name: entry for entry in await client.list_tools()}
+            result = await client.call_tool(tool, {})
+            return listed[tool], result
+
+    listed, result = anyio.run(scenario)
+
+    assert "tasklist_id" not in listed.input_schema.get("required", [])
+    assert "default list" in listed.input_schema["properties"]["tasklist_id"]["description"]
+    assert service.tasks_api.calls[-1][1]["tasklist"] == "@default"
+    assert result.structured_content["tasklist_id"] == "@default"
+
+
+class _PayloadService:
+    """A Google client stub whose every ``execute()`` returns one payload."""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return self
+
+    def __call__(self, *_args, **_kwargs):
+        return self
+
+    def execute(self, *_args, **_kwargs):
+        return json.loads(json.dumps(self._payload))
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "fixture", "golden"),
+    [
+        ("tasks_list_tasks", {}, "tasks_list_tasks", "tasks_list_tasks"),
+        ("tasks_tasks_digest", {}, "tasks_list_tasks", "tasks_tasks_digest"),
+        ("tasks_list_tasklists", {}, "tasks_list_tasklists", "tasks_list_tasklists"),
+        (
+            "tasks_create_task",
+            {"tasklist_id": "list-1", "title": "File the tax return", "due": "2026-11-14"},
+            "tasks_insert_task",
+            "tasks_create_task",
+        ),
+        (
+            "tasks_complete_task",
+            {"tasklist_id": "list-1", "task_id": "Y2xvc2VfY29udHJhY3RzOjE"},
+            "tasks_complete_task",
+            "tasks_complete_task",
+        ),
+        (
+            "tasks_move_task",
+            {"tasklist_id": "list-1", "task_id": "Ym9va19yb29tOjM", "destination_tasklist_id": "list-2"},
+            "tasks_move_task",
+            "tasks_move_task",
+        ),
+        ("tasks_create_tasklist", {"title": "Renovation"}, "tasks_insert_tasklist", "tasks_create_tasklist"),
+    ],
+)
+def test_tasks_tools_return_the_normalized_shape_through_the_server(tool, arguments, fixture, golden, monkeypatch):
+    payload = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
+    expected = json.loads((FIXTURES / "golden" / f"{golden}.json").read_text(encoding="utf-8"))
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+    monkeypatch.setattr("mcp_google_workspace.tasks.tools.resolve_user_timezone", _fixed_timezone)
+    monkeypatch.setattr("mcp_google_workspace.tasks.tools.user_now", _fixed_now)
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool(tool, arguments)
+
+    result = anyio.run(scenario)
+
+    assert result.is_error is False, result.content
+    structured = dict(result.structured_content)
+    for added in ("has_more", "next_page_token", "fetched_at"):  # list / digest wrapper fields
+        if added not in expected:
+            structured.pop(added, None)
+    assert structured == expected
 
 
 def test_move_task_rejects_reposition_combined_with_destination():
@@ -210,6 +353,7 @@ class _FailingTasksService:
 
 def test_get_tasklist_tool_returns_structured_error(monkeypatch):
     monkeypatch.setattr("mcp_google_workspace.tasks.tools.tasks_service", _FailingTasksService)
+    monkeypatch.setattr("mcp_google_workspace.tasks.tools.resolve_user_timezone", _fixed_timezone)
 
     async def scenario():
         async with Client(tasks_mcp) as client:

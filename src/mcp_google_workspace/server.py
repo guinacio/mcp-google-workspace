@@ -6,8 +6,9 @@ import anyio
 import base64
 import os
 import secrets
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 from fastmcp import FastMCP
+from googleapiclient.errors import HttpError
 from fastmcp.tools import InputRequiredToolResult, ToolResult
 import mcp_types
 from fastmcp.server.providers.addressing import hash_tool, hashed_resource_uri
@@ -47,7 +48,16 @@ from .auth.google_auth import (
     build_people_service,
 )
 from .common.async_ops import execute_google_request
-from .common.resources import ResourceHandleMiddleware, parse_resource_uri, resource_handle
+from .common.resources import (
+    ResourceHandleMiddleware,
+    clean_web_url,
+    parse_resource_uri,
+    resource_handle,
+)
+from .common.timezone import in_account_timezone, resolve_user_timezone
+from .drive.presentation import file_kind
+from .gmail.helpers import gather_in_order
+from .gmail.presentation import envelope as gmail_envelope
 from .common.approvals import (
     COMMIT_ACTIVE,
     CONSEQUENTIAL_TOOLS,
@@ -301,7 +311,6 @@ def get_workspace_capabilities() -> dict[str, object]:
     }
     enabled.extend(name for name, active in optional.items() if active)
     return {
-        "status": "ok",
         "enabled_namespaces": sorted(enabled),
         "optional_namespaces": optional,
         "oauth_capabilities": sorted(CAPABILITY_SCOPES),
@@ -318,14 +327,22 @@ def get_workspace_capabilities() -> dict[str, object]:
     }
 
 
+# Metadata the search hit needs from each Gmail message; no body is fetched.
+_GMAIL_HIT_FIELDS = "id,threadId,labelIds,snippet,internalDate,payload/headers"
+
+
+def _escape_drive_query(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
 @workspace_mcp.tool(name="search_workspace")
 async def search_workspace(
     query: Annotated[
         str,
         (
-            "Search text, must not be blank. Drive matches it against file names (Drive's name contains, which "
-            "matches word prefixes), contacts by prefix of names, emails, phone numbers or organizations, and "
-            "Gmail treats it as a Gmail search query, e.g. 'from:alice invoice'."
+            "Search text, must not be blank. Drive matches it against file names and content (fullText "
+            "contains, plus name contains for name prefixes), contacts by prefix of names, emails, phone "
+            "numbers or organizations, and Gmail treats it as a Gmail search query, e.g. 'from:alice invoice'."
         ),
     ],
     services: Annotated[
@@ -339,12 +356,12 @@ async def search_workspace(
         int, "Maximum hits from each searched service, 1 to 25."
     ] = 5,
 ) -> dict[str, object]:
-    """Run one query across Drive file names, the user's saved contacts and Gmail at once, for a first look when the
-    right service is unclear. Drive matches names only (not content, not shared drives) and Gmail hits carry only the
-    message ID (thread ID in name), so follow up with drive_list_files, people_search_contacts or gmail_search_emails for
-    full queries and details, or gmail_read_emails to open a hit. Returns matches (service, id, name, kind,
-    resource, plus url or email), count, and errors per failed service with status 'partial'; the call fails only
-    when every service fails."""
+    """Search Drive, the user's saved contacts and Gmail with one query, for a first look when the right service is
+    unclear. Drive matches names and content (name matches first, no shared drives); Gmail takes Gmail query syntax and
+    each hit is read in one metadata request. For full queries and paging use drive_list_files, people_search_contacts
+    or gmail_search_emails. Returns matches (service, id, kind, resource; Drive name, mime_type, modified_at, web_url;
+    contact name, email; Gmail thread_id, subject, from, date, snippet, unread), count, account_timezone and errors per
+    failed service; the call fails only when every service fails."""
     selected = services or ["drive", "people", "gmail"]
     unknown = sorted(set(selected) - {"drive", "people", "gmail"})
     if unknown:
@@ -353,114 +370,146 @@ async def search_workspace(
         raise ValueError("query must not be empty")
     if not 1 <= max_results_per_service <= 25:
         raise ValueError("max_results_per_service must be between 1 and 25")
-    matches: list[dict[str, object]] = []
+    found: dict[str, list[dict[str, object]]] = {}
     errors: dict[str, str] = {}
+    resolved_timezone: list[str] = []
+    timezone_lock = anyio.Lock()
 
-    async def search_drive() -> None:
-        escaped = query.replace("'", "\\'")
-        try:
-            result = await execute_google_request(
-                build_drive_service()
-                .files()
-                .list(
-                    q=f"name contains '{escaped}' and trashed = false",
-                    pageSize=max_results_per_service,
-                    fields="files(id,name,mimeType,webViewLink,modifiedTime)",
-                )
+    async def account_timezone() -> str:
+        async with timezone_lock:
+            if not resolved_timezone:
+                resolved_timezone.append(await resolve_user_timezone())
+        return resolved_timezone[0]
+
+    async def search_drive() -> list[dict[str, object]]:
+        escaped = _escape_drive_query(query)
+        result = await execute_google_request(
+            build_drive_service()
+            .files()
+            .list(
+                q=f"(fullText contains '{escaped}' or name contains '{escaped}') and trashed = false",
+                pageSize=max_results_per_service,
+                fields="files(id,name,mimeType,webViewLink,modifiedTime)",
             )
-            matches.extend(
+        )
+        zone = await account_timezone()
+        needle = query.strip().casefold()
+        files = result.get("files", [])
+        # Drive orders fullText results by relevance; a name match ranks first.
+        files = sorted(files, key=lambda item: needle not in str(item.get("name") or "").casefold())
+        return [
+            {
+                "service": "drive",
+                "id": item.get("id"),
+                "kind": file_kind(item.get("mimeType")),
+                "name": item.get("name"),
+                "mime_type": item.get("mimeType"),
+                "modified_at": in_account_timezone(item.get("modifiedTime"), zone),
+                "web_url": clean_web_url(item.get("webViewLink")),
+                "resource": resource_handle("drive_file", str(item.get("id"))),
+            }
+            for item in files
+        ]
+
+    async def search_people() -> list[dict[str, object]]:
+        service = build_people_service()
+        await execute_google_request(
+            service.people().searchContacts(
+                query="", readMask="names,emailAddresses", pageSize=1
+            )
+        )
+        result = await execute_google_request(
+            service.people().searchContacts(
+                query=query,
+                readMask="names,emailAddresses,phoneNumbers,organizations",
+                pageSize=max_results_per_service,
+            )
+        )
+        hits: list[dict[str, object]] = []
+        for result_item in result.get("results", []):
+            person = result_item.get("person", {})
+            names = person.get("names", [])
+            emails = person.get("emailAddresses", [])
+            hits.append(
                 {
-                    "service": "drive",
-                    "id": item.get("id"),
-                    "name": item.get("name"),
-                    "kind": item.get("mimeType"),
-                    "url": item.get("webViewLink"),
-                    "modified_at": item.get("modifiedTime"),
-                    "resource": resource_handle(
-                        "drive_file",
-                        str(item.get("id")),
-                        name=item.get("name"),
-                        mime_type=item.get("mimeType"),
-                        modified_at=item.get("modifiedTime"),
-                        web_url=item.get("webViewLink"),
-                    ),
+                    "service": "people",
+                    "id": person.get("resourceName"),
+                    "kind": "contact",
+                    "name": names[0].get("displayName") if names else None,
+                    "email": emails[0].get("value") if emails else None,
+                    "resource": resource_handle("contact", str(person.get("resourceName"))),
                 }
-                for item in result.get("files", [])
             )
-        except Exception as exc:
-            errors["drive"] = str(exc)
+        return hits
 
-    async def search_people() -> None:
-        try:
-            service = build_people_service()
-            await execute_google_request(
-                service.people().searchContacts(
-                    query="", readMask="names,emailAddresses", pageSize=1
-                )
-            )
-            result = await execute_google_request(
-                service.people().searchContacts(
-                    query=query,
-                    readMask="names,emailAddresses,phoneNumbers,organizations",
-                    pageSize=max_results_per_service,
-                )
-            )
-            for result_item in result.get("results", []):
-                person = result_item.get("person", {})
-                names = person.get("names", [])
-                emails = person.get("emailAddresses", [])
-                matches.append(
-                    {
-                        "service": "people",
-                        "id": person.get("resourceName"),
-                        "name": names[0].get("displayName") if names else None,
-                        "kind": "contact",
-                        "email": emails[0].get("value") if emails else None,
-                        "resource": resource_handle(
-                            "contact",
-                            str(person.get("resourceName")),
-                            name=names[0].get("displayName") if names else None,
-                        ),
-                    }
-                )
-        except Exception as exc:
-            errors["people"] = str(exc)
+    async def search_gmail() -> list[dict[str, object]]:
+        service = build_gmail_service()
+        listed = await execute_google_request(
+            service.users()
+            .messages()
+            .list(userId="me", q=query, maxResults=max_results_per_service)
+        )
+        zone = await account_timezone()
 
-    async def search_gmail() -> None:
-        try:
-            result = await execute_google_request(
-                build_gmail_service()
-                .users()
-                .messages()
-                .list(userId="me", q=query, maxResults=max_results_per_service)
-            )
-            matches.extend(
+        async def metadata(message_id: str) -> dict[str, Any] | None:
+            try:
+                return await execute_google_request(
+                    service.users().messages().get(
+                        userId="me",
+                        id=message_id,
+                        format="metadata",
+                        metadataHeaders=["From", "Subject", "Date"],
+                        fields=_GMAIL_HIT_FIELDS,
+                    )
+                )
+            except HttpError as exc:
+                if getattr(exc.resp, "status", None) != 404:
+                    raise
+                return None  # deleted between the search and the read
+
+        messages = await gather_in_order(
+            [str(item.get("id")) for item in listed.get("messages", [])], metadata
+        )
+        hits: list[dict[str, object]] = []
+        for message in messages:
+            if message is None:
+                continue
+            item = gmail_envelope(message, account_timezone=zone)
+            hits.append(
                 {
                     "service": "gmail",
-                    "id": item.get("id"),
-                    "name": item.get("threadId"),
+                    "id": item["id"],
                     "kind": "message",
-                    "resource": resource_handle(
-                        "gmail_message", str(item.get("id")), name=item.get("threadId")
-                    ),
+                    "thread_id": item["thread_id"],
+                    "subject": item["subject"],
+                    "from": item["from"],
+                    "date": item["date"],
+                    "snippet": item["snippet"],
+                    "unread": item["unread"],
+                    "resource": resource_handle("gmail_message", str(item["id"])),
                 }
-                for item in result.get("messages", [])
             )
-        except Exception as exc:
-            errors["gmail"] = str(exc)
+        return hits
 
     searchers = {
         "drive": search_drive,
         "people": search_people,
         "gmail": search_gmail,
     }
+
+    async def run(service_name: str) -> None:
+        try:
+            found[service_name] = await searchers[service_name]()
+        except Exception as exc:
+            errors[service_name] = str(exc)
+
     async with anyio.create_task_group() as task_group:
         for service_name in selected:
-            task_group.start_soon(searchers[service_name])
+            task_group.start_soon(run, service_name)
     if errors and len(errors) == len(set(selected)):
         # Partial-success policy: some services answered -> a successful
-        # "partial" result listing per-service errors; none answered -> a tool
-        # execution error, never an empty "ok"-shaped success.
+        # result listing per-service errors; none answered -> a tool
+        # execution error, never an empty success.
         raise RecoverableToolError(
             "provider_unavailable",
             "No Workspace service could be searched.",
@@ -469,12 +518,14 @@ async def search_workspace(
             retry_after=5,
             details={"errors": dict(sorted(errors.items()))},
         )
+    # Services in the order the caller listed them, hits in each service's order.
+    matches = [hit for service_name in dict.fromkeys(selected) for hit in found.get(service_name, [])]
     return {
-        "status": "ok" if not errors else "partial",
         "query": query,
         "services": selected,
         "matches": matches,
         "count": len(matches),
+        "account_timezone": resolved_timezone[0] if resolved_timezone else None,
         "errors": errors,
     }
 
@@ -490,9 +541,10 @@ async def resolve_workspace_resource(
     ],
 ) -> dict[str, object]:
     """Turn a resource URI from an earlier result's resource handle back into a handle with current metadata. Drive
-    files are re-read for a fresh name, mime_type, modified_at, web_url and etag, and Gmail messages are checked to
-    still exist; threads, events, contacts and tasks are only parsed, without a Google call. Returns status 'ok' (or
-    'resolved' for parsed-only kinds) with resource; pass resource.id to the matching service tool for content."""
+    files are re-read for a fresh name, mime_type, modified_at (account time zone), web_url and etag, and Gmail messages
+    are checked to still exist; threads, events, contacts and tasks are only parsed, without a Google call. Returns
+    resource and verified (true when Google confirmed the resource exists); pass resource.id to the matching service
+    tool for content."""
     kind, resource_id = parse_resource_uri(uri)
     if kind == "drive_file":
         item = await execute_google_request(
@@ -502,32 +554,25 @@ async def resolve_workspace_resource(
             )
         )
         return {
-            "status": "ok",
             "resource": resource_handle(
                 kind,
                 resource_id,
                 name=item.get("name"),
                 mime_type=item.get("mimeType"),
-                modified_at=item.get("modifiedTime"),
+                modified_at=in_account_timezone(item.get("modifiedTime"), await resolve_user_timezone()),
                 web_url=item.get("webViewLink"),
                 etag=item.get("etag"),
             ),
+            "verified": True,
         }
     if kind == "gmail_message":
-        item = await execute_google_request(
+        await execute_google_request(
             build_gmail_service().users().messages().get(
-                userId="me", id=resource_id, format="metadata"
+                userId="me", id=resource_id, format="minimal", fields="id"
             )
         )
-        return {
-            "status": "ok",
-            "resource": resource_handle(kind, resource_id, name=item.get("threadId")),
-        }
-    return {
-        "status": "resolved",
-        "resource": resource_handle(kind, resource_id),
-        "next_actions": ["Use the matching namespace tool with resource.id."],
-    }
+        return {"resource": resource_handle(kind, resource_id), "verified": True}
+    return {"resource": resource_handle(kind, resource_id), "verified": False}
 
 
 #: Tools that use prepare/commit (common/approvals.py CONSEQUENTIAL_TOOLS).

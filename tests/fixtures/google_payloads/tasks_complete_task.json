@@ -1,0 +1,15 @@
+{
+  "kind": "tasks#task",
+  "id": "Y2xvc2VfY29udHJhY3RzOjE",
+  "etag": "\"LTE3NjQ5ODIzNTk\"",
+  "title": "Send countersigned vendor contract",
+  "updated": "2026-11-03T15:00:00.000Z",
+  "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/Y2xvc2VfY29udHJhY3RzOjE",
+  "position": "00000000000000000000",
+  "notes": "Sent.",
+  "status": "completed",
+  "due": "2026-10-30T00:00:00.000Z",
+  "completed": "2026-11-03T12:00:00.000Z",
+  "links": [],
+  "webViewLink": "https://tasks.google.com/task/Y2xvc2VfY29udHJh?sa=6"
+}

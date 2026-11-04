@@ -1,11 +1,22 @@
+import json
+from pathlib import Path
+
 import anyio
 import pytest
 from fastmcp import Client
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
+import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.people.client import normalize_contact_group_name, normalize_person_name
 from mcp_google_workspace.people.schemas import CreateContactRequest, ModifyContactGroupMembersRequest, UpdateContactRequest
+from mcp_google_workspace.people.presentation import (
+    contact_envelope,
+    contact_group_envelope,
+    contact_search_result,
+    contacts_page,
+    group_members_result,
+)
 from mcp_google_workspace.people.server import people_mcp
 from mcp_google_workspace.people.tools import (
     CreateContactGroupRequest,
@@ -24,6 +35,10 @@ from mcp_google_workspace.people.tools import (
     search_contacts_payload,
     update_contact_payload,
 )
+from mcp_google_workspace.server import workspace_mcp
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "google_payloads"
+TIMEZONE = "America/Sao_Paulo"
 
 
 async def _list_tool_names(server):
@@ -219,3 +234,121 @@ def test_search_contacts_tool_returns_structured_error(monkeypatch):
     assert result["code"] == "permission_denied"
     assert result["provider_status"] == 403
     assert result["details"]["context"]["query"] == "Ada"
+
+
+def test_contact_envelope_keeps_what_the_next_call_needs():
+    person = {
+        "resourceName": "people/c1",
+        "etag": "%etag",
+        "metadata": {"sources": [{"type": "CONTACT", "updateTime": "2026-01-01T00:00:00Z"}]},
+        "names": [
+            {"metadata": {"source": {"type": "PROFILE"}}, "displayName": "Profile Name"},
+            {"metadata": {"primary": True}, "displayName": "Ada Lovelace", "givenName": "Ada", "familyName": "Lovelace"},
+        ],
+        "emailAddresses": [
+            {"value": "ada@example.com", "type": "work", "formattedType": "Work"},
+            {"value": "ADA@example.com", "metadata": {"source": {"type": "PROFILE"}}},
+        ],
+        "phoneNumbers": [{"value": "+1 555-0100", "canonicalForm": "+15550100"}],
+    }
+
+    envelope = contact_envelope(person)
+
+    assert envelope == {
+        "resource_name": "people/c1",
+        "etag": "%etag",
+        "name": "Ada Lovelace",
+        "given_name": "Ada",
+        "family_name": "Lovelace",
+        "emails": [{"value": "ada@example.com", "type": "work"}],
+        "phones": [{"value": "+1 555-0100", "type": None}],
+        "organizations": [],
+        "biography": None,
+    }
+    assert contact_envelope({})["name"] is None
+
+
+def test_people_list_and_group_normalizers():
+    page = contacts_page({"connections": [{"resourceName": "people/c1"}], "totalItems": 9, "totalPeople": 9})
+    assert set(page) == {"contacts", "count", "total", "next_page_token"}
+    assert (page["count"], page["total"], page["next_page_token"]) == (1, 9, None)
+    assert contact_search_result({}) == {"contacts": [], "count": 0}
+
+    group = contact_group_envelope(
+        {
+            "resourceName": "contactGroups/starred",
+            "name": "starred",
+            "formattedName": "Starred",
+            "groupType": "SYSTEM_CONTACT_GROUP",
+            "metadata": {"updateTime": "2026-11-03T15:00:00Z"},
+        },
+    )
+    assert group == {
+        "resource_name": "contactGroups/starred",
+        "name": "Starred",
+        "group_type": "system",
+        "member_count": 0,
+    }
+    assert group_members_result({}, group_name="contactGroups/abc") == {
+        "status": "ok",
+        "group_name": "contactGroups/abc",
+        "not_found": [],
+        "cannot_remove_last_group": [],
+    }
+
+
+class _PayloadService:
+    """A Google client stub whose every ``execute()`` returns one payload."""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return self
+
+    def __call__(self, *_args, **_kwargs):
+        return self
+
+    def execute(self, *_args, **_kwargs):
+        return json.loads(json.dumps(self._payload))
+
+
+async def _fixed_timezone():
+    return TIMEZONE
+
+
+def _call_workspace(tool, arguments):
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool(tool, arguments)
+
+    return anyio.run(scenario)
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "fixture"),
+    [
+        ("people_list_contacts", {"page_size": 3}, "people_list_contacts"),
+        ("people_get_contact", {"person_name": "people/c5566778899001122334"}, "people_get_contact"),
+        ("people_list_contact_groups", {}, "people_list_contact_groups"),
+        (
+            "people_modify_contact_group_members",
+            {"group_name": "4f1d2c3b0a9e8d7c", "resource_names_to_add": ["c1111111111111111111"]},
+            "people_modify_contact_group_members",
+        ),
+    ],
+)
+def test_people_tools_return_the_normalized_shape_through_the_server(tool, arguments, fixture, monkeypatch):
+    payload = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
+    golden = json.loads((FIXTURES / "golden" / f"{fixture}.json").read_text(encoding="utf-8"))
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+
+    result = _call_workspace(tool, arguments)
+
+    assert result.is_error is False, result.content
+    structured = dict(result.structured_content)
+    for added in ("has_more", "fetched_at"):  # the list pagination wrapper's fields
+        structured.pop(added, None)
+    assert structured == golden

@@ -1,0 +1,13 @@
+{
+  "kind": "tasks#task",
+  "id": "Ym9va19yb29tOjM",
+  "etag": "\"LTE3NjQ5ODIzNTk\"",
+  "title": "Book the meeting room",
+  "updated": "2026-11-03T14:59:40.000Z",
+  "selfLink": "https://www.googleapis.com/tasks/v1/lists/Wl9yX2FfeV9lXzNfOTg3NjU0MzIxOjA6MA/tasks/Ym9va19yb29tOjM",
+  "position": "00000000000000000005",
+  "status": "needsAction",
+  "due": "2026-11-07T00:00:00.000Z",
+  "links": [],
+  "webViewLink": "https://tasks.google.com/task/Ym9va19yb29tOjM?sa=6"
+}

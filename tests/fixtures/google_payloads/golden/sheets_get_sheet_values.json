@@ -1,0 +1,30 @@
+{
+  "major_dimension": "ROWS",
+  "range": "Summary!A1:D5",
+  "row_count": 5,
+  "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "values": [
+    [
+      "Category",
+      "Planned",
+      "Actual"
+    ],
+    [
+      "Rent",
+      "$1,200.00",
+      "$1,200.00"
+    ],
+    [
+      "Groceries",
+      "$450.00",
+      "$512.30",
+      "over"
+    ],
+    [],
+    [
+      "Total",
+      "$1,650.00",
+      "$1,712.30"
+    ]
+  ]
+}

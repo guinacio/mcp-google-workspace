@@ -9,9 +9,9 @@ conforming MCP client does (``mcp.client.session.validate_tool_result``).
 
 Before 1.0.1 the schemas were closed and typed by a name heuristic, so a
 ``namedStyles`` object or a ``totalItems`` counter Google returns made the
-whole call fail on the client. Since 2.0.0 these raw passthrough tools publish
-no outputSchema at all; the payload still arrives as ``structuredContent``.
-The fixtures keep the fields that used to fail on purpose.
+whole call fail on the client. Since 2.0.0 these tools return a normalized
+response and publish an open schema for it; the fixtures keep the fields that
+used to fail on purpose, and none of them may leak into the response.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
+import jsonschema
 import pytest
 from fastmcp import Client
 
@@ -29,9 +30,9 @@ from mcp_google_workspace.server import workspace_mcp
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "google_payloads"
 
-# (tool, fixture, arguments, top-level fields the old heuristic typed wrongly or did not list)
+# (tool, fixture, arguments, raw top-level fields the old heuristic typed wrongly or did not list)
 CASES: list[tuple[str, str, dict[str, Any], tuple[str, ...]]] = [
-    ("docs_get_document", "docs_get_document.json", {"document_id": "doc-1"}, ("namedStyles", "inlineObjects", "positionedObjects", "tabs")),
+    ("docs_get_document", "docs_get_document.json", {"document_id": "doc-1"}, ("namedStyles", "inlineObjects", "positionedObjects")),
     ("people_list_contacts", "people_list_contacts.json", {"page_size": 2}, ("totalItems", "totalPeople")),
     ("calendar_list_calendars", "calendar_list_calendars.json", {}, ("nextSyncToken", "items")),
     ("sheets_get_spreadsheet", "sheets_get_spreadsheet.json", {"spreadsheet_id": "sheet-1"}, ("dataSources", "developerMetadata")),
@@ -69,6 +70,10 @@ async def _call(tool: str, arguments: dict[str, Any]) -> tuple[dict[str, Any], A
     return listed[tool].output_schema, result
 
 
+async def _timezone() -> str:
+    return "America/Sao_Paulo"
+
+
 @pytest.mark.parametrize(("tool", "fixture", "arguments", "notable"), CASES, ids=[case[0] for case in CASES])
 def test_realistic_payload_validates_against_published_output_schema(
     tool: str, fixture: str, arguments: dict[str, Any], notable: tuple[str, ...], monkeypatch: pytest.MonkeyPatch
@@ -77,15 +82,19 @@ def test_realistic_payload_validates_against_published_output_schema(
     for field in notable:
         assert field in payload, f"fixture {fixture} must keep the {field!r} field"
     monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+    namespace = tool.split("_", 1)[0]
+    monkeypatch.setattr(f"mcp_google_workspace.{namespace}.tools.resolve_user_timezone", _timezone, raising=False)
 
     schema, result = anyio.run(_call, tool, arguments)
 
+    # The client validated structuredContent against the published schema.
     assert result.is_error is False, result.content
-    assert schema is None
+    assert schema is not None and schema["additionalProperties"] is True
     structured = result.structured_content
     assert isinstance(structured, dict)
+    jsonschema.validate(structured, schema)
     for field in notable:
-        assert field in structured
+        assert field not in structured, f"raw {field!r} leaked into the normalized {tool} response"
 
 
 def test_fixture_fields_are_not_typed_by_the_plural_name_heuristic() -> None:

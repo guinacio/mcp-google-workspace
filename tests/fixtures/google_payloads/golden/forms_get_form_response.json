@@ -1,0 +1,37 @@
+{
+  "answers": [
+    {
+      "question": "How satisfied are you with the product?",
+      "question_id": "7b2d9e10",
+      "values": [
+        "4"
+      ]
+    },
+    {
+      "question": "Which features do you use?",
+      "question_id": "3a5c7e9b",
+      "values": [
+        "Reports",
+        "Exports"
+      ]
+    },
+    {
+      "question": "Rate each area: Speed",
+      "question_id": "4b6d8f0a",
+      "values": [
+        "Great"
+      ]
+    },
+    {
+      "question": "Attach a screenshot",
+      "question_id": "0b2d4f6a",
+      "values": [
+        "1UploadedFileIdExample0123"
+      ]
+    }
+  ],
+  "created_at": "2026-11-02T10:05:12.345000-03:00",
+  "id": "ACYDBNj_exampleResponse01",
+  "respondent_email": "ana@example.com",
+  "submitted_at": "2026-11-02T10:05:12.345678-03:00"
+}

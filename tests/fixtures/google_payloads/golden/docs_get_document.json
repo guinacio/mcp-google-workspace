@@ -1,0 +1,131 @@
+{
+  "document_id": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg",
+  "revision_id": "ALBJ4LsyIxJbt1hRqeQ9YgQ0abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+  "suggestions_view_mode": "SUGGESTIONS_INLINE",
+  "tabs": [
+    {
+      "content": [
+        {
+          "end_index": 1,
+          "kind": "section_break",
+          "start_index": 0
+        },
+        {
+          "end_index": 13,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1,
+          "style": "HEADING_1",
+          "text": "Launch plan"
+        },
+        {
+          "end_index": 62,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 13,
+          "style": null,
+          "text": "Ship the beta by June with the current scope."
+        },
+        {
+          "end_index": 80,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.list0",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 62,
+          "style": null,
+          "text": "Write the FAQ"
+        },
+        {
+          "end_index": 82,
+          "inline": [
+            {
+              "end_index": 81,
+              "kind": "image",
+              "object_id": "kix.img0",
+              "start_index": 80
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 80,
+          "style": null,
+          "text": "￼"
+        }
+      ],
+      "footers": [
+        {
+          "content": [
+            {
+              "end_index": 1,
+              "inline": [],
+              "kind": "paragraph",
+              "list": null,
+              "start_index": 0,
+              "style": null,
+              "text": ""
+            }
+          ],
+          "footer_id": "kix.ftr0"
+        }
+      ],
+      "footnotes": [
+        {
+          "content": [
+            {
+              "end_index": 1,
+              "inline": [],
+              "kind": "paragraph",
+              "list": null,
+              "start_index": 0,
+              "style": null,
+              "text": ""
+            }
+          ],
+          "footnote_id": "kix.fn0"
+        }
+      ],
+      "headers": [
+        {
+          "content": [
+            {
+              "end_index": 1,
+              "inline": [],
+              "kind": "paragraph",
+              "list": null,
+              "start_index": 0,
+              "style": null,
+              "text": ""
+            }
+          ],
+          "header_id": "kix.hdr0"
+        }
+      ],
+      "index": 0,
+      "named_ranges": [
+        {
+          "name": "summary",
+          "named_range_id": "kix.nr0",
+          "ranges": [
+            {
+              "end_index": 62,
+              "segment_id": null,
+              "start_index": 13
+            }
+          ]
+        }
+      ],
+      "nesting_level": 0,
+      "parent_tab_id": null,
+      "tab_id": null,
+      "title": null
+    }
+  ],
+  "title": "Launch plan",
+  "url": "https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg/edit"
+}

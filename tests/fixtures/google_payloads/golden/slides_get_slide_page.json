@@ -1,0 +1,104 @@
+{
+  "elements": [
+    {
+      "object_id": "g2a0b1c2d3e_0_9",
+      "placeholder": "TITLE",
+      "position": {
+        "x_pt": 24.5,
+        "y_pt": 35.0
+      },
+      "size": {
+        "height_pt": 44.9,
+        "width_pt": 670.9
+      },
+      "text": "Highlights",
+      "type": "shape"
+    },
+    {
+      "object_id": "g2a0b1c2d3e_0_10",
+      "placeholder": "BODY",
+      "position": {
+        "x_pt": 24.5,
+        "y_pt": 90.7
+      },
+      "size": {
+        "height_pt": 259.8,
+        "width_pt": 670.9
+      },
+      "text": "Revenue up 18% year over year\nNew markets: Chile and Peru\nChurn down to 2.1%",
+      "type": "shape"
+    },
+    {
+      "object_id": "g2a0b1c2d3e_0_12",
+      "placeholder": null,
+      "position": {
+        "x_pt": 24.5,
+        "y_pt": 259.8
+      },
+      "size": {
+        "height_pt": 108.0,
+        "width_pt": 144.0
+      },
+      "text": null,
+      "type": "image"
+    },
+    {
+      "object_id": "g2a0b1c2d3e_0_13",
+      "placeholder": null,
+      "position": {
+        "x_pt": 196.9,
+        "y_pt": 259.8
+      },
+      "size": null,
+      "text": null,
+      "type": "group"
+    },
+    {
+      "object_id": "g2a0b1c2d3e_0_14",
+      "placeholder": null,
+      "position": {
+        "x_pt": 196.9,
+        "y_pt": 259.8
+      },
+      "size": {
+        "height_pt": 30.0,
+        "width_pt": 100.0
+      },
+      "text": "Owner: Ana Example",
+      "type": "shape"
+    },
+    {
+      "object_id": "g2a0b1c2d3e_0_15",
+      "placeholder": null,
+      "position": {
+        "x_pt": 196.9,
+        "y_pt": 299.8
+      },
+      "size": {
+        "height_pt": 30.0,
+        "width_pt": 100.0
+      },
+      "text": "Due: Q3",
+      "type": "shape"
+    },
+    {
+      "object_id": "g2a0b1c2d3e_0_11",
+      "placeholder": null,
+      "position": {
+        "x_pt": 401.6,
+        "y_pt": 259.8
+      },
+      "size": {
+        "height_pt": 78.7,
+        "width_pt": 236.2
+      },
+      "text": "Region | Q1 | Q2\nLATAM | 1.2M |",
+      "type": "table"
+    }
+  ],
+  "notes": "Mention the Peru launch date.",
+  "object_id": "g2a0b1c2d3e_0_8",
+  "page_type": "SLIDE",
+  "text": "Highlights\nRevenue up 18% year over year\nNew markets: Chile and Peru\nChurn down to 2.1%\nOwner: Ana Example\nDue: Q3\nRegion | Q1 | Q2\nLATAM | 1.2M |",
+  "title": "Highlights"
+}

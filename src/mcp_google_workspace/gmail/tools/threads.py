@@ -103,7 +103,7 @@ def register(server: FastMCP) -> None:
         ] = "clean",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Read one Gmail conversation by thread ID. The default format 'clean' gives the newest message with its cleaned body plus a one-line summary of each earlier message; 'full', 'metadata' and 'minimal' return Gmail's raw thread resource instead. Use gmail_read_emails to read particular messages in full or continue a truncated body, and gmail_list_threads or gmail_search_emails to find threads. Returns thread_id, history_id, message_count and either latest and prior_messages ('clean') or thread (the other formats)."""
+        """Read one Gmail conversation by thread ID. The default format 'clean' gives the newest message with its cleaned body plus a one-line summary of each earlier message; 'full', 'metadata' and 'minimal' return Gmail's raw thread resource instead. Use gmail_read_emails to read particular messages in full or continue a truncated body, and gmail_list_threads or gmail_search_emails to find threads. Returns thread_id, count (messages in the thread) and either latest, prior_messages and account_timezone ('clean') or thread (the other formats, whose historyId is Gmail's)."""
         api_format: Literal["full", "metadata", "minimal"] = "full" if format == "clean" else format
         request = GetThreadRequest(
             thread_id=thread_id,
@@ -127,8 +127,7 @@ def register(server: FastMCP) -> None:
             latest = messages[-1] if messages else None
             return {
                 "thread_id": thread.get("id"),
-                "history_id": thread.get("historyId"),
-                "message_count": len(messages),
+                "count": len(messages),
                 "latest": {
                     **envelope(latest, account_timezone=account_timezone),
                     **clean_message_content(latest),
@@ -141,8 +140,7 @@ def register(server: FastMCP) -> None:
             }
         return {
             "thread_id": thread.get("id"),
-            "history_id": thread.get("historyId"),
-            "message_count": len(messages),
+            "count": len(messages),
             "thread": thread,
         }
 

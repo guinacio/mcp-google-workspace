@@ -11,7 +11,15 @@ from ..common.async_ops import run_blocking
 from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
 from .client import forms_service
-from .presentation import question_titles, response_envelope
+from .presentation import (
+    batch_update_form_envelope,
+    created_form_envelope,
+    form_envelope,
+    form_responses_envelope,
+    publish_settings_envelope,
+    question_titles,
+    response_envelope,
+)
 from .schemas import (
     BatchUpdateFormRequest,
     CreateFormRequest,
@@ -121,9 +129,9 @@ _ENRICH_QUESTIONS = (
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_form")
     def get_form(form_id: str) -> dict[str, Any]:
-        """Read a Google Form's structure: title, description, settings and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns the Google Form resource: formId, info (title, documentTitle, description), items (each with itemId, title and questionItem.question.questionId), responderUri, revisionId and publishSettings."""
+        """Read a Google Form's structure: title, description, publish state and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns form_id, title, document_title, description, responder_url, revision_id, linked_spreadsheet_id, is_quiz, published and accepting_responses (both null for legacy forms), count and items, each with item_id, title, description, kind, question_id (for a grid, a list of question_id and row_title), required, question_type and options (choices, or scale bounds and labels)."""
         try:
-            return get_form_payload(GetFormRequest(form_id=form_id))
+            return form_envelope(get_form_payload(GetFormRequest(form_id=form_id)))
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
 
@@ -141,10 +149,12 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = False,
     ) -> dict[str, Any]:
-        """Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form. Returns the created Google Form resource: formId (the ID every other forms_ tool takes), responderUri (the link to share with respondents), info and revisionId. Unless unpublished is true, the form is published and accepting responses as soon as it exists."""
+        """Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form. Returns status ok, form_id (the ID every other forms_ tool takes), title, document_title, responder_url (the link to share with respondents) and revision_id. Unless unpublished is true, the form is published and accepting responses as soon as it exists."""
         try:
-            return create_form_payload(
-                CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
+            return created_form_envelope(
+                create_form_payload(
+                    CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
+                )
             )
         except HttpError as exc:
             raise provider_tool_error(exc, title=title) from exc
@@ -162,18 +172,21 @@ def register_tools(server: FastMCP) -> None:
             ),
         ],
         include_form_in_response: Annotated[
-            bool, "Also return the whole updated Form resource in the form field of the response."
+            bool, "Also return the updated form, in the forms_get_form shape, in the form field of the result."
         ] = False,
     ) -> dict[str, Any]:
-        """Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. The form_id comes from drive_list_files, search_workspace or forms_create_form. Returns the batchUpdate response: replies, one per request in order (createItem gives itemId and questionId), writeControl.requiredRevisionId, and form when include_form_in_response is true."""
+        """Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. The form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, revision_id (the revision after the update), replies (Google's, one per request in order; createItem gives itemId and questionId), count and form (the forms_get_form shape with include_form_in_response, else null)."""
         try:
-            return await run_blocking(
-                batch_update_form_payload,
-                BatchUpdateFormRequest(
-                    form_id=form_id,
-                    requests=requests,
-                    include_form_in_response=include_form_in_response,
-                )
+            return batch_update_form_envelope(
+                await run_blocking(
+                    batch_update_form_payload,
+                    BatchUpdateFormRequest(
+                        form_id=form_id,
+                        requests=requests,
+                        include_form_in_response=include_form_in_response,
+                    ),
+                ),
+                form_id=form_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
@@ -194,14 +207,17 @@ def register_tools(server: FastMCP) -> None:
             "Which publishSettings fields to write: 'publishState' or '*' (all fields, the default).",
         ] = "*",
     ) -> dict[str, Any]:
-        """Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form; the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns the Google response: formId and publishSettings.publishState (isPublished, isAcceptingResponses). Legacy forms, whose forms_get_form result has no publishSettings, do not support this."""
+        """Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form; the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, published and accepting_responses as they stand after the call. Legacy forms, whose forms_get_form result has null published, do not support this."""
         try:
-            return set_form_publish_settings_payload(
-                SetFormPublishSettingsRequest(
-                    form_id=form_id,
-                    publish_settings=publish_settings,
-                    update_mask=update_mask,
-                )
+            return publish_settings_envelope(
+                set_form_publish_settings_payload(
+                    SetFormPublishSettingsRequest(
+                        form_id=form_id,
+                        publish_settings=publish_settings,
+                        update_mask=update_mask,
+                    )
+                ),
+                form_id=form_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
@@ -239,17 +255,7 @@ def register_tools(server: FastMCP) -> None:
             )
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
-        responses = result.get("responses", [])
-        return {
-            "form_id": form_id,
-            "responses": [
-                response_envelope(response, titles, account_timezone=account_timezone)
-                for response in responses
-            ],
-            "next_page_token": result.get("nextPageToken"),
-            "count": len(responses),
-            "account_timezone": account_timezone,
-        }
+        return form_responses_envelope(result, titles, form_id=form_id, account_timezone=account_timezone)
 
     @server.tool(name="get_form_response")
     async def get_form_response(
@@ -257,7 +263,7 @@ def register_tools(server: FastMCP) -> None:
         response_id: str,
         enrich_questions: Annotated[bool, _ENRICH_QUESTIONS] = True,
     ) -> dict[str, Any]:
-        """Read one submitted response of a Google Form. To list or page through responses use forms_list_form_responses, which also supplies the response_id. Returns id, created_at and submitted_at in the account time zone, timezone, respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads)."""
+        """Read one submitted response of a Google Form. To list or page through responses use forms_list_form_responses, which also supplies the response_id. Returns id, created_at and submitted_at in the account time zone (ISO 8601 with offset), respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads)."""
         try:
             response = await run_blocking(
                 get_form_response_payload,

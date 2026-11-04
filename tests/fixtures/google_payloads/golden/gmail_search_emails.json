@@ -1,0 +1,31 @@
+{
+  "account_timezone": "America/Sao_Paulo",
+  "effective_query": "from:bruno@example.com",
+  "messages": [
+    {
+      "category": "CATEGORY_UPDATES",
+      "date": "2026-11-03T10:00:12-03:00",
+      "from": {
+        "email": "bruno@example.com",
+        "name": "Bruno Costa"
+      },
+      "has_attachments": false,
+      "id": "19a3f0c2d4e5b6a7",
+      "is_automated": false,
+      "is_draft": false,
+      "is_newsletter": false,
+      "is_sent": false,
+      "resource": {
+        "id": "19a3f0c2d4e5b6a7",
+        "kind": "gmail_message",
+        "uri": "gmail-message:///19a3f0c2d4e5b6a7"
+      },
+      "snippet": "Hi Ana, here's the agenda for Thursday's review: budget, hiring plan and the launch dates. Let me know if you'd like to add",
+      "subject": "Agenda for Thursday's review",
+      "thread_id": "19a3f0c2d4e5b6a7",
+      "unread": true
+    }
+  ],
+  "next_page_token": null,
+  "result_size_estimate": 1
+}

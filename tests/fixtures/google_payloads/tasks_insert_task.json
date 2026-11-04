@@ -1,0 +1,14 @@
+{
+  "kind": "tasks#task",
+  "id": "ZmlsZV90YXhlczo3",
+  "etag": "\"LTE3NjQ5ODIzNTk\"",
+  "title": "File the tax return",
+  "updated": "2026-11-03T14:58:31.000Z",
+  "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/ZmlsZV90YXhlczo3",
+  "position": "00000000000000000000",
+  "notes": "Receipts are in the 2026 folder.",
+  "status": "needsAction",
+  "due": "2026-11-14T00:00:00.000Z",
+  "links": [],
+  "webViewLink": "https://tasks.google.com/task/ZmlsZV90YXhlczo3?sa=6"
+}

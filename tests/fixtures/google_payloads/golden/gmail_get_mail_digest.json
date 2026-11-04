@@ -1,0 +1,26 @@
+{
+  "account_timezone": "America/Sao_Paulo",
+  "count": 1,
+  "messages": [
+    {
+      "date": "2026-11-03T10:00:12-03:00",
+      "direction": "received",
+      "from": {
+        "email": "bruno@example.com",
+        "name": "Bruno Costa"
+      },
+      "has_attachments": false,
+      "id": "19a3f0c2d4e5b6a7",
+      "resource": {
+        "id": "19a3f0c2d4e5b6a7",
+        "kind": "gmail_message",
+        "uri": "gmail-message:///19a3f0c2d4e5b6a7"
+      },
+      "snippet": "Hi Ana, here's the agenda for Thursday's review: budget, hiring plan and the launch dates. Let me know if you'd like to add",
+      "subject": "Agenda for Thursday's review",
+      "thread_id": "19a3f0c2d4e5b6a7",
+      "unread": true
+    }
+  ],
+  "window": "3d"
+}

@@ -157,10 +157,6 @@
             },
             "required": [],
             "type": "object"
-          },
-          "status": {
-            "description": "Machine-readable operation status.",
-            "type": "string"
           }
         },
         "required": [],

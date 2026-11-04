@@ -33,6 +33,8 @@ CANNED_RESPONSES: dict[str, dict[str, Any]] = {
     },
     "users.getProfile": {"emailAddress": "me@example.com"},
     "users.settings.sendAs.list": {"sendAs": []},
+    # Calendar's account time-zone setting, read by tools that return local times.
+    "settings.get": {"kind": "calendar#setting", "id": "timezone", "value": "UTC"},
 }
 
 

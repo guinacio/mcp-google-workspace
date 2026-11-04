@@ -1,0 +1,92 @@
+{
+  "account_timezone": "America/Sao_Paulo",
+  "count": 4,
+  "overdue": [
+    {
+      "completed_at": null,
+      "deleted": false,
+      "due_date": "2026-10-30",
+      "hidden": false,
+      "id": "Y2xvc2VfY29udHJhY3RzOjE",
+      "is_overdue": true,
+      "notes_snippet": "Collect the signed copies from legal, scan them, and upload the PDFs to the shared Contracts folder. Then email the vendor contact with the countersigned version and the purchase order number, and update the tracking sheet so finance can release the first invoice. If legal still has open comments on",
+      "notes_truncated": true,
+      "parent_id": null,
+      "resource": {
+        "id": "Y2xvc2VfY29udHJhY3RzOjE",
+        "kind": "task",
+        "uri": "gtask:///Y2xvc2VfY29udHJhY3RzOjE"
+      },
+      "status": "needsAction",
+      "title": "Send countersigned vendor contract",
+      "updated_at": "2026-10-28T10:42:10-03:00",
+      "url": "https://tasks.google.com/task/Y2xvc2VfY29udHJh?sa=6"
+    }
+  ],
+  "tasklist_id": "MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow",
+  "unscheduled": [
+    {
+      "completed_at": null,
+      "deleted": false,
+      "due_date": null,
+      "hidden": false,
+      "id": "cmVhZF9wYXBlcjo1",
+      "is_overdue": false,
+      "notes_snippet": "https://example.org/papers/caching.pdf",
+      "notes_truncated": false,
+      "parent_id": null,
+      "resource": {
+        "id": "cmVhZF9wYXBlcjo1",
+        "kind": "task",
+        "uri": "gtask:///cmVhZF9wYXBlcjo1"
+      },
+      "status": "needsAction",
+      "title": "Read the caching paper",
+      "updated_at": "2026-09-30T05:12:45-03:00",
+      "url": "https://tasks.google.com/task/cmVhZF9wYXBlcjo1?sa=6"
+    }
+  ],
+  "upcoming": [
+    {
+      "completed_at": null,
+      "deleted": false,
+      "due_date": "2026-11-03",
+      "hidden": false,
+      "id": "cmV2aWV3X2RlY2s6Mg",
+      "is_overdue": false,
+      "notes_snippet": "Slides 4-9 only.",
+      "notes_truncated": false,
+      "parent_id": null,
+      "resource": {
+        "id": "cmV2aWV3X2RlY2s6Mg",
+        "kind": "task",
+        "uri": "gtask:///cmV2aWV3X2RlY2s6Mg"
+      },
+      "status": "needsAction",
+      "title": "Review quarterly planning deck",
+      "updated_at": "2026-11-02T19:10:03-03:00",
+      "url": "https://tasks.google.com/task/cmV2aWV3X2RlY2s6?sa=6"
+    },
+    {
+      "completed_at": null,
+      "deleted": false,
+      "due_date": "2026-11-07",
+      "hidden": false,
+      "id": "Ym9va19yb29tOjM",
+      "is_overdue": false,
+      "notes_snippet": "",
+      "notes_truncated": false,
+      "parent_id": "cmV2aWV3X2RlY2s6Mg",
+      "resource": {
+        "id": "Ym9va19yb29tOjM",
+        "kind": "task",
+        "uri": "gtask:///Ym9va19yb29tOjM"
+      },
+      "status": "needsAction",
+      "title": "Book the meeting room",
+      "updated_at": "2026-11-01T06:00:00-03:00",
+      "url": "https://tasks.google.com/task/Ym9va19yb29tOjM?sa=6"
+    }
+  ],
+  "window_days": 7
+}
