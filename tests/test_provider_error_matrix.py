@@ -167,6 +167,7 @@ def test_error_details_reason_is_read_from_both_google_shapes() -> None:
     [
         ("https://gmail.googleapis.com/gmail/v1/users/me/messages?alt=json", "gmail"),
         ("https://www.googleapis.com/drive/v3/files?q=x&alt=json", "drive"),
+        ("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&alt=json", "drive"),
         ("https://www.googleapis.com/calendar/v3/calendars/primary/events?alt=json", "calendar"),
         ("https://sheets.googleapis.com/v4/spreadsheets/s1?alt=json", "sheets"),
         ("https://people.googleapis.com/v1/people/me/connections?alt=json", "people"),
@@ -194,6 +195,60 @@ def test_classify_error_and_provider_tool_error_agree_on_a_scope_403() -> None:
         assert envelope["provider_status"] == 403
         assert envelope["details"]["provider_reason"] == "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
     assert raw["message"] == explicit["message"]
+
+
+def test_full_drive_storage_is_not_a_retryable_rate_limit() -> None:
+    """``storageQuotaExceeded`` names a quota, but waiting never frees space."""
+    message = "The user's Drive storage quota has been exceeded."
+    error = HttpError(
+        Response({"status": "403"}),
+        _google_error_body(403, message, "storageQuotaExceeded"),
+        uri="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&alt=json",
+    )
+    for envelope in (classify_error(error)[1], classify_error(provider_tool_error(error))[1]):
+        assert envelope["code"] == "permission_denied"
+        assert envelope["retryable"] is False
+        assert envelope["required_action"]["action"] != "retry"
+
+
+PAGED_URI = "https://www.googleapis.com/drive/v3/files?pageToken=opaque-token&q=name+contains+%27budget%27&alt=json"
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "code"),
+    [
+        (403, INSUFFICIENT_SCOPE_BODY, "missing_capability"),
+        (429, _google_error_body(429, "Too many requests", "rateLimitExceeded"), "rate_limited"),
+        (404, _google_error_body(404, "File not found: f1.", "notFound"), "not_found"),
+    ],
+    ids=["403-scope", "429", "404"],
+)
+def test_a_paged_request_failure_is_not_read_as_a_bad_page_token(status: int, body: bytes, code: str) -> None:
+    """``str(HttpError)`` carries the URL, and with it ``pageToken=``."""
+    error = HttpError(Response({"status": str(status)}), body, uri=PAGED_URI)
+    rpc_code, envelope = classify_error(error)
+    assert rpc_code is None
+    assert envelope["code"] == code
+    assert "opaque-token" not in envelope["message"]
+    assert "budget" not in envelope["message"]
+
+
+def test_a_rejected_page_token_keeps_its_recovery_step() -> None:
+    legacy = HttpError(
+        Response({"status": "400"}),
+        json.dumps(
+            {"error": {"code": 400, "message": "Invalid Value", "errors": [
+                {"message": "Invalid Value", "domain": "global", "reason": "invalid", "location": "pageToken", "locationType": "parameter"}
+            ]}}
+        ).encode(),
+        uri=PAGED_URI,
+    )
+    worded = HttpError(Response({"status": "400"}), _google_error_body(400, "Invalid page token.", "invalid"), uri=PAGED_URI)
+    for error in (legacy, worded):
+        envelope = classify_error(error)[1]
+        assert envelope["code"] == "invalid_page_token"
+        assert envelope["required_action"] == {"action": "retry_without_page_token"}
+        assert "opaque-token" not in envelope["message"]
 
 
 @pytest.mark.parametrize(

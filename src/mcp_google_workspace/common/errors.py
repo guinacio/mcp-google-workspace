@@ -206,6 +206,9 @@ _QUOTA_REASONS: Final[frozenset[str]] = frozenset(
 _API_DISABLED_REASONS: Final[frozenset[str]] = frozenset(
     {"accessnotconfigured", "service_disabled"}
 )
+# A full Drive is a quota that waiting does not restore: never ``rate_limited``,
+# although its message ("storage quota has been exceeded") names a quota.
+_EXHAUSTED_STORAGE_REASONS: Final[frozenset[str]] = frozenset({"storagequotaexceeded"})
 
 # Google API host (or ``www.googleapis.com`` path prefix) -> capability name.
 _HOST_CAPABILITIES: Final[dict[str, str]] = {
@@ -223,6 +226,8 @@ _HOST_CAPABILITIES: Final[dict[str, str]] = {
 _PATH_CAPABILITIES: Final[dict[str, str]] = {
     "/calendar/": "calendar",
     "/drive/": "drive",
+    # Media uploads (drive_upload_file, drive_update_file_content).
+    "/upload/drive/": "drive",
     "/gmail/": "gmail",
     "/tasks/": "tasks",
 }
@@ -247,6 +252,23 @@ def provider_error_reason(exc: Exception) -> str | None:
         if isinstance(reason, str) and reason.strip():
             return reason.strip()[:100]
     return None
+
+
+def _rejects_page_token(exc: Exception, reason: str) -> bool:
+    """Whether Google rejected the page token itself, not merely a paged request.
+
+    Reads the provider message and ``errors[].location`` only, never the
+    request URL (which carries ``pageToken=`` on every paged call).
+    """
+    lowered = reason.lower()
+    if "page token" in lowered or "pagetoken" in lowered:
+        return True
+    details = getattr(exc, "error_details", None)
+    entries = details if isinstance(details, list) else [details]
+    return any(
+        isinstance(entry, dict) and str(entry.get("location", "")).lower() == "pagetoken"
+        for entry in entries
+    )
 
 
 def provider_capability(exc: Exception) -> str | None:
@@ -282,7 +304,9 @@ def classify_provider_status(
     lowered = reason.lower()
     reason_key = (provider_reason or "").lower()
     if status == 429 or (
-        status == 403 and (reason_key in _QUOTA_REASONS or "rate limit" in lowered or "quota" in lowered)
+        status == 403
+        and reason_key not in _EXHAUSTED_STORAGE_REASONS
+        and (reason_key in _QUOTA_REASONS or "rate limit" in lowered or "quota" in lowered)
     ):
         return "rate_limited", True, {"action": "retry", "after_seconds": retry_after or 5}
     if status is not None and status >= 500:
@@ -470,12 +494,13 @@ def classify_error(error: Exception) -> tuple[int | None, dict[str, Any]]:
         code, retryable = "missing_capability", False
     elif error_type in {"GoogleAccountConnectionRequired", "GoogleAccountReauthenticationRequired"}:
         code, retryable = "reauth_required", False
-    elif "page token" in lowered or "pagetoken" in lowered:
-        code, retryable = "invalid_page_token", False
     elif is_provider_http_error(error):
         # A Google HTTP error that escaped a tool body unclassified (issue
         # #51): the same mapping as provider_tool_error, so a 403 for missing
         # scopes names the reconnect step and 404 is distinguishable from 403.
+        # Checked before the page-token text match below: ``str(HttpError)``
+        # embeds the request URL, so any failure of a paged request would
+        # otherwise read as a bad page token and echo that URL.
         reason = _provider_reason(error)
         provider_reason = provider_error_reason(error)
         code, retryable, action = classify_provider_status(
@@ -485,9 +510,13 @@ def classify_error(error: Exception) -> tuple[int | None, dict[str, Any]]:
             retry_after=_provider_retry_after(error),
             capability=provider_capability(error),
         )
+        if provider_status == 400 and _rejects_page_token(error, reason):
+            code, action = "invalid_page_token", {"action": "retry_without_page_token"}
         message = f"Google API request failed (HTTP {provider_status}): {reason}"
         if provider_reason:
             details = {"provider_reason": provider_reason}
+    elif "page token" in lowered or "pagetoken" in lowered:
+        code, retryable = "invalid_page_token", False
     elif "confirmation" in lowered or "elicitation" in lowered:
         code, retryable = "confirmation_required", False
     elif isinstance(error, FileNotFoundError):
