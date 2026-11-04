@@ -15,7 +15,7 @@ from mcp.types import ToolAnnotations
 from .fastmcp_compat import local_tools
 from .confirmation import install_confirmation_guard
 from .execution import install_execution_guard
-from .output_schemas import RAW_PASSTHROUGH_TOOLS, infer_tool_output_schema
+from .output_schemas import infer_tool_output_schema
 from .parameter_descriptions import shared_parameter_description
 
 
@@ -196,7 +196,8 @@ _NAMESPACE_TAGS = {
 
 _READ_ONLY_TOOLS = {
     "get_mail_digest",
-    "tasks_digest",
+    # tasks_digest: its local name starts with its namespace, so it splits to "digest".
+    "digest",
     "get_calendar_digest",
 }
 
@@ -436,7 +437,31 @@ def simplify_optional_properties(schema: Any) -> None:
         simplify_optional_properties(definition)
 
 
+# Tools that return a list of resources without a list_/search_ name; they get
+# the same list envelope (count, has_more, next_page_token, fetched_at).
+_LIST_ENVELOPE_TOOLS = frozenset(
+    {
+        "check_mail_updates",
+        "get_calendar_digest",
+        "get_mail_digest",
+        "get_thread",
+        "digest",  # tasks_digest (see _READ_ONLY_TOOLS)
+    }
+)
+
+
+def _returns_list_envelope(base_name: str) -> bool:
+    return base_name.startswith(("list_", "search_")) or base_name in _LIST_ENVELOPE_TOOLS
+
+
 def _paginated_result(result: Any) -> Any:
+    """Complete the list envelope every list-shaped result shares.
+
+    The tool supplies its resource-named list (``files``, ``messages``,
+    ``events``, ...), ``count`` and ``next_page_token`` when it has them; the
+    wrapper fills ``count``, ``next_page_token``, ``has_more`` and
+    ``fetched_at`` where the tool did not.
+    """
     if not isinstance(result, dict):
         return result
     token = result.get("next_page_token", result.get("nextPageToken"))
@@ -456,7 +481,7 @@ def _paginated_result(result: Any) -> Any:
 
 
 def _wrap_pagination(component: Any, base_name: str) -> None:
-    if not base_name.startswith(("list_", "search_")):
+    if not _returns_list_envelope(base_name):
         return
     original = component.fn
     if getattr(original, "_workspace_pagination_wrapped", False):
@@ -487,19 +512,10 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
         tool_component.description = flow_description(tool_component.description)
         tool_component.tags.update(_tool_tags(tool_component.name, namespace_hint=namespace_hint))
         _enrich_parameters_schema(tool_component, namespace_hint=namespace_hint)
-        namespace, base_name = _split_tool_name(
-            tool_component.name, namespace_hint=namespace_hint
-        )
-        canonical_name = f"{namespace}_{base_name}" if namespace is not None else base_name
-        inferred_output_schema = (
-            None
-            if canonical_name in RAW_PASSTHROUGH_TOOLS
-            else infer_tool_output_schema(tool_component.fn, tool_name=base_name)
-        )
-        if canonical_name in RAW_PASSTHROUGH_TOOLS:
-            tool_component.output_schema = None
+        _, base_name = _split_tool_name(tool_component.name, namespace_hint=namespace_hint)
+        inferred_output_schema = infer_tool_output_schema(tool_component.fn, tool_name=base_name)
         if inferred_output_schema is not None:
-            if base_name.startswith(("list_", "search_")):
+            if _returns_list_envelope(base_name):
                 inferred_output_schema["properties"].update(
                     {
                         "count": {

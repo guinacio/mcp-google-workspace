@@ -4,13 +4,15 @@
 Prints, for every message in ``tests/fixtures/gmail_corpus``, the size of the
 first ``gmail_read_emails format=clean`` page under the 1.0.1 cleaner (a
 frozen copy kept in the corpus package) and under the current one, whether
-each was truncated, and the totals. Then prints the size of the committed tool
-catalogs (``tests/contracts/catalog_*.json``) as a client receives them; their
-ceilings live in ``tests/test_catalog_budget.py``.
+each was truncated, and the totals. Then prints, for every response normalizer
+case in ``tests/fixtures/google_payloads``, the size of the Google payload, of
+the normalized response and of one list item. Last, the size of the committed
+tool catalogs (``tests/contracts/catalog_*.json``) as a client receives them;
+their ceilings live in ``tests/test_catalog_budget.py``.
 
-    uv run python scripts/measure_tokens.py           # print the table
-    uv run python scripts/measure_tokens.py --write   # also rewrite metrics.json
-    uv run python scripts/measure_tokens.py --check   # exit 1 if metrics.json is stale
+    uv run python scripts/measure_tokens.py           # print the tables
+    uv run python scripts/measure_tokens.py --write   # also rewrite both metrics.json files
+    uv run python scripts/measure_tokens.py --check   # exit 1 if either metrics.json is stale
 
 Tokens are estimated as ceil(characters / 4); no tokenizer is installed. This
 is a development tool: it is not part of the package or the MCPB bundle.
@@ -28,6 +30,7 @@ if str(PROJECT_ROOT / "tests") not in sys.path:
 
 from contracts.catalog_budget import measure as measure_catalog  # noqa: E402
 from fixtures.gmail_corpus.metrics import METRICS_PATH, compute_metrics, render  # noqa: E402
+from fixtures.google_payloads import metrics as response_metrics  # noqa: E402
 
 
 def _yes_no(value: bool) -> str:
@@ -65,6 +68,14 @@ def main() -> int:
     )
     print(f"\ntokens: {metrics['token_estimate']}; trunc columns in the total row count truncated messages")
 
+    responses = response_metrics.compute_metrics()
+    print(f"\n{'response case':<44} {'payload tok':>11} {'response tok':>12} {'items':>5} {'tok/item':>8}")
+    for case in responses["cases"]:
+        print(
+            f"{case['name']:<44} {case['payload_tokens']:>11} {case['response_tokens']:>12} "
+            f"{case.get('items', ''):>5} {case.get('tokens_per_item', ''):>8}"
+        )
+
     print(f"\n{'catalog':<28} {'tools':>5} {'with schema':>11} {'tokens':>8} {'tokens w/o output schemas':>26}")
     for snapshot in ("catalog_default.json", "catalog_all_optional.json"):
         size = measure_catalog(snapshot)
@@ -73,14 +84,18 @@ def main() -> int:
             f"{size['tokens']:>8} {size['tokens_without_output_schemas']:>26}"
         )
 
-    rendered = render(metrics)
-    if args.write:
-        METRICS_PATH.write_text(rendered, encoding="utf-8", newline="\n")
-        print(f"wrote {METRICS_PATH.relative_to(PROJECT_ROOT)}")
-    elif args.check and METRICS_PATH.read_text(encoding="utf-8") != rendered:
-        print(f"{METRICS_PATH.relative_to(PROJECT_ROOT)} is stale; rerun with --write", file=sys.stderr)
-        return 1
-    return 0
+    stale = False
+    for path, rendered in (
+        (METRICS_PATH, render(metrics)),
+        (response_metrics.METRICS_PATH, response_metrics.render(responses)),
+    ):
+        if args.write:
+            path.write_text(rendered, encoding="utf-8", newline="\n")
+            print(f"wrote {path.relative_to(PROJECT_ROOT)}")
+        elif args.check and (not path.exists() or path.read_text(encoding="utf-8") != rendered):
+            print(f"{path.relative_to(PROJECT_ROOT)} is stale; rerun with --write", file=sys.stderr)
+            stale = True
+    return 1 if stale else 0
 
 
 if __name__ == "__main__":

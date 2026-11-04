@@ -14,16 +14,39 @@
 3. Point ``keyring`` at its refusing backend for this process and every
    subprocess it starts, so no test can read or write the developer's real OS
    keychain. Tests of the keychain path install an in-memory backend.
+4. Start every test with empty per-principal rate windows. The server's
+   per-principal rate limit (120 calls a minute by default) is a sliding
+   window held by each admission controller (one per server instance, and
+   tests reload the server), so without this the calls of earlier tests count
+   against later ones and the outcome depends on how many tool calls the
+   suite happens to make within a minute.
 """
 
 from __future__ import annotations
 
 import os
+import weakref
 
 os.environ["FASTMCP_MCP_CAMELCASE_COMPAT"] = "false"
 os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
 
 import fastmcp  # noqa: E402
+import pytest  # noqa: E402
+
+# Before any server module builds its admission controller (item 4).
+from mcp_google_workspace.common.admission import AdmissionController  # noqa: E402
+
+_CONTROLLERS: weakref.WeakSet[AdmissionController] = weakref.WeakSet()
+_controller_init = AdmissionController.__init__
+
+
+def _tracked_init(self: AdmissionController, *args: object, **kwargs: object) -> None:
+    _controller_init(self, *args, **kwargs)  # type: ignore[arg-type]
+    _CONTROLLERS.add(self)
+
+
+AdmissionController.__init__ = _tracked_init  # type: ignore[method-assign]
+
 
 from mcp_google_workspace.apps import apps_mcp  # noqa: E402
 from mcp_google_workspace.calendar import calendar_mcp  # noqa: E402
@@ -64,6 +87,14 @@ SUBSERVERS = (
 for _subserver in SUBSERVERS:
     if any(tool.task_config.supports_tasks() for tool in local_tools(_subserver)):
         install_tasks_extension(_subserver)
+
+
+
+
+@pytest.fixture(autouse=True)
+def _empty_rate_windows() -> None:
+    for controller in list(_CONTROLLERS):
+        controller._principal_states.clear()
 
 
 def pytest_configure(config) -> None:  # type: ignore[no-untyped-def]
