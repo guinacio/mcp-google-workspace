@@ -56,7 +56,7 @@ Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwardi
 | 2 | gmail_search_emails | List INBOX via labels=["INBOX"], max_results=5 | Read-only; labels take names or IDs |
 | 3 | gmail_search_emails | Search e.g. "unsubscribe", max_results=5 | Find ad-like mail for delete |
 | 4 | gmail_read_emails | Read one or more IDs from search_emails | Read-only |
-| 5 | gmail_send_email | Send to self, confirm_send=False | Use existing address |
+| 5 | gmail_send_email | Send to self (asks for consent) | Use existing address |
 | 6 | gmail_modify_messages | mark_read=true on one message | Id from search |
 | 7 | gmail_modify_messages | mark_read=false on same message | Id from search |
 | 8 | gmail_delete | Trash one message (ad/unsubscribe), mode="trash" | Use ID from search |
@@ -84,7 +84,7 @@ Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwardi
 | 31 | gmail_delete | thread_id, mode="trash" | Then untrash |
 | 32 | gmail_modify_messages | thread_id, untrash=true | Cleanup |
 | 33 | gmail_delete | thread_id, mode="permanent" | Optional, destructive; asks to confirm |
-| 34 | gmail_reply | Reply (reply_all=false / true) to a message, confirm_send=False | Optional, side-effectful |
+| 34 | gmail_reply | Reply (reply_all=false / true) to a message (asks for consent) | Optional, side-effectful |
 | 35 | gmail_manage_forwarding | action="list" | Read-only; extended tier |
 | 36 | gmail_manage_forwarding | action="get", forwarding_email | If known address exists |
 | 37 | gmail_manage_forwarding | action="create", forwarding_email | May require account policy/verification |
@@ -151,9 +151,9 @@ Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwardi
 | # | Tool | Test | Notes |
 |---|------|------|--------|
 | 27 | keep_list_notes | List notes, page_size=5 | Read-only |
-| 28 | keep_create_note | Create note "QA test note", confirm_create=False | Then delete |
+| 28 | keep_create_note | Create note "QA test note" | Then delete |
 | 29 | keep_get_note | Get note by ID from list/create | Read-only |
-| 30 | keep_delete_note | Delete QA note, confirm_delete=False | After create |
+| 30 | keep_delete_note | Delete QA note (asks for consent) | After create |
 | 31 | keep_share_note | (Optional) Share note if we have collaborator | May skip |
 | 32 | keep_update_note | Call (expect unsupported) | Expect status unsupported |
 | 33 | keep_archive_note | Call (expect unsupported) | Expect status unsupported |
@@ -169,7 +169,7 @@ Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwardi
 | 37 | chat_get_space | Get first space by name | From list_spaces |
 | 38 | chat_list_messages | List messages in one space, page_size=5 | Read-only |
 | 39 | chat_get_message | Get one message by name | From list_messages |
-| 40 | chat_create_message | Post "QA test" in first space, notify=False | Then delete |
+| 40 | chat_create_message | Post "QA test" in first space (asks for consent) | Then delete |
 | 41 | chat_update_message | Update message text | Use message from create |
 | 42 | chat_delete_message | Delete QA message, force=True | After create |
 
@@ -218,7 +218,7 @@ Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwardi
 4. Update tools (update_event, update_message, manage_labels update, modify_messages, drive metadata updates and upload_file content replacement).
 5. Resource reads (all URIs above).
 6. Prompt renders (all prompt names + minimal args).
-7. Destructive with created IDs: delete_event (force), delete_note (confirm_delete=False), delete_message (force=True), gmail_delete (mode="trash"), manage_labels delete, drive_delete_file.
+7. Destructive with created IDs: delete_event, delete_note, delete_message (each asks for consent), gmail_delete (mode="trash"), manage_labels delete, drive_delete_file.
 8. Optional: download_attachment if a message with an attachment is found (download_id from read_emails); summarize_* tools.
 
 ---
