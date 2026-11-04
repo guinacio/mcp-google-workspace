@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -14,8 +14,9 @@ from ..client import drive_service
 from ..schemas import (
     CreatePermissionRequest,
     DeletePermissionRequest,
-    GetPermissionRequest,
     ListPermissionsRequest,
+    PermissionRole,
+    PermissionType,
     UpdatePermissionRequest,
 )
 
@@ -27,22 +28,162 @@ _PERMISSION_LIST_FIELDS = "nextPageToken,permissions(id,type,role,emailAddress,d
 _PERMISSION_FIELDS = "id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime"
 _WRITTEN_PERMISSION_FIELDS = "id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime"
 
+# Parameters that describe a new grant; an existing grant's grantee and
+# notification cannot change, so update mode rejects them.
+_CREATE_ONLY_PARAMETERS = ("type", "email_address", "domain", "email_message", "send_notification_email")
+
+
+async def _create_permission(request: CreatePermissionRequest, ctx: Context | None) -> dict[str, Any]:
+    grantee = request.email_address or request.domain or request.type
+    create_details = [f"role {request.role}"]
+    if request.allow_file_discovery is not None:
+        create_details.append(
+            f"file discovery {'enabled' if request.allow_file_discovery else 'disabled'}"
+        )
+    if request.expiration_time is not None:
+        create_details.append(f"expiration {request.expiration_time}")
+    if request.transfer_ownership:
+        create_details.append("transfer ownership")
+    if not await confirm_destructive_action(
+        ctx,
+        "create_permission",
+        (
+            f"Grant access to {grantee} on Drive file {request.file_id} "
+            f"with {', '.join(create_details)}?"
+        ),
+    ):
+        return {
+            "status": "cancelled",
+            "file_id": request.file_id,
+            "grantee": grantee,
+            "role": request.role,
+        }
+    service = drive_service()
+    body: dict[str, Any] = {
+        "type": request.type,
+        "role": request.role,
+    }
+    if request.email_address is not None:
+        body["emailAddress"] = request.email_address
+    if request.domain is not None:
+        body["domain"] = request.domain
+    if request.allow_file_discovery is not None:
+        body["allowFileDiscovery"] = request.allow_file_discovery
+    if request.expiration_time is not None:
+        body["expirationTime"] = request.expiration_time
+
+    LOGGER.debug(
+        f"Creating permission {request.type}:{request.role} for file {request.file_id}."
+    )
+    created = await execute_google_request(
+        service.permissions()
+        .create(
+            fileId=request.file_id,
+            body=body,
+            sendNotificationEmail=request.send_notification_email,
+            emailMessage=request.email_message,
+            transferOwnership=request.transfer_ownership,
+            supportsAllDrives=True,
+            useDomainAdminAccess=False,
+            fields=_WRITTEN_PERMISSION_FIELDS,
+        )
+    )
+    return {"status": "ok", "mode": "created", "permission": created}
+
+
+async def _update_permission(request: UpdatePermissionRequest, ctx: Context | None) -> dict[str, Any]:
+    update_details: list[str] = []
+    if request.role is not None:
+        update_details.append(f"set role to {request.role}")
+    if request.allow_file_discovery is not None:
+        update_details.append(
+            f"set file discovery to {request.allow_file_discovery}"
+        )
+    if request.expiration_time is not None:
+        update_details.append(f"set expiration to {request.expiration_time}")
+    if request.remove_expiration:
+        update_details.append("remove expiration")
+    if request.transfer_ownership:
+        update_details.append("transfer ownership")
+    change_summary = ", ".join(update_details) or "apply the requested changes"
+    if not await confirm_destructive_action(
+        ctx,
+        "update_permission",
+        (
+            f"Update permission {request.permission_id} "
+            f"on Drive file {request.file_id}: {change_summary}?"
+        ),
+    ):
+        return {
+            "status": "cancelled",
+            "file_id": request.file_id,
+            "permission_id": request.permission_id,
+        }
+    service = drive_service()
+    body: dict[str, Any] = {}
+    if request.role is not None:
+        body["role"] = request.role
+    if request.allow_file_discovery is not None:
+        body["allowFileDiscovery"] = request.allow_file_discovery
+    if request.expiration_time is not None:
+        body["expirationTime"] = request.expiration_time
+    if request.remove_expiration:
+        body["expirationTime"] = None
+
+    LOGGER.debug(
+        f"Updating permission {request.permission_id} for file {request.file_id}."
+    )
+    updated = await execute_google_request(
+        service.permissions()
+        .update(
+            fileId=request.file_id,
+            permissionId=request.permission_id,
+            body=body,
+            transferOwnership=request.transfer_ownership,
+            supportsAllDrives=True,
+            useDomainAdminAccess=False,
+            fields=_WRITTEN_PERMISSION_FIELDS,
+        )
+    )
+    return {"status": "ok", "mode": "updated", "permission": updated}
+
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_permissions")
     async def list_permissions(
         file_id: str,
+        permission_id: Annotated[
+            str | None,
+            (
+                "Return only this permission, as a one-item list; page_size and page_token are "
+                "ignored when it is given. Omit to list every grant on the file."
+            ),
+        ] = None,
         page_size: Annotated[int, "Permissions per page, 1 to 200."] = 50,
         page_token: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List who has access to a Drive file or folder and at what level. Use it before drive_update_permission or drive_delete_permission to find the permission_id; for one known permission use drive_get_permission. Returns permissions (id, type, role, emailAddress, domain, displayName, allowFileDiscovery, pendingOwner, expirationTime, deleted), count and next_page_token."""
+        """List who has access to a Drive file or folder and at what level, or look up one grant by permission_id. Use it before drive_share_file (update mode) or drive_unshare_file to find the permission_id. Returns permissions (id, type, role, emailAddress, domain, displayName, allowFileDiscovery, pendingOwner, expirationTime, deleted), count and next_page_token."""
         request = ListPermissionsRequest(
             file_id=file_id,
+            permission_id=permission_id,
             page_size=page_size,
             page_token=page_token,
         )
         service = drive_service()
+        if request.permission_id is not None:
+            LOGGER.debug(f"Fetching permission {request.permission_id} for file {request.file_id}.")
+            permission = await execute_google_request(
+                service.permissions()
+                .get(
+                    fileId=request.file_id,
+                    permissionId=request.permission_id,
+                    supportsAllDrives=True,
+                    useDomainAdminAccess=False,
+                    fields=_PERMISSION_FIELDS,
+                )
+            )
+            return {"permissions": [permission], "next_page_token": None, "count": 1}
         LOGGER.debug(f"Listing permissions for file {request.file_id}.")
         result = await execute_google_request(
             service.permissions()
@@ -64,43 +205,33 @@ def register(server: FastMCP) -> None:
             "count": len(items),
         }
 
-    @server.tool(name="get_permission")
-    async def get_permission(
+    @server.tool(name="share_file")
+    async def share_file(
         file_id: str,
-        permission_id: str,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Get one sharing permission on a Drive file by its permission ID. To see everyone with access use drive_list_permissions. Returns permission (id, type, role, emailAddress, domain, displayName, allowFileDiscovery, pendingOwner, expirationTime, deleted)."""
-        request = GetPermissionRequest(
-            file_id=file_id,
-            permission_id=permission_id,
-        )
-        service = drive_service()
-        LOGGER.debug(f"Fetching permission {request.permission_id} for file {request.file_id}.")
-        permission = await execute_google_request(
-            service.permissions()
-            .get(
-                fileId=request.file_id,
-                permissionId=request.permission_id,
-                supportsAllDrives=True,
-                useDomainAdminAccess=False,
-                fields=_PERMISSION_FIELDS,
-            )
-        )
-        return {"permission": permission}
-
-    @server.tool(name="create_permission")
-    async def create_permission(
-        file_id: str,
-        type: Annotated[
-            Literal["user", "group", "domain", "anyone"],
+        permission_id: Annotated[
+            str | None,
             (
-                "Who receives access: 'user' or 'group' (set email_address), 'domain' (everyone in a "
-                "Google Workspace domain; set domain), or 'anyone' (anyone with the link, no sign-in; "
-                "requires prepare_workspace_action first)."
+                "Existing grant to change, from drive_list_permissions; selects update mode, where "
+                "type, email_address, domain, email_message and send_notification_email are rejected "
+                "because a grant's grantee cannot change. Omit to create a new grant."
             ),
-        ],
-        role: Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"],
+        ] = None,
+        type: Annotated[
+            PermissionType | None,
+            (
+                "Who receives access, required to create a grant: 'user' or 'group' (set "
+                "email_address), 'domain' (everyone in a Google Workspace domain; set domain), or "
+                "'anyone' (anyone with the link, no sign-in; requires prepare_workspace_action first)."
+            ),
+        ] = None,
+        role: Annotated[
+            PermissionRole | None,
+            (
+                "Access level: reader, commenter, writer, fileOrganizer or organizer (shared drives "
+                "only), or owner (ownership transfer). Required to create a grant; in update mode omit "
+                "it to keep the current role."
+            ),
+        ] = None,
         email_address: Annotated[
             str | None,
             "Email address of the person or Google group to share with; required for type user or group.",
@@ -110,174 +241,91 @@ def register(server: FastMCP) -> None:
         ] = None,
         allow_file_discovery: bool | None = None,
         expiration_time: str | None = None,
+        remove_expiration: Annotated[
+            bool,
+            (
+                "Update mode only: true clears the grant's expiration so access no longer ends; "
+                "overrides expiration_time."
+            ),
+        ] = False,
         send_notification_email: Annotated[
             bool | None,
             (
-                "For type user or group: false shares silently. Omitted, Google emails the grantee; it "
-                "cannot be false for an ownership transfer."
+                "Create mode, type user or group: false shares silently. Omitted, Google emails the "
+                "grantee; it cannot be false for an ownership transfer."
             ),
         ] = None,
         email_message: Annotated[
             str | None,
-            "Plain-text message added to the sharing notification email sent to a user or group.",
+            "Create mode: plain-text message added to the sharing notification email sent to a user or group.",
         ] = None,
         transfer_ownership: bool | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Share a Drive file or folder with a person, group, domain or anyone with the link. To change an existing grant's role or expiry use drive_update_permission, and to revoke access drive_delete_permission. Returns status 'ok' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled'. It asks the user to confirm, Google emails user and group grantees by default, and type 'anyone' first requires prepare_workspace_action, then commit_workspace_action."""
-        request = CreatePermissionRequest(
-            file_id=file_id,
-            type=type,
-            role=role,
-            email_address=email_address,
-            domain=domain,
-            allow_file_discovery=allow_file_discovery,
-            expiration_time=expiration_time,
-            send_notification_email=send_notification_email,
-            email_message=email_message,
-            transfer_ownership=transfer_ownership,
-        )
-        grantee = request.email_address or request.domain or request.type
-        create_details = [f"role {request.role}"]
-        if request.allow_file_discovery is not None:
-            create_details.append(
-                f"file discovery {'enabled' if request.allow_file_discovery else 'disabled'}"
+        """Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled'. It asks the user to confirm, Google emails new user and group grantees by default, and type 'anyone' first requires prepare_workspace_action, then commit_workspace_action."""
+        if permission_id is not None:
+            rejected = [
+                name
+                for name, value in (
+                    ("type", type),
+                    ("email_address", email_address),
+                    ("domain", domain),
+                    ("email_message", email_message),
+                    ("send_notification_email", send_notification_email),
+                )
+                if value is not None
+            ]
+            if rejected:
+                raise ValueError(
+                    f"{', '.join(rejected)} cannot be given with permission_id: updating a grant changes only "
+                    "role, expiration_time, remove_expiration, allow_file_discovery and transfer_ownership. "
+                    "To share with someone new, omit permission_id."
+                )
+            return await _update_permission(
+                UpdatePermissionRequest(
+                    file_id=file_id,
+                    permission_id=permission_id,
+                    role=role,
+                    allow_file_discovery=allow_file_discovery,
+                    expiration_time=expiration_time,
+                    remove_expiration=remove_expiration,
+                    transfer_ownership=transfer_ownership,
+                ),
+                ctx,
             )
-        if request.expiration_time is not None:
-            create_details.append(f"expiration {request.expiration_time}")
-        if request.transfer_ownership:
-            create_details.append("transfer ownership")
-        if not await confirm_destructive_action(
-            ctx,
-            "create_permission",
-            (
-                f"Grant access to {grantee} on Drive file {request.file_id} "
-                f"with {', '.join(create_details)}?"
+        if remove_expiration:
+            raise ValueError(
+                "remove_expiration applies only with permission_id, to clear an existing grant's expiration."
+            )
+        if type is None or role is None:
+            missing = [name for name, value in (("type", type), ("role", role)) if value is None]
+            raise ValueError(
+                f"drive_share_file needs {' and '.join(missing)} to create a grant; "
+                "pass permission_id to update an existing one instead."
+            )
+        return await _create_permission(
+            CreatePermissionRequest(
+                file_id=file_id,
+                type=type,
+                role=role,
+                email_address=email_address,
+                domain=domain,
+                allow_file_discovery=allow_file_discovery,
+                expiration_time=expiration_time,
+                send_notification_email=send_notification_email,
+                email_message=email_message,
+                transfer_ownership=transfer_ownership,
             ),
-        ):
-            return {
-                "status": "cancelled",
-                "file_id": request.file_id,
-                "grantee": grantee,
-                "role": request.role,
-            }
-        service = drive_service()
-        body: dict[str, Any] = {
-            "type": request.type,
-            "role": request.role,
-        }
-        if request.email_address is not None:
-            body["emailAddress"] = request.email_address
-        if request.domain is not None:
-            body["domain"] = request.domain
-        if request.allow_file_discovery is not None:
-            body["allowFileDiscovery"] = request.allow_file_discovery
-        if request.expiration_time is not None:
-            body["expirationTime"] = request.expiration_time
-
-        LOGGER.debug(
-            f"Creating permission {request.type}:{request.role} for file {request.file_id}."
-        )
-        created = await execute_google_request(
-            service.permissions()
-            .create(
-                fileId=request.file_id,
-                body=body,
-                sendNotificationEmail=request.send_notification_email,
-                emailMessage=request.email_message,
-                transferOwnership=request.transfer_ownership,
-                supportsAllDrives=True,
-                useDomainAdminAccess=False,
-                fields=_WRITTEN_PERMISSION_FIELDS,
-            )
-        )
-        return {"status": "ok", "permission": created}
-
-    @server.tool(name="update_permission")
-    async def update_permission(
-        file_id: str,
-        permission_id: str,
-        role: Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"] | None = None,
-        allow_file_discovery: bool | None = None,
-        expiration_time: str | None = None,
-        remove_expiration: Annotated[
-            bool, "True clears the grant's expiration so access no longer ends; overrides expiration_time."
-        ] = False,
-        transfer_ownership: bool | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Change an existing sharing grant on a Drive file: its role, expiry or discoverability. The grantee cannot be changed; to share with someone new use drive_create_permission and to revoke access drive_delete_permission, with permission_id from drive_list_permissions. Returns status 'ok' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled'. It asks the user to confirm first."""
-        request = UpdatePermissionRequest(
-            file_id=file_id,
-            permission_id=permission_id,
-            role=role,
-            allow_file_discovery=allow_file_discovery,
-            expiration_time=expiration_time,
-            remove_expiration=remove_expiration,
-            transfer_ownership=transfer_ownership,
-        )
-        update_details: list[str] = []
-        if request.role is not None:
-            update_details.append(f"set role to {request.role}")
-        if request.allow_file_discovery is not None:
-            update_details.append(
-                f"set file discovery to {request.allow_file_discovery}"
-            )
-        if request.expiration_time is not None:
-            update_details.append(f"set expiration to {request.expiration_time}")
-        if request.remove_expiration:
-            update_details.append("remove expiration")
-        if request.transfer_ownership:
-            update_details.append("transfer ownership")
-        change_summary = ", ".join(update_details) or "apply the requested changes"
-        if not await confirm_destructive_action(
             ctx,
-            "update_permission",
-            (
-                f"Update permission {request.permission_id} "
-                f"on Drive file {request.file_id}: {change_summary}?"
-            ),
-        ):
-            return {
-                "status": "cancelled",
-                "file_id": request.file_id,
-                "permission_id": request.permission_id,
-            }
-        service = drive_service()
-        body: dict[str, Any] = {}
-        if request.role is not None:
-            body["role"] = request.role
-        if request.allow_file_discovery is not None:
-            body["allowFileDiscovery"] = request.allow_file_discovery
-        if request.expiration_time is not None:
-            body["expirationTime"] = request.expiration_time
-        if request.remove_expiration:
-            body["expirationTime"] = None
-
-        LOGGER.debug(
-            f"Updating permission {request.permission_id} for file {request.file_id}."
         )
-        updated = await execute_google_request(
-            service.permissions()
-            .update(
-                fileId=request.file_id,
-                permissionId=request.permission_id,
-                body=body,
-                transferOwnership=request.transfer_ownership,
-                supportsAllDrives=True,
-                useDomainAdminAccess=False,
-                fields=_WRITTEN_PERMISSION_FIELDS,
-            )
-        )
-        return {"status": "ok", "permission": updated}
 
-    @server.tool(name="delete_permission")
-    async def delete_permission(
+    @server.tool(name="unshare_file")
+    async def unshare_file(
         file_id: str,
         permission_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Revoke one person's, group's, domain's or link's access to a Drive file or folder. Find the permission_id with drive_list_permissions; to lower access instead of removing it use drive_update_permission. Returns status 'ok' with file_id and permission_id, or status 'cancelled'. It asks the user to confirm first; undo by granting access again with drive_create_permission."""
+        """Revoke one person's, group's, domain's or link's access to a Drive file or folder. Find the permission_id with drive_list_permissions; to lower access instead of removing it use drive_share_file with permission_id. Returns status 'ok' with file_id and permission_id, or status 'cancelled'. It asks the user to confirm first; undo by granting access again with drive_share_file."""
         request = DeletePermissionRequest(
             file_id=file_id,
             permission_id=permission_id,
