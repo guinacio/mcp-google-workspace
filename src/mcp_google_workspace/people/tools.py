@@ -145,7 +145,7 @@ def _merge_stored_name(service: Any, resource_name: str, name: dict[str, Any]) -
     out (the family name when only given_name is passed) would be cleared.
     """
     person = service.people().get(resourceName=resource_name, personFields="names").execute()
-    stored = next(iter(person.get("names") or []), {})
+    stored: dict[str, Any] = next(iter(person.get("names") or []), {})
     merged = {part: stored[part] for part in _WRITABLE_NAME_PARTS if stored.get(part)}
     return {**merged, **name}
 
