@@ -77,7 +77,9 @@ class CreateTaskRequest(ToolRequestModel):
 
 
 class UpdateTaskRequest(ToolRequestModel):
-    tasklist_id: str = Field(description="Tasklist ID.")
+    """A field patch and/or a reposition of one task (tasks.move, then tasks.patch)."""
+
+    tasklist_id: str = Field(description="Tasklist ID the task is in now.")
     task_id: str = Field(description="Task ID.")
     title: str | None = Field(default=None)
     notes: str | None = Field(default=None)
@@ -86,47 +88,51 @@ class UpdateTaskRequest(ToolRequestModel):
     completed: str | None = Field(default=None)
     deleted: bool | None = Field(default=None)
     hidden: bool | None = Field(default=None)
+    parent: str | None = Field(default=None)
+    previous: str | None = Field(default=None)
+    destination_tasklist_id: str | None = Field(default=None)
+    move_to_top: bool = Field(default=False)
 
     @field_validator("due", "completed", mode="before")
     @classmethod
     def _normalize_times(cls, value: str | None) -> str | None:
         return _normalize_timestamp(value)
 
-    @model_validator(mode="after")
-    def _ensure_updates(self) -> "UpdateTaskRequest":
-        if all(
-            value is None
-            for value in (self.title, self.notes, self.due, self.status, self.completed, self.deleted, self.hidden)
-        ):
-            raise ValueError("At least one mutable task field must be provided")
-        return self
-
-
-class CompleteTaskRequest(ToolRequestModel):
-    tasklist_id: str = Field(description="Tasklist ID.")
-    task_id: str = Field(description="Task ID.")
-    completed_at: str | None = Field(default=None)
-
-    @field_validator("completed_at", mode="before")
+    @field_validator("parent", "previous", "destination_tasklist_id", mode="before")
     @classmethod
-    def _normalize_completed(cls, value: str | None) -> str | None:
-        return _normalize_timestamp(value)
+    def _blank_is_omitted(cls, value: str | None) -> str | None:
+        # An empty string must not turn into a move to the top of the list.
+        return value or None
 
+    @property
+    def moves(self) -> bool:
+        """Whether a tasks.move is requested."""
+        return self.move_to_top or any(
+            value is not None for value in (self.parent, self.previous, self.destination_tasklist_id)
+        )
 
-class MoveTaskRequest(ToolRequestModel):
-    tasklist_id: str = Field(description="Source tasklist ID.")
-    task_id: str = Field(description="Task ID.")
-    parent: str | None = Field(default=None)
-    previous: str | None = Field(default=None)
-    destination_tasklist_id: str | None = Field(default=None)
+    def patch_body(self) -> dict[str, object]:
+        """The tasks.patch body: the task fields that were set."""
+        return self.model_dump(
+            exclude_none=True,
+            include={"title", "notes", "due", "status", "completed", "deleted", "hidden"},
+            mode="json",
+        )
 
     @model_validator(mode="after")
-    def _ensure_valid_combination(self) -> "MoveTaskRequest":
+    def _ensure_valid_change(self) -> "UpdateTaskRequest":
         # The Tasks API rejects cross-list moves that also reposition the task.
         if self.destination_tasklist_id is not None and (self.parent or self.previous):
             raise ValueError(
                 "parent/previous cannot be combined with destination_tasklist_id; "
                 "move the task to the destination tasklist first, then reorder it"
+            )
+        if self.move_to_top and (self.parent or self.previous or self.destination_tasklist_id):
+            raise ValueError("move_to_top cannot be combined with parent, previous or destination_tasklist_id")
+        if not self.moves and not self.patch_body():
+            raise ValueError(
+                "At least one change must be provided: a task field (title, notes, due, status, completed, "
+                "deleted, hidden) or a move (parent, previous, destination_tasklist_id, move_to_top)"
             )
         return self
 

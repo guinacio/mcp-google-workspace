@@ -13,7 +13,6 @@ from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone, user_now
 from .client import tasks_service
 from .schemas import (
-    CompleteTaskRequest,
     CreateTaskRequest,
     CreateTasklistRequest,
     DeleteTaskRequest,
@@ -21,7 +20,6 @@ from .schemas import (
     GetTasklistRequest,
     ListTasksRequest,
     ListTasklistsRequest,
-    MoveTaskRequest,
     TaskStatus,
     UpdateTaskRequest,
 )
@@ -89,27 +87,8 @@ def create_task_payload(request: CreateTaskRequest) -> dict[str, Any]:
     ).execute()
 
 
-def update_task_payload(request: UpdateTaskRequest) -> dict[str, Any]:
-    service = tasks_service()
-    body = request.model_dump(exclude_none=True, exclude={"tasklist_id", "task_id"}, mode="json")
-    return service.tasks().patch(tasklist=request.tasklist_id, task=request.task_id, body=body).execute()
-
-
-def complete_task_payload(
-    request: CompleteTaskRequest, *, default_completed_at: str | None = None
-) -> dict[str, Any]:
-    service = tasks_service()
-    completed_at = request.completed_at or default_completed_at
-    if not completed_at:
-        raise ValueError("completed_at must be supplied when no account timezone is available")
-    return service.tasks().patch(
-        tasklist=request.tasklist_id,
-        task=request.task_id,
-        body={"status": "completed", "completed": completed_at},
-    ).execute()
-
-
-def move_task_payload(request: MoveTaskRequest) -> dict[str, Any]:
+def move_task_payload(request: UpdateTaskRequest) -> dict[str, Any]:
+    """tasks.move: reposition the task in its list, or move it to destination_tasklist_id."""
     service = tasks_service()
     return service.tasks().move(
         tasklist=request.tasklist_id,
@@ -118,6 +97,22 @@ def move_task_payload(request: MoveTaskRequest) -> dict[str, Any]:
         previous=request.previous,
         destinationTasklist=request.destination_tasklist_id,
     ).execute()
+
+
+def patch_task_payload(tasklist_id: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """tasks.patch with the task fields to change."""
+    service = tasks_service()
+    return service.tasks().patch(tasklist=tasklist_id, task=task_id, body=body).execute()
+
+
+def update_task_body(request: UpdateTaskRequest, *, default_completed: str | None) -> dict[str, Any]:
+    """The patch body; status 'completed' without a completion time records default_completed."""
+    body = request.patch_body()
+    if body.get("status") == "completed" and "completed" not in body:
+        if not default_completed:
+            raise ValueError("completed must be supplied when no account timezone is available")
+        body["completed"] = default_completed
+    return body
 
 
 def delete_task_payload(request: DeleteTaskRequest) -> dict[str, Any]:
@@ -129,11 +124,24 @@ def delete_task_payload(request: DeleteTaskRequest) -> dict[str, Any]:
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_tasklists")
     async def list_tasklists(
+        tasklist_id: Annotated[
+            str | None,
+            (
+                "Task list ID (or '@default') to return only that list, as a one-item tasklists; "
+                "max_results and page_token are ignored when it is given."
+            ),
+        ] = None,
         max_results: Annotated[int, "Maximum task lists per page, 1 to 100."] = 100,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        """List the user's Google Tasks task lists. Call it to get the tasklist_id the other tasks tools take ('@default' also selects the default list). Returns tasklists (id, title, updated_at in local time), count, next_page_token when more lists remain, and account_timezone."""
+        """List the user's Google Tasks task lists, or look up one list by tasklist_id. Call it to get the tasklist_id the other tasks tools take ('@default' also selects the default list); for the tasks in a list use tasks_list_tasks. Returns tasklists (id, title, updated_at in local time), count, next_page_token when more lists remain, and account_timezone."""
         timezone_name = await resolve_user_timezone()
+        if tasklist_id is not None:
+            try:
+                one = await run_blocking(get_tasklist_payload, GetTasklistRequest(tasklist_id=tasklist_id))
+            except HttpError as exc:
+                raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
+            return tasklists_page({"items": [one]}, account_timezone=timezone_name)
         try:
             result = await run_blocking(
                 list_tasklists_payload, ListTasklistsRequest(max_results=max_results, page_token=page_token)
@@ -141,18 +149,6 @@ def register_tools(server: FastMCP) -> None:
         except HttpError as exc:
             raise provider_tool_error(exc) from exc
         return tasklists_page(result, account_timezone=timezone_name)
-
-    @server.tool(name="get_tasklist")
-    async def get_tasklist(tasklist_id: str) -> dict[str, Any]:
-        """Get one task list's title and last update time by ID. To find list IDs use tasks_list_tasklists, and for the tasks in a list use tasks_list_tasks. Returns id, title and updated_at (local time in the account time zone)."""
-        timezone_name = await resolve_user_timezone()
-        try:
-            return tasklist_envelope(
-                await run_blocking(get_tasklist_payload, GetTasklistRequest(tasklist_id=tasklist_id)),
-                account_timezone=timezone_name,
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
 
     @server.tool(name="create_tasklist")
     async def create_tasklist(title: Annotated[str, "Name of the new task list."]) -> dict[str, Any]:
@@ -167,6 +163,13 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_tasks")
     async def list_tasks(
         tasklist_id: Annotated[str | None, _LIST_TASKLIST_ID] = None,
+        task_id: Annotated[
+            str | None,
+            (
+                "Task ID to return only that task of the list, as a one-item tasks; the filter and paging "
+                "parameters are ignored when it is given."
+            ),
+        ] = None,
         completed_max: Annotated[
             str | None,
             "Upper bound for the completion time: RFC3339, or YYYY-MM-DD for midnight UTC; a time without offset is read as UTC.",
@@ -204,9 +207,17 @@ def register_tools(server: FastMCP) -> None:
             "Lower bound for the last modification time, RFC3339; a time without offset is read as UTC.",
         ] = None,
     ) -> dict[str, Any]:
-        """List the tasks in one task list (the default list when tasklist_id is omitted), filtered by due date, completion or update time. For a triage view of open work grouped by overdue, upcoming and unscheduled use tasks_tasks_digest. Returns tasklist_id (the list's real ID when Google reports it), tasks (id, title, status, due_date, is_overdue, completed_at and updated_at in local time, notes_snippet, notes_truncated, parent_id, deleted, hidden, url), count, next_page_token when more tasks remain, and account_timezone."""
+        """List the tasks in one task list (the default list when tasklist_id is omitted), filtered by due date, completion or update time, or read one task by task_id. For a triage view of open work grouped by overdue, upcoming and unscheduled use tasks_tasks_digest. Returns tasklist_id (the list's real ID when Google reports it), tasks (id, title, status, due_date, is_overdue, completed_at and updated_at in local time, notes_snippet, notes_truncated, parent_id, deleted, hidden, url), count, next_page_token when more tasks remain, and account_timezone."""
         timezone_name = await resolve_user_timezone()
         list_id = tasklist_id or DEFAULT_TASKLIST
+        if task_id is not None:
+            try:
+                one = await run_blocking(get_task_payload, GetTaskRequest(tasklist_id=list_id, task_id=task_id))
+            except HttpError as exc:
+                raise provider_tool_error(exc, tasklist_id=list_id, task_id=task_id) from exc
+            return tasks_page(
+                {"items": [one]}, tasklist_id=list_id, now=user_now(timezone_name), account_timezone=timezone_name
+            )
         try:
             result = await run_blocking(
                 list_tasks_payload,
@@ -230,22 +241,6 @@ def register_tools(server: FastMCP) -> None:
         return tasks_page(
             result, tasklist_id=list_id, now=user_now(timezone_name), account_timezone=timezone_name
         )
-
-    @server.tool(name="get_task")
-    async def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
-        """Get one task by its task list and task ID. To list a task list's tasks use tasks_list_tasks. Returns id, title, status, due_date, is_overdue, completed_at and updated_at (local time in the account time zone), parent_id, deleted, hidden, url and the notes as notes_snippet (first 300 characters, with notes_truncated)."""
-        timezone_name = await resolve_user_timezone()
-        try:
-            return task_envelope(
-                await run_blocking(
-                    get_task_payload,
-                    GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id),
-                ),
-                now=user_now(timezone_name),
-                account_timezone=timezone_name,
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
     @server.tool(name="tasks_digest")
     async def tasks_digest_tool(
@@ -278,8 +273,8 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="create_task")
     async def create_task(
-        tasklist_id: str,
         title: Annotated[str, "Text of the task as shown in the list."],
+        tasklist_id: Annotated[str | None, _LIST_TASKLIST_ID] = None,
         notes: Annotated[str | None, "Longer free-text details shown under the task."] = None,
         due: Annotated[
             str | None,
@@ -296,13 +291,14 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         status: Annotated[TaskStatus, "'needsAction' creates an open task; 'completed' creates it already done."] = "needsAction",
     ) -> dict[str, Any]:
-        """Add a task to a task list, optionally as a subtask (parent) or right after a sibling (previous). To change an existing task use tasks_update_task, and to reposition it use tasks_move_task. Returns status 'ok' and task: id (the task_id for the other tasks tools), title, status ('needsAction' or 'completed'), due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
+        """Add a task to a task list (the default list when tasklist_id is omitted), optionally as a subtask (parent) or right after a sibling (previous). To change, complete or move an existing task use tasks_update_task. Returns status 'ok' and task: id (the task_id for the other tasks tools), title, status ('needsAction' or 'completed'), due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
         timezone_name = await resolve_user_timezone()
+        list_id = tasklist_id or DEFAULT_TASKLIST
         try:
             created = await run_blocking(
                 create_task_payload,
                 CreateTaskRequest(
-                    tasklist_id=tasklist_id,
+                    tasklist_id=list_id,
                     title=title,
                     notes=notes,
                     due=due,
@@ -316,12 +312,12 @@ def register_tools(server: FastMCP) -> None:
                 "task": task_envelope(created, now=user_now(timezone_name), account_timezone=timezone_name),
             }
         except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
+            raise provider_tool_error(exc, tasklist_id=list_id) from exc
 
     @server.tool(name="update_task")
     async def update_task(
-        tasklist_id: str,
         task_id: str,
+        tasklist_id: Annotated[str | None, _LIST_TASKLIST_ID] = None,
         title: Annotated[str | None, "New text of the task."] = None,
         notes: Annotated[str | None, "New details text, replacing the old notes."] = None,
         due: Annotated[
@@ -329,11 +325,18 @@ def register_tools(server: FastMCP) -> None:
             "New due date as YYYY-MM-DD (sent as midnight UTC) or RFC3339; Google Tasks keeps only the date.",
         ] = None,
         status: Annotated[
-            TaskStatus | None, "'completed' marks the task done; 'needsAction' reopens it."
+            TaskStatus | None,
+            (
+                "'completed' marks the task done, recording completed (now in the account time zone when "
+                "completed is omitted); 'needsAction' reopens it."
+            ),
         ] = None,
         completed: Annotated[
             str | None,
-            "Completion time to record, RFC3339 (YYYY-MM-DD means midnight UTC); usually sent with status 'completed'.",
+            (
+                "Completion time to record, RFC3339 (YYYY-MM-DD means midnight UTC), usually with status "
+                "'completed'; omitted there, it defaults to now in the account time zone."
+            ),
         ] = None,
         deleted: Annotated[
             bool | None, "True flags the task as deleted (it then lists only with show_deleted); false clears the flag."
@@ -341,100 +344,80 @@ def register_tools(server: FastMCP) -> None:
         hidden: Annotated[
             bool | None, "Sets the hidden flag (true for completed tasks cleared from the list); Google documents it as read-only, so it may be ignored."
         ] = None,
-    ) -> dict[str, Any]:
-        """Change fields of an existing task; only the fields you pass change, and at least one is required. To just mark a task done use tasks_complete_task, and to reorder or move it use tasks_move_task. Returns status 'ok' and task, the task as stored now, shaped as in tasks_get_task: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
-        timezone_name = await resolve_user_timezone()
-        try:
-            updated = await run_blocking(
-                update_task_payload,
-                UpdateTaskRequest(
-                    tasklist_id=tasklist_id,
-                    task_id=task_id,
-                    title=title,
-                    notes=notes,
-                    due=due,
-                    status=status,
-                    completed=completed,
-                    deleted=deleted,
-                    hidden=hidden,
-                ),
-            )
-            return {
-                "status": "ok",
-                "task": task_envelope(updated, now=user_now(timezone_name), account_timezone=timezone_name),
-            }
-        except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
-
-    @server.tool(name="complete_task")
-    async def complete_task(
-        tasklist_id: str,
-        task_id: str,
-        completed_at: Annotated[
-            str | None,
-            "Completion time to record, RFC3339 (YYYY-MM-DD means midnight UTC); defaults to now in the account's time zone.",
-        ] = None,
-    ) -> dict[str, Any]:
-        """Mark one task as done, recording when it was completed. To reopen it use tasks_update_task with status 'needsAction'. Returns status 'ok' and task, shaped as in tasks_get_task: id, title, status ('completed'), completed_at (the recorded time, in local time), due_date, is_overdue, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
-        timezone_name = await resolve_user_timezone()
-        try:
-            completed = await run_blocking(
-                complete_task_payload,
-                CompleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id, completed_at=completed_at),
-                default_completed_at=_completed_now(timezone_name),
-            )
-            return {
-                "status": "ok",
-                "task": task_envelope(completed, now=user_now(timezone_name), account_timezone=timezone_name),
-            }
-        except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
-
-    @server.tool(name="move_task")
-    async def move_task(
-        tasklist_id: str,
-        task_id: str,
         parent: Annotated[
             str | None,
-            "Task ID in the same list to nest this task under; omit to make it a top-level task. Not allowed with destination_tasklist_id.",
+            (
+                "Moves the task under this task of the same list as a subtask; a move without it puts the "
+                "task at the top level. Not allowed with destination_tasklist_id."
+            ),
         ] = None,
         previous: Annotated[
             str | None,
-            "ID of the sibling task to place this task right after; omit to place it first. Not allowed with destination_tasklist_id.",
+            (
+                "Moves the task right after this sibling task; a move without it puts the task first among "
+                "its siblings. Not allowed with destination_tasklist_id."
+            ),
         ] = None,
         destination_tasklist_id: Annotated[
             str | None,
-            "Task list ID to move the task into; omit to reposition it within its current list.",
+            (
+                "Task list ID to move the task into, at its top level; to place it there, call again on "
+                "that list with parent or previous."
+            ),
         ] = None,
+        move_to_top: Annotated[
+            bool,
+            (
+                "True moves the task to the first position at the top level of its list; not allowed "
+                "with parent, previous or destination_tasklist_id."
+            ),
+        ] = False,
     ) -> dict[str, Any]:
-        """Reposition a task within its list (nest it under a parent or place it after a sibling), or move it to another list. A cross-list move cannot also set parent or previous: move first, then call again on the destination list to place it. Returns status 'ok' and task, the task after the move shaped as in tasks_get_task: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id (null at the top level), deleted, hidden and url."""
+        """Change an existing task: edit its fields, mark it done (status 'completed') or reopen it, move it within its list (parent, previous, move_to_top) or to another list (destination_tasklist_id). Only what you pass changes and at least one change is required; a move runs first, then the field changes on the list the task ends up in. Returns status 'ok' and task, shaped as in tasks_list_tasks: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
         timezone_name = await resolve_user_timezone()
+        list_id = tasklist_id or DEFAULT_TASKLIST
+        request = UpdateTaskRequest(
+            tasklist_id=list_id,
+            task_id=task_id,
+            title=title,
+            notes=notes,
+            due=due,
+            status=status,
+            completed=completed,
+            deleted=deleted,
+            hidden=hidden,
+            parent=parent,
+            previous=previous,
+            destination_tasklist_id=destination_tasklist_id,
+            move_to_top=move_to_top,
+        )
+        body = update_task_body(request, default_completed=_completed_now(timezone_name))
+        # The error context names where the task is: after a move, its new list.
+        target_list, target_task, moved = list_id, task_id, False
+        stored: dict[str, Any] = {}
         try:
-            moved = await run_blocking(
-                move_task_payload,
-                MoveTaskRequest(
-                    tasklist_id=tasklist_id,
-                    task_id=task_id,
-                    parent=parent,
-                    previous=previous,
-                    destination_tasklist_id=destination_tasklist_id,
-                ),
-            )
-            return {
-                "status": "ok",
-                "task": task_envelope(moved, now=user_now(timezone_name), account_timezone=timezone_name),
-            }
+            if request.moves:
+                stored = await run_blocking(move_task_payload, request)
+                moved = True
+                target_list = request.destination_tasklist_id or list_id
+                target_task = stored.get("id") or task_id
+            if body:
+                stored = await run_blocking(patch_task_payload, target_list, target_task, body)
         except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
+            raise provider_tool_error(exc, tasklist_id=target_list, task_id=target_task, moved=moved) from exc
+        return {
+            "status": "ok",
+            "task": task_envelope(stored, now=user_now(timezone_name), account_timezone=timezone_name),
+        }
 
     @server.tool(name="delete_task")
     async def delete_task(
-        tasklist_id: str,
         task_id: str,
+        tasklist_id: Annotated[str | None, _LIST_TASKLIST_ID] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a task from its task list after the user confirms. To only mark it done use tasks_complete_task. Returns status 'deleted' with task_id and tasklist_id; declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted."""
-        request = DeleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id)
+        """Delete a task from its task list (the default list when tasklist_id is omitted) after the user confirms. To only mark it done use tasks_update_task with status 'completed'. Returns status 'deleted' with task_id and tasklist_id; declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted."""
+        request = DeleteTaskRequest(tasklist_id=tasklist_id or DEFAULT_TASKLIST, task_id=task_id)
         if not await confirm_destructive_action(
             ctx, "delete_task", f"Permanently delete task {request.task_id}?"
         ):
@@ -446,4 +429,4 @@ def register_tools(server: FastMCP) -> None:
         try:
             return await run_blocking(delete_task_payload, request)
         except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
+            raise provider_tool_error(exc, tasklist_id=request.tasklist_id, task_id=task_id) from exc
