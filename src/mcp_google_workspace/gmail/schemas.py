@@ -83,9 +83,16 @@ class ReadEmailsRequest(ToolRequestModel):
     )
     format: Literal["metadata", "preview", "clean", "full"] = Field(
         default="clean",
-        description="Detail level. clean is hygienic text capped near 2k tokens; full includes raw text/html.",
+        description=(
+            "Detail level. preview is the first 1,000 characters of the cleaned body; clean is the "
+            "cleaned body paged near 2k tokens; full is the whole cleaned body plus the raw text part."
+        ),
     )
     offset: int = Field(default=0, ge=0, description="Character offset for continuing a truncated clean body.")
+    include_html: bool = Field(
+        default=False,
+        description="With format=full, also return the original HTML part as html_body (null otherwise).",
+    )
 
 
 class DigestRequest(ToolRequestModel):

@@ -19632,7 +19632,7 @@
         "properties": {
           "format": {
             "default": "clean",
-            "description": "Response format to request from the Google API.",
+            "description": "Body detail: 'metadata' omits the body; 'preview' returns the first 1,000 characters of the cleaned body text; 'clean' returns the cleaned body text in pages of about 8,000 characters; 'full' returns the whole cleaned body unpaged plus the original text/plain part (text_body) and, with include_html, the HTML part.",
             "enum": [
               "metadata",
               "preview",
@@ -19641,6 +19641,11 @@
             ],
             "maxLength": 1000000,
             "type": "string"
+          },
+          "include_html": {
+            "default": false,
+            "description": "With format='full' only: also return the original HTML part as html_body. Set it only when the markup itself is needed (layout, images, exact link targets with their query strings); newsletter HTML is often tens of kilobytes. When false, html_body is null and the readable text is in body.",
+            "type": "boolean"
           },
           "message_ids": {
             "description": "Gmail message IDs.",
