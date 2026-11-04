@@ -552,6 +552,30 @@ def test_dry_run_previews_without_any_google_call(
     assert google_calls == []
 
 
+@pytest.mark.parametrize("tool", ["gmail_modify_messages", "gmail_delete"])
+def test_gmail_dry_run_counts_every_message_not_only_the_listed_ones(
+    workspace: FastMCP, google_calls: list[str], tool: str
+) -> None:
+    ids = [f"m{i}" for i in range(12)] + ["m0", "m1"]
+    result = _call(workspace, tool, {"message_ids": ids, "dry_run": True})
+    content = result.structured_content
+    # The preview text names only the first IDs; the counts cover all of them.
+    assert (content["count"], content["requested_count"]) == (12, 14)
+    assert content["consent_required"] is True
+    thread = _call(workspace, tool, {"thread_id": "t1", "dry_run": True}).structured_content
+    assert (thread["count"], thread["requested_count"]) == (None, 0)
+    assert google_calls == []
+
+
+def test_gmail_dry_run_description_says_nothing_is_asked_and_what_consent_required_means(
+    workspace: FastMCP,
+) -> None:
+    tool = anyio.run(workspace.get_tool, "gmail_modify_messages")
+    text = tool.parameters["properties"]["dry_run"]["description"]
+    assert "no consent is asked" not in text
+    assert "consent_required" in text and "real call" in text
+
+
 # ---------------------------------------------------------------------------
 # MCP_CONSENT
 # ---------------------------------------------------------------------------

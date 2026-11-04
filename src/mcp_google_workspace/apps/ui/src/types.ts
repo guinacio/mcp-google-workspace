@@ -116,6 +116,8 @@ export interface EventEditorDraft {
   description?: string;
   attendees_csv?: string;
   create_conference: boolean;
+  /** Edit mode: the event already has a Meet link, so the view never asks for another one. */
+  has_conference?: boolean;
 }
 
 /** Server operations the view may call (from the server's operation manifest). */

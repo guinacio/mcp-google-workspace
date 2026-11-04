@@ -253,7 +253,7 @@ def test_find_free_time_suggests_common_slots_within_working_hours(monkeypatch) 
         {"start": "2026-03-02T09:00:00+00:00", "end": "2026-03-02T09:30:00+00:00"},
         {"start": "2026-03-02T16:30:00+00:00", "end": "2026-03-02T17:00:00+00:00"},
     ]
-    assert payload["total_suggestions"] == 2
+    assert payload["total_suggestions"] == payload["count"] == 2
     assert payload["slot_duration_minutes"] == 30
     assert payload["granularity_minutes"] == 15
     assert payload["working_hours_start"] == "08:00"

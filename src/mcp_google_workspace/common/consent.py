@@ -142,6 +142,8 @@ class ToolPolicy:
     preview: Renderer | None = None
     #: The tool takes ``dry_run`` and the gate answers it with the preview.
     dry_run: bool = False
+    #: Extra structured fields of the dry-run result (counts the preview text abbreviates).
+    dry_run_fields: Callable[[Arguments], dict[str, Any]] | None = None
     #: ``destructiveHint`` override; derived from ``triggers`` when None.
     destructive: bool | None = None
 
@@ -199,6 +201,16 @@ def _notifies(arguments: Arguments) -> bool:
 
 def _bulk_messages(arguments: Arguments) -> bool:
     return len(_unique(arguments.get("message_ids"))) >= BULK_THRESHOLD
+
+
+def _message_counts(arguments: Arguments) -> dict[str, Any]:
+    """Dry-run counts of a Gmail call: distinct message IDs (null for a thread) and IDs as given."""
+    given = arguments.get("message_ids")
+    ids = _unique(given)
+    return {
+        "count": len(ids) if ids or not arguments.get("thread_id") else None,
+        "requested_count": len(given) if isinstance(given, list) else 0,
+    }
 
 
 def _raw_batch_is_consequential(arguments: Arguments) -> bool:
@@ -675,6 +687,7 @@ CONSENT_TABLE: Final[dict[str, ToolPolicy]] = {
         ),
         preview=_gmail_delete_preview,
         dry_run=True,
+        dry_run_fields=_message_counts,
     ),
     "gmail_delete_draft": _always_ask(
         "delete_draft", _static("Permanently delete Gmail draft {draft_id}? It does not go to Trash."), idempotent=True
@@ -732,6 +745,7 @@ CONSENT_TABLE: Final[dict[str, ToolPolicy]] = {
         ),
         preview=_gmail_modify_preview,
         dry_run=True,
+        dry_run_fields=_message_counts,
     ),
     "gmail_read_emails": READ,
     "gmail_reply": ToolPolicy(
@@ -1157,6 +1171,7 @@ async def enforce_consent(call: CallBinding, ctx: Context | None) -> dict[str, A
             "preview": await render_preview(
                 call.tool, arguments, would_trigger.action if would_trigger is not None else None
             ),
+            **(policy.dry_run_fields(arguments) if policy.dry_run_fields is not None else {}),
         }
     if trigger is None:
         return None

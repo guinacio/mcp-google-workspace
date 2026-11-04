@@ -515,7 +515,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Check the free/busy times of up to 50 calendars or people over one window. To test a chosen time, pass it as the window and read all_free; to find meeting times, read suggested_slots, then book with calendar_create_event. Returns all_free (true only when every calendar was read and is free for the whole window), calendars in request order (id, free, null when unreadable, busy periods, errors such as notFound), suggested_slots (start/end within working hours when every readable calendar is free; unreadable ones count as free), total_suggestions, timezone (the zone of every time) and the window and slot settings used.",
+      "description": "Check the free/busy times of up to 50 calendars or people over one window. To test a chosen time, pass it as the window and read all_free; to find meeting times, read suggested_slots, then book with calendar_create_event. Returns all_free (true only when every calendar was read and is free for the whole window), calendars in request order (id, free, null when unreadable, busy periods, errors such as notFound), suggested_slots (start/end within working hours when every readable calendar is free; unreadable ones count as free), total_suggestions and count (both the number of suggested_slots), timezone (the zone of every time) and the window and slot settings used.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -598,6 +598,10 @@
             "items": {},
             "type": "array"
           },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
           "granularity_minutes": {
             "type": "integer"
           },
@@ -629,7 +633,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as \"tomorrow at 3pm\" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone (IANA name), utc_offset, current_local_time, current_utc_time and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden.",
+      "description": "Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as \"tomorrow at 3pm\" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone and timezone_name (both the IANA name), utc_offset, current_local_time, current_utc_time (also as utc_datetime), count, has_more (false), next_page_token, fetched_at and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -668,6 +672,10 @@
               "null"
             ]
           },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
           "current_date": {
             "type": [
               "string",
@@ -693,10 +701,28 @@
             ]
           },
           "day_of_week": {},
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "timezone": {
             "type": "string"
           },
-          "timezone_name": {},
+          "timezone_name": {
+            "type": "string"
+          },
           "utc_datetime": {
             "type": [
               "string",
@@ -1780,7 +1806,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs (the append and replace tools need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document.",
+      "description": "Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs, 'raw' for Google's Document resource unchanged. Every format returns document_id, title, url and revision_id (null unless the user can edit the document). Text and markdown add format, tabs and one page of body with truncated, next_offset, body_chars and body_sha256; outline adds tabs of content elements (kind, start_index, end_index, text, style) with truncated, next_offset, element_count, outline_chars and outline_sha256; page on with offset=next_offset until it is null. Raw returns the resource in document.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1790,7 +1816,7 @@
           },
           "format": {
             "default": "text",
-            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out; an index inside an element's text counts UTF-16 units, so most emoji take two. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
+            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline in pages of about 16,000 characters of JSON, cut only between structural elements: every element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out; an index inside an element's text counts UTF-16 units, so most emoji take two; a tab begun on an earlier page has continued true and no headers, footers, footnotes or named_ranges. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included. The text differs from drive_read_file's Google export, so body_chars differ too.",
             "enum": [
               "text",
               "markdown",
@@ -1806,7 +1832,7 @@
           },
           "offset": {
             "default": 0,
-            "description": "Character offset into the rendered text to resume from: the next_offset of a truncated 'text' or 'markdown' result, with the same format; 0 starts at the beginning, and 'outline' and 'raw' ignore it.",
+            "description": "Where to resume: the next_offset of a truncated result, with the same format. For 'text' and 'markdown' a character offset into the rendered text; for 'outline' the number of structural elements already read, counted across tabs in order. 0 starts at the beginning; 'raw' ignores it.",
             "type": "integer"
           },
           "suggestions_view_mode": {
@@ -1861,8 +1887,17 @@
               "null"
             ]
           },
+          "element_count": {
+            "type": "integer"
+          },
           "format": {},
           "next_offset": {},
+          "outline_chars": {
+            "type": "integer"
+          },
+          "outline_sha256": {
+            "type": "string"
+          },
           "revision_id": {
             "type": [
               "string",
@@ -1982,7 +2017,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it) of the new copy; the source file is unchanged.",
+      "description": "Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it) of the new copy; the source file is unchanged.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2051,7 +2086,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_upload_file with only name and mime_type; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it); use file.id as a parent ID in later calls.",
+      "description": "Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_upload_file with only name and mime_type; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it); use file.id as a parent ID in later calls.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2112,7 +2147,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_unshare_file instead. Returns status 'ok' with mode 'trash' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline.",
+      "description": "Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_unshare_file instead. Returns status 'ok' with mode 'trash' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2272,7 +2307,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get the metadata of one Drive file or folder by ID, including how its content can be retrieved. To find files by name or filter use drive_list_files; to read a file's text use drive_read_file, and to save or export it drive_download_file. Returns file (id, name, kind, mime_type, size, created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download, is_google_native, export_formats: the MIME types a Google-native file can be exported to).",
+      "description": "Get the metadata of one Drive file or folder by ID, including how its content can be retrieved. To find files by name or filter use drive_list_files; to read a file's text use drive_read_file, and to save or export it drive_download_file. Returns file (id, name, kind, mime_type, size (Drive's string) and size_bytes (the number), created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download, is_google_native, export_formats: the MIME types a Google-native file can be exported to).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2600,7 +2635,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it).",
+      "description": "Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2668,7 +2703,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes. Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text).",
+      "description": "Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes (it renders the document itself, so its body_chars differ from this export's). Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2935,7 +2970,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_upload_file with file_id. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it).",
+      "description": "Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_upload_file with file_id. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3022,7 +3057,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Upload a file to Drive from the Workspace Files picker or a local path, as a new file or, with file_id, as new content of an existing file (same ID, name, folder and sharing). With neither source it creates an empty file from name and mime_type, such as a blank Google Doc in a chosen folder; for folders use drive_create_folder and to rename or set properties drive_update_file_metadata. Returns status 'ok', mode ('create', 'overwrite', 'skipped', 'replace' or 'metadata_only') and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where not reported). Mode 'skipped' returns the same-named file that already exists.",
+      "description": "Upload a file to Drive from the Workspace Files picker or a local path, as a new file or, with file_id, as new content of an existing file (same ID, name, folder and sharing). With neither source it creates an empty file from name and mime_type, such as a blank Google Doc in a chosen folder; for folders use drive_create_folder and to rename or set properties drive_update_file_metadata. Returns status 'ok', mode ('create', 'overwrite', 'skipped', 'replace' or 'metadata_only') and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where not reported). Mode 'skipped' returns the same-named file that already exists.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3533,9 +3568,6 @@
             "items": {},
             "type": "array"
           },
-          "principal_key": {
-            "type": "string"
-          },
           "required_scopes": {
             "items": {},
             "type": "array"
@@ -3735,7 +3767,7 @@
         "properties": {
           "dry_run": {
             "default": false,
-            "description": "True returns the impact preview (status 'dry_run', preview, consent_required, action) without changing anything; no consent is asked.",
+            "description": "True previews the call instead of running it: nothing is sent to Google and the user is not asked. Returns status 'dry_run', preview, action, count (distinct message IDs; null for a thread_id), requested_count (IDs as given) and consent_required: whether the real call would ask the user to confirm.",
             "type": "boolean"
           },
           "message_ids": {
@@ -4394,7 +4426,7 @@
           },
           "dry_run": {
             "default": false,
-            "description": "True returns the impact preview (status 'dry_run', preview, consent_required, action) without changing anything; no consent is asked.",
+            "description": "True previews the call instead of running it: nothing is sent to Google and the user is not asked. Returns status 'dry_run', preview, action, count (distinct message IDs; null for a thread_id), requested_count (IDs as given) and consent_required: whether the real call would ask the user to confirm.",
             "type": "boolean"
           },
           "mark_read": {
@@ -4485,7 +4517,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the content of one to 100 Gmail messages by ID, all at the same detail level. Use it after gmail_search_emails, gmail_get_mail_digest or gmail_check_mail_updates, which return only snippets; gmail_get_thread reads a whole conversation at once. Returns messages (id, thread_id, from, to, subject, date, snippet, label_ids, attachments with filename, mime_type, size and the download_id gmail_download_attachment takes, and, by format, body with truncated and next_offset), missing_message_ids for IDs that no longer exist instead of failing the call, and account_timezone.",
+      "description": "Read the content of one to 100 Gmail messages by ID, all at the same detail level. Use it after gmail_search_emails, gmail_get_mail_digest or gmail_check_mail_updates, which return only snippets; gmail_get_thread reads a whole conversation at once. Returns messages (id, thread_id, from, to, subject, date, snippet, label_ids, attachments with filename, mime_type, size and the download_id gmail_download_attachment takes, and, by format, body with truncated and next_offset), missing_count and missing_message_ids for IDs that no longer exist instead of failing the call, account_timezone, and count, has_more (always false), next_page_token and fetched_at.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4546,7 +4578,20 @@
           "account_timezone": {
             "type": "string"
           },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
           "format": {},
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
           "messages": {
             "items": {},
             "type": "array"
@@ -4557,6 +4602,13 @@
           "missing_message_ids": {
             "items": {},
             "type": "array"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [],
@@ -5511,7 +5563,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Find the user's saved Google contacts whose name, email, phone or organization starts with query, or, without query, list every saved contact page by page (sort_order, page_token). A search returns at most 30 matches in one response with no paging. Returns contacts, each with resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography; plus count, total (all saved contacts, null for a search) and next_page_token (null for a search).",
+      "description": "Find the user's saved Google contacts whose name, email, phone or organization starts with query, or, without query, list every saved contact page by page (sort_order, page_token). A search returns at most 30 matches in one response with no paging. Returns contacts, each with resource_name (the person_name other people_ tools take; also as id), etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography; plus count, total (all saved contacts, null for a search) and next_page_token (null for a search).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7452,7 +7504,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "List the user's Workspace Files uploads from uploads_file_manager, newest first, a page at a time; they are staged on the MCP server, not in Google Drive (for Drive use drive_list_files). Pass an upload_id as uploaded_file to drive_upload_file, the attachments of gmail_send_email, gmail_reply and gmail_save_draft, or the Gemini media tools. Returns files (upload_id, display_name, type, size, uploaded_at, expires_at, remaining_quota_bytes, ...), count and next_cursor, which is null once a page comes back short.",
+      "description": "List the user's Workspace Files uploads from uploads_file_manager, newest first, a page at a time; they are staged on the MCP server, not in Google Drive (for Drive use drive_list_files). Pass an upload_id as uploaded_file to drive_upload_file, the attachments of gmail_send_email, gmail_reply and gmail_save_draft, or the Gemini media tools. Returns files (upload_id, display_name, type, size, uploaded_at, expires_at, remaining_quota_bytes, ...), count, next_cursor, which is null once a page comes back short, and the same cursor as next_page_token with has_more and fetched_at.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7494,6 +7546,18 @@
             "description": "Number of files returned in this page.",
             "minimum": 0,
             "type": "integer"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC3339 time when this response was fetched."
           },
           "files": {
             "description": "Uploaded file summaries in this page.",
@@ -7594,6 +7658,11 @@
             },
             "type": "array"
           },
+          "has_more": {
+            "default": false,
+            "description": "Whether next_cursor is set.",
+            "type": "boolean"
+          },
           "next_cursor": {
             "anyOf": [
               {
@@ -7605,6 +7674,18 @@
             ],
             "default": null,
             "description": "Cursor for the next page, or null at the end."
+          },
+          "next_page_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The same value as next_cursor."
           }
         },
         "required": [

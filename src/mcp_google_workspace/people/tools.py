@@ -270,7 +270,7 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Find the user's saved Google contacts whose name, email, phone or organization starts with query, or, without query, list every saved contact page by page (sort_order, page_token). A search returns at most 30 matches in one response with no paging. Returns contacts, each with resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography; plus count, total (all saved contacts, null for a search) and next_page_token (null for a search)."""
+        """Find the user's saved Google contacts whose name, email, phone or organization starts with query, or, without query, list every saved contact page by page (sort_order, page_token). A search returns at most 30 matches in one response with no paging. Returns contacts, each with resource_name (the person_name other people_ tools take; also as id), etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography; plus count, total (all saved contacts, null for a search) and next_page_token (null for a search)."""
         read_sources: list[ReadSourceType] = sources or ["READ_SOURCE_TYPE_CONTACT"]
         if query is None or not query.strip():
             try:

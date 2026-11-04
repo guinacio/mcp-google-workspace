@@ -412,7 +412,7 @@ def register(server: FastMCP) -> None:
         ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Read the content of one to 100 Gmail messages by ID, all at the same detail level. Use it after gmail_search_emails, gmail_get_mail_digest or gmail_check_mail_updates, which return only snippets; gmail_get_thread reads a whole conversation at once. Returns messages (id, thread_id, from, to, subject, date, snippet, label_ids, attachments with filename, mime_type, size and the download_id gmail_download_attachment takes, and, by format, body with truncated and next_offset), missing_message_ids for IDs that no longer exist instead of failing the call, and account_timezone."""
+        """Read the content of one to 100 Gmail messages by ID, all at the same detail level. Use it after gmail_search_emails, gmail_get_mail_digest or gmail_check_mail_updates, which return only snippets; gmail_get_thread reads a whole conversation at once. Returns messages (id, thread_id, from, to, subject, date, snippet, label_ids, attachments with filename, mime_type, size and the download_id gmail_download_attachment takes, and, by format, body with truncated and next_offset), missing_count and missing_message_ids for IDs that no longer exist instead of failing the call, account_timezone, and count, has_more (always false), next_page_token and fetched_at."""
         request = ReadEmailsRequest(
             message_ids=message_ids, format=format, offset=offset, include_html=include_html
         )
@@ -466,6 +466,7 @@ def register(server: FastMCP) -> None:
                 await ctx.report_progress(index, len(request.message_ids), "Messages loaded")
         return {
             "messages": outputs,
+            "count": len(outputs),
             "format": request.format,
             "missing_count": len(missing_message_ids),
             "missing_message_ids": missing_message_ids,

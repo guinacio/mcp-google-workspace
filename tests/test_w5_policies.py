@@ -792,6 +792,14 @@ def test_connection_status_reports_grants_and_the_server_without_calling_google(
     assert server["tool_tier"] == "core"
     assert server["tool_tiers"] == ["core", "extended", "complete"]
     assert "gmail" in server["enabled_namespaces"] and server["optional_namespaces"]["chat"] is False
+    # The token-store key is internal: no tool takes it, so the model never sees it (2.0.1).
+    assert "principal_key" not in result.structured_content
+    assert "principal_key" not in (anyio.run(_status_tool).output_schema or {}).get("properties", {})
+
+
+async def _status_tool() -> Any:
+    async with Client(workspace_mcp) as client:
+        return next(tool for tool in await client.list_tools() if tool.name == "get_google_connection_status")
 
 
 # ---------------------------------------------------------------------------

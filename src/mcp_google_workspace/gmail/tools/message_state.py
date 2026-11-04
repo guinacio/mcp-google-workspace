@@ -26,8 +26,10 @@ _THREAD_ID = (
     "that conversation; give message_ids or thread_id, not both."
 )
 _DRY_RUN = (
-    "True returns the impact preview (status 'dry_run', preview, consent_required, action) without "
-    "changing anything; no consent is asked."
+    "True previews the call instead of running it: nothing is sent to Google and the user is not "
+    "asked. Returns status 'dry_run', preview, action, count (distinct message IDs; null for a "
+    "thread_id), requested_count (IDs as given) and consent_required: whether the real call would "
+    "ask the user to confirm."
 )
 _LABEL_VALUES = (
     "Label names as shown in Gmail (e.g. 'Clients/Acme') or label IDs; system labels such as STARRED, "

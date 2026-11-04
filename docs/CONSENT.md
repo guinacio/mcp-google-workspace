@@ -125,7 +125,12 @@ made once per call and reused by the tool. `MCP_EMAIL_PREPARE_RECIPIENTS`
 
 `gmail_modify_messages`, `gmail_delete` and the four `*_batch_update_*` tools
 take `dry_run: true`: the result is `{"status": "dry_run", "preview",
-"consent_required", "action"}` and nothing is sent to Google.
+"consent_required", "action"}` and nothing is sent to Google. A dry run never
+asks the user; `consent_required` says whether the same call without
+`dry_run` would ask, and `action` names the confirmation it would show. The
+two Gmail tools add `count` (distinct message IDs, null for a `thread_id`) and
+`requested_count` (the IDs as given), since the preview text lists only the
+first few.
 
 ## Annotations
 

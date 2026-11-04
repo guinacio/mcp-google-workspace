@@ -554,7 +554,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = True,
     ) -> dict[str, Any]:
-        """Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as "tomorrow at 3pm" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone (IANA name), utc_offset, current_local_time, current_utc_time and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden."""
+        """Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as "tomorrow at 3pm" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone and timezone_name (both the IANA name), utc_offset, current_local_time, current_utc_time (also as utc_datetime), count, has_more (false), next_page_token, fetched_at and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden."""
         user_tz = await resolve_user_timezone()
         now_local = user_now(user_tz)
         now_utc = now_local.astimezone(pytz.UTC)
@@ -577,11 +577,15 @@ def register_tools(server: FastMCP) -> None:
             "day_of_week": now_local.strftime("%A"),
             "current_local_time": now_local.isoformat(),
             "current_utc_time": now_utc.isoformat(),
+            # Same value as current_utc_time, kept for 2.0.0 callers.
             "utc_datetime": now_utc.isoformat(),
             "utc_offset": now_local.strftime("%z"),
-            "timezone_name": now_local.tzname(),
+            # The IANA name, like timezone; tzname() gave abbreviations such as "-03".
+            "timezone_name": user_tz,
             # null, not [], when the list was not requested: nothing was looked up.
             "calendars": list(calendars) if include_calendars else None,
+            # Every page was read, so the list envelope's has_more is false and next_page_token null.
+            "count": len(calendars),
         }
 
     @server.tool(name="find_free_time")
@@ -632,7 +636,7 @@ def register_tools(server: FastMCP) -> None:
         ] = "17:00",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Check the free/busy times of up to 50 calendars or people over one window. To test a chosen time, pass it as the window and read all_free; to find meeting times, read suggested_slots, then book with calendar_create_event. Returns all_free (true only when every calendar was read and is free for the whole window), calendars in request order (id, free, null when unreadable, busy periods, errors such as notFound), suggested_slots (start/end within working hours when every readable calendar is free; unreadable ones count as free), total_suggestions, timezone (the zone of every time) and the window and slot settings used."""
+        """Check the free/busy times of up to 50 calendars or people over one window. To test a chosen time, pass it as the window and read all_free; to find meeting times, read suggested_slots, then book with calendar_create_event. Returns all_free (true only when every calendar was read and is free for the whole window), calendars in request order (id, free, null when unreadable, busy periods, errors such as notFound), suggested_slots (start/end within working hours when every readable calendar is free; unreadable ones count as free), total_suggestions and count (both the number of suggested_slots), timezone (the zone of every time) and the window and slot settings used."""
         request = FindFreeTimeRequest(
             participants=participants,
             time_min=time_min,
@@ -722,6 +726,7 @@ def register_tools(server: FastMCP) -> None:
             "calendars": list(availability["calendars"]),
             "suggested_slots": suggestions,
             "total_suggestions": len(suggestions),
+            "count": len(suggestions),
             "timezone": query_timezone,
             "time_min": window_start.isoformat(),
             "time_max": window_end.isoformat(),

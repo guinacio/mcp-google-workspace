@@ -5,6 +5,92 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
+## 2.0.1 — Unreleased
+
+Polish from the 2.0.0 live QA (issue #63) and the cheap items left over from
+issue #57. Response changes are additive except where a "Changed" entry says
+otherwise; no tool, parameter or dependency is added or removed.
+
+### Added
+
+- **`docs_read_document` `format: outline` is paged** like the text formats.
+  A page holds about 16,000 characters of JSON (`OUTLINE_LIMIT_CHARS`; the
+  outline is about twice the size of the text, so a page covers about as much
+  of the document as an 8,000-character text page) and is cut only between
+  structural elements, so a paragraph or table is never split; an element
+  larger than the budget comes alone on its page. The result gains
+  `truncated`, `next_offset`, `element_count`, `outline_chars` and
+  `outline_sha256` (size and hash of the whole outline, to tell whether the
+  document changed between pages, since `revision_id` is null for viewers).
+  `offset` for the outline counts structural elements already read, across
+  tabs in reading order, not characters: an element index always falls on a
+  boundary and does not depend on how the JSON is serialized. A client
+  continues by calling again with `offset: next_offset` until it is null. A
+  tab's `headers`, `footers`, `footnotes` and `named_ranges` come with its
+  first element; a tab begun on an earlier page has `continued: true` and its
+  `content` only.
+- **The list envelope on the remaining list-shaped reads.**
+  `gmail_read_emails` gains `count`, `has_more` (always false),
+  `next_page_token` (null) and `fetched_at` beside `missing_count` and
+  `missing_message_ids`, which stay. `calendar_get_calendar_context` gains
+  `count` (the calendars listed; 0 with `include_calendars: false`),
+  `has_more` (false: every page is read), `next_page_token` (null) and
+  `fetched_at`. `uploads_list_files` gains `has_more`, `next_page_token` (the
+  same value as `next_cursor`, which stays) and `fetched_at`.
+- **`calendar_find_free_time`** gains `count`, the number of
+  `suggested_slots`; `total_suggestions` stays with the same value.
+- **`dry_run` counts.** The dry-run result of `gmail_modify_messages` and
+  `gmail_delete` gains `count` (distinct message IDs; null for a
+  `thread_id`) and `requested_count` (the IDs as given): the preview text
+  lists only the first five IDs.
+- **Consistent keys.** Every People contact gains `id`, the same value as
+  `resource_name` (which stays and is still what `person_name` takes), so a
+  contact is keyed like a Drive file or a Gmail message. Every Drive file
+  envelope (`drive_list_files`, `drive_get_file` and the `file` of the
+  Drive change tools) gains `size_bytes`, the size as an integer (null when
+  Drive reports none, as for Google-native files); `size` stays the string
+  Drive sends.
+
+### Changed
+
+- **`calendar_get_calendar_context` `timezone_name`** is the IANA zone name
+  (the same value as `timezone`) instead of the abbreviation Python's
+  `tzname()` gave, which for many zones is only an offset such as `"-03"`; the
+  offset stays in `utc_offset`. `utc_datetime` keeps the value of
+  `current_utc_time` and is now described as its alias rather than removed.
+- **`get_google_connection_status` no longer returns `principal_key`**, the
+  internal token-store key of the caller (`"local"`, or a hash for remote
+  users). Its description never listed it, no tool takes it and the
+  dashboard does not read it; it is gone from the published output schema
+  too.
+
+- **`docs_read_document` outline of a long document** returns its first page
+  instead of the whole outline (a document whose outline fits in one page is
+  unchanged apart from the new fields above), and `offset`, ignored for the
+  outline before, now selects the page.
+
+### Fixed
+
+- **Apps dashboard: "Add Google Meet" when editing an event.** The box was
+  ignored on save because the update sent no `add_meet_link`. Editing an
+  event without a Meet link now offers the box unchecked and sends
+  `add_meet_link: true` when it is checked; an event that already has a link
+  shows it as already added (disabled), and its update never sends
+  `add_meet_link`, which would replace the existing conference.
+- **`dry_run` wording** on `gmail_modify_messages` and `gmail_delete`: the
+  parameter said "no consent is asked" while the result carries
+  `consent_required: true`. It now says a dry run sends nothing to Google and
+  never asks, and that `consent_required` says whether the real call would
+  ask; `docs/CONSENT.md` says the same.
+- **Descriptions.** `docs_read_document` says `revision_id` is null unless
+  the user can edit the document (the Docs API returns `revisionId` only to
+  editors). `docs_read_document` and `drive_read_file` say that their text,
+  and so `body_chars`, differ for the same Doc: the first renders the
+  Document resource itself, the second returns Google's text export. The
+  renderers stay separate: sharing one would make `drive_read_file` call the
+  Docs API (another scope and request) or drop the Docs renderer's tabs,
+  chips and footnotes.
+
 ## 2.0.0 — 2026-11-04
 
 A smaller catalog organised around tasks, one consent model, and one response

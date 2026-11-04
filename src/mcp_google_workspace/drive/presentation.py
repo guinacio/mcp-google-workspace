@@ -39,6 +39,15 @@ def _people(people: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
     return [{"name": person.get("displayName"), "email": person.get("emailAddress")} for person in people]
 
 
+def _size_bytes(file: dict[str, Any]) -> int | None:
+    """Drive sends int64 values as strings; ``size`` keeps that string, ``size_bytes`` is the number."""
+    size = file.get("size")
+    try:
+        return int(size) if size is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def file_envelope(file: dict[str, Any], *, account_timezone: str) -> dict[str, Any]:
     """Present file metadata suitable for selecting the next action.
 
@@ -54,6 +63,7 @@ def file_envelope(file: dict[str, Any], *, account_timezone: str) -> dict[str, A
         "kind": file_kind(file.get("mimeType")),
         "mime_type": file.get("mimeType"),
         "size": file.get("size"),
+        "size_bytes": _size_bytes(file),
         "created_at": in_account_timezone(file.get("createdTime"), account_timezone),
         "modified_at": in_account_timezone(file.get("modifiedTime"), account_timezone),
         "description": file.get("description"),
@@ -94,6 +104,7 @@ def file_summary(file: dict[str, Any]) -> dict[str, Any]:
         "kind": file_kind(file.get("mimeType")) if file.get("mimeType") else None,
         "mime_type": file.get("mimeType"),
         "size": file.get("size"),
+        "size_bytes": _size_bytes(file),
         "parent_ids": file.get("parents"),
         "drive_id": file.get("driveId"),
         "web_url": clean_web_url(file.get("webViewLink")),

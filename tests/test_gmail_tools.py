@@ -539,6 +539,9 @@ def test_read_emails_has_one_consistent_batch_shape_and_isolates_missing_ids(
     assert result["messages"][0]["id"] == "available"
     assert result["messages"][0]["to"] == "me@example.com"
     assert result["messages"][0]["bodies_omitted"] is True
+    # The shared list envelope, beside the missing-ID fields (2.0.1).
+    assert (result["count"], result["has_more"], result["next_page_token"]) == (1, False, None)
+    assert result["fetched_at"]
 
 
 def _labelled_message(message_id: str, labels: list[str], sender: str, subject: str) -> dict:

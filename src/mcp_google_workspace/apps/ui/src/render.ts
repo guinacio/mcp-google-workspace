@@ -2315,6 +2315,7 @@ function submitEventEditor(form: HTMLFormElement) {
     description: String(formData.get("description") || ""),
     attendees_csv: String(formData.get("attendees_csv") || ""),
     create_conference: formData.get("create_conference") === "on",
+    has_conference: formData.get("has_conference") === "1",
   };
   _onAction({ type: "save_event_editor", draft });
 }
@@ -2712,14 +2713,20 @@ function renderEventEditorPanel(
               <span>Description</span>
               <textarea name="description">${draft.description || ""}</textarea>
             </label>
-            <label class="inline-toggle">
-              <input
-                type="checkbox"
-                name="create_conference"
-                ${draft.create_conference ? "checked" : ""}
-              />
-              Add Google Meet conference
-            </label>
+            ${draft.has_conference
+              ? html`<input type="hidden" name="has_conference" value="1" />
+                  <label class="inline-toggle">
+                    <input type="checkbox" checked disabled />
+                    Google Meet link already added
+                  </label>`
+              : html`<label class="inline-toggle">
+                  <input
+                    type="checkbox"
+                    name="create_conference"
+                    ${draft.create_conference ? "checked" : ""}
+                  />
+                  Add Google Meet conference
+                </label>`}
             <div class="editor-actions">
               <button type="button" class="nav-btn" data-close-event-editor="1">Cancel</button>
               <button type="submit" class="action-btn">${draft.mode === "create" ? "Create event" : "Save changes"}</button>

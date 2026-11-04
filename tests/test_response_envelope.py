@@ -103,6 +103,7 @@ _DATED_LISTS = {
     "gmail_check_mail_updates",
     "gmail_get_mail_digest",
     "gmail_get_thread",
+    "gmail_read_emails",
     "gmail_search_emails",
     "search_workspace",
     "tasks_list_tasklists",
@@ -110,7 +111,9 @@ _DATED_LISTS = {
     "tasks_tasks_digest",
 }
 _LIST_SHAPED = {
+    "calendar_get_calendar_context",
     "gmail_check_mail_updates",
+    "gmail_read_emails",
     "gmail_get_mail_digest",
     "gmail_get_thread",
     "calendar_get_calendar_digest",
@@ -134,6 +137,7 @@ def test_every_list_tool_publishes_the_same_envelope_keys() -> None:
     list_tools = sorted(name for name in tools if _is_list_tool(name) and not name.startswith("uploads_"))
     assert {
         "people_search_contacts", "tasks_tasks_digest", "gmail_get_thread", "gmail_list_drafts",
+        "gmail_read_emails", "calendar_get_calendar_context",
         "drive_list_permissions", "drive_list_drives", "forms_list_form_responses",
     } <= set(list_tools)
     problems: dict[str, Any] = {}
@@ -148,6 +152,12 @@ def test_every_list_tool_publishes_the_same_envelope_keys() -> None:
         if missing or retired or (name in _DATED_LISTS and "account_timezone" not in properties):
             problems[name] = {"missing": sorted(missing), "retired": sorted(retired), "lists": lists}
     assert problems == {}
+
+
+def test_uploads_list_publishes_the_envelope_beside_its_cursor() -> None:
+    tools = anyio.run(_published_tools)
+    properties = set(tools["uploads_list_files"].output_schema["properties"])
+    assert _ENVELOPE_FIELDS | {"next_cursor"} <= properties
 
 
 def test_wrapper_completes_the_envelope_without_overriding_the_tool() -> None:

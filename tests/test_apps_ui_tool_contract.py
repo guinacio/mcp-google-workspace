@@ -75,6 +75,12 @@ def test_operation_tool_is_published_and_accepts_every_argument_the_view_sends(o
     assert not missing, f"{operation} -> {name}: never sends required {sorted(missing)}"
 
 
+def test_event_editor_can_add_a_meet_link_when_editing() -> None:
+    # The edit form's "Add Google Meet" box sends add_meet_link (2.0.1: it was ignored).
+    assert "add_meet_link" in ARGUMENTS["updateEvent"]
+    assert "add_meet_link" in COMPLETE[_published("updateEvent")]["inputSchema"]["properties"]
+
+
 @pytest.mark.parametrize("operation", sorted(READ_FALLBACKS))
 def test_read_fallback_names_are_the_composed_then_the_standalone_name(operation: str) -> None:
     spec = DASHBOARD_OPERATIONS[operation]

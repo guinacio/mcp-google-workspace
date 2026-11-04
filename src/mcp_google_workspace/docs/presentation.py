@@ -13,6 +13,8 @@ Two views of a Document resource:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -334,16 +336,99 @@ def _outline_tab(tab: _Tab) -> dict[str, Any]:
     }
 
 
-def document_outline(payload: dict[str, Any]) -> dict[str, Any]:
-    """docs_read_document (outline): the editing outline of a Document resource."""
+# Serialized characters per outline page: the outline is about twice the size
+# of the text it describes, so a page covers about as much of the document as
+# a text page (BODY_LIMIT_CHARS).
+OUTLINE_LIMIT_CHARS = 16_000
+_TAB_SEGMENTS = ("headers", "footers", "footnotes", "named_ranges")
+
+
+def _serialized(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _outline_page(
+    tabs: list[dict[str, Any]], offset: int, limit: int | None
+) -> tuple[list[dict[str, Any]], int | None]:
+    """The tabs of one outline page and the element index the next page starts at.
+
+    The paging unit is one structural element of a tab's ``content``, counted
+    across tabs in reading order: a page never cuts a paragraph or a table,
+    and an element larger than ``limit`` comes alone on its page. A tab's
+    ``headers``, ``footers``, ``footnotes`` and ``named_ranges`` come with its
+    first element (and count towards that page); a tab whose content started
+    on an earlier page is marked ``continued`` and carries its content only.
+    """
+    spans: list[tuple[int, int]] = []
+    total = 0
+    for tab in tabs:
+        spans.append((total, total + len(tab["content"])))
+        total += len(tab["content"])
+    offset = min(max(0, offset), total)
+    end = offset
+    used = 0
+    for index, (first, last) in enumerate(spans):
+        if last <= offset:
+            continue
+        # The tab's own fields count once, with its first element on this page.
+        dropped = {"content"} if offset <= first else {"content", *_TAB_SEGMENTS}
+        cost = len(_serialized({key: value for key, value in tabs[index].items() if key not in dropped}))
+        full = False
+        for position in range(max(first, offset), last):
+            cost += len(_serialized(tabs[index]["content"][position - first]))
+            if limit is not None and end > offset and used + cost > limit:
+                full = True
+                break
+            used += cost
+            cost = 0
+            end += 1
+        if full:
+            break
+    next_offset = end if end < total else None
+    page: list[dict[str, Any]] = []
+    for index, (first, last) in enumerate(spans):
+        tab = tabs[index]
+        if first == last:
+            # An empty tab sits between elements; it belongs to the page that reaches it.
+            if offset <= first < end or (first == end and next_offset is None):
+                page.append(tab)
+            continue
+        if last <= offset or first >= end:
+            continue
+        content = tab["content"][max(offset - first, 0) : end - first]
+        if offset > first:
+            entry = {key: value for key, value in tab.items() if key not in {"content", *_TAB_SEGMENTS}}
+            page.append({**entry, "continued": True, "content": content})
+        else:
+            page.append({**tab, "content": content})
+    return page, next_offset
+
+
+def document_outline(payload: dict[str, Any], *, offset: int = 0, limit: int | None = None) -> dict[str, Any]:
+    """docs_read_document (outline): the editing outline of a Document resource.
+
+    With ``limit``, one page of at most about ``limit`` serialized characters
+    starting at element ``offset`` (see ``_outline_page``); ``element_count``,
+    ``outline_chars`` and ``outline_sha256`` describe the whole outline, so a
+    caller can tell whether the document changed between pages.
+    """
     document_id = payload.get("documentId")
+    tabs = [_outline_tab(tab) for tab in _tabs(payload)]
+    whole = _serialized(tabs)
+    page, next_offset = _outline_page(tabs, offset, limit)
     return {
         "document_id": document_id,
         "title": payload.get("title"),
         "revision_id": payload.get("revisionId"),
         "url": document_url(document_id),
         "suggestions_view_mode": payload.get("suggestionsViewMode"),
-        "tabs": [_outline_tab(tab) for tab in _tabs(payload)],
+        # Typed conversions, so the published output schema reads each field's type.
+        "tabs": list(page),
+        "truncated": bool(next_offset is not None),
+        "next_offset": next_offset,
+        "element_count": sum(len(tab["content"]) for tab in tabs),
+        "outline_chars": len(whole),
+        "outline_sha256": str(hashlib.sha256(whole.encode("utf-8")).hexdigest()),
     }
 
 

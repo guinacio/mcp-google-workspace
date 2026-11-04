@@ -39,6 +39,7 @@ def contact_envelope(person: dict[str, Any]) -> dict[str, Any]:
     name = _primary(person.get("names"))
     biography = _primary(person.get("biographies"))
     return {
+        "id": person.get("resourceName"),  # the same value, under the key other services use
         "resource_name": person.get("resourceName"),
         "etag": person.get("etag"),
         "name": name.get("displayName"),

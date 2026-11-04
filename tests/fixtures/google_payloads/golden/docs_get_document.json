@@ -1,5 +1,9 @@
 {
   "document_id": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg",
+  "element_count": 5,
+  "next_offset": null,
+  "outline_chars": 1316,
+  "outline_sha256": "37868cb6e0b77972ab93c491a251aca951ea8739a55e330a150a1dbafc957cd2",
   "revision_id": "ALBJ4LsyIxJbt1hRqeQ9YgQ0abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
   "suggestions_view_mode": "SUGGESTIONS_INLINE",
   "tabs": [
@@ -127,5 +131,6 @@
     }
   ],
   "title": "Launch plan",
+  "truncated": false,
   "url": "https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg/edit"
 }

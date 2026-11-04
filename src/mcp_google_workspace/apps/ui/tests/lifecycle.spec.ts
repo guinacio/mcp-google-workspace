@@ -186,6 +186,41 @@ test.describe("event editor", () => {
     expect(create?.arguments).not.toHaveProperty("conference_data");
   });
 
+  test("editing an event without Meet adds a link only when the box is checked", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported");
+    const app = appFrame(page);
+    // The event's detail stays open after a save, so its Edit button reopens the editor.
+    const edit = () => app.locator('[data-open-event-editor="edit"]').click();
+    await app.getByRole("button", { name: EVENT, exact: true }).click();
+    await edit();
+    const meet = app.getByRole("checkbox", { name: "Add Google Meet conference" });
+    await expect(meet).not.toBeChecked();
+    await app.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(app.getByText("Event updated.")).toBeVisible();
+    await edit();
+    await app.getByRole("checkbox", { name: "Add Google Meet conference" }).check();
+    await app.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(app.getByText("Event updated.")).toBeVisible();
+    const updates = (await callLog(page)).filter((call) => call.name === "calendar_update_event");
+    expect(updates).toHaveLength(2);
+    expect(updates[0].arguments).not.toHaveProperty("add_meet_link");
+    expect(updates[1].arguments).toMatchObject({ add_meet_link: true, event_id: updates[0].arguments.event_id });
+  });
+
+  test("editing an event that has a Meet link never asks for another", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported&meet");
+    const app = appFrame(page);
+    await app.getByRole("button", { name: EVENT, exact: true }).click();
+    await app.locator('[data-open-event-editor="edit"]').click();
+    const meet = app.getByRole("checkbox", { name: "Google Meet link already added" });
+    await expect(meet).toBeChecked();
+    await expect(meet).toBeDisabled();
+    await app.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(app.getByText("Event updated.")).toBeVisible();
+    const update = (await callLog(page)).find((call) => call.name === "calendar_update_event");
+    expect(update?.arguments).not.toHaveProperty("add_meet_link");
+  });
+
   test("Enter in a field saves even where the sandbox blocks form submission", async ({ page }) => {
     await page.goto("/tests/host.html?discovery=unsupported");
     const app = appFrame(page);

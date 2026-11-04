@@ -11,6 +11,7 @@ from fastmcp import Client
 import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.docs.presentation import (
     OBJECT_MARKER,
+    OUTLINE_LIMIT_CHARS,
     batch_update_result,
     created_document,
     document_outline,
@@ -238,6 +239,47 @@ def test_outline_flattens_every_tab_and_keeps_indices_usable():
     assert link["url"] == "?tab=t.eng#heading=h.risk01"
 
 
+def _outline_pages(document: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    pages = [document_outline(document, limit=limit)]
+    while pages[-1]["next_offset"] is not None:
+        pages.append(document_outline(document, offset=pages[-1]["next_offset"], limit=limit))
+    return pages
+
+
+@pytest.mark.parametrize("limit", [1, 2_000, OUTLINE_LIMIT_CHARS])
+def test_outline_pages_rejoin_to_the_whole_outline_without_cutting_an_element(limit):
+    document = load(LONG_DOCUMENT)
+    whole = document_outline(document)
+    pages = _outline_pages(document, limit)
+    assert len(pages) > 1
+    elements = [element for page in pages for tab in page["tabs"] for element in tab["content"]]
+    assert elements == [element for tab in whole["tabs"] for element in tab["content"]]
+    assert {page["element_count"] for page in pages} == {len(elements)}
+    assert {(page["outline_chars"], page["outline_sha256"]) for page in pages} == {
+        (whole["outline_chars"], whole["outline_sha256"])
+    }
+    assert [page["truncated"] for page in pages] == [True] * (len(pages) - 1) + [False]
+    for page in pages:
+        if len([element for tab in page["tabs"] for element in tab["content"]]) > 1:
+            assert len(json.dumps(page["tabs"], ensure_ascii=False, separators=(",", ":"))) <= limit + 200
+    # Each tab's own fields come once, with its first element; a later page marks it continued.
+    opened = [tab for page in pages for tab in page["tabs"] if not tab.get("continued")]
+    assert [{k: v for k, v in tab.items() if k != "content"} for tab in opened] == [
+        {k: v for k, v in tab.items() if k != "content"} for tab in whole["tabs"]
+    ]
+    continued = [tab for page in pages for tab in page["tabs"] if tab.get("continued")]
+    assert continued and all("footnotes" not in tab and "headers" not in tab for tab in continued)
+
+
+def test_small_outline_is_one_page_with_the_paging_fields():
+    document = load("docs_get_document.json")
+    page = document_outline(document, limit=OUTLINE_LIMIT_CHARS)
+    assert page["tabs"] == document_outline(document)["tabs"]
+    assert (page["truncated"], page["next_offset"], page["element_count"]) == (False, None, 2)
+    beyond = document_outline(document, offset=99, limit=OUTLINE_LIMIT_CHARS)
+    assert (beyond["tabs"], beyond["next_offset"]) == ([], None)
+
+
 def test_outline_is_much_smaller_than_the_document():
     document = load(LONG_DOCUMENT)
     raw = len(json.dumps(document, ensure_ascii=False))
@@ -450,12 +492,33 @@ def test_read_document_outline_returns_the_editing_outline_of_every_tab(monkeypa
 
     assert result.is_error is False, result.content
     assert calls[-1] == ("get", {"documentId": payload["documentId"], "includeTabsContent": True, "suggestionsViewMode": None})
-    # Exactly what docs_get_document returned.
-    assert result.structured_content == json.loads(json.dumps(document_outline(payload)))
+    # The first page of the outline docs_get_document returned.
+    assert result.structured_content == json.loads(
+        json.dumps(document_outline(payload, limit=OUTLINE_LIMIT_CHARS))
+    )
     assert list(result.structured_content) == [
         "document_id", "title", "revision_id", "url", "suggestions_view_mode", "tabs",
+        "truncated", "next_offset", "element_count", "outline_chars", "outline_sha256",
     ]
-    assert [tab["tab_id"] for tab in result.structured_content["tabs"]] == ["t.0", "t.tl1", "t.eng", "t.dec", "t.run"]
+    assert result.structured_content["truncated"] is True
+    assert result.structured_content["tabs"][0]["tab_id"] == "t.0"
+
+
+def test_read_document_outline_pages_on_with_next_offset(monkeypatch):
+    payload = load(LONG_DOCUMENT)
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _RecordingService(payload, []))
+    pages: list[dict[str, Any]] = []
+    arguments: dict[str, Any] = {"document_id": payload["documentId"], "format": "outline"}
+    while True:
+        _, result = anyio.run(_call_workspace, "docs_read_document", arguments)
+        pages.append(result.structured_content)
+        if result.structured_content["next_offset"] is None:
+            break
+        arguments = {**arguments, "offset": result.structured_content["next_offset"]}
+    assert len(pages) > 1
+    assert [tab["tab_id"] for page in pages for tab in page["tabs"] if not tab.get("continued")] == [
+        "t.0", "t.tl1", "t.eng", "t.dec", "t.run",
+    ]
 
 
 def test_read_document_raw_returns_the_document_resource_unchanged(monkeypatch):

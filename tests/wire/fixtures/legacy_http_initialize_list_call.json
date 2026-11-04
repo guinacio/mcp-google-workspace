@@ -128,9 +128,6 @@
               "items": {},
               "type": "array"
             },
-            "principal_key": {
-              "type": "string"
-            },
             "required_scopes": {
               "items": {},
               "type": "array"
