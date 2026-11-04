@@ -624,6 +624,21 @@ area:
 - Background-task runs of `tasks_tasks_digest` were authorized, admitted and
   recorded under `tasks_digest`: the execution guard skipped the namespace
   prefix for a local name that already starts with it.
+- The Apps dashboard created events with the removed `conference_data`
+  argument, which `calendar_create_event` rejects; it now sends
+  `add_meet_link`. Every argument the view sends is listed per operation in
+  `apps/ui/src/operations.ts` (`OPERATION_ARGUMENTS`), the call sites are
+  typed against it, and `tests/test_apps_ui_tool_contract.py` checks each
+  operation's tool and argument names against the published catalog. The
+  browser test host now rejects arguments the real input schema rejects.
+- The dashboard's event editor saved only through the form's `submit` event,
+  which a sandbox without `allow-forms` blocks; it now saves from the submit
+  button (and Enter in a field) in either sandbox.
+- A dashboard action that needs consent the host cannot ask for
+  (`confirmation_required`) now shows the server's preview text and tells
+  the user nothing changed and to ask the assistant, which runs the
+  prepare/commit step; the view never prepares or commits itself. The
+  unused `prepare_required` message is removed.
 
 ### Added
 

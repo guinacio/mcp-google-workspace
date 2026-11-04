@@ -29,6 +29,7 @@ const OPERATIONS_META_KEY = "mcp-google-workspace/operations";
 
 interface ServerFixture {
   tools: Record<string, string[]>;
+  inputs: Record<string, { properties: string[]; required: string[] }>;
   dashboard: { uri: string; mimeType: string; ui: { csp?: McpUiResourceCsp } };
   picker: {
     uri: string;
@@ -50,6 +51,8 @@ const localNames = discovery === "supported" || discovery === "partial" || param
 const calls: string[] = [];
 const callLog: Array<{ name: string; arguments: Record<string, unknown> }> = [];
 const rejectedCalls: string[] = [];
+/** Calls whose arguments the real server's input schema rejects. */
+const invalidCalls: Array<{ name: string; unknown: string[]; missing: string[] }> = [];
 const cursors: Array<string | undefined> = [];
 const openedLinks: string[] = [];
 const downloads: unknown[] = [];
@@ -383,7 +386,7 @@ function delayFor(name: string, args: Record<string, unknown>): number {
 }
 
 /** `fail=<tool suffix>:<iserror|reject|embedded>[:<code>]`. */
-function failureFor(name: string): CallToolResult | null {
+function failureFor(name: string, rawArgs: Record<string, unknown> = {}): CallToolResult | null {
   for (const spec of params.getAll("fail")) {
     const [suffix, kind, code = "provider_error"] = spec.split(":");
     if (!name.endsWith(suffix)) continue;
@@ -393,9 +396,31 @@ function failureFor(name: string): CallToolResult | null {
     if (kind === "embedded") {
       return { content: [], structuredContent: { error: { code: "PROVIDER_ERROR", message: "Provider exploded", retryable: false } } };
     }
+    if (code === "confirmation_required") {
+      // The server's real envelope (common/errors.py ConfirmationRequiredError).
+      return toolError(code, `${name} needs the user's consent, which this request cannot ask for.`, {
+        required_action: { tool: "prepare_workspace_action", arguments: { tool_name: name, arguments: rawArgs } },
+        details: { action: name, preview: `Archive 1 message? (${name})` },
+      });
+    }
     return toolError(code, `The server could not run ${name}.`);
   }
   return null;
+}
+
+/**
+ * The server's real input schema check (`additionalProperties: false`):
+ * an unknown or missing argument is the server's `invalid_input` error.
+ */
+function invalidArguments(name: string, args: Record<string, unknown>): CallToolResult | null {
+  const schema = serverFixture.inputs[name] ?? serverFixture.inputs[`apps_${name}`];
+  if (!schema) return null; // A name the server does not publish (read fallbacks under test).
+  const present = Object.keys(args).filter((key) => args[key] !== undefined);
+  const unknown = present.filter((key) => !schema.properties.includes(key));
+  const missing = schema.required.filter((key) => !present.includes(key));
+  if (!unknown.length && !missing.length) return null;
+  invalidCalls.push({ name, unknown, missing });
+  return toolError("invalid_input", `The tool arguments are invalid: ${[...unknown, ...missing].join(", ")}`);
 }
 
 /** The server's real visibility, keyed by composed tool name. */
@@ -415,9 +440,11 @@ bridge.oncalltool = async ({ name, arguments: rawArgs }) => {
   }
   calls.push(name);
   callLog.push({ name, arguments: args });
+  const invalid = invalidArguments(name, args);
+  if (invalid) return invalid;
   const delay = delayFor(name, args);
   if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-  const failure = failureFor(name);
+  const failure = failureFor(name, args);
   if (failure) return failure;
   if (fixture === "adversarial") {
     const operations = manifest();
@@ -556,6 +583,7 @@ Object.assign(window, {
   calls,
   callLog,
   rejectedCalls,
+  invalidCalls,
   cursors,
   openedLinks,
   downloads,

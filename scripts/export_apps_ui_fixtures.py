@@ -7,6 +7,8 @@ enabled, lists it through an in-memory FastMCP client, and writes one JSON file:
 
 * ``tools``: name -> ``_meta.ui.visibility`` for every tool (the test host
   rejects app calls to tools without ``"app"``, as the spec requires of hosts);
+* ``inputs``: name -> the input schema's argument names and required names
+  (the test host rejects a call with an argument the server would reject);
 * ``dashboard``: the dashboard UI resource URI, MIME type and ``_meta.ui``;
 * ``picker``: the Prefab file picker resource (URI, HTML, ``_meta.ui`` with its
   CSP) and a real ``uploads_file_manager`` tool result.
@@ -46,6 +48,13 @@ async def _export() -> dict[str, Any]:
         visibility = {
             tool.name: _ui_meta(tool.meta).get("visibility", ["model", "app"]) for tool in tools
         }
+        inputs = {
+            tool.name: {
+                "properties": sorted(tool.input_schema.get("properties", {})),
+                "required": sorted(tool.input_schema.get("required", [])),
+            }
+            for tool in tools
+        }
         launch = next(tool for tool in tools if tool.name == "apps_get_dashboard")
         dashboard_uri = _ui_meta(launch.meta)["resourceUri"]
         picker_tool = next(tool for tool in tools if tool.name == "uploads_file_manager")
@@ -54,6 +63,7 @@ async def _export() -> dict[str, Any]:
         picker_result = await client.call_tool("uploads_file_manager", {})
         return {
             "tools": visibility,
+            "inputs": inputs,
             "dashboard": {
                 "uri": dashboard_uri,
                 "mimeType": resources[dashboard_uri].mime_type,

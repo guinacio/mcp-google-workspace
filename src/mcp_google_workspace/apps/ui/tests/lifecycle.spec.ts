@@ -18,8 +18,10 @@ let external: string[] = [];
 test.beforeEach(async ({ page }) => {
   external = await blockExternalNetwork(page);
 });
-test.afterEach(() => {
+test.afterEach(async ({ page }) => {
   expect(external).toEqual([]);
+  // Every call the view made passed the real server's input schema check.
+  expect(await hostValue<unknown[]>(page, "invalidCalls")).toEqual([]);
 });
 
 test.describe("invocation timing", () => {
@@ -170,6 +172,32 @@ test.describe("operation manifest", () => {
   });
 });
 
+test.describe("event editor", () => {
+  test("creating an event sends only the arguments calendar_create_event publishes", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported");
+    const app = appFrame(page);
+    await app.getByRole("button", { name: EVENT, exact: true }).waitFor();
+    await app.locator('.create-event-btn[data-open-event-editor="create"]').click();
+    await app.locator('input[name="summary"]').fill("Planning");
+    await app.getByRole("button", { name: "Create event", exact: true }).click();
+    await expect(app.getByText("Event created.")).toBeVisible();
+    const create = (await callLog(page)).find((call) => call.name === "calendar_create_event");
+    expect(create?.arguments).toMatchObject({ summary: "Planning", add_meet_link: true, on_conflict: "suggest_next_slot" });
+    expect(create?.arguments).not.toHaveProperty("conference_data");
+  });
+
+  test("Enter in a field saves even where the sandbox blocks form submission", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported");
+    const app = appFrame(page);
+    await app.getByRole("button", { name: EVENT, exact: true }).waitFor();
+    await app.locator('.create-event-btn[data-open-event-editor="create"]').click();
+    await app.locator('input[name="summary"]').fill("Standup");
+    await app.locator('input[name="summary"]').press("Enter");
+    await expect(app.getByText("Event created.")).toBeVisible();
+    expect((await callLog(page)).filter((call) => call.name === "calendar_create_event")).toHaveLength(1);
+  });
+});
+
 test.describe("errors", () => {
   async function openAndArchive(page: Page, query: string) {
     await page.goto(`/tests/host.html?discovery=unsupported&inbox&${query}`);
@@ -196,9 +224,18 @@ test.describe("errors", () => {
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
   });
 
-  test("a typed confirmation error asks the user to use the chat", async ({ page }) => {
-    const { app } = await openAndArchive(page, "fail=modify_messages:iserror:confirmation_required");
-    await expect(app.getByText(/Failed to archive email: The server needs your confirmation/)).toBeVisible();
+  test("a confirmation error shows the server's preview and sends the user to the chat", async ({ page }) => {
+    const { app, panel } = await openAndArchive(page, "fail=modify_messages:iserror:confirmation_required");
+    await expect(
+      app.getByText(
+        'Failed to archive email: This needs your confirmation: "Archive 1 message? (gmail_modify_messages)" Nothing was changed. Ask the assistant in chat to do it',
+        { exact: false },
+      ),
+    ).toBeVisible();
+    await expect(app.getByText("Email archived.")).toHaveCount(0);
+    await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
+    // The view never runs the prepare/commit step itself.
+    expect(await hostValue<string[]>(page, "calls")).not.toContain("prepare_workspace_action");
   });
 
   test("success is reported only after the server confirmed the action", async ({ page }) => {
