@@ -1,0 +1,23 @@
+{
+  "kind": "tasks#taskLists",
+  "etag": "\"MTU2NzgxMjM0NTY3OA\"",
+  "nextPageToken": "CgwIzq-zqgYQ0Le2nwISBgoEEgIIAQ",
+  "items": [
+    {
+      "kind": "tasks#taskList",
+      "id": "MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow",
+      "etag": "\"MTU2NzgxMjM0NQ\"",
+      "title": "My Tasks",
+      "updated": "2026-11-03T11:58:20.512Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/users/@me/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow"
+    },
+    {
+      "kind": "tasks#taskList",
+      "id": "Wl9yX2FfeV9lXzNfOTg3NjU0MzIxOjA6MA",
+      "etag": "\"MTU2NzgxMjM0NQ\"",
+      "title": "Work",
+      "updated": "2026-10-31T19:04:11.020Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/users/@me/lists/Wl9yX2FfeV9lXzNfOTg3NjU0MzIxOjA6MA"
+    }
+  ]
+}

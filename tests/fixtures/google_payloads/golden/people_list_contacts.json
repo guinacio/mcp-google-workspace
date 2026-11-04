@@ -1,0 +1,80 @@
+{
+  "contacts": [
+    {
+      "biography": null,
+      "emails": [
+        {
+          "type": "work",
+          "value": "ada@example.com"
+        }
+      ],
+      "etag": "%EgcBAj0JPjcuGgQBAgUHIgxhYmNkZWZnaGlqa2w=",
+      "family_name": "Lovelace",
+      "given_name": "Ada",
+      "name": "Ada Lovelace",
+      "organizations": [
+        {
+          "name": "Analytical Engines Ltd",
+          "title": "Principal Engineer"
+        }
+      ],
+      "phones": [
+        {
+          "type": "mobile",
+          "value": "+1 555-0100"
+        }
+      ],
+      "resource": {
+        "id": "people/c1234567890123456789",
+        "kind": "contact",
+        "uri": "gcontact:///people%2Fc1234567890123456789"
+      },
+      "resource_name": "people/c1234567890123456789"
+    },
+    {
+      "biography": null,
+      "emails": [
+        {
+          "type": null,
+          "value": "grace@example.org"
+        }
+      ],
+      "etag": "%EgcBAj0JPjcuGgQBAgUHIgx6eXh3dnV0c3JxcG8=",
+      "family_name": "Hopper",
+      "given_name": "Grace",
+      "name": "Grace Hopper",
+      "organizations": [],
+      "phones": [],
+      "resource": {
+        "id": "people/c9876543210987654321",
+        "kind": "contact",
+        "uri": "gcontact:///people%2Fc9876543210987654321"
+      },
+      "resource_name": "people/c9876543210987654321"
+    },
+    {
+      "biography": "Emergency plumber, available weekends.",
+      "emails": [],
+      "etag": "%EgcBAj0JPjcuGgQBAgUHIgxQbHVtYmVyT25seQ==",
+      "family_name": null,
+      "given_name": null,
+      "name": null,
+      "organizations": [],
+      "phones": [
+        {
+          "type": "Plumber",
+          "value": "+1 555-0199"
+        }
+      ],
+      "resource": {
+        "id": "people/c3141592653589793238",
+        "kind": "contact",
+        "uri": "gcontact:///people%2Fc3141592653589793238"
+      },
+      "resource_name": "people/c3141592653589793238"
+    }
+  ],
+  "count": 3,
+  "next_page_token": "GgYKAggBEAIaBgoCCAEQAioCCAE",
+  "total": 412
+}

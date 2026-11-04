@@ -84,6 +84,30 @@
           "contactGroupMembership": {"contactGroupId": "myContacts", "contactGroupResourceName": "contactGroups/myContacts"}
         }
       ]
+    },
+    {
+      "resourceName": "people/c3141592653589793238",
+      "etag": "%EgcBAj0JPjcuGgQBAgUHIgxQbHVtYmVyT25seQ==",
+      "metadata": {
+        "sources": [{"type": "CONTACT", "id": "3141592653589793238", "etag": "#0a1b2c3d4e5f", "updateTime": "2025-08-19T12:30:00.000000Z"}],
+        "objectType": "PERSON"
+      },
+      "phoneNumbers": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "3141592653589793238"}, "sourcePrimary": true},
+          "value": "+1 555-0199",
+          "canonicalForm": "+15550199",
+          "type": "Plumber",
+          "formattedType": "Plumber"
+        }
+      ],
+      "biographies": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "3141592653589793238"}},
+          "value": "Emergency plumber, available weekends.",
+          "contentType": "TEXT_PLAIN"
+        }
+      ]
     }
   ],
   "nextPageToken": "GgYKAggBEAIaBgoCCAEQAioCCAE",

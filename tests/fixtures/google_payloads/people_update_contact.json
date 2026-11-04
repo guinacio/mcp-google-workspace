@@ -1,0 +1,102 @@
+{
+  "resourceName": "people/c5566778899001122334",
+  "etag": "%EgoBAj0DCQ4/QDcuGgQBAgUHIgxVcGRhdGVkRXRhZzI=",
+  "metadata": {
+    "sources": [
+      {
+        "type": "CONTACT",
+        "id": "5566778899001122334",
+        "etag": "#Q2hhbmdlZA==",
+        "updateTime": "2026-11-03T14:56:12.402118Z"
+      }
+    ],
+    "objectType": "PERSON"
+  },
+  "names": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "displayName": "Katherine Johnson",
+      "familyName": "Johnson",
+      "givenName": "Katherine",
+      "displayNameLastFirst": "Johnson, Katherine",
+      "unstructuredName": "Katherine Johnson"
+    }
+  ],
+  "emailAddresses": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "value": "katherine@example.com",
+      "type": "work",
+      "formattedType": "Work"
+    },
+    {
+      "metadata": {
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        }
+      },
+      "value": "kjohnson@example.org",
+      "type": "home",
+      "formattedType": "Home"
+    }
+  ],
+  "phoneNumbers": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "value": "+1 650-555-0142",
+      "canonicalForm": "+16505550142",
+      "type": "work",
+      "formattedType": "Work"
+    }
+  ],
+  "organizations": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "name": "Orbital Mechanics Group",
+      "title": "Lead Mathematician"
+    }
+  ],
+  "biographies": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "value": "Prefers email over calls. Moved to the Houston office in November.",
+      "contentType": "TEXT_PLAIN"
+    }
+  ]
+}

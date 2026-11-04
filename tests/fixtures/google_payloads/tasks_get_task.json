@@ -1,0 +1,20 @@
+{
+  "kind": "tasks#task",
+  "id": "cmV2aWV3X2RlY2s6Mg",
+  "etag": "\"LTE3NjQ5ODIzNTk\"",
+  "title": "Review quarterly planning deck",
+  "updated": "2026-11-02T22:10:03.000Z",
+  "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/cmV2aWV3X2RlY2s6Mg",
+  "position": "00000000000000000001",
+  "notes": "Slides 4-9 only.",
+  "status": "needsAction",
+  "due": "2026-11-03T00:00:00.000Z",
+  "links": [
+    {
+      "type": "email",
+      "description": "Q4 planning deck: draft for review",
+      "link": "https://mail.google.com/mail/#all/18f3a2b4c5d6e7f8"
+    }
+  ],
+  "webViewLink": "https://tasks.google.com/task/cmV2aWV3X2RlY2s6?sa=6"
+}

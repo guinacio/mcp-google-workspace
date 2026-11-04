@@ -26,6 +26,14 @@ from .schemas import (
     SortOrder,
     UpdateContactRequest,
 )
+from .presentation import (
+    contact_envelope,
+    contact_group_envelope,
+    contact_groups_page,
+    contact_search_result,
+    contacts_page,
+    group_members_result,
+)
 
 
 def _build_contact_body(
@@ -194,14 +202,16 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """List the user's saved Google contacts, one page at a time. To find a contact by name, email or phone use people_search_contacts instead. Returns the Google connections.list response: connections (Person resources with resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies), nextPageToken and totalItems."""
+        """List the user's saved Google contacts, one page at a time. To find a contact by name, email or phone use people_search_contacts instead. Returns contacts, each with resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails and phones (each {value, type}, type being Google's label such as 'work' or 'mobile', or null), organizations ({name, title}) and biography; plus count, total (all saved contacts) and next_page_token."""
         try:
-            return list_contacts_payload(
-                ListContactsRequest(
-                    page_size=page_size,
-                    page_token=page_token,
-                    sort_order=sort_order,
-                    sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+            return contacts_page(
+                list_contacts_payload(
+                    ListContactsRequest(
+                        page_size=page_size,
+                        page_token=page_token,
+                        sort_order=sort_order,
+                        sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+                    )
                 )
             )
         except HttpError as exc:
@@ -219,13 +229,15 @@ def register_tools(server: FastMCP) -> None:
         page_size: Annotated[int, "Maximum matches to return, 1 to 100; Google returns at most 30."] = 20,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Find the user's saved Google contacts whose name, email, phone or organization starts with the query text. To page through every contact use people_list_contacts; there is no paging here. Returns the Google searchContacts response: results, each with a person (resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies); results is missing when nothing matches."""
+        """Find the user's saved Google contacts whose name, email, phone or organization starts with the query text. To page through every contact use people_list_contacts; there is no paging here. Returns contacts (each with resource_name, etag, name, given_name, family_name, emails and phones as {value, type}, organizations and biography, as in people_list_contacts) and count; contacts is empty when nothing matches."""
         try:
-            return search_contacts_payload(
-                SearchContactsRequest(
-                    query=query,
-                    page_size=page_size,
-                    sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+            return contact_search_result(
+                search_contacts_payload(
+                    SearchContactsRequest(
+                        query=query,
+                        page_size=page_size,
+                        sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+                    )
                 )
             )
         except HttpError as exc:
@@ -236,14 +248,18 @@ def register_tools(server: FastMCP) -> None:
         person_name: str,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Read one Google contact by its resource name, found with people_search_contacts or people_list_contacts. Use it to fetch the current etag before people_update_contact. Returns the Google Person resource: resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies."""
+        """Read one Google contact by its resource name, found with people_search_contacts or people_list_contacts. Use it to fetch the current etag before people_update_contact. Returns contact: resource_name, etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography."""
         try:
-            return get_contact_payload(
-                GetContactRequest(
-                    person_name=person_name,
-                    sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+            return {
+                "contact": contact_envelope(
+                    get_contact_payload(
+                        GetContactRequest(
+                            person_name=person_name,
+                            sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+                        )
+                    )
                 )
-            )
+            }
         except HttpError as exc:
             raise provider_tool_error(exc, person_name=person_name) from exc
 
@@ -261,9 +277,9 @@ def register_tools(server: FastMCP) -> None:
         organization: str | None = None,
         biography: str | None = None,
     ) -> dict[str, Any]:
-        """Create a new contact in the user's Google Contacts; at least one field must be set. To change an existing contact use people_update_contact. Returns the created Google Person resource: resourceName (the person_name other people_ tools take), etag, and the stored names, emailAddresses, phoneNumbers, organizations and biographies."""
+        """Create a new contact in the user's Google Contacts; at least one field must be set. To change an existing contact use people_update_contact. Returns status 'ok' and contact, the stored contact: resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails, phones, organizations and biography."""
         try:
-            return create_contact_payload(
+            created = create_contact_payload(
                 CreateContactRequest(
                     given_name=given_name,
                     family_name=family_name,
@@ -274,6 +290,7 @@ def register_tools(server: FastMCP) -> None:
                     biography=biography,
                 )
             )
+            return {"status": "ok", "contact": contact_envelope(created)}
         except HttpError as exc:
             raise provider_tool_error(exc) from exc
 
@@ -316,9 +333,9 @@ def register_tools(server: FastMCP) -> None:
         biography: Annotated[str | None, "Replacement notes; replaces the stored notes."] = None,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns the updated Google Person resource, with its new etag, names, emailAddresses, phoneNumbers, organizations and biographies."""
+        """Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography."""
         try:
-            return update_contact_payload(
+            updated = update_contact_payload(
                 UpdateContactRequest(
                     person_name=person_name,
                     etag=etag,
@@ -332,6 +349,7 @@ def register_tools(server: FastMCP) -> None:
                     sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
                 )
             )
+            return {"status": "ok", "contact": contact_envelope(updated)}
         except HttpError as exc:
             raise provider_tool_error(exc, person_name=person_name) from exc
 
@@ -352,25 +370,29 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, person_name=person_name) from exc
 
     @server.tool(name="list_contact_groups")
-    def list_contact_groups(
+    async def list_contact_groups(
         page_size: Annotated[int, "Contact groups per page, 1 to 1000."] = 100,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        """List the user's contact groups (labels), including system groups such as myContacts and starred. To change a group's members use people_modify_contact_group_members, and to add a group use people_create_contact_group. Returns the Google contactGroups.list response: contactGroups (each with resourceName, etag, name, groupType and memberCount), nextPageToken and totalItems."""
+        """List the user's contact groups (labels), including system groups such as myContacts and starred. To change a group's members use people_modify_contact_group_members, and to add a group use people_create_contact_group. Returns contact_groups, each with resource_name (contactGroups/..., the group_name other people_ tools take), name (Google's display name, localized for system groups), group_type ('user' or 'system') and member_count; plus count, total and next_page_token."""
         try:
-            return list_contact_groups_payload(
-                ListContactGroupsRequest(page_size=page_size, page_token=page_token)
+            return contact_groups_page(
+                await run_blocking(
+                    list_contact_groups_payload,
+                    ListContactGroupsRequest(page_size=page_size, page_token=page_token),
+                )
             )
         except HttpError as exc:
             raise provider_tool_error(exc) from exc
 
     @server.tool(name="create_contact_group")
-    def create_contact_group(
+    async def create_contact_group(
         name: Annotated[str, "Name of the new group; Google rejects a name the user already has for a group."],
     ) -> dict[str, Any]:
-        """Create a new, empty contact group (label) in the user's Google Contacts. Add contacts to it afterwards with people_modify_contact_group_members. Returns the created Google ContactGroup resource: resourceName (contactGroups/..., the group_name other people_ tools take), etag, name and groupType."""
+        """Create a new, empty contact group (label) in the user's Google Contacts. Add contacts to it afterwards with people_modify_contact_group_members. Returns status 'ok' and contact_group: resource_name (contactGroups/..., the group_name other people_ tools take), name, group_type ('user') and member_count (0)."""
         try:
-            return create_contact_group_payload(CreateContactGroupRequest(name=name))
+            created = await run_blocking(create_contact_group_payload, CreateContactGroupRequest(name=name))
+            return {"status": "ok", "contact_group": contact_group_envelope(created)}
         except HttpError as exc:
             raise provider_tool_error(exc, name=name) from exc
 
@@ -380,14 +402,16 @@ def register_tools(server: FastMCP) -> None:
         resource_names_to_add: list[str] | None = None,
         resource_names_to_remove: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Add contacts to and remove contacts from one contact group in a single call; at least one of the two lists must be non-empty. Contact resource names come from people_search_contacts or people_list_contacts, group names from people_list_contact_groups. Returns the Google members.modify response: notFoundResourceNames and canNotRemoveLastContactGroupResourceNames list the contacts that were not changed, and both are missing when every change applied."""
+        """Add contacts to and remove contacts from one contact group in a single call; at least one of the two lists must be non-empty. Contact resource names come from people_search_contacts or people_list_contacts, group names from people_list_contact_groups. Returns status 'ok', group_name (contactGroups/...), not_found (contacts that do not exist) and cannot_remove_last_group (contacts not removed because this is their only group); both lists are empty when every change applied."""
+        request = ModifyContactGroupMembersRequest(
+            group_name=group_name,
+            resource_names_to_add=resource_names_to_add or [],
+            resource_names_to_remove=resource_names_to_remove or [],
+        )
         try:
-            return modify_contact_group_members_payload(
-                ModifyContactGroupMembersRequest(
-                    group_name=group_name,
-                    resource_names_to_add=resource_names_to_add or [],
-                    resource_names_to_remove=resource_names_to_remove or [],
-                )
+            return group_members_result(
+                modify_contact_group_members_payload(request),
+                group_name=normalize_contact_group_name(request.group_name),
             )
         except HttpError as exc:
             raise provider_tool_error(exc, group_name=group_name) from exc

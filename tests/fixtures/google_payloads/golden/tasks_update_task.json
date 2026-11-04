@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "task": {
+    "completed_at": null,
+    "deleted": false,
+    "due_date": "2026-11-10",
+    "hidden": false,
+    "id": "cmVuZXdfcGFzc3BvcnQ6NA",
+    "is_overdue": false,
+    "notes_snippet": "Appointment confirmation number is in the email from the consulate.",
+    "notes_truncated": false,
+    "parent_id": null,
+    "resource": {
+      "id": "cmVuZXdfcGFzc3BvcnQ6NA",
+      "kind": "task",
+      "uri": "gtask:///cmVuZXdfcGFzc3BvcnQ6NA"
+    },
+    "status": "needsAction",
+    "title": "Renew passport and ID card",
+    "updated_at": "2026-11-03T11:59:02-03:00",
+    "url": "https://tasks.google.com/task/cmVuZXdfcGFzc3Bv?sa=6"
+  }
+}

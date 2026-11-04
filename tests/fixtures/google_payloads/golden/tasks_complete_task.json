@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "task": {
+    "completed_at": "2026-11-03T09:00:00-03:00",
+    "deleted": false,
+    "due_date": "2026-10-30",
+    "hidden": false,
+    "id": "Y2xvc2VfY29udHJhY3RzOjE",
+    "is_overdue": false,
+    "notes_snippet": "Sent.",
+    "notes_truncated": false,
+    "parent_id": null,
+    "resource": {
+      "id": "Y2xvc2VfY29udHJhY3RzOjE",
+      "kind": "task",
+      "uri": "gtask:///Y2xvc2VfY29udHJhY3RzOjE"
+    },
+    "status": "completed",
+    "title": "Send countersigned vendor contract",
+    "updated_at": "2026-11-03T12:00:00-03:00",
+    "url": "https://tasks.google.com/task/Y2xvc2VfY29udHJh?sa=6"
+  }
+}

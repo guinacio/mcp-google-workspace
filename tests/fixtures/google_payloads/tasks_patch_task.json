@@ -1,0 +1,14 @@
+{
+  "kind": "tasks#task",
+  "id": "cmVuZXdfcGFzc3BvcnQ6NA",
+  "etag": "\"LTE3NjQ5ODIzNTk\"",
+  "title": "Renew passport and ID card",
+  "updated": "2026-11-03T14:59:02.000Z",
+  "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/cmVuZXdfcGFzc3BvcnQ6NA",
+  "position": "00000000000000000002",
+  "notes": "Appointment confirmation number is in the email from the consulate.",
+  "status": "needsAction",
+  "due": "2026-11-10T00:00:00.000Z",
+  "links": [],
+  "webViewLink": "https://tasks.google.com/task/cmVuZXdfcGFzc3Bv?sa=6"
+}

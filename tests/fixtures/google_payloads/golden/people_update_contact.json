@@ -1,0 +1,38 @@
+{
+  "contact": {
+    "biography": "Prefers email over calls. Moved to the Houston office in November.",
+    "emails": [
+      {
+        "type": "work",
+        "value": "katherine@example.com"
+      },
+      {
+        "type": "home",
+        "value": "kjohnson@example.org"
+      }
+    ],
+    "etag": "%EgoBAj0DCQ4/QDcuGgQBAgUHIgxVcGRhdGVkRXRhZzI=",
+    "family_name": "Johnson",
+    "given_name": "Katherine",
+    "name": "Katherine Johnson",
+    "organizations": [
+      {
+        "name": "Orbital Mechanics Group",
+        "title": "Lead Mathematician"
+      }
+    ],
+    "phones": [
+      {
+        "type": "work",
+        "value": "+1 650-555-0142"
+      }
+    ],
+    "resource": {
+      "id": "people/c5566778899001122334",
+      "kind": "contact",
+      "uri": "gcontact:///people%2Fc5566778899001122334"
+    },
+    "resource_name": "people/c5566778899001122334"
+  },
+  "status": "ok"
+}

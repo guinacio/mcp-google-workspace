@@ -25,7 +25,11 @@ from .schemas import (
     TaskStatus,
     UpdateTaskRequest,
 )
-from .presentation import task_envelope, tasklist_envelope, tasks_digest
+from .presentation import task_envelope, tasklist_envelope, tasklists_page, tasks_digest, tasks_page
+
+# How the Tasks API addresses the account's default task list.
+DEFAULT_TASKLIST = "@default"
+_LIST_TASKLIST_ID = "Task list ID from tasks_list_tasklists; omit for the account's default list."
 
 
 def _completed_now(timezone_name: str) -> str:
@@ -124,37 +128,45 @@ def delete_task_payload(request: DeleteTaskRequest) -> dict[str, Any]:
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_tasklists")
-    def list_tasklists(
+    async def list_tasklists(
         max_results: Annotated[int, "Maximum task lists per page, 1 to 100."] = 100,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        """List the user's Google Tasks task lists. Call it first to get the tasklist_id every other tasks tool needs ('@default' also selects the default list). Returns tasklists (id, title, updated_at), count and next_page_token when more lists remain."""
+        """List the user's Google Tasks task lists. Call it to get the tasklist_id the other tasks tools take ('@default' also selects the default list). Returns tasklists (id, title, updated_at in local time), count, next_page_token when more lists remain, and account_timezone."""
+        timezone_name = await resolve_user_timezone()
         try:
-            result = list_tasklists_payload(ListTasklistsRequest(max_results=max_results, page_token=page_token))
+            result = await run_blocking(
+                list_tasklists_payload, ListTasklistsRequest(max_results=max_results, page_token=page_token)
+            )
         except HttpError as exc:
             raise provider_tool_error(exc) from exc
-        items = result.get("items", [])
-        return {"tasklists": [tasklist_envelope(item) for item in items], "next_page_token": result.get("nextPageToken"), "count": len(items)}
+        return tasklists_page(result, account_timezone=timezone_name)
 
     @server.tool(name="get_tasklist")
-    def get_tasklist(tasklist_id: str) -> dict[str, Any]:
-        """Get one task list's title and last update time by ID. To find list IDs use tasks_list_tasklists, and for the tasks in a list use tasks_list_tasks. Returns id, title and updated_at."""
+    async def get_tasklist(tasklist_id: str) -> dict[str, Any]:
+        """Get one task list's title and last update time by ID. To find list IDs use tasks_list_tasklists, and for the tasks in a list use tasks_list_tasks. Returns id, title and updated_at (local time in the account time zone)."""
+        timezone_name = await resolve_user_timezone()
         try:
-            return tasklist_envelope(get_tasklist_payload(GetTasklistRequest(tasklist_id=tasklist_id)))
+            return tasklist_envelope(
+                await run_blocking(get_tasklist_payload, GetTasklistRequest(tasklist_id=tasklist_id)),
+                account_timezone=timezone_name,
+            )
         except HttpError as exc:
             raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
 
     @server.tool(name="create_tasklist")
-    def create_tasklist(title: Annotated[str, "Name of the new task list."]) -> dict[str, Any]:
-        """Create a new, empty Google Tasks task list. To add tasks to an existing list use tasks_create_task with its ID from tasks_list_tasklists. Returns Google's TaskList resource: id (the tasklist_id for the other tasks tools), title and updated."""
+    async def create_tasklist(title: Annotated[str, "Name of the new task list."]) -> dict[str, Any]:
+        """Create a new, empty Google Tasks task list. To add tasks to an existing list use tasks_create_task with its ID from tasks_list_tasklists. Returns status 'ok' and tasklist: id (the tasklist_id for the other tasks tools), title and updated_at (local time)."""
+        timezone_name = await resolve_user_timezone()
         try:
-            return create_tasklist_payload(CreateTasklistRequest(title=title))
+            created = await run_blocking(create_tasklist_payload, CreateTasklistRequest(title=title))
+            return {"status": "ok", "tasklist": tasklist_envelope(created, account_timezone=timezone_name)}
         except HttpError as exc:
             raise provider_tool_error(exc, title=title) from exc
 
     @server.tool(name="list_tasks")
     async def list_tasks(
-        tasklist_id: str,
+        tasklist_id: Annotated[str | None, _LIST_TASKLIST_ID] = None,
         completed_max: Annotated[
             str | None,
             "Upper bound for the completion time: RFC3339, or YYYY-MM-DD for midnight UTC; a time without offset is read as UTC.",
@@ -192,14 +204,14 @@ def register_tools(server: FastMCP) -> None:
             "Lower bound for the last modification time, RFC3339; a time without offset is read as UTC.",
         ] = None,
     ) -> dict[str, Any]:
-        """List the tasks in one task list, filtered by due date, completion or update time. For a triage view of open work grouped by overdue, upcoming and unscheduled use tasks_tasks_digest. Returns tasks (id, title, status, due_date, is_overdue, completed_at, notes_snippet, parent_id), count, account_timezone and next_page_token when more tasks remain."""
+        """List the tasks in one task list (the default list when tasklist_id is omitted), filtered by due date, completion or update time. For a triage view of open work grouped by overdue, upcoming and unscheduled use tasks_tasks_digest. Returns tasklist_id (the list's real ID when Google reports it), tasks (id, title, status, due_date, is_overdue, completed_at and updated_at in local time, notes_snippet, notes_truncated, parent_id, deleted, hidden, url), count, next_page_token when more tasks remain, and account_timezone."""
         timezone_name = await resolve_user_timezone()
-        now = user_now(timezone_name)
+        list_id = tasklist_id or DEFAULT_TASKLIST
         try:
             result = await run_blocking(
                 list_tasks_payload,
                 ListTasksRequest(
-                    tasklist_id=tasklist_id,
+                    tasklist_id=list_id,
                     completed_max=completed_max,
                     completed_min=completed_min,
                     due_max=due_max,
@@ -214,19 +226,14 @@ def register_tools(server: FastMCP) -> None:
                 )
             )
         except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
-        items = result.get("items", [])
-        return {
-            "tasklist_id": tasklist_id,
-            "tasks": [task_envelope(item, now=now) for item in items],
-            "account_timezone": timezone_name,
-            "next_page_token": result.get("nextPageToken"),
-            "count": len(items),
-        }
+            raise provider_tool_error(exc, tasklist_id=list_id) from exc
+        return tasks_page(
+            result, tasklist_id=list_id, now=user_now(timezone_name), account_timezone=timezone_name
+        )
 
     @server.tool(name="get_task")
     async def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
-        """Get one task by its task list and task ID. To list a task list's tasks use tasks_list_tasks. Returns id, title, status, due_date, is_overdue, completed_at, parent_id, updated_at, deleted, hidden and the notes as notes_snippet (first 300 characters, with notes_truncated)."""
+        """Get one task by its task list and task ID. To list a task list's tasks use tasks_list_tasks. Returns id, title, status, due_date, is_overdue, completed_at and updated_at (local time in the account time zone), parent_id, deleted, hidden, url and the notes as notes_snippet (first 300 characters, with notes_truncated)."""
         timezone_name = await resolve_user_timezone()
         try:
             return task_envelope(
@@ -235,13 +242,14 @@ def register_tools(server: FastMCP) -> None:
                     GetTaskRequest(tasklist_id=tasklist_id, task_id=task_id),
                 ),
                 now=user_now(timezone_name),
+                account_timezone=timezone_name,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
     @server.tool(name="tasks_digest")
     async def tasks_digest_tool(
-        tasklist_id: str,
+        tasklist_id: Annotated[str | None, _LIST_TASKLIST_ID] = None,
         days: Annotated[
             int,
             "Days ahead of today whose due tasks go in 'upcoming'; tasks due later appear in no group.",
@@ -250,29 +258,26 @@ def register_tools(server: FastMCP) -> None:
             int, "Maximum open tasks to read from the list, 1 to 100; there is no paging, so tasks past this are left out."
         ] = 100,
     ) -> dict[str, Any]:
-        """Triage one task list's open tasks into overdue, upcoming and unscheduled work. It needs a tasklist_id: get one from tasks_list_tasklists or pass '@default'; for completed tasks or custom filters use tasks_list_tasks. Returns overdue (due before today in the account time zone), upcoming (due from today through the window, soonest first) and unscheduled (no due date), plus tasklist_id, window_days and account_timezone."""
+        """Triage one task list's open tasks into overdue, upcoming and unscheduled work; it reads the default list unless tasklist_id names another one from tasks_list_tasklists. For completed tasks or custom filters use tasks_list_tasks. Returns overdue (due before today in the account time zone), upcoming (due from today through the window, soonest first) and unscheduled (no due date), each a list of tasks shaped as in tasks_list_tasks, plus count (tasks in the three groups), tasklist_id (the list's real ID when Google reports it), window_days and account_timezone."""
         timezone_name = await resolve_user_timezone()
+        list_id = tasklist_id or DEFAULT_TASKLIST
         try:
             result = await run_blocking(
                 list_tasks_payload,
-                ListTasksRequest(tasklist_id=tasklist_id, max_results=max_results, show_completed=False)
+                ListTasksRequest(tasklist_id=list_id, max_results=max_results, show_completed=False)
             )
         except HttpError as exc:
-            raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
-        digest = tasks_digest(
-            result.get("items", []), now=user_now(timezone_name), days=days
+            raise provider_tool_error(exc, tasklist_id=list_id) from exc
+        return tasks_digest(
+            result,
+            tasklist_id=list_id,
+            now=user_now(timezone_name),
+            account_timezone=timezone_name,
+            days=days,
         )
-        digest.update(
-            {
-                "tasklist_id": tasklist_id,
-                "window_days": days,
-                "account_timezone": timezone_name,
-            }
-        )
-        return digest
 
     @server.tool(name="create_task")
-    def create_task(
+    async def create_task(
         tasklist_id: str,
         title: Annotated[str, "Text of the task as shown in the list."],
         notes: Annotated[str | None, "Longer free-text details shown under the task."] = None,
@@ -291,9 +296,11 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         status: Annotated[TaskStatus, "'needsAction' creates an open task; 'completed' creates it already done."] = "needsAction",
     ) -> dict[str, Any]:
-        """Add a task to a task list, optionally as a subtask (parent) or right after a sibling (previous). To change an existing task use tasks_update_task, and to reposition it use tasks_move_task. Returns Google's Task resource: id (the task_id for the other tasks tools), title, status ('needsAction' or 'completed'), due, notes, parent, position and webViewLink."""
+        """Add a task to a task list, optionally as a subtask (parent) or right after a sibling (previous). To change an existing task use tasks_update_task, and to reposition it use tasks_move_task. Returns status 'ok' and task: id (the task_id for the other tasks tools), title, status ('needsAction' or 'completed'), due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
+        timezone_name = await resolve_user_timezone()
         try:
-            return create_task_payload(
+            created = await run_blocking(
+                create_task_payload,
                 CreateTaskRequest(
                     tasklist_id=tasklist_id,
                     title=title,
@@ -302,13 +309,17 @@ def register_tools(server: FastMCP) -> None:
                     parent=parent,
                     previous=previous,
                     status=status,
-                )
+                ),
             )
+            return {
+                "status": "ok",
+                "task": task_envelope(created, now=user_now(timezone_name), account_timezone=timezone_name),
+            }
         except HttpError as exc:
             raise provider_tool_error(exc, tasklist_id=tasklist_id) from exc
 
     @server.tool(name="update_task")
-    def update_task(
+    async def update_task(
         tasklist_id: str,
         task_id: str,
         title: Annotated[str | None, "New text of the task."] = None,
@@ -331,9 +342,11 @@ def register_tools(server: FastMCP) -> None:
             bool | None, "Sets the hidden flag (true for completed tasks cleared from the list); Google documents it as read-only, so it may be ignored."
         ] = None,
     ) -> dict[str, Any]:
-        """Change fields of an existing task; only the fields you pass change, and at least one is required. To just mark a task done use tasks_complete_task, and to reorder or move it use tasks_move_task. Returns Google's updated Task resource: id, title, status, due, notes, completed, parent and updated."""
+        """Change fields of an existing task; only the fields you pass change, and at least one is required. To just mark a task done use tasks_complete_task, and to reorder or move it use tasks_move_task. Returns status 'ok' and task, the task as stored now, shaped as in tasks_get_task: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
+        timezone_name = await resolve_user_timezone()
         try:
-            return update_task_payload(
+            updated = await run_blocking(
+                update_task_payload,
                 UpdateTaskRequest(
                     tasklist_id=tasklist_id,
                     task_id=task_id,
@@ -344,8 +357,12 @@ def register_tools(server: FastMCP) -> None:
                     completed=completed,
                     deleted=deleted,
                     hidden=hidden,
-                )
+                ),
             )
+            return {
+                "status": "ok",
+                "task": task_envelope(updated, now=user_now(timezone_name), account_timezone=timezone_name),
+            }
         except HttpError as exc:
             raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
@@ -358,19 +375,23 @@ def register_tools(server: FastMCP) -> None:
             "Completion time to record, RFC3339 (YYYY-MM-DD means midnight UTC); defaults to now in the account's time zone.",
         ] = None,
     ) -> dict[str, Any]:
-        """Mark one task as done, recording when it was completed. To reopen it use tasks_update_task with status 'needsAction'. Returns Google's updated Task resource: id, title, status ('completed'), completed (the recorded time), due and updated."""
+        """Mark one task as done, recording when it was completed. To reopen it use tasks_update_task with status 'needsAction'. Returns status 'ok' and task, shaped as in tasks_get_task: id, title, status ('completed'), completed_at (the recorded time, in local time), due_date, is_overdue, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
         timezone_name = await resolve_user_timezone()
         try:
-            return await run_blocking(
+            completed = await run_blocking(
                 complete_task_payload,
                 CompleteTaskRequest(tasklist_id=tasklist_id, task_id=task_id, completed_at=completed_at),
                 default_completed_at=_completed_now(timezone_name),
             )
+            return {
+                "status": "ok",
+                "task": task_envelope(completed, now=user_now(timezone_name), account_timezone=timezone_name),
+            }
         except HttpError as exc:
             raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 
     @server.tool(name="move_task")
-    def move_task(
+    async def move_task(
         tasklist_id: str,
         task_id: str,
         parent: Annotated[
@@ -386,17 +407,23 @@ def register_tools(server: FastMCP) -> None:
             "Task list ID to move the task into; omit to reposition it within its current list.",
         ] = None,
     ) -> dict[str, Any]:
-        """Reposition a task within its list (nest it under a parent or place it after a sibling), or move it to another list. A cross-list move cannot also set parent or previous: move first, then call again on the destination list to place it. Returns Google's Task resource after the move: id, title, parent and position."""
+        """Reposition a task within its list (nest it under a parent or place it after a sibling), or move it to another list. A cross-list move cannot also set parent or previous: move first, then call again on the destination list to place it. Returns status 'ok' and task, the task after the move shaped as in tasks_get_task: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id (null at the top level), deleted, hidden and url."""
+        timezone_name = await resolve_user_timezone()
         try:
-            return move_task_payload(
+            moved = await run_blocking(
+                move_task_payload,
                 MoveTaskRequest(
                     tasklist_id=tasklist_id,
                     task_id=task_id,
                     parent=parent,
                     previous=previous,
                     destination_tasklist_id=destination_tasklist_id,
-                )
+                ),
             )
+            return {
+                "status": "ok",
+                "task": task_envelope(moved, now=user_now(timezone_name), account_timezone=timezone_name),
+            }
         except HttpError as exc:
             raise provider_tool_error(exc, tasklist_id=tasklist_id, task_id=task_id) from exc
 

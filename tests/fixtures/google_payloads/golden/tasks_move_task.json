@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "task": {
+    "completed_at": null,
+    "deleted": false,
+    "due_date": "2026-11-07",
+    "hidden": false,
+    "id": "Ym9va19yb29tOjM",
+    "is_overdue": false,
+    "notes_snippet": "",
+    "notes_truncated": false,
+    "parent_id": null,
+    "resource": {
+      "id": "Ym9va19yb29tOjM",
+      "kind": "task",
+      "uri": "gtask:///Ym9va19yb29tOjM"
+    },
+    "status": "needsAction",
+    "title": "Book the meeting room",
+    "updated_at": "2026-11-03T11:59:40-03:00",
+    "url": "https://tasks.google.com/task/Ym9va19yb29tOjM?sa=6"
+  }
+}

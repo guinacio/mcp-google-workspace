@@ -1,0 +1,59 @@
+{
+  "contactGroups": [
+    {
+      "resourceName": "contactGroups/myContacts",
+      "etag": "WGl2ZW5Hcm91cEV0YWc=",
+      "metadata": {
+        "updateTime": "2026-11-03T14:56:12.402Z"
+      },
+      "groupType": "SYSTEM_CONTACT_GROUP",
+      "name": "myContacts",
+      "formattedName": "My Contacts",
+      "memberCount": 412
+    },
+    {
+      "resourceName": "contactGroups/starred",
+      "etag": "WGl2ZW5Hcm91cEV0YWc=",
+      "metadata": {
+        "updateTime": "2026-10-02T08:30:00.000Z"
+      },
+      "groupType": "SYSTEM_CONTACT_GROUP",
+      "name": "starred",
+      "formattedName": "Starred",
+      "memberCount": 9
+    },
+    {
+      "resourceName": "contactGroups/friends",
+      "etag": "WGl2ZW5Hcm91cEV0YWc=",
+      "metadata": {
+        "updateTime": "2025-12-24T20:00:00.000Z"
+      },
+      "groupType": "SYSTEM_CONTACT_GROUP",
+      "name": "friends",
+      "formattedName": "Friends"
+    },
+    {
+      "resourceName": "contactGroups/4f1d2c3b0a9e8d7c",
+      "etag": "WGl2ZW5Hcm91cEV0YWc=",
+      "metadata": {
+        "updateTime": "2026-09-14T17:45:21.778Z"
+      },
+      "groupType": "USER_CONTACT_GROUP",
+      "name": "Book club",
+      "formattedName": "Book club",
+      "memberCount": 7
+    },
+    {
+      "resourceName": "contactGroups/9a8b7c6d5e4f3a2b",
+      "etag": "TmFtZWxlc3NHcm91cA==",
+      "metadata": {
+        "updateTime": "2026-11-01T02:15:00.000Z"
+      },
+      "groupType": "USER_CONTACT_GROUP",
+      "name": "Conference 2026"
+    }
+  ],
+  "totalItems": 5,
+  "nextPageToken": "EgYIARICCAE",
+  "nextSyncToken": "EgYI_9n8jQYQ"
+}
