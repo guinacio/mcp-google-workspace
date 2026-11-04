@@ -191,6 +191,113 @@ def test_update_conflict_check_excludes_the_event_being_rescheduled() -> None:
     assert [item["id"] for item in result["conflicts"]] == ["event-2"]
 
 
+class _CreateEvents:
+    def insert(self, *, body: dict, **kwargs) -> _CalendarRequest:
+        return _CalendarRequest("insert", body=body)
+
+
+class _FreeBusy:
+    def __init__(self, busy: list[dict] | Exception) -> None:
+        self._busy = busy
+
+    def query(self, *, body: dict) -> _ExecutedRequest:
+        if isinstance(self._busy, Exception):
+            raise self._busy
+        calendar_id = body["items"][0]["id"]
+        return _ExecutedRequest({"calendars": {calendar_id: {"busy": self._busy}}})
+
+
+class _CreateService:
+    def __init__(self, busy: list[dict] | Exception) -> None:
+        self._busy = busy
+
+    def events(self) -> _CreateEvents:
+        return _CreateEvents()
+
+    def freebusy(self) -> _FreeBusy:
+        return _FreeBusy(self._busy)
+
+
+def _create_event_scenario(monkeypatch, busy: list[dict] | Exception, **arguments) -> tuple[Any, list[dict]]:
+    inserted: list[dict] = []
+
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _CalendarRequest) -> dict:
+        assert request.kind == "insert"
+        inserted.append(request.body or {})
+        return {"id": "event-new", **(request.body or {})}
+
+    monkeypatch.setattr(calendar_tools, "build_calendar_service", lambda: _CreateService(busy))
+    monkeypatch.setattr(calendar_tools, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(calendar_tools, "execute_google_request", fake_execute)
+
+    async def scenario() -> Any:
+        async with Client(calendar_mcp) as client:
+            return await client.call_tool(
+                "create_event",
+                {
+                    "summary": "Planning",
+                    "start_datetime": "2026-07-12T10:00:00",
+                    "end_datetime": "2026-07-12T11:00:00",
+                    **arguments,
+                },
+                raise_on_error=False,
+            )
+
+    return asyncio.run(scenario()), inserted
+
+
+BUSY = [{"start": "2026-07-12T10:30:00Z", "end": "2026-07-12T11:30:00Z"}]
+
+
+def test_create_event_time_slot_conflict_is_a_conflict_tool_error(monkeypatch) -> None:
+    """An occupied slot is an isError result with code ``conflict``, not a success."""
+    result, inserted = _create_event_scenario(monkeypatch, BUSY)
+
+    assert result.is_error is True
+    envelope = result.structured_content
+    assert envelope["code"] == "conflict"
+    assert envelope["retryable"] is False
+    assert envelope["details"]["conflicting_events"] == BUSY
+    assert envelope["details"]["calendar_id"] == "primary"
+    assert "suggested_slots" not in envelope["details"]
+    assert envelope["required_action"]["action"] == "choose_a_free_time_slot"
+    assert "[code: conflict]" in result.content[0].text
+    assert inserted == []
+
+
+def test_create_event_conflict_carries_suggested_slots_when_asked(monkeypatch) -> None:
+    result, inserted = _create_event_scenario(monkeypatch, BUSY, on_conflict="suggest_next_slot")
+
+    assert result.is_error is True
+    details = result.structured_content["details"]
+    assert details["conflicting_events"] == BUSY
+    assert isinstance(details["suggested_slots"], list) and details["suggested_slots"]
+    assert all({"start", "end"} <= set(slot) for slot in details["suggested_slots"])
+    assert result.structured_content["required_action"]["action"] == "retry_with_one_of_suggested_slots"
+    assert inserted == []
+
+
+def test_create_event_reports_a_failed_conflict_check_instead_of_hiding_it(monkeypatch) -> None:
+    result, inserted = _create_event_scenario(monkeypatch, RuntimeError("freebusy down"))
+
+    assert result.is_error is False, result.content
+    assert len(inserted) == 1
+    payload = result.structured_content
+    assert payload["success"] is True
+    assert payload["warnings"] == ["Could not check for conflicts: freebusy down"]
+
+
+def test_create_event_without_conflict_has_no_warnings(monkeypatch) -> None:
+    result, inserted = _create_event_scenario(monkeypatch, [])
+
+    assert result.is_error is False
+    assert len(inserted) == 1
+    assert "warnings" not in result.structured_content
+
+
 class _DigestEvents:
     def list(self, **kwargs) -> _CalendarRequest:
         return _CalendarRequest("list")
