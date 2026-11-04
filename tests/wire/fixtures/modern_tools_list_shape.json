@@ -1,15 +1,173 @@
 {
-  "actual_tool_count_over_100": true,
+  "actual_tool_count_at_least_60": true,
   "cacheScope": "private",
   "named_tools": {
-    "files_file_manager": {
+    "get_google_connection_status": {
+      "_meta": {
+        "fastmcp": {
+          "tags": [
+            "connection",
+            "get",
+            "get-google-connection-status",
+            "google",
+            "google-workspace",
+            "status"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Check whether the calling user has a stored Google connection and which services it grants, and what this server offers, without calling Google. Use it before connect_google_workspace, after a consent finishes, or to learn the active tool tier; for remote users tools/list already reflects the current grants, so list tools again after consent. Returns state (connected, refresh_required, missing_scopes, reauth_required, not_connected or error), connected, granted_capabilities, granted_scopes, expires_at, an action hint when the user must reconnect, and server (tool_tier, enabled_namespaces, optional_namespaces, oauth_capabilities, file_inputs, tool_search).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "description": "One service to verify, e.g. 'calendar'; if the grant lacks its scopes, state is missing_scopes. Omit to report the overall connection only.",
+            "enum": [
+              "calendar",
+              "chat",
+              "docs",
+              "drive",
+              "forms",
+              "gmail",
+              "keep",
+              "meet",
+              "people",
+              "sheets",
+              "slides",
+              "tasks"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "get_google_connection_status",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_capability": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "granted_capabilities": {
+            "items": {},
+            "type": "array"
+          },
+          "granted_scopes": {
+            "items": {},
+            "type": "array"
+          },
+          "principal_key": {
+            "type": "string"
+          },
+          "required_scopes": {
+            "items": {},
+            "type": "array"
+          },
+          "server": {
+            "additionalProperties": true,
+            "properties": {
+              "enabled_namespaces": {
+                "items": {},
+                "type": "array"
+              },
+              "file_inputs": {
+                "additionalProperties": true,
+                "properties": {
+                  "drive": {
+                    "type": "string"
+                  },
+                  "local": {
+                    "type": "string"
+                  },
+                  "remote": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "oauth_capabilities": {
+                "items": {},
+                "type": "array"
+              },
+              "optional_namespaces": {
+                "additionalProperties": true,
+                "properties": {
+                  "apps": {
+                    "type": "boolean"
+                  },
+                  "chat": {
+                    "type": "boolean"
+                  },
+                  "gemini": {
+                    "type": "boolean"
+                  },
+                  "keep": {
+                    "type": "boolean"
+                  },
+                  "meet": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "tool_search": {
+                "type": "boolean"
+              },
+              "tool_tier": {
+                "type": "string"
+              },
+              "tool_tiers": {
+                "items": {},
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "title": "Get Google Connection Status"
+    },
+    "uploads_file_manager": {
       "_meta": {
         "fastmcp": {
           "app": "Workspace Files",
           "tags": [
             "files",
             "mcp-app",
-            "upload"
+            "upload",
+            "uploads"
           ],
           "tool_hash": "872d2c9e20b2"
         },
@@ -26,14 +184,14 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "Open the Workspace Files picker so the user can upload files from their device to this MCP server's temporary upload area (not Google Drive), at most 25 MiB per file, kept for one hour by default. Use it when a tool needs a file the user has and the server cannot read local paths; after the user uploads, get the upl_... IDs from files_list_files and pass one as uploaded_file to a tool such as gmail_send_email (attachments), drive_upload_file or drive_update_file_content. Returns the picker UI for an MCP Apps host, whose state.stored lists uploads already staged.",
+      "description": "Open the Workspace Files picker so the user can upload files from their device to this MCP server's temporary upload area (not Google Drive), at most 25 MiB per file, kept for one hour by default. Use it when a tool needs a file the user has and the server cannot read local paths; after the user uploads, get the upl_... IDs from uploads_list_files and pass one as uploaded_file to a tool such as gmail_send_email (attachments) or drive_upload_file. Returns the picker UI for an MCP Apps host, whose state.stored lists uploads already staged.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
       },
-      "name": "files_file_manager",
+      "name": "uploads_file_manager",
       "outputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -78,94 +236,10 @@
         ],
         "type": "object"
       },
-      "title": "Files File Manager"
-    },
-    "get_workspace_capabilities": {
-      "_meta": {
-        "fastmcp": {
-          "tags": [
-            "capabilities",
-            "get",
-            "get-workspace-capabilities",
-            "google-workspace",
-            "workspace"
-          ]
-        }
-      },
-      "annotations": {
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": true,
-        "readOnlyHint": true
-      },
-      "description": "Describe what this server offers without calling Google: enabled tool namespaces, which optional integrations are on, the capability names connect_google_workspace accepts, and how to pass files to tools. For the user's actual grants use get_google_connection_status instead. Returns enabled_namespaces, optional_namespaces, oauth_capabilities, file_inputs and discovery.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {},
-        "required": [],
-        "type": "object"
-      },
-      "name": "get_workspace_capabilities",
-      "outputSchema": {
-        "additionalProperties": true,
-        "properties": {
-          "discovery": {
-            "type": "string"
-          },
-          "enabled_namespaces": {
-            "items": {},
-            "type": "array"
-          },
-          "file_inputs": {
-            "additionalProperties": true,
-            "properties": {
-              "drive": {
-                "type": "string"
-              },
-              "local": {
-                "type": "string"
-              },
-              "remote": {
-                "type": "string"
-              }
-            },
-            "required": [],
-            "type": "object"
-          },
-          "oauth_capabilities": {
-            "items": {},
-            "type": "array"
-          },
-          "optional_namespaces": {
-            "additionalProperties": true,
-            "properties": {
-              "apps": {
-                "type": "boolean"
-              },
-              "chat": {
-                "type": "boolean"
-              },
-              "gemini": {
-                "type": "boolean"
-              },
-              "keep": {
-                "type": "boolean"
-              },
-              "meet": {
-                "type": "boolean"
-              }
-            },
-            "required": [],
-            "type": "object"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "title": "Get Workspace Capabilities"
+      "title": "Uploads File Manager"
     }
   },
   "resultType": "complete",
-  "tool_count_at_least": 100,
+  "tool_count_at_least": 60,
   "ttlMs": 0
 }

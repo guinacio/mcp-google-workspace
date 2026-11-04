@@ -329,11 +329,20 @@ def test_get_spreadsheet_end_to_end_returns_the_normalized_shape(monkeypatch):
 
 
 def test_batch_update_spreadsheet_end_to_end_with_a_minimal_payload(monkeypatch):
+    import importlib
+
+    import mcp_google_workspace.server as server_module
+
     payload = {"spreadsheetId": "sheet-1", "replies": [{}]}
     monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+    # The raw batchUpdate tools are published from the extended tool tier up.
+    monkeypatch.setenv("MCP_TOOL_TIER", "extended")
+    extended = importlib.reload(server_module).workspace_mcp
+    monkeypatch.delenv("MCP_TOOL_TIER")
+    importlib.reload(server_module)
 
     async def scenario():
-        async with Client(workspace_mcp) as client:
+        async with Client(extended) as client:
             return await client.call_tool(
                 "sheets_batch_update_spreadsheet",
                 {"spreadsheet_id": "sheet-1", "requests": [{"addSheet": {"properties": {"title": "Q2"}}}]},

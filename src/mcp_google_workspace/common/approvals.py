@@ -49,8 +49,8 @@ PRE_EXECUTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
 
 CONSEQUENTIAL_TOOLS = {
     "gmail_send_email",
-    "drive_create_permission",
-    "gmail_batch_modify",
+    "drive_share_file",
+    "gmail_modify_messages",
     "calendar_update_event",
     "sheets_batch_update_spreadsheet",
 }
@@ -60,9 +60,10 @@ def requires_prepare(tool: str, arguments: dict[str, Any]) -> bool:
     if tool == "gmail_send_email":
         recipients = sum(len(arguments.get(key) or []) for key in ("to", "cc", "bcc"))
         return recipients >= int(os.getenv("MCP_EMAIL_PREPARE_RECIPIENTS", "10"))
-    if tool == "drive_create_permission":
+    if tool == "drive_share_file":
+        # Creating a link-sharing grant; update mode (permission_id) takes no type.
         return arguments.get("permission_type") == "anyone" or arguments.get("type") == "anyone"
-    if tool == "gmail_batch_modify":
+    if tool == "gmail_modify_messages":
         return len(arguments.get("message_ids") or []) >= 10
     if tool == "calendar_update_event":
         return arguments.get("recurrence") is not None
@@ -79,11 +80,11 @@ def impact_preview(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         }
         preview["subject"] = arguments.get("subject")
         preview["warnings"] = ["This sends an external email and cannot be recalled reliably."]
-    elif tool == "drive_create_permission":
+    elif tool == "drive_share_file":
         preview["file_id"] = arguments.get("file_id")
         preview["permission_type"] = arguments.get("permission_type") or arguments.get("type")
         preview["warnings"] = ["This may expose a Drive resource outside the organization."]
-    elif tool == "gmail_batch_modify":
+    elif tool == "gmail_modify_messages":
         preview["counts"] = {"messages": len(arguments.get("message_ids") or [])}
     elif tool == "calendar_update_event":
         preview["event_id"] = arguments.get("event_id")

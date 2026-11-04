@@ -98,7 +98,7 @@ locally the same way: `uv run python scripts/verify_mcpb_bundle.py`
 3. Inspect the archive and confirm it contains `manifest.json`, `pyproject.toml`, and `src/`, but not credentials or `node_modules`.
 4. Start the bundle entrypoint locally with `uv run python -m mcp_google_workspace.bundle_entry`.
 5. Install the resulting `.mcpb` in an MCPB-capable host and verify that the host reads the manifest settings and can list tools over stdio.
-6. Call `get_mcp_apps_diagnostics` with `run_self_test=true`, then open `files_file_manager` and upload a real file.
+6. With `MCP_TOOL_TIER=extended`, call `get_mcp_apps_diagnostics` with `run_self_test=true`, then open `uploads_file_manager` and upload a real file.
 
 Steps 2–5 are also covered automatically; see "Automated Validation" above. Manual validation with a real host remains necessary for anything the CI's mock host cannot exercise — see `docs/migration/W7_MANUAL_QUALIFICATION.md`.
 

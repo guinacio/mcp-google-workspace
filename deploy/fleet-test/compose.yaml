@@ -30,6 +30,9 @@ x-server-env-base: &server-env-base
   FASTMCP_TASKS_ENCRYPTION_KEY: ${FLEET_TASKS_ENCRYPTION_KEY}
   MCP_REPLICAS: "2"
   ENABLE_APPS_DASHBOARD: "true"
+  # The suite drives extended-tier tools (batch updates as tasks, diagnostics);
+  # servers and the worker must publish the same tier.
+  MCP_TOOL_TIER: extended
   MCP_MAX_REQUEST_BYTES: "1048576"
   MCP_RATE_LIMIT_PER_MINUTE: "120"
   MCP_SHUTDOWN_GRACE_SECONDS: "20"

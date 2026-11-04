@@ -19,8 +19,6 @@ _ALWAYS_VISIBLE = [
     "connect_google_workspace",
     "get_google_connection_status",
     "disconnect_google_workspace",
-    "refresh_workspace_catalog",
-    "get_workspace_capabilities",
     "search_workspace",
     "resolve_workspace_resource",
     "prepare_workspace_action",

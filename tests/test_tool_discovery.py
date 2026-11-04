@@ -97,8 +97,6 @@ def test_workspace_front_page_shows_service_entry_points_not_plumbing(monkeypatc
         "connect_google_workspace",
         "get_google_connection_status",
         "disconnect_google_workspace",
-        "refresh_workspace_catalog",
-        "get_workspace_capabilities",
         "search_workspace",
         "resolve_workspace_resource",
         "prepare_workspace_action",
@@ -111,8 +109,7 @@ def test_workspace_front_page_shows_service_entry_points_not_plumbing(monkeypatc
         "tasks_tasks_digest",
     }
     assert not visible & {
-        "files_file_manager",
-        "files_list_files",
-        "files_list_files_page",
+        "uploads_file_manager",
+        "uploads_list_files",
         "get_mcp_apps_diagnostics",
     }

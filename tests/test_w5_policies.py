@@ -765,20 +765,33 @@ def test_grant_cache_is_keyed_by_principal_and_revision(tmp_path, monkeypatch: p
     assert read_grant(alice) == GrantSnapshot(alice.storage_key, None, frozenset())
 
 
-def test_refresh_catalog_tool_is_truthful_and_needs_no_connection_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_connection_status_reports_grants_and_the_server_without_calling_google(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 2.0.0: refresh_workspace_catalog and get_workspace_capabilities folded in here.
     monkeypatch.setattr(
-        "mcp_google_workspace.auth.grants.read_grant",
-        lambda principal=None: GrantSnapshot("p", "rev-7", frozenset({"gmail", "calendar"})),
+        "mcp_google_workspace.auth.google_oauth.google_connection_status",
+        lambda capability=None: {
+            "state": "connected",
+            "connected": True,
+            "principal_key": "p",
+            "granted_capabilities": ["calendar", "gmail"],
+            "granted_scopes": [],
+            "expires_at": None,
+            "action": None,
+        },
     )
 
     async def call() -> Any:
         async with Client(workspace_mcp) as client:
-            return await client.call_tool("refresh_workspace_catalog", {})
+            return await client.call_tool("get_google_connection_status", {})
 
     result = anyio.run(call)
-    assert result.structured_content["notification_sent"] is False
     assert result.structured_content["granted_capabilities"] == ["calendar", "gmail"]
-    assert result.structured_content["grant_revision"] == "rev-7"
+    server = result.structured_content["server"]
+    assert server["tool_tier"] == "core"
+    assert server["tool_tiers"] == ["core", "extended", "complete"]
+    assert "gmail" in server["enabled_namespaces"] and server["optional_namespaces"]["chat"] is False
 
 
 # ---------------------------------------------------------------------------

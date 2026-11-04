@@ -142,11 +142,11 @@ def test_tools_list_shape_and_named_tools(client: TestClient) -> None:
         "resultType": result["resultType"],
         "ttlMs": result["ttlMs"],
         "cacheScope": result["cacheScope"],
-        "tool_count_at_least": 100,
-        "actual_tool_count_over_100": len(result["tools"]) >= 100,
+        "tool_count_at_least": 60,
+        "actual_tool_count_at_least_60": len(result["tools"]) >= 60,
         "named_tools": {
-            "get_workspace_capabilities": by_name["get_workspace_capabilities"],
-            "files_file_manager": by_name["files_file_manager"],
+            "get_google_connection_status": by_name["get_google_connection_status"],
+            "uploads_file_manager": by_name["uploads_file_manager"],
         },
     }
     assert_matches_fixture("modern_tools_list_shape", normalize(payload))
@@ -157,8 +157,8 @@ def test_safe_tool_call_with_result_type(client: TestClient) -> None:
         client,
         2,
         "tools/call",
-        {"name": "get_workspace_capabilities", "arguments": {}},
-        name="get_workspace_capabilities",
+        {"name": "resolve_workspace_resource", "arguments": {"uri": "gcal-event:///evt-1"}},
+        name="resolve_workspace_resource",
     )
     assert response.status_code == 200, response.text
     payload = {"status_code": response.status_code, "result": response.json()["result"]}
@@ -253,8 +253,8 @@ def test_is_error_tool_result_envelope(client: TestClient) -> None:
         client,
         24,
         "tools/call",
-        {"name": "files_read_file", "arguments": {"name": "upl_does_not_exist"}},
-        name="files_read_file",
+        {"name": "uploads_read_file", "arguments": {"name": "upl_does_not_exist"}},
+        name="uploads_read_file",
     )
     assert response.status_code == 200, response.text
     result = response.json()["result"]
@@ -324,7 +324,7 @@ def test_server_info_version_is_the_package_release(client: TestClient) -> None:
     assert released != fastmcp.__version__
 
     response = modern_request(
-        client, 28, "tools/call", {"name": "get_workspace_capabilities", "arguments": {}}, name="get_workspace_capabilities"
+        client, 28, "tools/call", {"name": "resolve_workspace_resource", "arguments": {"uri": "gcal-event:///evt-1"}}, name="resolve_workspace_resource"
     )
     assert response.status_code == 200, response.text
     info = response.json()["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]
@@ -353,7 +353,7 @@ async def _stdio_discover_and_safe_call() -> dict[str, Any]:
     async with Client(workspace_mcp, mode="auto") as fastmcp_client:
         assert fastmcp_client.protocol_version == MODERN
         result = await fastmcp_client.session.call_tool(
-            "get_workspace_capabilities", {}, allow_input_required=True
+            "resolve_workspace_resource", {"uri": "gcal-event:///evt-1"}, allow_input_required=True
         )
         protocol_version = fastmcp_client.protocol_version
     return {

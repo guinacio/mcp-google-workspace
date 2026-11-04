@@ -596,9 +596,7 @@ class ProductionControlMiddleware(Middleware):
 _REMOTE_HIDDEN: Final[frozenset[str]] = frozenset(
     {
         "gmail_download_attachment",
-        "calendar_download_event_attachment",
         "drive_download_file",
-        "drive_export_google_file",
     }
 )
 
@@ -632,8 +630,6 @@ class CapabilityCatalogMiddleware(Middleware):
         "connect_google_workspace",
         "get_google_connection_status",
         "disconnect_google_workspace",
-        "refresh_workspace_catalog",
-        "get_workspace_capabilities",
         "get_mcp_apps_diagnostics",
         "search_workspace",
         "resolve_workspace_resource",

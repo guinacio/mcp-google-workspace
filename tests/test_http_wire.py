@@ -75,19 +75,19 @@ def test_modern_requests_work_without_initialize_or_session(client: TestClient) 
     listed = _modern(client, 2, "tools/list")
     assert listed.status_code == 200, listed.text
     names = {tool["name"] for tool in listed.json()["result"]["tools"]}
-    assert {"get_workspace_capabilities", "files_file_manager"} <= names
+    assert {"get_google_connection_status", "uploads_file_manager"} <= names
 
     called = _modern(
         client,
         3,
         "tools/call",
-        {"name": "get_workspace_capabilities", "arguments": {}},
-        name="get_workspace_capabilities",
+        {"name": "resolve_workspace_resource", "arguments": {"uri": "gcal-event:///evt-1"}},
+        name="resolve_workspace_resource",
     )
     assert called.status_code == 200, called.text
     payload = called.json()["result"]
     assert payload.get("isError") in (None, False)
-    assert "gmail" in payload["structuredContent"]["enabled_namespaces"]
+    assert payload["structuredContent"]["resource"]["uri"] == "gcal-event:///evt-1"
 
 
 def test_modern_routing_header_mismatch_is_rejected_before_execution(client: TestClient) -> None:
@@ -95,7 +95,7 @@ def test_modern_routing_header_mismatch_is_rejected_before_execution(client: Tes
         client,
         4,
         "tools/call",
-        {"name": "get_workspace_capabilities", "arguments": {}},
+        {"name": "resolve_workspace_resource", "arguments": {"uri": "gcal-event:///evt-1"}},
         name="search_workspace",
     )
     assert response.status_code == 400

@@ -199,7 +199,7 @@ def test_routing_header_mismatch_and_bad_origin_are_rejected_through_the_proxy(f
     before = len(fleet.google_calls())
     mismatch = fleet.http.post(
         "/gw/mcp",
-        headers=fleet.headers("tools/call", subject="heidi", name="files_list_files"),
+        headers=fleet.headers("tools/call", subject="heidi", name="uploads_list_files"),
         json=fleet.body("tools/call", {"name": "sheets_get_spreadsheet", "arguments": {"spreadsheet_id": "hdr"}}),
     )
     assert mismatch.status_code == 400, mismatch.text
@@ -228,7 +228,7 @@ def _raw_tls(fleet: Fleet) -> ssl.SSLSocket:
 def _head(fleet: Fleet, extra: dict[str, str]) -> bytes:
     headers = {
         "Host": f"localhost:{fleet.values['FLEET_HTTPS_PORT']}",
-        **fleet.headers("tools/call", subject="heidi", name="files_list_files"),
+        **fleet.headers("tools/call", subject="heidi", name="uploads_list_files"),
         **extra,
     }
     return ("POST /gw/mcp HTTP/1.1\r\n" + "".join(f"{k}: {v}\r\n" for k, v in headers.items()) + "\r\n").encode()
@@ -286,7 +286,7 @@ def test_chunked_oversized_body_gets_413_while_streaming_through_nginx(fleet: Fl
     assert status == 413
 
     # A small chunked body is served normally.
-    body = json.dumps(fleet.body("tools/call", {"name": "files_list_files", "arguments": {}})).encode()
+    body = json.dumps(fleet.body("tools/call", {"name": "uploads_list_files", "arguments": {}})).encode()
     sock = _raw_tls(fleet)
     try:
         sock.sendall(_head(fleet, {"Transfer-Encoding": "chunked", "Connection": "close"}))
@@ -362,16 +362,16 @@ def test_upload_stored_on_one_replica_is_listed_read_and_deleted_on_the_others(f
     }]})
     uploads = structured(stored)["result"]
     upload_id = uploads[0]["upload_id"]
-    listed = fleet.tool("bob", "files_list_files")
-    assert upload_id in [item["upload_id"] for item in structured(listed)["result"]]
-    other = fleet.tool("alice", "files_list_files")  # isolation: another principal
-    assert upload_id not in [item.get("upload_id") for item in structured(other)["result"]]
-    read = fleet.tool("bob", "files_read_file", {"name": upload_id})
+    listed = fleet.tool("bob", "uploads_list_files")
+    assert upload_id in [item["upload_id"] for item in structured(listed)["files"]]
+    other = fleet.tool("alice", "uploads_list_files")  # isolation: another principal
+    assert upload_id not in [item.get("upload_id") for item in structured(other)["files"]]
+    read = fleet.tool("bob", "uploads_read_file", {"name": upload_id})
     assert structured(read)["result"]["content"] == content.decode()
-    deleted = fleet.tool("bob", "files_delete_file", {"name": upload_id})
+    deleted = fleet.tool("bob", "uploads_delete_file", {"name": upload_id})
     assert structured(deleted) == {"status": "deleted", "name": upload_id}
-    gone = fleet.tool("bob", "files_list_files")
-    assert upload_id not in [item["upload_id"] for item in structured(gone)["result"]]
+    gone = fleet.tool("bob", "uploads_list_files")
+    assert upload_id not in [item["upload_id"] for item in structured(gone)["files"]]
     calls = [diagnostics, stored, listed, other, read, deleted, gone]
     assert_alternates(calls)
     assert stored.replica == deleted.replica != read.replica == listed.replica
@@ -495,7 +495,7 @@ def test_per_principal_rate_limit_is_enforced_across_replicas(fleet: Fleet) -> N
     subject = unique("rate")
     served: list[Call] = []
     for _ in range(RATE_LIMIT):
-        call = fleet.tool(subject, "files_list_files")
+        call = fleet.tool(subject, "uploads_list_files")
         assert "error" not in call.body, call.body
         served.append(call)
     counts = {replica: sum(1 for call in served if call.replica == replica) for replica in REPLICAS}
@@ -503,12 +503,12 @@ def test_per_principal_rate_limit_is_enforced_across_replicas(fleet: Fleet) -> N
     assert counts == {"replica-1": RATE_LIMIT // 2, "replica-2": RATE_LIMIT // 2}
     # ... yet the next call is refused on either one: the limit is fleet-wide.
     for service in REPLICAS:
-        refused = fleet.post("tools/call", {"name": "files_list_files", "arguments": {}}, subject=subject,
-                             name="files_list_files", path=f"/_fleet/{service}/mcp")
+        refused = fleet.post("tools/call", {"name": "uploads_list_files", "arguments": {}}, subject=subject,
+                             name="uploads_list_files", path=f"/_fleet/{service}/mcp")
         error = refused.body["error"]
         assert error["code"] == -32005
         assert error["data"]["code"] == "rate_limited" and error["data"]["retryable"] is True
-    assert "error" not in fleet.tool("alice", "files_list_files").body
+    assert "error" not in fleet.tool("alice", "uploads_list_files").body
 
 
 # ---------------------------------------------------------------------------
@@ -641,7 +641,7 @@ def _assert_flow_survived(fleet: Fleet, flow: dict[str, Any], *, revision: int) 
         path = f"/_fleet/{service}/mcp"
         state = fleet.tool(subject, "apps_get_state", {"view_handle": flow["handle"]}, path=path)
         assert structured(state)["view"]["revision"] == revision, structured(state)
-        read = fleet.tool(subject, "files_read_file", {"name": flow["upload_id"]}, path=path)
+        read = fleet.tool(subject, "uploads_read_file", {"name": flow["upload_id"]}, path=path)
         assert structured(read)["result"]["content"] == flow["content"]
         contact, arguments, answer = flow["done"]
         replay = fleet.tool(subject, "people_delete_contact", arguments, capabilities=ELICITATION,

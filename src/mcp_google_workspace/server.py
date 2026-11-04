@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import __version__
 from .apps import apps_mcp, mount_apps_dashboard
 from .common.component_annotations import apply_default_tool_annotations
+from .common.fastmcp_compat import local_tools
 from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
 from .common.errors import RecoverableToolError, StructuredToolErrorMiddleware
 from .common.task_backend import install_tasks_extension
@@ -42,7 +43,6 @@ from .auth import (
 from .auth.google_oauth import register_connection_tools
 from .auth.identity import current_principal
 from .auth.google_auth import (
-    CAPABILITY_SCOPES,
     build_drive_service,
     build_gmail_service,
     build_people_service,
@@ -86,6 +86,7 @@ from .people import people_mcp
 from .sheets import sheets_mcp
 from .slides import slides_mcp
 from .tasks import tasks_mcp
+from .tool_tiers import hidden_tools, tool_tier
 
 workspace_mcp = FastMCP(
     name="google-workspace-mcp",
@@ -137,7 +138,7 @@ async def version_info(_: Request) -> Response:
 async def metrics(_: Request) -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-workspace_mcp.add_provider(workspace_file_upload, namespace="files")
+workspace_mcp.add_provider(workspace_file_upload, namespace="uploads")
 
 workspace_mcp.mount(gmail_mcp, namespace="gmail")
 workspace_mcp.mount(calendar_mcp, namespace="calendar")
@@ -210,11 +211,11 @@ async def get_mcp_apps_diagnostics(
         ),
     ] = False,
 ) -> McpAppsDiagnostics:
-    """Report how the Workspace Files upload picker (files_file_manager) is wired for MCP Apps hosts, to
+    """Report how the Workspace Files upload picker (uploads_file_manager) is wired for MCP Apps hosts, to
     troubleshoot uploads that never arrive. Returns picker_tool, resource_uri, resource_mime_type, renderer_mode,
     hidden_callbacks (the hashed addresses of the store_files and delete_file callbacks), max_file_bytes and self_test.
     With run_self_test the call fails if the store callback returns no usable file handle."""
-    picker_name = "files_file_manager"
+    picker_name = "uploads_file_manager"
     store_address = f"{hash_tool('Workspace Files', 'store_files')}_store_files"
     delete_address = f"{hash_tool('Workspace Files', 'delete_file')}_delete_file"
     resource_uri = str(hashed_resource_uri("Workspace Files", "file_manager"))
@@ -283,48 +284,6 @@ async def get_mcp_apps_diagnostics(
         "delete_result": deleted.structured_content,
     }
     return McpAppsDiagnostics.model_validate(result)
-
-
-@workspace_mcp.tool(name="get_workspace_capabilities")
-def get_workspace_capabilities() -> dict[str, object]:
-    """Describe what this server offers without calling Google: enabled tool namespaces, which optional integrations
-    are on, the capability names connect_google_workspace accepts, and how to pass files to tools. For the user's
-    actual grants use get_google_connection_status instead. Returns enabled_namespaces, optional_namespaces,
-    oauth_capabilities, file_inputs and discovery."""
-    enabled = [
-        "gmail",
-        "calendar",
-        "drive",
-        "sheets",
-        "docs",
-        "tasks",
-        "people",
-        "forms",
-        "slides",
-    ]
-    optional = {
-        "apps": is_apps_dashboard_enabled(),
-        "chat": is_chat_enabled(),
-        "gemini": is_gemini_enabled(),
-        "keep": is_keep_enabled(),
-        "meet": is_meet_enabled(),
-    }
-    enabled.extend(name for name, active in optional.items() if active)
-    return {
-        "enabled_namespaces": sorted(enabled),
-        "optional_namespaces": optional,
-        "oauth_capabilities": sorted(CAPABILITY_SCOPES),
-        "file_inputs": {
-            "remote": "Call files_file_manager, then pass uploaded_file.",
-            "local": "Trusted stdio clients may pass local filesystem paths.",
-            "drive": "Gemini media tools also accept drive_file_id.",
-        },
-        "discovery": (
-            "FastMCP BM25 Tool Search is enabled by default for HTTP and stdio. "
-            "Set MCP_CLIENT_MODEL=claude to disable it automatically in auto mode, "
-            "or use MCP_TOOL_SEARCH=on|off explicitly."
-        ),
-    }
 
 
 # Metadata the search hit needs from each Gmail message; no body is fetched.
@@ -578,8 +537,8 @@ async def resolve_workspace_resource(
 #: Tools that use prepare/commit (common/approvals.py CONSEQUENTIAL_TOOLS).
 ConsequentialToolName = Literal[
     "calendar_update_event",
-    "drive_create_permission",
-    "gmail_batch_modify",
+    "drive_share_file",
+    "gmail_modify_messages",
     "gmail_send_email",
     "sheets_batch_update_spreadsheet",
 ]
@@ -592,8 +551,9 @@ async def prepare_workspace_action(
     tool_name: Annotated[
         ConsequentialToolName,
         (
-            "Published name of the tool to prepare: "
-            f"{', '.join(sorted(CONSEQUENTIAL_TOOLS))}. No other tool uses prepare/commit."
+            "Published name of the tool to prepare: calendar_update_event, drive_share_file, "
+            "gmail_modify_messages, gmail_send_email or sheets_batch_update_spreadsheet (extended tool "
+            "tier only). No other tool uses prepare/commit."
         ),
     ],
     arguments: Annotated[
@@ -606,10 +566,12 @@ async def prepare_workspace_action(
 ) -> dict[str, object]:
     """Preview a high-impact action and bind its exact arguments to a one-time commit token, then run it with
     commit_workspace_action. A direct call fails with prepare_required for gmail_send_email with 10 or more
-    recipients by default (to, cc and bcc together), drive_create_permission with type 'anyone', gmail_batch_modify
-    on 10 or more messages, calendar_update_event that sets recurrence, and sheets_batch_update_spreadsheet with 10
+    recipients by default (to, cc and bcc together), drive_share_file with type 'anyone', gmail_modify_messages
+    on 10 or more message_ids, calendar_update_event that sets recurrence, and sheets_batch_update_spreadsheet with 10
     or more requests. Returns commit_token, expires_at (epoch seconds, 10 minutes ahead by default), impact (counts and
     warnings) and next_action; nothing runs until commit."""
+    if tool_name in hidden_tools():
+        raise ValueError(f"{tool_name} is not available in the {tool_tier()} tool tier (MCP_TOOL_TIER).")
     return await prepare_action(tool_name, arguments)
 
 
@@ -672,3 +634,18 @@ async def commit_workspace_action(
         },
     }
 apply_default_tool_annotations(workspace_mcp)
+
+
+def _apply_tool_tier(server: FastMCP) -> None:
+    """Leave out the tools above the active tier (tool_tiers.py)."""
+    hidden = hidden_tools()
+    if not hidden:
+        return
+    server.disable(names=set(hidden), components={"tool"})
+    for component in local_tools(server):
+        if component.name == "prepare_workspace_action" and isinstance(component.parameters, dict):
+            choice = component.parameters["properties"]["tool_name"]
+            choice["enum"] = [name for name in choice["enum"] if name not in hidden]
+
+
+_apply_tool_tier(workspace_mcp)
