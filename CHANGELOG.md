@@ -5,33 +5,44 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
-## 2.0.0 — Unreleased
+## 2.0.0 — 2026-11-04
 
-Smaller, truthful tool catalog. Every tool and parameter description is
-written for the tool (no generated text), schemas stop repeating limits and
-`null` alternatives, raw Google payloads stop publishing an inferred output
-schema, and API plumbing parameters are gone. Every response is normalized
-into one envelope (snake_case, local times, compact resource handles, one list
-shape), and Docs and Drive files can be read as text. The default catalog
-shrinks from about 89,000 to about 67,000 estimated tokens (characters / 4;
-75,444 to 58,746 with the cl100k tokenizer), and the tool consolidation below
-takes it to about 47,000 (40,892). Tool names, results and behaviour are
-unchanged except where listed under Tool consolidation and Breaking changes.
+A smaller catalog organised around tasks, one consent model, and one response
+shape. Tools are consolidated (140 in 1.1.0 to 82 by default) and grouped in
+tiers; every call that sends, shares, permanently deletes or acts in bulk asks
+the user through one table, with a prepare/commit fallback for clients that
+cannot ask; every response is normalized by the server (snake_case, local
+times, compact resource handles, one list envelope) and publishes an open
+output schema. Every tool and parameter description is written for the tool,
+schemas stop repeating generic limits and `null` alternatives, and API
+plumbing parameters are gone. Docs and Drive files can be read as text. The
+default catalog shrinks from about 89,000 to about 46,000 estimated tokens
+(characters / 4). No dependency changes.
 
-### Tool consolidation and tiers
+### Breaking changes
+
+Input schemas are closed (`additionalProperties: false`), so a caller that
+still sends a removed parameter gets the normal input-validation error. Some
+entries below describe a change by the tool's 1.1.0 name; the Retired tools
+table gives each retired name's replacement.
+
+Upgrading from 1.1.0 needs no reconnect and loses no stored state: the OAuth
+scopes, the token store and the upload and operation stores are unchanged.
+The one exception is `MCP_TOOL_TIER=complete`, which turns on Chat, Keep and
+Meet unless their `ENABLE_*` flag is `false`, so their scopes are requested on
+the next connection. An action prepared or a confirmation left pending under
+1.1.0 (both expire after 10 minutes by default) may name a retired tool or a
+removed flag; prepare or call it again.
+
+#### Tool consolidation
 
 The catalog is consolidated around tasks instead of Google API methods: the
-default catalog goes from 142 tools to 82 (80 for the model plus the two
-app-only upload callbacks), Gmail from 44 tools to 16 (19 with the extended
-tier). Merged tools take the union of their predecessors' parameters, typed,
-and return the same envelope shapes. Retired names are removed outright: they
-are absent from `tools/list` and a call to one is the normal unknown-tool
-error. The consolidation itself kept every gate: each merged tool asked
-exactly when its predecessor asked. The consent model below then replaces
-those gates.
-
-The default catalog shrinks from about 67,000 to about 47,000 estimated
-tokens (characters / 4; 58,746 to 40,892 with the cl100k tokenizer).
+default catalog goes from 140 tools in 1.1.0 (142 with the two new read tools)
+to 82 (80 for the model plus the two app-only upload callbacks), Gmail from 44
+tools to 16 (19 with the extended tier). Merged tools take the union of their
+predecessors' parameters, typed, and return the same envelope shapes. Retired
+names are removed outright: they are absent from `tools/list` and a call to
+one is the normal unknown-tool error.
 
 #### Tool tiers
 
@@ -46,7 +57,8 @@ tokens (characters / 4; 58,746 to 40,892 with the cl100k tokenizer).
   `get_mcp_apps_diagnostics` (82 to 91 tools).
 - `complete`: extended plus every optional integration (Apps dashboard,
   Chat, Keep, Meet, and Gemini when `GEMINI_API_KEY` is set) whose `ENABLE_*`
-  flag is not explicitly `false`.
+  flag is not explicitly `false` (143 tools with all of them on). Under
+  `core` and `extended` an unset `ENABLE_*` flag is off, as in 1.1.0.
 
 Tools above the active tier are not registered at all, and
 `prepare_workspace_action` only offers tools of the active tier.
@@ -171,31 +183,23 @@ Tools above the active tier are not registered at all, and
   format) and `suggestions_view_mode`.
 - **`sheets_read_sheet_values`** always returns `value_ranges`, one entry per
   requested range.
-- **`tasks_*`**: `tasklist_id` is optional (the default list) on every task
-  tool.
+- **`people_search_contacts`** without `query` lists contacts (the former
+  `people_list_contacts`, paged, with `sort_order`); with `query` it searches,
+  returns at most 30 matches without paging, and rejects `page_token` and
+  `sort_order`. Both return `contacts`, `count`, `total` and
+  `next_page_token` (the last two null for a search).
 - **`uploads_list_files`** is paged and returns `{files, count,
   next_cursor}` instead of a bare list.
 - **`get_google_connection_status`** gains `server` (tier, namespaces,
   capabilities, file inputs, tool search); the old catalog-refresh
   `grant_revision` is gone.
 
-#### Fixed
-
-- The Apps dashboard's calendar picker read Google's raw calendar list
-  (`items`, `summary`) after responses were normalized, so it showed no
-  calendars; it now reads `calendar_get_calendar_context`'s `calendars`.
-- Listing uploads stored in S3 failed validation on the store's own `status`
-  field.
-- `resolve_workspace_resource` is annotated read-only, and
-  `calendar_get_calendar_context` open-world (it always read the account time
-  zone from Google).
-
-### Consent for consequential calls
+#### Consent for consequential calls
 
 One table (`CONSENT_TABLE` in `common/consent.py`, described in
 `docs/CONSENT.md`) classifies every call, from its tool and validated
 arguments, as read, write or consequential. Consequential calls (sending mail,
-replies, drafts, invitations and Chat messages; sharing and unsharing;
+replies, sent drafts, invitations and Chat messages; sharing and unsharing;
 permanent deletion; forwarding, filters that forward or trash, turning the
 auto-reply on; disconnecting; 10 or more items in one call) always need
 consent, and no argument can skip it. The confirmation guard asks before the
@@ -228,12 +232,9 @@ commits, background tasks); no tool asks by itself any more.
   instead of name prefixes: `destructiveHint` is true for every tool some call
   of which needs consent.
 
-### Breaking changes
+What changes for callers:
 
-Input schemas are closed (`additionalProperties: false`), so a caller that
-still sends a removed parameter gets the normal input-validation error.
-
-- **Consent: model-settable safety flags removed.** Each was a way for the
+- **Model-settable safety flags removed.** Each was a way for the
   caller to skip or weaken the user's confirmation; whether a call asks now
   depends only on what it does.
   - `confirm_send` from `gmail_send_email` and `gmail_reply` (every send and
@@ -248,7 +249,7 @@ still sends a removed parameter gets the normal input-validation error.
     with collaborators) and `confirm_delete` from `keep_delete_note` (always
     asks).
   - `confirm` from `disconnect_google_workspace` (asks).
-- **Consent: calls that now ask** (through elicitation, or prepare/commit for
+- **Calls that now ask** (through elicitation, or prepare/commit for
   clients without it), with what they did before:
   - `gmail_send_email`: asked only with `confirm_send: true`, and 10 or more
     recipients needed prepare/commit; now every send asks.
@@ -283,7 +284,7 @@ still sends a removed parameter gets the normal input-validation error.
     Cancelling an event, and saving one with guests, from the dashboard now
     asks through the host; a host that cannot complete the question shows the
     view's "ask the assistant in chat" message and nothing changes.
-- **Consent: changed contract.**
+- **Changed contract.**
   - `confirmation_required`: `required_action` is the
     `prepare_workspace_action` call (`{tool, arguments: {tool_name,
     arguments}}`) instead of `{action: "request_host_confirmation",
@@ -323,6 +324,9 @@ still sends a removed parameter gets the normal input-validation error.
   that Keep cannot do something (`keep_archive_note`, `keep_unarchive_note`,
   `keep_update_note`, the label and checklist-item tools) are read-only and
   not destructive.
+
+#### Removed parameters and schema changes
+
 - **Removed parameters.** The server now always sends what the removed
   defaults sent.
   - `supports_all_drives` from `drive_list_files`, `drive_get_file`,
@@ -358,16 +362,14 @@ still sends a removed parameter gets the normal input-validation error.
     `format=metadata` now returns every header).
 - **Values that passed through to Google and are now rejected by the schema.**
   - `send_updates` on `calendar_create_event`, `calendar_update_event`,
-    `calendar_delete_event`, `calendar_add_event_attachment`,
-    `calendar_remove_event_attachment`: only `all`, `externalOnly`, `none`.
+    `calendar_delete_event` and `calendar_set_event_attachments`: only `all`,
+    `externalOnly`, `none`.
   - `calendar_search_events` `order_by`: only `startTime`, `updated`.
-  - `drive_list_files` `corpora`: only `user`, `drive`, `domain`,
-    `allDrives`; `spaces`: only `drive` or `appDataFolder` (the
-    comma-separated `drive,appDataFolder` and the retired `photos` space are
-    rejected).
-  - `drive_update_permission` `role`: only `owner`, `organizer`,
-    `fileOrganizer`, `writer`, `commenter`, `reader`.
-- **No tool returns a Google resource unchanged any more.** The 37 tools
+  - `drive_share_file` `role` (the former `drive_update_permission` role):
+    only `owner`, `organizer`, `fileOrganizer`, `writer`, `commenter`,
+    `reader`.
+- **No tool returns a Google resource unchanged any more**, except
+  `docs_read_document` with `format: raw`. The 37 tools
   that did (every Docs, Sheets and Slides tool; `forms_get_form`,
   `forms_create_form`, `forms_batch_update_form`,
   `forms_set_form_publish_settings`; every People tool except
@@ -578,6 +580,37 @@ area:
   gains `count`. `tasks_list_tasks` and `tasks_tasks_digest` report the
   list's real ID as `tasklist_id`.
 
+### Added
+
+- `docs_read_document(document_id, format=text|markdown|outline|raw,
+  offset)`: a document as clean text or Markdown (headings, nested lists,
+  tables, links, person and rich-link chips, footnotes, every tab), paged like
+  an email body (`body`, `truncated`, `next_offset`, `body_chars`,
+  `body_sha256`); `outline` is the editing outline with indices for
+  `docs_batch_update_document` (an index inside an element's text counts
+  UTF-16 units, as Google's do), and `raw` the Document resource unchanged.
+- `drive_read_file(file_id, format=text|markdown, offset)`: the text of a
+  Drive file with the same paging fields, without the server's filesystem:
+  Google Docs (also as Markdown) and Slides exported as text, Sheets as CSV
+  of the first sheet, stored text files up to 5 MB downloaded; binary files,
+  folders, forms and drawings fail with `invalid_input`.
+- `tasklist_id` is optional on every task tool; omitted, the tool uses the
+  account's default list, and `tasks_list_tasks` and `tasks_tasks_digest`
+  report that list's real ID.
+- `MCP_TOOL_TIER=core|extended|complete` (see Tool tiers).
+- `MCP_CONSENT=required|preview_only|off`, `dry_run` on the bulk and raw
+  batch-update tools, and prepare/commit for every consequential call (see
+  Consent for consequential calls); `docs/CONSENT.md` describes the model.
+- `get_google_connection_status` reports the deployment under `server`
+  (tool tier, enabled namespaces, OAuth capabilities, file inputs, tool
+  search) without calling Google.
+- `tests/test_catalog_budget.py` pins a ceiling for the default and
+  all-optional catalogs; `scripts/measure_tokens.py` prints their size.
+- `tests/fixtures/google_payloads/` holds a recorded-shape Google payload
+  per normalizer and its golden output (`tests/test_response_goldens.py`);
+  `scripts/measure_tokens.py` reports each response's size against its
+  payload, and per-item token ceilings are tested.
+
 ### Changed
 
 - **Descriptions.** Every default-catalog tool description says what the tool
@@ -602,33 +635,38 @@ area:
   `gmail_get_mail_digest`, `calendar_search_events`,
   `calendar_get_calendar_digest`, `drive_list_files` and
   `tasks_tasks_digest`. The upload picker (`uploads_file_manager`,
-  `uploads_list_files`) and
-  `get_mcp_apps_diagnostics` are reachable through `search_tools`.
+  `uploads_list_files`) and `get_mcp_apps_diagnostics` (extended tier) are
+  reachable through `search_tools`.
 - **Enums for closed sets the tools already enforced**, so the schema states
   them: `search_workspace` `services`, `connect_google_workspace`
   `capabilities`, `get_google_connection_status` `capability`,
-  `prepare_workspace_action` `tool_name`, `keep_patch_note_checklist`
-  `operation`. The accepted values are unchanged; an invalid value is now
-  rejected by input validation instead of by the tool.
+  `keep_patch_note_checklist` `operation`. The accepted values are unchanged;
+  an invalid value is now rejected by input validation instead of by the
+  tool.
+- **Apps dashboard** follows the 2.0.0 tools: it reads calendars from
+  `calendar_get_calendar_context`, creates events with `add_meet_link`, sends
+  `gmail_modify_messages` and `gmail_delete` for its email actions, and no
+  longer passes `force` when it cancels an event. Every argument the view
+  sends is listed per operation in `apps/ui/src/operations.ts`
+  (`OPERATION_ARGUMENTS`), and `tests/test_apps_ui_tool_contract.py` checks
+  each operation's tool and argument names against the published catalog.
+  An action that needs consent the host cannot ask for
+  (`confirmation_required`) shows the server's preview text and tells the
+  user nothing changed and to ask the assistant, which runs the
+  prepare/commit step; the view never prepares or commits itself.
 
 ### Fixed
 
 - `tasks_tasks_digest` was published with `readOnlyHint: false` and
   `idempotentHint: false` (its local name starts with its namespace, which the
   annotation rules stripped); it is now read-only and idempotent.
-- `drive_hide_drive` and `drive_unhide_drive` failed on every call: they
+- Hiding or unhiding a shared drive (`drive_hide_drive` and
+  `drive_unhide_drive`, now `drive_update_drive`) failed on every call: it
   passed `useDomainAdminAccess`, which `drives.hide`/`drives.unhide` do not
   accept, and the Google client raised before sending the request.
 - Background-task runs of `tasks_tasks_digest` were authorized, admitted and
   recorded under `tasks_digest`: the execution guard skipped the namespace
   prefix for a local name that already starts with it.
-- The Apps dashboard created events with the removed `conference_data`
-  argument, which `calendar_create_event` rejects; it now sends
-  `add_meet_link`. Every argument the view sends is listed per operation in
-  `apps/ui/src/operations.ts` (`OPERATION_ARGUMENTS`), the call sites are
-  typed against it, and `tests/test_apps_ui_tool_contract.py` checks each
-  operation's tool and argument names against the published catalog. The
-  browser test host now rejects arguments the real input schema rejects.
 - `drive_upload_file` without `parent_ids` checked for a same-named file
   across everything the user can access, including shared drives, so
   `if_exists="overwrite"` could replace an unrelated file's content (and
@@ -650,38 +688,14 @@ area:
 - `gmail_save_draft` with `thread_id` set only the thread ID, without the
   `In-Reply-To` and `References` headers Gmail needs to keep the draft in
   the thread. They now point at the thread's latest message.
-- The `docs_read_document` outline description now says that an index
-  inside an element's text counts UTF-16 units (most emoji take two), as
-  Google's indices do; the indices it returns were already Google's own.
 - The dashboard's event editor saved only through the form's `submit` event,
   which a sandbox without `allow-forms` blocks; it now saves from the submit
   button (and Enter in a field) in either sandbox.
-- A dashboard action that needs consent the host cannot ask for
-  (`confirmation_required`) now shows the server's preview text and tells
-  the user nothing changed and to ask the assistant, which runs the
-  prepare/commit step; the view never prepares or commits itself. The
-  unused `prepare_required` message is removed.
-
-### Added
-
-- `docs_read_document(document_id, format=text|markdown|raw, offset)`: a
-  document as clean text or Markdown (headings, nested lists, tables, links,
-  person and rich-link chips, footnotes, every tab), paged like an email
-  body (`body`, `truncated`, `next_offset`, `body_chars`, `body_sha256`);
-  `raw` returns the Document resource unchanged.
-- `drive_read_file(file_id, format=text|markdown, offset)`: the text of a
-  Drive file with the same paging fields, without the server's filesystem:
-  Google Docs (also as Markdown) and Slides exported as text, Sheets as CSV
-  of the first sheet, stored text files up to 5 MB downloaded; binary files,
-  folders, forms and drawings fail with `invalid_input`.
-- `tasks_list_tasks` and `tasks_tasks_digest` take `tasklist_id` as
-  optional; omitted, they read the account's default list.
-- `tests/test_catalog_budget.py` pins a ceiling for the default and
-  all-optional catalogs; `scripts/measure_tokens.py` prints their size.
-- `tests/fixtures/google_payloads/` holds a recorded-shape Google payload
-  per normalizer and its golden output (`tests/test_response_goldens.py`);
-  `scripts/measure_tokens.py` reports each response's size against its
-  payload, and per-item token ceilings are tested.
+- Listing uploads stored in S3 failed validation on the store's own `status`
+  field.
+- `resolve_workspace_resource` is annotated read-only, and
+  `calendar_get_calendar_context` open-world (it always read the account time
+  zone from Google).
 
 ## 1.1.0 — 2026-11-04
 
