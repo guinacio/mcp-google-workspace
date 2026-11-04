@@ -493,4 +493,4 @@ def test_state_tools_require_a_view_handle_and_publish_closed_schemas() -> None:
             "ttl_seconds",
         ]
     for name in ("set_state", "patch_state", "next_range", "prev_range", "today"):
-        assert tools[name].input_schema["properties"]["expected_revision"]["anyOf"][0]["minimum"] == 1
+        assert tools[name].input_schema["properties"]["expected_revision"]["minimum"] == 1

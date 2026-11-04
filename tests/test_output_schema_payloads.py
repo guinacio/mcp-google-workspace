@@ -1,4 +1,4 @@
-"""Realistic Google payloads must pass the published output schemas.
+"""Realistic Google payloads must reach the client intact.
 
 ``tests/fixtures/google_payloads/`` holds one response per raw passthrough
 tool, shaped like the Google API reference (field names, nesting and types),
@@ -9,7 +9,9 @@ conforming MCP client does (``mcp.client.session.validate_tool_result``).
 
 Before 1.0.1 the schemas were closed and typed by a name heuristic, so a
 ``namedStyles`` object or a ``totalItems`` counter Google returns made the
-whole call fail on the client. The fixtures keep those fields on purpose.
+whole call fail on the client. Since 2.0.0 these raw passthrough tools publish
+no outputSchema at all; the payload still arrives as ``structuredContent``.
+The fixtures keep the fields that used to fail on purpose.
 """
 
 from __future__ import annotations
@@ -21,7 +23,6 @@ from typing import Any
 import anyio
 import pytest
 from fastmcp import Client
-from jsonschema import Draft202012Validator
 
 import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.server import workspace_mcp
@@ -80,27 +81,20 @@ def test_realistic_payload_validates_against_published_output_schema(
     schema, result = anyio.run(_call, tool, arguments)
 
     assert result.is_error is False, result.content
-    assert schema is not None and schema["additionalProperties"] is True
+    assert schema is None
     structured = result.structured_content
     assert isinstance(structured, dict)
     for field in notable:
         assert field in structured
-    # The in-memory client already validated; validate once more explicitly
-    # so a regression names the offending field instead of a generic failure.
-    errors = sorted(Draft202012Validator(schema).iter_errors(structured), key=lambda error: list(error.path))
-    assert errors == [], [f"{list(error.path)}: {error.message}" for error in errors]
 
 
 def test_fixture_fields_are_not_typed_by_the_plural_name_heuristic() -> None:
     """The exact failure from the audit: ``namedStyles must be array``."""
-    from mcp_google_workspace.common.output_schemas import _named_field_schema, _registered_schema
+    from mcp_google_workspace.common.output_schemas import _named_field_schema
 
     assert "type" not in _named_field_schema("namedStyles")
     assert "type" not in _named_field_schema("notes")  # a string on Tasks
     assert "type" not in _named_field_schema("tabs")
     assert _named_field_schema("items")["type"] == "array"
     assert _named_field_schema("totalItems")["type"] == "integer"
-    document = _registered_schema("get_document")
-    assert document is not None
-    assert document["additionalProperties"] is True
-    assert "type" not in document["properties"]["namedStyles"]
+    assert "description" not in _named_field_schema("namedStyles")

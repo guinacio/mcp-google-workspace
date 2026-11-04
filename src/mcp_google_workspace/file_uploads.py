@@ -31,7 +31,7 @@ from .auth.identity import current_principal
 from .common.crypto import FernetKeyring
 from .common.errors import RecoverableToolError
 from .common.fastmcp_compat import local_tools
-from .common.component_annotations import apply_structural_input_limits
+from .common.component_annotations import simplify_optional_properties
 from .common.prefab_render_cache import install_prefab_resource_cache
 from .runtime import get_token_storage_settings
 
@@ -744,7 +744,7 @@ class WorkspaceFileUpload(FileUpload):
                     "description",
                     "Opaque upload ID (upl_...) returned by the picker or files_list_files.",
                 )
-            apply_structural_input_limits(component.parameters)
+            simplify_optional_properties(component.parameters)
             if component.name in {"list_files", "store_files"}:
                 component.output_schema = {
                     "type": "object",

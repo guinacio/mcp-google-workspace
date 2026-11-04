@@ -225,17 +225,17 @@ def test_unlisted_plural_names_carry_no_type_claim() -> None:
     assert properties["items"]["type"] == "array"
 
 
-def test_catalog_publishes_open_schemas_for_every_google_passthrough_tool() -> None:
-    from mcp_google_workspace.common.output_schemas import _OUTPUT_FIELDS
+def test_catalog_publishes_open_schemas_and_none_for_raw_passthrough_tools() -> None:
+    from mcp_google_workspace.common.output_schemas import RAW_PASSTHROUGH_TOOLS
 
     async def catalog() -> list[Any]:
         return await workspace_mcp.list_tools(run_middleware=False)
 
-    tools = anyio.run(catalog)
-    registered = {tool.name: tool for tool in tools if tool.name.split("_", 1)[-1] in _OUTPUT_FIELDS or tool.name in _OUTPUT_FIELDS}
-    assert len(registered) >= 35  # 39 in the default composition, 41 with the Apps dashboard
-    closed = [name for name, tool in registered.items() if (tool.output_schema or {}).get("additionalProperties") is not True]
-    assert closed == []
+    tools = {tool.name: tool for tool in anyio.run(catalog)}
+    assert len(RAW_PASSTHROUGH_TOOLS) == 37
+    assert [name for name in RAW_PASSTHROUGH_TOOLS if tools[name].output_schema is not None] == []
+    registered = [tools[name] for name in ("prepare_workspace_action", "commit_workspace_action")]
+    assert all(tool.output_schema["additionalProperties"] is True for tool in registered)
 
 
 def test_catalog_has_no_unit_suffix_fields_typed_as_arrays() -> None:
