@@ -23,7 +23,7 @@ from ..common.errors import ProviderToolError, provider_tool_error, render_error
 from ..common.output_schemas import VIEW_DESCRIPTOR_SCHEMA
 from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
-from ..gmail.presentation import envelope as gmail_envelope
+from ..gmail.presentation import envelope as gmail_envelope, header_map
 from .addressing import dashboard_ui_meta
 from .operations import DashboardOperationCatalog, operation_catalog
 from .schemas import (
@@ -180,7 +180,7 @@ def _fetch_inbox_summary(
                 "subject": decode_rfc2047(headers.get("subject")),
                 "from": decode_rfc2047(headers.get("from")),
                 "date": message_envelope["date"],
-                "date_timezone": message_envelope["date_timezone"],
+                "date_timezone": state.timezone if message_envelope["date"] else None,
                 "snippet": full.get("snippet"),
                 "label_ids": full.get("labelIds", []),
                 "is_unread": "UNREAD" in (full.get("labelIds", []) or []),
@@ -211,8 +211,10 @@ def _fetch_email_detail(message_id: str, account_timezone: str) -> dict[str, Any
     payload = build_email_detail_view_model(message).model_dump(mode="json")
     normalized = gmail_envelope(message, account_timezone=account_timezone)
     payload["date"] = normalized["date"]
-    payload["date_timezone"] = normalized["date_timezone"]
-    payload["source_date"] = normalized["source_date"]
+    # The dashboard view keeps its own fields: the zone the date was rendered in
+    # and the raw Date header (the tools' envelope no longer repeats either).
+    payload["date_timezone"] = account_timezone if normalized["date"] else None
+    payload["source_date"] = header_map(message.get("payload", {})).get("date")
     return payload
 
 

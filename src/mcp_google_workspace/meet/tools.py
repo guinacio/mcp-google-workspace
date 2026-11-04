@@ -326,7 +326,7 @@ def register_tools(server: FastMCP) -> None:
 
         Find the record with meet_list_conference_records. Returns transcripts (id, started_at,
         ended_at, document_id, export_uri), count, next_page_token and account_timezone; read the
-        text with docs_get_document using document_id.
+        text with docs_read_document using document_id.
         """
         record_name = normalize_conference_record_name(conference_record_name)
         try:

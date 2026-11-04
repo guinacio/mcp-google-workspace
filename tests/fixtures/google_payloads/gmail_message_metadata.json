@@ -1,0 +1,20 @@
+{
+  "id": "19a3f0c2d4e5b6a7",
+  "threadId": "19a3f0c2d4e5b6a7",
+  "labelIds": ["UNREAD", "IMPORTANT", "CATEGORY_UPDATES", "INBOX"],
+  "snippet": "Hi Ana, here&#39;s the agenda for Thursday&#39;s review: budget, hiring plan and the launch dates. Let me know if you&#39;d like to add",
+  "sizeEstimate": 18342,
+  "historyId": "2914736",
+  "internalDate": "1793710812000",
+  "payload": {
+    "partId": "",
+    "mimeType": "multipart/alternative",
+    "filename": "",
+    "headers": [
+      {"name": "From", "value": "Bruno Costa <bruno@example.com>"},
+      {"name": "Subject", "value": "Agenda for Thursday's review"},
+      {"name": "Date", "value": "Mon, 3 Nov 2026 10:00:12 -0300"}
+    ],
+    "body": {"size": 0}
+  }
+}

@@ -69,7 +69,7 @@ def register(server: FastMCP) -> None:
         ] = 25,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List the mail received and sent in a recent time window (default the last 3 days) as one feed with snippets, with no category or importance filtering; drafts, Spam and Trash are left out. Use it to catch up on recent mail; use gmail_search_emails to find mail by sender, subject or any Gmail query, and gmail_check_mail_updates to poll for new mail since a saved checkpoint. Returns messages (id, thread_id, from, subject, date, snippet, unread, has_attachments, direction 'received' or 'sent'), message_count, window and account_timezone; next_history_id is always null here. Read bodies with gmail_read_emails."""
+        """List the mail received and sent in a recent time window (default the last 3 days) as one feed with snippets, with no category or importance filtering; drafts, Spam and Trash are left out. Use it to catch up on recent mail; use gmail_search_emails to find mail by sender, subject or any Gmail query, and gmail_check_mail_updates to poll for new mail since a saved checkpoint. Returns messages (id, thread_id, from, subject, date, snippet, unread, has_attachments, direction 'received' or 'sent'), count, window and account_timezone; there is no next page. Read bodies with gmail_read_emails."""
         request = DigestRequest(window=window, unread_only=unread_only, max_items=max_items)
         window_match = re.fullmatch(r"(\d+)([dhw])", request.window)
         if window_match is None:  # pragma: no cover - DigestRequest validates this shape
@@ -97,11 +97,10 @@ def register(server: FastMCP) -> None:
             if item is not None:
                 feed_messages.append(item)
         return {
+            "messages": feed_messages,
+            "count": len(feed_messages),
             "window": request.window,
             "account_timezone": account_timezone,
-            "message_count": len(feed_messages),
-            "messages": feed_messages,
-            "next_history_id": None,
         }
 
     @server.tool(name="search_emails")

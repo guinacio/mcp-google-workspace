@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
-import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,14 +13,16 @@ from typing import Any
 
 import pytz
 
+from ..common.text_paging import (  # noqa: F401 - re-exported for Gmail callers
+    BODY_LIMIT_CHARS,
+    PAGE_BOUNDARY_WINDOW,
+    page_text,
+    paged_text,
+)
 from .mime_utils import decode_rfc2047, extract_message_bodies, flatten_parts
 
-BODY_LIMIT_CHARS = 8_000  # approximately 2,000 tokens for ordinary email text
 PREVIEW_LIMIT_CHARS = 1_000
 SNIPPET_LIMIT_CHARS = 150
-# A page may end early at a paragraph, line, sentence or word break, but only
-# one found in the last 40% of the requested window.
-PAGE_BOUNDARY_WINDOW = 0.4
 _HTML_PLACEHOLDERS = {"this message contains html content.", "this email contains html content."}
 
 # Every Unicode format (Cf) character, plus combining and filler characters that
@@ -310,47 +310,6 @@ def clean_body(value: str) -> tuple[str, int]:
     return (f"{head}\n\n{marker}" if head else marker), earlier
 
 
-_PAGE_BREAKS = (
-    re.compile(r"\n\s*\n\s*"),  # paragraph
-    re.compile(r"\n\s*"),  # line
-    re.compile(r"(?<=[.!?\u2026])[\"')\]\u00bb\u201d\u2019]*\s+|(?<=[\u3002\uff01\uff1f])\s*"),  # sentence
-    re.compile(r"\s+"),  # word
-)
-
-
-def _extends_previous(character: str) -> bool:
-    """Combining marks, variation selectors and skin-tone modifiers attach to the character before."""
-    return unicodedata.category(character).startswith("M") or "\U0001f3fb" <= character <= "\U0001f3ff"
-
-
-def page_text(text: str, offset: int = 0, limit: int = BODY_LIMIT_CHARS) -> tuple[str, int | None]:
-    """Return one page of ``text`` from ``offset`` and the offset of the next page.
-
-    A page is at most ``limit`` characters. When the text continues, the page
-    ends just after the last paragraph break in the final 40% of the window,
-    else the last line, sentence or word break there, so the cut falls between
-    words; only text without any whitespace in that window is cut at ``limit``,
-    and then never between a character and its combining marks. Pages joined in
-    order reproduce ``text`` exactly.
-    """
-    offset = max(0, offset)
-    limit = max(1, limit)
-    end = offset + limit
-    if end >= len(text):
-        return text[offset:], None
-    floor = offset + max(1, int(limit * (1 - PAGE_BOUNDARY_WINDOW)))
-    for pattern in _PAGE_BREAKS:
-        last = None
-        for last in pattern.finditer(text, floor, end):
-            pass
-        if last is not None and last.end() > offset:
-            return text[offset : last.end()], last.end()
-    cut = end
-    while cut > offset + 1 and _extends_previous(text[cut]):
-        cut -= 1
-    return text[offset:cut], cut
-
-
 def message_attachments(payload: dict[str, Any], *, include_download_id: bool = False) -> list[dict[str, Any]]:
     attachments: list[dict[str, Any]] = []
     for part in flatten_parts(payload):
@@ -449,8 +408,6 @@ def envelope(message: dict[str, Any], *, account_timezone: str) -> dict[str, Any
         "from": {"name": name or sender, "email": email},
         "subject": decode_rfc2047(headers.get("subject")),
         "date": received_at,
-        "date_timezone": account_timezone if received_at else None,
-        "source_date": headers.get("date"),
         "snippet": message_snippet(message),
         "category": categories[0] if categories else None,
         "unread": "UNREAD" in labels,
@@ -487,15 +444,4 @@ def clean_message_content(
     between pages.
     """
     clean, quoted_messages = cleaned_message_body(message)
-    if limit is None:
-        body, next_offset = clean[max(0, offset) :], None
-    else:
-        body, next_offset = page_text(clean, offset, limit)
-    return {
-        "body": body,
-        "truncated": next_offset is not None,
-        "next_offset": next_offset,
-        "quoted_messages_collapsed": quoted_messages,
-        "body_chars": len(clean),
-        "body_sha256": hashlib.sha256(clean.encode("utf-8")).hexdigest(),
-    }
+    return {**paged_text(clean, offset=offset, limit=limit), "quoted_messages_collapsed": quoted_messages}

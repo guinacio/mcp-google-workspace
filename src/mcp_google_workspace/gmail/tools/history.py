@@ -57,7 +57,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Fetch the mail added to the mailbox since a saved checkpoint (since_history_id), or on a cold start since timestamp (the last day without one), received and sent alike with drafts left out, for incremental polling. Use gmail_get_mail_digest for a one-off look at a recent window and gmail_search_emails to search. Returns messages (the digest's fields), new_count, skipped_deleted_message_ids for mail deleted before it could be read, next_page_token, and next_history_id: the checkpoint to save for the next call, null until the last page. Read bodies with gmail_read_emails."""
+        """Fetch the mail added to the mailbox since a saved checkpoint (since_history_id), or on a cold start since timestamp (the last day without one), received and sent alike with drafts left out, for incremental polling. Use gmail_get_mail_digest for a one-off look at a recent window and gmail_search_emails to search. Returns messages (the digest's fields), count, skipped_deleted_message_ids for mail deleted before it could be read, next_page_token, and next_history_id: the checkpoint to save for the next call, null until the last page. Read bodies with gmail_read_emails."""
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         if since_history_id:
@@ -134,7 +134,7 @@ def register(server: FastMCP) -> None:
             if item is not None:
                 messages.append(item)
         return {
-            "new_count": len(messages),
+            "count": len(messages),
             "skipped_deleted_count": len(skipped_deleted_message_ids),
             "skipped_deleted_message_ids": skipped_deleted_message_ids,
             "messages": messages,

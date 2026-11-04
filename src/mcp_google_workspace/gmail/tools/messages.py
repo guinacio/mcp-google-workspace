@@ -434,7 +434,8 @@ def register(server: FastMCP) -> None:
                 "Body detail: 'metadata' omits the body; 'preview' returns the first 1,000 characters "
                 "of the cleaned body text; 'clean' returns the cleaned body text in pages of about "
                 "8,000 characters; 'full' returns the whole cleaned body unpaged plus the original "
-                "text/plain part (text_body) and, with include_html, the HTML part."
+                "text/plain part (text_body), the raw date header, internal_date and history_id under details and, "
+                "with include_html, the HTML part."
             ),
         ] = "clean",
         offset: Annotated[
@@ -481,8 +482,6 @@ def register(server: FastMCP) -> None:
                 "to": decode_rfc2047(headers.get("to")),
                 "attachments": message_attachments(payload),
                 "label_ids": message.get("labelIds", []),
-                "history_id": message.get("historyId"),
-                "internal_date": message.get("internalDate"),
                 "format": request.format,
             })
             if request.format == "metadata":
@@ -499,6 +498,13 @@ def register(server: FastMCP) -> None:
                 output.update({
                     "text_body": bodies.get("text"),
                     "html_body": bodies.get("html") if request.include_html else None,
+                    # Raw provider values behind ``date``, for callers that
+                    # need the exact header or Gmail's own ordering keys.
+                    "details": {
+                        "date_header": headers.get("date"),
+                        "internal_date": message.get("internalDate"),
+                        "history_id": message.get("historyId"),
+                    },
                 })
             outputs.append(output)
             if ctx is not None:
