@@ -9,7 +9,7 @@ enabled, lists it through an in-memory FastMCP client, and writes one JSON file:
   rejects app calls to tools without ``"app"``, as the spec requires of hosts);
 * ``dashboard``: the dashboard UI resource URI, MIME type and ``_meta.ui``;
 * ``picker``: the Prefab file picker resource (URI, HTML, ``_meta.ui`` with its
-  CSP) and a real ``files_file_manager`` tool result.
+  CSP) and a real ``uploads_file_manager`` tool result.
 
 No Google credentials or network access are needed. Usage::
 
@@ -48,10 +48,10 @@ async def _export() -> dict[str, Any]:
         }
         launch = next(tool for tool in tools if tool.name == "apps_get_dashboard")
         dashboard_uri = _ui_meta(launch.meta)["resourceUri"]
-        picker_tool = next(tool for tool in tools if tool.name == "files_file_manager")
+        picker_tool = next(tool for tool in tools if tool.name == "uploads_file_manager")
         picker_uri = _ui_meta(picker_tool.meta)["resourceUri"]
         picker_html = (await client.read_resource(picker_uri))[0]
-        picker_result = await client.call_tool("files_file_manager", {})
+        picker_result = await client.call_tool("uploads_file_manager", {})
         return {
             "tools": visibility,
             "dashboard": {

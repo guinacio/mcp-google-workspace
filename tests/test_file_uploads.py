@@ -38,12 +38,12 @@ class _Context:
 async def _file_picker_contract():
     async with Client(workspace_mcp) as client:
         tools = await client.list_tools()
-        picker = next(tool for tool in tools if tool.name == "files_file_manager")
+        picker = next(tool for tool in tools if tool.name == "uploads_file_manager")
         assert picker.annotations is not None
         uri = picker.meta["ui"]["resourceUri"]
         resources = await client.list_resources()
         contents = await client.read_resource(uri)
-        entry = await client.call_tool("files_file_manager", {})
+        entry = await client.call_tool("uploads_file_manager", {})
         backend = await client.call_tool(
             f"{hash_tool('Workspace Files', 'store_files')}_store_files",
             {"files": []},
@@ -54,7 +54,7 @@ async def _file_picker_contract():
 def test_file_picker_uses_the_standard_mcp_apps_contract() -> None:
     tools, uri, resources, contents, entry, backend = anyio.run(_file_picker_contract)
 
-    picker = tools["files_file_manager"]
+    picker = tools["uploads_file_manager"]
     assert picker.annotations is not None
     assert uri.startswith("ui://prefab/tool/")
     assert uri.endswith("/renderer.html")
@@ -72,7 +72,7 @@ def test_file_picker_uses_the_standard_mcp_apps_contract() -> None:
     # (per the MCP Apps spec, which puts visibility filtering on the host) now lists
     # app-only tools in tools/list, so the catalog must mark it app-only rather than
     # omit it. W2: previously asserted absence from tools/list.
-    store = tools["files_store_files"]
+    store = tools["uploads_store_files"]
     assert store.meta["ui"]["visibility"] == ["app"]
     assert store.annotations is not None and store.annotations.read_only_hint is False
 
@@ -92,7 +92,7 @@ def test_file_picker_uses_the_standard_mcp_apps_contract() -> None:
 
 def test_store_files_callback_input_is_documented_and_bounded() -> None:
     tools, _, _, _, _, _ = anyio.run(_file_picker_contract)
-    schema = tools["files_store_files"].input_schema
+    schema = tools["uploads_store_files"].input_schema
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)
     item = schema["properties"]["files"]["items"]
@@ -106,15 +106,25 @@ def test_store_files_callback_input_is_documented_and_bounded() -> None:
     assert list(validator.iter_errors({"files": [{**valid["files"][0], "extra": 1}]}))
 
 
-async def _run_apps_self_test():
-    async with Client(workspace_mcp) as client:
+async def _run_apps_self_test(server):
+    async with Client(server) as client:
         return await client.call_tool(
             "get_mcp_apps_diagnostics", {"run_self_test": True}
         )
 
 
-def test_file_picker_diagnostics_exercise_hidden_store_and_delete_callbacks() -> None:
-    result = anyio.run(_run_apps_self_test)
+def test_file_picker_diagnostics_exercise_hidden_store_and_delete_callbacks(monkeypatch) -> None:
+    # The diagnostics tool is published from the extended tool tier up.
+    import importlib
+
+    import mcp_google_workspace.server as server_module
+
+    monkeypatch.setenv("MCP_TOOL_TIER", "extended")
+    try:
+        result = anyio.run(_run_apps_self_test, importlib.reload(server_module).workspace_mcp)
+    finally:
+        monkeypatch.delenv("MCP_TOOL_TIER")
+        importlib.reload(server_module)
     assert result.is_error is False
     assert result.structured_content["self_test"]["status"] == "passed"
     assert result.structured_content["self_test"]["delete_result"]["status"] == "deleted"
@@ -122,7 +132,7 @@ def test_file_picker_diagnostics_exercise_hidden_store_and_delete_callbacks() ->
 
 def test_file_tool_schema_describes_remote_upload_handles() -> None:
     tools, _, _, _, _, _ = anyio.run(_file_picker_contract)
-    item_properties = tools["files_list_files"].output_schema["properties"]["result"][
+    item_properties = tools["uploads_list_files"].output_schema["properties"]["files"][
         "items"
     ]["properties"]
     assert {
@@ -236,10 +246,10 @@ async def _local_upload_round_trips() -> tuple[str, list, dict, dict, list]:
         for entry in stored.structured_content["result"]
         if entry["display_name"] == "persist.txt"
     )
-    listed = (await call("files_list_files", {})).structured_content["result"]
-    read = (await call("files_read_file", {"name": upload_id})).structured_content["result"]
-    deleted = (await call("files_delete_file", {"name": upload_id})).structured_content
-    after = (await call("files_list_files", {})).structured_content["result"]
+    listed = (await call("uploads_list_files", {})).structured_content["files"]
+    read = (await call("uploads_read_file", {"name": upload_id})).structured_content["result"]
+    deleted = (await call("uploads_delete_file", {"name": upload_id})).structured_content
+    after = (await call("uploads_list_files", {})).structured_content["files"]
     return upload_id, listed, read, deleted, after
 
 
@@ -260,7 +270,7 @@ def test_picker_accepts_large_file_between_repeated_small_uploads(
     monkeypatch.setattr(workspace_file_upload, "_local_store", LocalUploadStore())
     address = (
         f"{hash_tool('Workspace Files', 'store_files')}_store_files"
-        if hashed_address else "files_store_files"
+        if hashed_address else "uploads_store_files"
     )
     files = [
         ("first.py", "text/x-python", b"# first\n" * 1280),
@@ -285,12 +295,12 @@ def test_picker_accepts_large_file_between_repeated_small_uploads(
             assert entry["size"] == len(content)
             assert entry["checksum_sha256"] == sha256(content).hexdigest()
             ids.append(entry["upload_id"])
-        listed = await call("files_list_files", {})
-        assert {item["upload_id"] for item in listed.structured_content["result"]} == set(ids)
-        read = await call("files_read_file", {"name": ids[-1]})
+        listed = await call("uploads_list_files", {})
+        assert {item["upload_id"] for item in listed.structured_content["files"]} == set(ids)
+        read = await call("uploads_read_file", {"name": ids[-1]})
         assert read.structured_content["result"]["content"] == files[-1][2].decode()
         for upload_id in ids:
-            deleted = await call("files_delete_file", {"name": upload_id})
+            deleted = await call("uploads_delete_file", {"name": upload_id})
             assert deleted.structured_content["status"] == "deleted"
 
     anyio.run(exercise)
@@ -356,10 +366,12 @@ def test_remote_upload_listing_is_paginated_with_account_level_quota(tmp_path) -
         10,
     )
     all_stored = store.list("alice")
-    list_tool = anyio.run(lambda: workspace_mcp.get_tool("files_list_files"))
+    list_tool = anyio.run(lambda: workspace_mcp.get_tool("uploads_list_files"))
     assert list_tool is not None
     assert not list(
-        Draft202012Validator(list_tool.output_schema).iter_errors({"result": all_stored})
+        Draft202012Validator(list_tool.output_schema).iter_errors(
+            {"files": all_stored, "count": len(all_stored), "next_cursor": None}
+        )
     )
 
     first = store.list("alice", limit=1, offset=0)

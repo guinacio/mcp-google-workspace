@@ -34,7 +34,7 @@ class _OneInputSourceModel(ToolRequestModel):
     uploaded_file: str | None = Field(
         default=None,
         description=(
-            "Upload handle (upl_...) returned by files_file_manager after the user picks a file. "
+            "Upload handle (upl_...) returned by uploads_file_manager after the user picks a file. "
             "Give exactly one of input_path, drive_file_id or uploaded_file."
         ),
     )
