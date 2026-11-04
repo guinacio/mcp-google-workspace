@@ -5,7 +5,7 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
-## 1.1.0 — Unreleased
+## 1.1.0 — 2026-11-04
 
 Cleaner Gmail text. No tool or parameter is removed or renamed; one optional
 parameter and two result fields are added. One default changes:
@@ -18,7 +18,9 @@ the new `include_html` is true.
   `<head>`, `<style>`, `<script>`, `<title>`, `<template>` and `<noscript>`
   content and inline-hidden elements (pre-headers, hidden layout variants),
   separates blocks and table cells, keeps a link's URL once after its text,
-  and drops zero-width and other invisible characters used as padding. On
+  and drops zero-width and other invisible characters used as padding
+  (this includes the zero-width joiner, so an emoji ZWJ sequence such as a
+  family emoji shows as its separate emoji). On
   the synthetic newsletter corpus in `tests/fixtures/gmail_corpus` the first
   `clean` page shrinks by 85 to 94% and no longer starts with CSS.
 - **Pages end between words.** `clean` and `preview` pages end at the last
@@ -28,6 +30,9 @@ the new `include_html` is true.
 - **`preview` is a 1,000-character window of the cleaned text**, and
   `gmail_get_thread`, `gmail_get_draft` (`format=full`) and the digest use
   the same cleaner.
+- **Signatures and quoted replies.** Several trailing "Sent from my ..." /
+  "Get Outlook for ..." lines are all removed, not only the last one, and a
+  body that is only a quoted reply shows the `[quoted: ...]` marker alone.
 - **Snippets are decoded and de-padded** (`&#39;` and pre-header padding no
   longer appear). Every Gmail tool takes the snippet from Gmail's own
   `snippet`, so search, digest, thread and read results agree on it.
@@ -41,6 +46,9 @@ the new `include_html` is true.
 - `body_chars` and `body_sha256` on message results that carry a body,
   describing the whole cleaned body, so a client paging with `next_offset`
   can tell whether the message changed between pages.
+- `gmail_get_draft` with `format=full` adds the cleaned, unpaged `body` (with
+  `body_chars`, `body_sha256` and `quoted_messages_collapsed`) next to the
+  raw `draft`, and its `snippet` is decoded like the other Gmail tools'.
 
 ## 1.0.1 — 2026-11-04
 
