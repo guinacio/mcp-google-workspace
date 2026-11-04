@@ -5,6 +5,49 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
+## 2.0.1 — Unreleased
+
+Polish from the 2.0.0 live QA (issue #63) and the cheap items left over from
+issue #57. Response changes are additive except where a "Changed" entry says
+otherwise; no tool, parameter or dependency is added or removed.
+
+### Added
+
+- **`docs_read_document` `format: outline` is paged** like the text formats.
+  A page holds about 16,000 characters of JSON (`OUTLINE_LIMIT_CHARS`; the
+  outline is about twice the size of the text, so a page covers about as much
+  of the document as an 8,000-character text page) and is cut only between
+  structural elements, so a paragraph or table is never split; an element
+  larger than the budget comes alone on its page. The result gains
+  `truncated`, `next_offset`, `element_count`, `outline_chars` and
+  `outline_sha256` (size and hash of the whole outline, to tell whether the
+  document changed between pages, since `revision_id` is null for viewers).
+  `offset` for the outline counts structural elements already read, across
+  tabs in reading order, not characters: an element index always falls on a
+  boundary and does not depend on how the JSON is serialized. A client
+  continues by calling again with `offset: next_offset` until it is null. A
+  tab's `headers`, `footers`, `footnotes` and `named_ranges` come with its
+  first element; a tab begun on an earlier page has `continued: true` and its
+  `content` only.
+
+### Changed
+
+- **`docs_read_document` outline of a long document** returns its first page
+  instead of the whole outline (a document whose outline fits in one page is
+  unchanged apart from the new fields above), and `offset`, ignored for the
+  outline before, now selects the page.
+
+### Fixed
+
+- **Descriptions.** `docs_read_document` says `revision_id` is null unless
+  the user can edit the document (the Docs API returns `revisionId` only to
+  editors). `docs_read_document` and `drive_read_file` say that their text,
+  and so `body_chars`, differ for the same Doc: the first renders the
+  Document resource itself, the second returns Google's text export. The
+  renderers stay separate: sharing one would make `drive_read_file` call the
+  Docs API (another scope and request) or drop the Docs renderer's tabs,
+  chips and footnotes.
+
 ## 2.0.0 — 2026-11-04
 
 A smaller catalog organised around tasks, one consent model, and one response

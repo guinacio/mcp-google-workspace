@@ -43,13 +43,13 @@
       "name": "docs_get_document",
       "fixture": "docs_get_document.json",
       "payload_tokens": 1629,
-      "response_tokens": 414
+      "response_tokens": 454
     },
     {
       "name": "docs_get_document_tabs",
       "fixture": "docs_get_document_tabs.json",
       "payload_tokens": 26098,
-      "response_tokens": 8356,
+      "response_tokens": 8397,
       "items": 5,
       "tokens_per_item": 1654
     },

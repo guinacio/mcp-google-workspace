@@ -1,5 +1,9 @@
 {
   "document_id": "1Qw3rTyU1oPaSdFgHjKlZxCvBnM0987654321poiuyt",
+  "element_count": 104,
+  "next_offset": null,
+  "outline_chars": 33074,
+  "outline_sha256": "ee40d3e83e863b0786b87f606aa72a324315bc26e9d80fed9a68c977306966f9",
   "revision_id": "ALBJ4LtQ9mZx7Kp2Vb5Nc8Rd1Sf4Tg7Uh0Wi3Xj6Yk9Zl2Am5Bn8Co1Dp4Eq7Fr0Gs3Ht6Iu9Jv2Kw5Lx8My",
   "suggestions_view_mode": "SUGGESTIONS_INLINE",
   "tabs": [
@@ -1678,5 +1682,6 @@
     }
   ],
   "title": "Project Atlas: Q3 delivery plan",
+  "truncated": false,
   "url": "https://docs.google.com/document/d/1Qw3rTyU1oPaSdFgHjKlZxCvBnM0987654321poiuyt/edit"
 }

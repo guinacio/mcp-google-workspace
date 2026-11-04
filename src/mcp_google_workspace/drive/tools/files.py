@@ -932,7 +932,7 @@ def register(server: FastMCP) -> None:
         ] = 0,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes. Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text)."""
+        """Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes (it renders the document itself, so its body_chars differ from this export's). Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text)."""
         service = drive_service()
         account_timezone = await resolve_user_timezone()
         metadata = await execute_google_request(

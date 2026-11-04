@@ -11,6 +11,7 @@ from ..common.async_ops import run_blocking
 from ..common.errors import provider_tool_error
 from .client import docs_service
 from .presentation import (
+    OUTLINE_LIMIT_CHARS,
     batch_update_result,
     created_document,
     document_outline,
@@ -103,18 +104,22 @@ def register_tools(server: FastMCP) -> None:
             (
                 "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown "
                 "(headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 "
-                "characters. 'outline' returns the editing outline, unpaged: every structural element "
-                "with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles "
-                "left out; an index inside an element's text counts UTF-16 units, so most emoji take two. 'raw' returns Google's Document resource unchanged and unpaged, every style "
-                "and index included."
+                "characters. 'outline' returns the editing outline in pages of about 16,000 characters of "
+                "JSON, cut only between structural elements: every element with the start_index and end_index "
+                "docs_batch_update_document (extended tool tier) requests need, styles left out; an index "
+                "inside an element's text counts UTF-16 units, so most emoji take two; a tab begun on an "
+                "earlier page has continued true and no headers, footers, footnotes or named_ranges. 'raw' "
+                "returns Google's Document resource unchanged and unpaged, every style and index included. "
+                "The text differs from drive_read_file's Google export, so body_chars differ too."
             ),
         ] = "text",
         offset: Annotated[
             int,
             (
-                "Character offset into the rendered text to resume from: the next_offset of a truncated "
-                "'text' or 'markdown' result, with the same format; 0 starts at the beginning, and "
-                "'outline' and 'raw' ignore it."
+                "Where to resume: the next_offset of a truncated result, with the same format. For 'text' "
+                "and 'markdown' a character offset into the rendered text; for 'outline' the number of "
+                "structural elements already read, counted across tabs in order. 0 starts at the "
+                "beginning; 'raw' ignores it."
             ),
         ] = 0,
         include_tabs_content: Annotated[
@@ -135,7 +140,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = None,
     ) -> dict[str, Any]:
-        """Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs (the append and replace tools need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document."""
+        """Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs, 'raw' for Google's Document resource unchanged. Every format returns document_id, title, url and revision_id (null unless the user can edit the document). Text and markdown add format, tabs and one page of body with truncated, next_offset, body_chars and body_sha256; outline adds tabs of content elements (kind, start_index, end_index, text, style) with truncated, next_offset, element_count, outline_chars and outline_sha256; page on with offset=next_offset until it is null. Raw returns the resource in document."""
         request = ReadDocumentRequest(
             document_id=document_id,
             format=format,
@@ -148,7 +153,7 @@ def register_tools(server: FastMCP) -> None:
         except HttpError as exc:
             raise provider_tool_error(exc, document_id=document_id) from exc
         if request.format == "outline":
-            return document_outline(payload)
+            return document_outline(payload, offset=request.offset, limit=OUTLINE_LIMIT_CHARS)
         if request.format == "raw":
             return raw_document_view(payload)
         return document_text_view(payload, format=request.format, offset=request.offset)

@@ -1780,7 +1780,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs (the append and replace tools need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document.",
+      "description": "Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs, 'raw' for Google's Document resource unchanged. Every format returns document_id, title, url and revision_id (null unless the user can edit the document). Text and markdown add format, tabs and one page of body with truncated, next_offset, body_chars and body_sha256; outline adds tabs of content elements (kind, start_index, end_index, text, style) with truncated, next_offset, element_count, outline_chars and outline_sha256; page on with offset=next_offset until it is null. Raw returns the resource in document.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1790,7 +1790,7 @@
           },
           "format": {
             "default": "text",
-            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out; an index inside an element's text counts UTF-16 units, so most emoji take two. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
+            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline in pages of about 16,000 characters of JSON, cut only between structural elements: every element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out; an index inside an element's text counts UTF-16 units, so most emoji take two; a tab begun on an earlier page has continued true and no headers, footers, footnotes or named_ranges. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included. The text differs from drive_read_file's Google export, so body_chars differ too.",
             "enum": [
               "text",
               "markdown",
@@ -1806,7 +1806,7 @@
           },
           "offset": {
             "default": 0,
-            "description": "Character offset into the rendered text to resume from: the next_offset of a truncated 'text' or 'markdown' result, with the same format; 0 starts at the beginning, and 'outline' and 'raw' ignore it.",
+            "description": "Where to resume: the next_offset of a truncated result, with the same format. For 'text' and 'markdown' a character offset into the rendered text; for 'outline' the number of structural elements already read, counted across tabs in order. 0 starts at the beginning; 'raw' ignores it.",
             "type": "integer"
           },
           "suggestions_view_mode": {
@@ -1861,8 +1861,17 @@
               "null"
             ]
           },
+          "element_count": {
+            "type": "integer"
+          },
           "format": {},
           "next_offset": {},
+          "outline_chars": {
+            "type": "integer"
+          },
+          "outline_sha256": {
+            "type": "string"
+          },
           "revision_id": {
             "type": [
               "string",
@@ -2668,7 +2677,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes. Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text).",
+      "description": "Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes (it renders the document itself, so its body_chars differ from this export's). Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
