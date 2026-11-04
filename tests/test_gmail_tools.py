@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import threading
 from collections.abc import Callable
 from email import policy
 from email.parser import BytesParser
@@ -14,6 +15,7 @@ from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 from mcp_google_workspace.common.async_ops import execute_google_request
+from mcp_google_workspace.common.errors import classify_error
 from mcp_google_workspace.gmail.helpers import gather_in_order
 from mcp_google_workspace.gmail.mime_utils import (
     build_email_message,
@@ -806,6 +808,31 @@ def test_gather_in_order_surfaces_the_original_worker_error() -> None:
     # error middleware would lose the exception type it maps to envelopes.
     with pytest.raises(ValueError, match="boom"):
         asyncio.run(scenario())
+
+
+def test_gather_in_order_surfaces_one_error_when_several_workers_fail() -> None:
+    """Parallel fetches hit by the same 429 still classify as ``rate_limited``."""
+
+    # Google requests run in worker threads that a cancelled task group still
+    # waits for, so every in-flight fetch reports its own failure. The barrier
+    # makes all three in flight before any fails.
+    barrier = threading.Barrier(3, timeout=5)
+
+    def fetch() -> int:
+        barrier.wait()
+        raise HttpError(Response({"status": "429"}), b'{"error": {"code": 429, "message": "Too many requests"}}')
+
+    async def worker(n: int) -> int:
+        return await anyio.to_thread.run_sync(fetch)
+
+    async def scenario() -> list[int]:
+        return await gather_in_order([1, 2, 3], worker)
+
+    with pytest.raises(HttpError) as raised:
+        asyncio.run(scenario())
+    rpc_code, envelope = classify_error(raised.value)
+    assert rpc_code is None
+    assert envelope["code"] == "rate_limited"
 
 
 @pytest.mark.parametrize(
