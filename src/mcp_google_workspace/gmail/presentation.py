@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parseaddr, parsedate_to_datetime
@@ -69,6 +70,8 @@ _HIDDEN_STYLE = re.compile(rf"(?:^|;)(?:display:none|opacity:{_ZERO_LENGTH}|max-
 _FONT_SIZE = re.compile(r"(?:^|;)font-size:(\d*\.?\d+)(px|pt|em|rem|%)?")
 _VISIBILITY = re.compile(r"(?:^|;)visibility:(hidden|visible|collapse)")
 _LINK_SCHEME = re.compile(r"(?:https?://|mailto:)(?:www\.)?", re.I)
+# A link text longer than this many text nodes is never just its URL.
+_LINK_LABEL_CHUNKS = 64
 
 
 @dataclass
@@ -83,12 +86,18 @@ class _Frame:
 
 
 class _HTMLText(HTMLParser):
-    """Render the text a mail client would show, as plain lines and paragraphs."""
+    """Render the text a mail client would show, as plain lines and paragraphs.
+
+    Every step is amortized constant time per tag or text node (running
+    counters instead of rescans), because the markup comes from any sender.
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.chunks: list[str] = []
         self.stack: list[_Frame] = [_Frame("#root")]
+        self.open_tags: Counter[str] = Counter()
+        self.trailing_newlines = 0
         self.links_seen: set[str] = set()
 
     @property
@@ -99,26 +108,29 @@ class _HTMLText(HTMLParser):
         top = self._top
         return not (top.hidden or top.invisible or top.tiny)
 
-    def _trailing_newlines(self) -> int:
-        count = 0
-        for chunk in reversed(self.chunks):
-            stripped = chunk.rstrip(" ")
-            count += len(stripped) - len(stripped.rstrip("\n"))
-            if stripped.strip("\n"):
-                break
-        return count
+    def _append(self, text: str) -> None:
+        self.chunks.append(text)
+        stripped = text.rstrip(" ")
+        newlines = len(stripped) - len(stripped.rstrip("\n"))
+        if stripped.strip("\n"):
+            self.trailing_newlines = newlines
+        else:
+            self.trailing_newlines += newlines
 
     def _emit_break(self, tag: str) -> None:
         # Hidden subtrees emit nothing; tiny or invisible ones may hold visible blocks.
         if self._top.hidden:
             return
         if tag in _CELL_TAGS:
-            self.chunks.append(" ")
+            self._append(" ")
+            return
+        if tag == "br":  # an explicit line break, so <br><br> keeps its blank line
+            self._append("\n")
             return
         wanted = 2 if tag in _PARAGRAPH_TAGS else 1 if tag in _BLOCK_TAGS else 0
-        missing = wanted - self._trailing_newlines()
+        missing = wanted - self.trailing_newlines
         if missing > 0 and self.chunks:
-            self.chunks.append("\n" * missing)
+            self._append("\n" * missing)
 
     def _child_frame(self, tag: str, attrs: list[tuple[str, str | None]]) -> _Frame:
         parent = self._top
@@ -147,39 +159,54 @@ class _HTMLText(HTMLParser):
             frame.link_start = len(self.chunks)
         return frame
 
+    def _push(self, frame: _Frame) -> None:
+        self.stack.append(frame)
+        self.open_tags[frame.tag] += 1
+
     def _pop(self) -> None:
         frame = self.stack.pop()
+        self.open_tags[frame.tag] -= 1
         if frame.href is None or frame.hidden or frame.invisible or frame.tiny:
             return
         # Tracking queries and fragments are dropped, as clean_whitespace does for text.
-        url = re.sub(r"[?#].*$", "", frame.href)
+        url = _bare_link(frame.href)
         if not _LINK_SCHEME.match(url) or url in self.links_seen:
             return
-        label = re.sub(r"\s+", "", "".join(self.chunks[frame.link_start :])).casefold()
-        bare_url = _LINK_SCHEME.sub("", url).casefold().rstrip("/")
-        if not label or bare_url in label:
-            return
+        label_chunks = self.chunks[frame.link_start :]
+        if not "".join(label_chunks[:_LINK_LABEL_CHUNKS]).strip():
+            return  # an image or empty link: nothing to attach the URL to
+        # The URL is left out only when the text is exactly that URL; any other
+        # text, including text that merely contains it, shows the destination.
+        if len(label_chunks) <= _LINK_LABEL_CHUNKS:
+            label = re.sub(r"\s+", "", "".join(label_chunks))
+            if _comparable_link(label) == _comparable_link(url):
+                return
         self.links_seen.add(url)
-        self.chunks.append(f" ({url})")
+        self._append(f" ({url})")
 
     def _close_through(self, index: int) -> None:
         while len(self.stack) > index:
             self._pop()
 
+    def _close_nearest(self, tag: str) -> bool:
+        if not self.open_tags[tag]:
+            return False
+        for index in range(len(self.stack) - 1, 0, -1):
+            if self.stack[index].tag == tag:
+                self._close_through(index)
+                return True
+        return False  # pragma: no cover - open_tags mirrors the stack
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
-        if tag == "body" or (tag not in _HEAD_TAGS and any(frame.tag == "head" for frame in self.stack)):
-            # A body or body content ends an unclosed <head>.
-            for index, frame in enumerate(self.stack):
-                if frame.tag == "head":
-                    self._close_through(index)
-                    break
+        if self.open_tags["head"] and (tag == "body" or tag not in _HEAD_TAGS):
+            self._close_nearest("head")  # a body or body content ends an unclosed <head>
         closers = _IMPLICIT_CLOSE.get(tag)
         while closers and len(self.stack) > 1 and self._top.tag in closers:
             self._pop()
         self._emit_break(tag)
         if tag not in _VOID_TAGS:
-            self.stack.append(self._child_frame(tag, attrs))
+            self._push(self._child_frame(tag, attrs))
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
@@ -188,20 +215,25 @@ class _HTMLText(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
-        for index in range(len(self.stack) - 1, 0, -1):
-            if self.stack[index].tag == tag:
-                self._close_through(index)
-                break
+        self._close_nearest(tag)
         self._emit_break(tag)
 
     def handle_data(self, data: str) -> None:
         if not self._shown():
             return
-        self.chunks.append(data if self._top.pre else re.sub(r"[ \t\r\n\f]+", " ", data))
+        self._append(data if self._top.pre else re.sub(r"[ \t\r\n\f]+", " ", data))
 
     def text(self) -> str:
         self._close_through(1)
         return "".join(self.chunks)
+
+
+def _bare_link(href: str) -> str:
+    return re.sub(r"[?#].*$", "", href)
+
+
+def _comparable_link(value: str) -> str:
+    return _LINK_SCHEME.sub("", _bare_link(value)).rstrip("/").casefold()
 
 
 def header_map(payload: dict[str, Any]) -> dict[str, str]:
@@ -227,7 +259,8 @@ def html_to_text(value: str) -> str:
     element hidden inline (display:none, max-height:0, opacity:0, the hidden
     attribute, aria-hidden, visibility:hidden, font-size of 0 or 1px), emits
     line and paragraph breaks for block elements, and keeps a link's URL once,
-    after its text, when the text does not already show it.
+    after its text, unless the text is that URL. ``mso-hide:all`` alone hides
+    content from Outlook only, so that content is kept.
     """
     parser = _HTMLText()
     try:
@@ -245,8 +278,8 @@ def clean_whitespace(value: str) -> str:
     value = re.sub(r"([!?.,=])\1{2,}", r"\1", value)
     value = re.sub(r"[ \t]+", " ", value)
     value = re.sub(r"\n[ \t]+", "\n", value)
-    # Keep the space of a "-- " signature delimiter line.
-    value = re.sub(r"(?<!\n--)[ \t]+\n", "\n", value)
+    # Strip trailing spaces, except on a "-- " signature delimiter line.
+    value = re.sub(r"(?m)(?<!^--)[ \t]+$", "", value)
     return re.sub(r"\n{3,}", "\n\n", value).strip()
 
 
@@ -255,12 +288,18 @@ def clean_text(value: str) -> str:
     return clean_whitespace(remove_invisible_characters(value))
 
 
+_MOBILE_FOOTER = re.compile(r"(?:Sent from my |Get Outlook for ).+", re.I)
+
+
 def clean_body(value: str) -> tuple[str, int]:
     """Remove common signatures and collapse copied reply chains."""
     text = clean_text(value)
     if "\n-- \n" in text:
         text = text.split("\n-- \n", 1)[0].rstrip()
-    text = re.sub(r"(?:\n(?:Sent from my .+|Get Outlook for .+))+$", "", text, flags=re.I)
+    lines = text.split("\n")
+    while len(lines) > 1 and _MOBILE_FOOTER.fullmatch(lines[-1]):
+        lines.pop()
+    text = "\n".join(lines).rstrip()
     quoted = re.search(r"\n(?:On .+ wrote:|From:.+\nSent:.+\nTo:|>{1,})", text, flags=re.I)
     if not quoted:
         return text, 0
