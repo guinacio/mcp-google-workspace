@@ -1,4 +1,15 @@
-"""Derive strict JSON output schemas from tool implementation return paths."""
+"""Derive JSON output schemas from tool implementation return paths.
+
+Every schema produced here is *open* (``additionalProperties: true``): it
+documents the fields a client can rely on without claiming to be exhaustive.
+Most registered tools return a Google API payload unchanged, and the
+provider adds, omits and reshapes fields over time; a closed schema turned
+each such change into a client-side validation failure on conforming clients
+(the MCP specification asks clients to validate ``structuredContent`` against
+``outputSchema``). The same applies to inferred schemas: a return value
+assembled from a spread (``{**base, ...}``) or a helper the inference cannot
+see carries fields the literal dict does not.
+"""
 
 from __future__ import annotations
 
@@ -123,7 +134,7 @@ def _registered_schema(tool_name: str) -> dict[str, Any] | None:
         "description": "Documented structured response returned by this MCP tool.",
         "properties": properties,
         "required": [],
-        "additionalProperties": False,
+        "additionalProperties": True,
     }
 
 
@@ -155,14 +166,19 @@ def _named_field_schema(name: str) -> dict[str, Any]:
     elif lowered.endswith(("token", "id", "uri", "url", "time", "date", "status")) or lowered in {"kind", "etag", "title", "message", "mode", "action", "range", "majordimension"}:
         schema["type"] = ["string", "null"]
     elif lowered in {
-        "calendars", "error", "errors", "groups", "headers", "footers", "footnotes", "lists", "namedranges", "section_errors",
+        # ``namedRanges`` is deliberately absent: an object map on Docs, a list on Sheets.
+        "calendars", "error", "errors", "groups", "headers", "footers", "footnotes", "lists", "section_errors",
         "state", "properties", "settings", "metadata", "body", "form", "file", "event", "thread", "updates", "writecontrol", "publishsettings", "optional_namespaces", "file_inputs", "impact", "next_action", "result",
     }:
         schema["type"] = "object"
     elif lowered in {
         "items", "files", "responses", "results", "replies", "connections", "sheets", "slides", "masters", "layouts", "values", "valueranges", "contactgroups", "names", "emailaddresses", "phonenumbers", "organizations", "addresses", "biographies", "birthdays", "photos", "urls", "relations", "memberships", "links", "days", "sections", "warnings", "enabled_namespaces", "oauth_capabilities",
-    } or lowered.endswith("s") and lowered not in {"status", "properties", "settings"}:
+    }:
         schema.update({"type": "array", "items": {}})
+    # Any other name carries no type claim. A plural name is not evidence of
+    # an array: Google returns ``namedStyles`` and ``tabs`` as objects and
+    # ``totalItems`` as an integer, and a wrong claim fails client-side
+    # validation of every successful call.
     return schema
 
 
@@ -354,7 +370,7 @@ def _schema_for_shapes(shapes: list[dict[str, dict[str, Any]]]) -> dict[str, Any
         "type": "object",
         "properties": properties,
         "required": [],
-        "additionalProperties": False,
+        "additionalProperties": True,
     }
 
 
@@ -421,7 +437,7 @@ def infer_tool_output_schema(
     tool_name: str | None = None,
     _seen: set[int] | None = None,
 ) -> dict[str, Any] | None:
-    """Infer a closed object schema from literal dict returns and helper calls."""
+    """Infer an open object schema from literal dict returns and helper calls."""
     if tool_name is not None and (registered := _registered_schema(tool_name)) is not None:
         return registered
     seen = _seen or set()

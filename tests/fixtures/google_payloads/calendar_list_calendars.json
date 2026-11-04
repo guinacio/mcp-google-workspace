@@ -1,0 +1,61 @@
+{
+  "kind": "calendar#calendarList",
+  "etag": "\"p32cdj6f9mtde20o\"",
+  "nextSyncToken": "CLD29r2a4ZEDEhVleGFtcGxlQGV4YW1wbGUuY29tGAE=",
+  "items": [
+    {
+      "kind": "calendar#calendarListEntry",
+      "etag": "\"1748000000000000\"",
+      "id": "user@example.com",
+      "summary": "user@example.com",
+      "timeZone": "America/Sao_Paulo",
+      "colorId": "14",
+      "backgroundColor": "#9fe1e7",
+      "foregroundColor": "#000000",
+      "selected": true,
+      "accessRole": "owner",
+      "defaultReminders": [{"method": "popup", "minutes": 10}],
+      "notificationSettings": {
+        "notifications": [
+          {"type": "eventCreation", "method": "email"},
+          {"type": "eventChange", "method": "email"},
+          {"type": "eventCancellation", "method": "email"},
+          {"type": "eventResponse", "method": "email"}
+        ]
+      },
+      "primary": true,
+      "conferenceProperties": {"allowedConferenceSolutionTypes": ["hangoutsMeet"]}
+    },
+    {
+      "kind": "calendar#calendarListEntry",
+      "etag": "\"1748000000000001\"",
+      "id": "c_team0123456789abcdef@group.calendar.google.com",
+      "summary": "Team",
+      "description": "Shared team calendar",
+      "timeZone": "America/Sao_Paulo",
+      "colorId": "7",
+      "backgroundColor": "#42d692",
+      "foregroundColor": "#000000",
+      "selected": true,
+      "accessRole": "writer",
+      "defaultReminders": [],
+      "conferenceProperties": {"allowedConferenceSolutionTypes": ["hangoutsMeet"]}
+    },
+    {
+      "kind": "calendar#calendarListEntry",
+      "etag": "\"1748000000000002\"",
+      "id": "en.brazilian#holiday@group.v.calendar.google.com",
+      "summary": "Holidays in Brazil",
+      "description": "Holidays and Observances in Brazil",
+      "timeZone": "America/Sao_Paulo",
+      "summaryOverride": "Holidays",
+      "colorId": "8",
+      "backgroundColor": "#16a765",
+      "foregroundColor": "#000000",
+      "selected": false,
+      "accessRole": "reader",
+      "defaultReminders": [],
+      "conferenceProperties": {"allowedConferenceSolutionTypes": ["hangoutsMeet"]}
+    }
+  ]
+}
