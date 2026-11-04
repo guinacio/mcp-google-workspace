@@ -210,12 +210,12 @@
   "tools": [
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_free_time first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees, attachments, recurrence and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. Guests receive invitations only as send_updates says.",
+      "description": "Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_free_time first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. An event with guests asks the user to confirm first; they are emailed only as send_updates says.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -441,11 +441,11 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Delete an event from a calendar. Unless force is true the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted. Returns status 'ok' and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says.",
+      "description": "Delete an event from a calendar. The user is asked to confirm first, and declining returns status 'cancelled' with nothing deleted. Returns status 'ok' and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -457,11 +457,6 @@
           "event_id": {
             "description": "Calendar event ID, from calendar_search_events, calendar_get_calendar_digest or calendar_read_events results. An occurrence's instance ID deletes only that occurrence; the series ID deletes the whole series.",
             "type": "string"
-          },
-          "force": {
-            "default": false,
-            "description": "Skip the interactive confirmation when true. Default false: the deletion is confirmed with the user first (clients that cannot confirm get a confirmation_required error and nothing is deleted).",
-            "type": "boolean"
           },
           "send_updates": {
             "description": "Who Google notifies about this change: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar, by email), or 'none'.",
@@ -1093,7 +1088,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Add files to and remove files from an existing event's attachments in one change, keeping the others; give add, remove or both. To replace the whole list use calendar_update_event, and to save an attached file use drive_download_file with its file_id. Returns status 'ok', event (the updated event in the calendar_read_events shape), added_count and removed_count (0 when nothing matched). When remove is given the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed.",
+      "description": "Add files to and remove files from an existing event's attachments in one change, keeping the others; give add, remove or both. To replace the whole list use calendar_update_event, and to save an attached file use drive_download_file with its file_id. Returns status 'ok', event (the updated event in the calendar_read_events shape), added_count and removed_count (0 when nothing matched). Removing attachments, or a send_updates that emails guests, asks the user to confirm first; declining returns status 'cancelled' with nothing changed.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1200,12 +1195,6 @@
           "event": {
             "type": "object"
           },
-          "event_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "removed_count": {
             "type": "integer"
           },
@@ -1221,12 +1210,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Passing recurrence fails with prepare_required until the call goes through prepare_workspace_action and commit_workspace_action. Returns status 'ok', event (the updated event in the calendar_read_events shape, times in timezone or else the account's zone) and warnings, non-empty when the conflict check could not run; guests are notified as send_updates says.",
+      "description": "Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Changing the guest list or recurrence, or a send_updates that emails guests, asks the user to confirm first. Returns status 'ok', event (the updated event in the calendar_read_events shape, times in timezone or else the account's zone) and warnings, non-empty when the conflict check could not run; guests are notified as send_updates says.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1343,7 +1332,7 @@
             "type": "string"
           },
           "recurrence": {
-            "description": "New RFC 5545 recurrence lines replacing the old ones, e.g. ['RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10']. Passing it, even as an empty list, requires prepare_workspace_action and commit_workspace_action.",
+            "description": "New RFC 5545 recurrence lines replacing the old ones, e.g. ['RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10']. Passing it, even as an empty list, asks the user to confirm first, because it changes every occurrence.",
             "items": {
               "type": "string"
             },
@@ -1444,12 +1433,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "idempotentHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Run an action prepared with prepare_workspace_action, with exactly the bound arguments, at most once; the bound tool's own checks and confirmation questions still apply. A token that is invalid, expired or another user's is rejected. Returns status 'committed' with tool and the bound tool's result, that tool's error result if it failed, or its confirmation question if it asks one.",
+      "description": "Run the call prepared with prepare_workspace_action, with exactly the bound arguments, at most once; this is the step that carries out a consequential action, so call it only after the user has seen the preview and agreed. A client that can ask the user directly is still asked here. A token that is invalid, expired or another user's is rejected. Returns status 'committed' with tool and the bound tool's result, that tool's error result if it failed, or its confirmation question if it asks one.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1601,21 +1590,15 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
-        "idempotentHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Disconnect the calling user's Google account: revoke the grant at Google and delete this user's stored credentials; other users' connections are untouched. Without confirm=true nothing happens. Returns status 'disconnected' with grant_revoked and revocation_error; the stored credentials are deleted even when revocation fails. Reconnect later with connect_google_workspace.",
+      "description": "Disconnect the calling user's Google account: revoke the grant at Google and delete this user's stored credentials; other users' connections are untouched. The user is asked to confirm first, and the call returns status 'cancelled' if declined. Returns status 'disconnected' with grant_revoked and revocation_error; the stored credentials are deleted even when revocation fails. Reconnect later with connect_google_workspace.",
       "inputSchema": {
         "additionalProperties": false,
-        "properties": {
-          "confirm": {
-            "default": false,
-            "description": "Must be true to disconnect; false (the default) changes nothing and returns status 'confirmation_required'.",
-            "type": "boolean"
-          }
-        },
+        "properties": {},
         "required": [],
         "type": "object"
       },
@@ -1634,9 +1617,6 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "action": {
-            "type": "string"
-          },
           "grant_revoked": {},
           "revocation_error": {},
           "status": {
@@ -2124,7 +2104,7 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
@@ -2132,14 +2112,9 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "confirm_permanent": {
-            "default": true,
-            "description": "Must stay true for delete_mode='permanent' (false is rejected); a permanent delete is always confirmed interactively. Ignored for delete_mode='trash'.",
-            "type": "boolean"
-          },
           "delete_mode": {
             "default": "trash",
-            "description": "'trash' moves the file to Drive's trash, where it can be restored, with no confirmation; 'permanent' deletes it irreversibly after asking the user to confirm.",
+            "description": "'trash' moves the file to Drive's trash, where it can be restored; 'permanent' deletes it irreversibly after asking the user to confirm.",
             "enum": [
               "trash",
               "permanent"
@@ -2769,12 +2744,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled'. It asks the user to confirm, Google emails new user and group grantees by default, and type 'anyone' first requires prepare_workspace_action, then commit_workspace_action.",
+      "description": "Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled' if the user declines. Every share or change asks the user to confirm first, shown who gets which access; Google emails new user and group grantees by default.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2832,7 +2807,7 @@
             "type": "boolean"
           },
           "type": {
-            "description": "Who receives access, required to create a grant: 'user' or 'group' (set email_address), 'domain' (everyone in a Google Workspace domain; set domain), or 'anyone' (anyone with the link, no sign-in; requires prepare_workspace_action first).",
+            "description": "Who receives access, required to create a grant: 'user' or 'group' (set email_address), 'domain' (everyone in a Google Workspace domain; set domain), or 'anyone' (anyone with the link, no sign-in).",
             "enum": [
               "user",
               "group",
@@ -2867,24 +2842,10 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "file_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "grantee": {},
           "mode": {
             "type": "string"
           },
           "permission": {},
-          "permission_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "role": {},
           "status": {
             "description": "Machine-readable operation status.",
             "type": "string"
@@ -2898,11 +2859,11 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Revoke one person's, group's, domain's or link's access to a Drive file or folder. Find the permission_id with drive_list_permissions; to lower access instead of removing it use drive_share_file with permission_id. Returns status 'ok' with file_id and permission_id, or status 'cancelled'. It asks the user to confirm first; undo by granting access again with drive_share_file.",
+      "description": "Revoke one person's, group's, domain's or link's access to a Drive file or folder. Find the permission_id with drive_list_permissions; to lower access instead of removing it use drive_share_file with permission_id. Returns status 'ok' with file_id and permission_id, or status 'cancelled' if the user declines. It asks the user to confirm first; undo by granting access again with drive_share_file.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3760,14 +3721,19 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Delete Gmail messages or one whole conversation: move them to Trash (default) or, with mode 'permanent', delete them for good. Prefer Trash, which gmail_modify_messages with untrash=true can undo; to only hide mail from the inbox, archive it with gmail_modify_messages instead. Returns status 'ok', mode, message_ids or thread_id and processed, or status 'cancelled' if the user declines. Permanent deletion asks the user to confirm and cannot be undone; trashing several messages goes one by one, so a failure part-way leaves the earlier ones in Trash.",
+      "description": "Delete Gmail messages or one whole conversation: move them to Trash (default) or, with mode 'permanent', delete them for good. Prefer Trash, which gmail_modify_messages with untrash=true can undo; to only hide mail from the inbox, archive it with gmail_modify_messages instead. Returns status 'ok', mode, message_ids or thread_id and processed, or status 'cancelled' if the user declines. Permanent deletion, and trashing 10 or more messages, asks the user to confirm first; permanent deletion cannot be undone. Trashing several messages goes one by one, so a failure part-way leaves the earlier ones in Trash.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "dry_run": {
+            "default": false,
+            "description": "True returns the impact preview (status 'dry_run', preview, consent_required, action) without changing anything; no consent is asked.",
+            "type": "boolean"
+          },
           "message_ids": {
             "description": "Gmail message IDs to delete, 1 to 1,000; give message_ids or thread_id, not both.",
             "items": {
@@ -3777,7 +3743,7 @@
           },
           "mode": {
             "default": "trash",
-            "description": "'trash' (default) moves the mail to Trash, reversible with gmail_modify_messages untrash=true until Gmail empties Trash after 30 days; 'permanent' deletes it for good after the user confirms, and a client that cannot ask makes the call fail without deleting.",
+            "description": "'trash' (default) moves the mail to Trash, reversible with gmail_modify_messages untrash=true until Gmail empties Trash after 30 days; 'permanent' deletes it for good after the user confirms.",
             "enum": [
               "trash",
               "permanent"
@@ -3837,7 +3803,7 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
@@ -4402,12 +4368,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change the state of Gmail messages or of one whole conversation: add or remove labels by name or ID, mark read or unread, archive or move back to the inbox, report spam or not spam, or restore from Trash, in one call. Use gmail_delete to move mail to Trash or delete it, and gmail_manage_labels to create or rename labels. Returns status 'ok', the label IDs added and removed, untrashed, processed and messages (id, thread_id, label_ids) when Gmail reports them (one message or a thread). Changing 10 or more message_ids first requires prepare_workspace_action and commit_workspace_action.",
+      "description": "Change the state of Gmail messages or of one whole conversation: add or remove labels by name or ID, mark read or unread, archive or move back to the inbox, report spam or not spam, or restore from Trash, in one call. Use gmail_delete to move mail to Trash or delete it, and gmail_manage_labels to create or rename labels. Returns status 'ok', the label IDs added and removed, untrashed, processed and messages (id, thread_id, label_ids) when Gmail reports them (one message or a thread). Changing 10 or more message_ids asks the user to confirm first.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4420,6 +4386,11 @@
           },
           "archive": {
             "description": "True archives the mail (removes INBOX; it stays in All Mail), false moves it back to the inbox (adds INBOX).",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "True returns the impact preview (status 'dry_run', preview, consent_required, action) without changing anything; no consent is asked.",
             "type": "boolean"
           },
           "mark_read": {
@@ -4591,12 +4562,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Reply to one Gmail message inside its existing thread, to the sender only or with reply_all to everyone on it: the subject is reused and In-Reply-To and References point at that message, leaving out the account's own and send-as addresses (on your own sent mail the original recipients are kept). gmail_send_email starts a new conversation instead, and gmail_save_draft saves mail for review without sending. Returns status 'sent' with mode ('reply' or 'reply_all'), the new message_id, thread_id, to, cc and subject. Sends immediately unless confirm_send is true, which asks the user first and returns status 'cancelled' if declined.",
+      "description": "Reply to one Gmail message inside its existing thread, to the sender only or with reply_all to everyone on it: the subject is reused and In-Reply-To and References point at that message, leaving out the account's own and send-as addresses (on your own sent mail the original recipients are kept). gmail_send_email starts a new conversation instead, and gmail_save_draft saves mail for review without sending. Returns status 'sent' with mode ('reply' or 'reply_all'), the new message_id, thread_id, to, cc and subject, or status 'cancelled' if the user declines. The user is always asked to approve the reply first, with its recipients.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4648,11 +4619,6 @@
               "type": "object"
             },
             "type": "array"
-          },
-          "confirm_send": {
-            "default": false,
-            "description": "When true, the user is asked to approve the reply (shown To, Cc, Subject and the attachment count) before anything is sent: declining returns status 'cancelled', and a client that cannot ask makes the call fail unsent. Default false sends immediately.",
-            "type": "boolean"
           },
           "html_body": {
             "description": "HTML body, sent as an alternative to text_body; without text_body the plain-text part is the placeholder 'This message contains HTML content.'",
@@ -5015,12 +4981,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Send an existing Gmail draft exactly as saved; Gmail removes it from Drafts once sent. Check its content with gmail_list_drafts (draft_id) and change it with gmail_save_draft first; gmail_send_email sends new mail without a draft. Returns status 'sent' with the sent message's message_id, thread_id and label_ids. Sends immediately, with no confirmation step.",
+      "description": "Send an existing Gmail draft exactly as saved; Gmail removes it from Drafts once sent. Check its content with gmail_list_drafts (draft_id) and change it with gmail_save_draft first; gmail_send_email sends new mail without a draft. Returns status 'sent' with the sent message's message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is asked to approve the send first, shown the draft's recipients and subject.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5079,12 +5045,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Compose and send a new Gmail message, with a plain-text and/or HTML body and optional attachments. To answer an existing message inside its thread use gmail_reply; to save mail for review instead of sending it, use gmail_save_draft. Returns status 'sent' with the new message_id, thread_id and label_ids, or status 'cancelled' if confirm_send asked and the user declined. Sends immediately unless confirm_send is true, and by default a send to 10 or more recipients in total must first go through prepare_workspace_action.",
+      "description": "Compose and send a new Gmail message, with a plain-text and/or HTML body and optional attachments. To answer an existing message inside its thread use gmail_reply; to save mail for review instead of sending it, use gmail_save_draft. Returns status 'sent' with the new message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is always asked to approve the send first (recipients, subject, the start of the text and the attachment count).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5151,11 +5117,6 @@
             },
             "type": "array"
           },
-          "confirm_send": {
-            "default": false,
-            "description": "When true, the user is asked to approve the send (shown To, Subject and the attachment count) before anything is sent: declining returns status 'cancelled', and a client that cannot ask makes the call fail unsent. Default false sends immediately.",
-            "type": "boolean"
-          },
           "html_body": {
             "description": "HTML body, sent as an alternative to text_body; without text_body the plain-text part is the placeholder 'This message contains HTML content.'",
             "type": "string"
@@ -5202,9 +5163,6 @@
         "additionalProperties": true,
         "properties": {
           "label_ids": {},
-          "message": {
-            "type": "string"
-          },
           "message_id": {
             "type": [
               "string",
@@ -5310,11 +5268,11 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Permanently delete one Google contact, found with people_search_contacts. The user is asked to confirm first: the call returns status 'cancelled' if declined, and fails with confirmation_required when the client cannot ask. Returns status 'deleted' with the person_name (people/...). These tools cannot restore a deleted contact.",
+      "description": "Permanently delete one Google contact, found with people_search_contacts. The user is asked to confirm first, and the call returns status 'cancelled' if declined. Returns status 'deleted' with the person_name (people/...). These tools cannot restore a deleted contact.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5346,7 +5304,9 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "person_name": {},
+          "person_name": {
+            "type": "string"
+          },
           "status": {
             "description": "Machine-readable operation status.",
             "type": "string"
@@ -5747,27 +5707,21 @@
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
-        "readOnlyHint": false
+        "readOnlyHint": true
       },
-      "description": "Preview a high-impact action and bind its exact arguments to a one-time commit token, then run it with commit_workspace_action. A direct call fails with prepare_required for gmail_send_email with 10 or more recipients by default (to, cc and bcc together), drive_share_file with type 'anyone', gmail_modify_messages on 10 or more message_ids, calendar_update_event that sets recurrence, and sheets_batch_update_spreadsheet with 10 or more requests. Returns commit_token, expires_at (epoch seconds, 10 minutes ahead by default), impact (counts and warnings) and next_action; nothing runs until commit.",
+      "description": "Preview a consequential call (sending mail, sharing, permanent deletion, forwarding, a bulk change) and bind it to a one-time commit token, for clients that cannot ask the user directly: a direct call of such a tool fails with confirmation_required and names this tool as the next step. Nothing runs here. Returns status 'prepared', action, preview (the exact text to show the user before committing), commit_token, expires_at (epoch seconds, 10 minutes ahead by default) and next_action; a call that needs no consent fails with invalid_input naming the direct call.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "arguments": {
             "additionalProperties": true,
-            "description": "The keyword arguments for tool_name exactly as in a direct call. They are stored unchanged, not validated until commit, and cannot be edited afterwards.",
+            "description": "The arguments for tool_name exactly as in a direct call, as in that required_action. They are validated now and bound to the token; they cannot be edited afterwards.",
             "type": "object"
           },
           "tool_name": {
-            "description": "Published name of the tool to prepare: calendar_update_event, drive_share_file, gmail_modify_messages, gmail_send_email or sheets_batch_update_spreadsheet (extended tool tier only). No other tool uses prepare/commit.",
-            "enum": [
-              "calendar_update_event",
-              "drive_share_file",
-              "gmail_modify_messages",
-              "gmail_send_email"
-            ],
+            "description": "Published name of the tool to run, as in the required_action of its confirmation_required error, e.g. 'gmail_send_email'.",
             "type": "string"
           }
         },
@@ -5792,6 +5746,12 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "commit_token": {
             "type": [
               "string",
@@ -5799,12 +5759,10 @@
             ]
           },
           "expires_at": {},
-          "impact": {
-            "type": "object"
-          },
           "next_action": {
             "type": "object"
           },
+          "preview": {},
           "status": {
             "description": "Machine-readable operation status.",
             "type": [
@@ -6882,11 +6840,11 @@
     {
       "annotations": {
         "destructiveHint": true,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Delete a task from its task list (the default list when tasklist_id is omitted) after the user confirms. To only mark it done use tasks_update_task with status 'completed'. Returns status 'deleted' with task_id and tasklist_id; declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted.",
+      "description": "Delete a task from its task list (the default list when tasklist_id is omitted) after the user confirms. To only mark it done use tasks_update_task with status 'completed'. Returns status 'deleted' with task_id and tasklist_id; declining returns status 'cancelled' with nothing deleted.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7242,12 +7200,12 @@
     },
     {
       "annotations": {
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change an existing task: edit its fields, mark it done (status 'completed') or reopen it, move it within its list (parent, previous, move_to_top) or to another list (destination_tasklist_id). Only what you pass changes and at least one change is required; a move runs first, then the field changes on the list the task ends up in. Returns status 'ok' and task, shaped as in tasks_list_tasks: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url.",
+      "description": "Change an existing task: edit its fields, mark it done (status 'completed') or reopen it, move it within its list (parent, previous, move_to_top) or to another list (destination_tasklist_id). Only what you pass changes and at least one change is required; a move runs first, then the field changes on the list the task ends up in. Returns status 'ok' and task, shaped as in tasks_list_tasks: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url. Flagging the task deleted asks the user to confirm first.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7256,7 +7214,7 @@
             "type": "string"
           },
           "deleted": {
-            "description": "True flags the task as deleted (it then lists only with show_deleted); false clears the flag.",
+            "description": "True flags the task as deleted (it then lists only with show_deleted), after the user confirms, like tasks_delete_task; false clears the flag.",
             "type": "boolean"
           },
           "destination_tasklist_id": {

@@ -9,7 +9,6 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
-from ...common.confirmation import confirm_destructive_action
 from ..client import gmail_service
 from ..label_resolver import LabelResolver
 
@@ -25,6 +24,10 @@ _MESSAGE_IDS = (
 _THREAD_ID = (
     "Gmail thread ID (thread_id from search or read results): the change applies to every message of "
     "that conversation; give message_ids or thread_id, not both."
+)
+_DRY_RUN = (
+    "True returns the impact preview (status 'dry_run', preview, consent_required, action) without "
+    "changing anything; no consent is asked."
 )
 _LABEL_VALUES = (
     "Label names as shown in Gmail (e.g. 'Clients/Acme') or label IDs; system labels such as STARRED, "
@@ -78,9 +81,12 @@ def register(server: FastMCP) -> None:
                 "permanently deleted mail cannot be restored."
             ),
         ] = False,
+        dry_run: Annotated[bool, _DRY_RUN] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Change the state of Gmail messages or of one whole conversation: add or remove labels by name or ID, mark read or unread, archive or move back to the inbox, report spam or not spam, or restore from Trash, in one call. Use gmail_delete to move mail to Trash or delete it, and gmail_manage_labels to create or rename labels. Returns status 'ok', the label IDs added and removed, untrashed, processed and messages (id, thread_id, label_ids) when Gmail reports them (one message or a thread). Changing 10 or more message_ids first requires prepare_workspace_action and commit_workspace_action."""
+        """Change the state of Gmail messages or of one whole conversation: add or remove labels by name or ID, mark read or unread, archive or move back to the inbox, report spam or not spam, or restore from Trash, in one call. Use gmail_delete to move mail to Trash or delete it, and gmail_manage_labels to create or rename labels. Returns status 'ok', the label IDs added and removed, untrashed, processed and messages (id, thread_id, label_ids) when Gmail reports them (one message or a thread). Changing 10 or more message_ids asks the user to confirm first."""
+        if dry_run:
+            raise RuntimeError("dry_run is answered by the consent gate before the tool body runs.")
         ids, thread = _target(message_ids, thread_id)
         service = gmail_service()
         resolver = LabelResolver(service, execute_google_request)
@@ -180,13 +186,15 @@ def register(server: FastMCP) -> None:
             Literal["trash", "permanent"],
             (
                 "'trash' (default) moves the mail to Trash, reversible with gmail_modify_messages untrash=true "
-                "until Gmail empties Trash after 30 days; 'permanent' deletes it for good after the user "
-                "confirms, and a client that cannot ask makes the call fail without deleting."
+                "until Gmail empties Trash after 30 days; 'permanent' deletes it for good after the user confirms."
             ),
         ] = "trash",
+        dry_run: Annotated[bool, _DRY_RUN] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete Gmail messages or one whole conversation: move them to Trash (default) or, with mode 'permanent', delete them for good. Prefer Trash, which gmail_modify_messages with untrash=true can undo; to only hide mail from the inbox, archive it with gmail_modify_messages instead. Returns status 'ok', mode, message_ids or thread_id and processed, or status 'cancelled' if the user declines. Permanent deletion asks the user to confirm and cannot be undone; trashing several messages goes one by one, so a failure part-way leaves the earlier ones in Trash."""
+        """Delete Gmail messages or one whole conversation: move them to Trash (default) or, with mode 'permanent', delete them for good. Prefer Trash, which gmail_modify_messages with untrash=true can undo; to only hide mail from the inbox, archive it with gmail_modify_messages instead. Returns status 'ok', mode, message_ids or thread_id and processed, or status 'cancelled' if the user declines. Permanent deletion, and trashing 10 or more messages, asks the user to confirm first; permanent deletion cannot be undone. Trashing several messages goes one by one, so a failure part-way leaves the earlier ones in Trash."""
+        if dry_run:
+            raise RuntimeError("dry_run is answered by the consent gate before the tool body runs.")
         ids, thread = _target(message_ids, thread_id)
         service = gmail_service()
         outcome: dict[str, Any] = {
@@ -198,12 +206,6 @@ def register(server: FastMCP) -> None:
         }
         if thread is not None:
             if mode == "permanent":
-                if not await confirm_destructive_action(
-                    ctx,
-                    "delete_thread",
-                    f"Permanently delete thread {thread}? This cannot be undone.",
-                ):
-                    return {**outcome, "status": "cancelled"}
                 LOGGER.debug(f"Permanently deleting thread {thread}.")
                 await execute_google_request(service.users().threads().delete(userId="me", id=thread))
             else:
@@ -212,16 +214,6 @@ def register(server: FastMCP) -> None:
                 outcome["processed"] = len(trashed.get("messages", [])) or None
             return outcome
         if mode == "permanent":
-            if len(ids) == 1:
-                confirmed = await confirm_destructive_action(
-                    ctx, "delete_email", "Permanently delete this email? This cannot be undone."
-                )
-            else:
-                confirmed = await confirm_destructive_action(
-                    ctx, "batch_delete", f"Permanently delete {len(ids)} messages?"
-                )
-            if not confirmed:
-                return {**outcome, "status": "cancelled"}
             if len(ids) == 1:
                 await execute_google_request(service.users().messages().delete(userId="me", id=ids[0]))
             else:

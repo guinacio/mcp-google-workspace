@@ -474,7 +474,7 @@ def test_create_update_delete_default_to_the_default_list(service, monkeypatch):
     async def confirm(_ctx, _action, _message, **_kwargs):
         return True
 
-    monkeypatch.setattr("mcp_google_workspace.tasks.tools.confirm_destructive_action", confirm)
+    monkeypatch.setattr("mcp_google_workspace.common.confirmation.confirm_destructive_action", confirm)
 
     async def scenario():
         async with Client(tasks_mcp) as client:
@@ -527,17 +527,42 @@ def test_delete_task_asks_for_confirmation(accepted, service, monkeypatch):
         asked.append((action_name, message, kwargs))
         return accepted
 
-    monkeypatch.setattr("mcp_google_workspace.tasks.tools.confirm_destructive_action", confirm)
+    monkeypatch.setattr("mcp_google_workspace.common.confirmation.confirm_destructive_action", confirm)
 
     result = _call("delete_task", {"tasklist_id": "list-1", "task_id": "task-1"})
 
-    assert asked == [("delete_task", "Permanently delete task task-1?", {})]
+    assert asked == [("delete_task", "Delete task task-1 from task list list-1?", {"explicit_confirm_field": False})]
     if accepted:
         assert service.tasks_api.calls == [("delete", {"tasklist": "list-1", "task": "task-1"})]
         assert result.structured_content["status"] == "deleted"
     else:
         assert service.tasks_api.calls == []
-        assert result.structured_content == {"status": "cancelled", "task_id": "task-1", "tasklist_id": "list-1"}
+        assert result.structured_content == {
+            "status": "cancelled",
+            "action": "delete_task",
+            "reason": "The user declined; nothing was changed.",
+        }
+
+
+@pytest.mark.parametrize("accepted", [True, False])
+def test_flagging_a_task_deleted_asks_like_delete_task(accepted, service, monkeypatch):
+    """tasks_update_task(deleted=true) deletes the task, so it needs the same consent."""
+    asked = []
+
+    async def confirm(ctx, action_name, message, **kwargs):
+        asked.append((action_name, message))
+        return accepted
+
+    monkeypatch.setattr("mcp_google_workspace.common.confirmation.confirm_destructive_action", confirm)
+
+    result = _call("update_task", {"tasklist_id": "list-1", "task_id": "task-1", "deleted": True})
+
+    assert asked == [("delete_task", "Delete task task-1 from task list list-1?")]
+    if accepted:
+        assert [name for name, _ in service.tasks_api.calls] == ["patch"]
+    else:
+        assert service.tasks_api.calls == []
+        assert result.structured_content["status"] == "cancelled"
 
 
 # --- presentation ---

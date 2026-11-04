@@ -31,7 +31,7 @@ from .auth.identity import current_principal
 from .common.crypto import FernetKeyring
 from .common.errors import RecoverableToolError
 from .common.fastmcp_compat import local_tools, remove_local_tool
-from .common.component_annotations import flow_description, simplify_optional_properties
+from .common.component_annotations import consent_hints, flow_description, simplify_optional_properties
 from .common.prefab_render_cache import install_prefab_resource_cache
 from .runtime import get_token_storage_settings
 
@@ -740,11 +740,11 @@ class WorkspaceFileUpload(FileUpload):
                 # docstrings do not say what this server's uploads are for.
                 component.description = _INHERITED_FILE_TOOL_DESCRIPTIONS[component.name]
             component.description = flow_description(component.description)
-            read_only = component.name not in {"store_files", "delete_file"}
+            hints = consent_hints(f"uploads_{component.name}")
             component.annotations = ToolAnnotations(
-                read_only_hint=read_only,
-                destructive_hint=False,
-                idempotent_hint=component.name != "store_files",
+                read_only_hint=hints["read_only_hint"],
+                destructive_hint=hints["destructive_hint"],
+                idempotent_hint=hints["idempotent_hint"],
                 open_world_hint=False,
             )
             if component.name in _MODEL_ONLY_FILE_TOOLS:

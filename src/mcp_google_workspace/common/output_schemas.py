@@ -24,7 +24,7 @@ from typing import Annotated, Any, Union, get_args, get_origin
 
 # Server-built responses whose fields cannot be read from a literal return.
 _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
-    "prepare_workspace_action": ("status", "commit_token", "expires_at", "impact", "next_action"),
+    "prepare_workspace_action": ("status", "action", "preview", "commit_token", "expires_at", "next_action"),
     "commit_workspace_action": ("status", "tool", "result"),
     "get_dashboard": ("title", "generated_at_utc", "state", "sections", "warnings", "section_errors", "weekly_calendar", "view"),
     "get_weekly_calendar_view": ("state", "week_start", "week_end", "timezone", "total_events", "days", "fallback_text", "view"),

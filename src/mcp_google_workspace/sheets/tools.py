@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
@@ -272,15 +272,24 @@ def register_tools(server: FastMCP) -> None:
             (
                 "Sheets API batchUpdate request objects, applied in order, e.g. "
                 '[{"addSheet": {"properties": {"title": "New tab"}}}] or '
-                "updateSheetProperties/deleteSheet/repeatCell/updateCells requests. Ten or more "
-                "requests require prepare_workspace_action first."
+                "updateSheetProperties/deleteSheet/repeatCell/updateCells requests."
             ),
         ],
         include_spreadsheet_in_response: Annotated[
             bool, "Also return the spreadsheet after the update, without cell values, in spreadsheet."
         ] = False,
+        dry_run: Annotated[
+            bool,
+            (
+                "True returns the impact preview (status 'dry_run', preview with the request count by "
+                "kind, consent_required, action) without sending anything to Google."
+            ),
+        ] = False,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply raw Google Sheets API batchUpdate requests for structure and formatting: adding, renaming or deleting sheets, formatting, merges, charts. To write cell values use sheets_update_sheet_values or sheets_append_sheet_values instead. With ten or more requests the call fails with prepare_required, and it must go through prepare_workspace_action and commit_workspace_action. Requests apply atomically: if one is invalid, none is applied. Returns status 'ok', spreadsheet_id, replies (Google's, one per request in order, e.g. addSheet.properties.sheetId), count and spreadsheet (the sheets_get_spreadsheet shape when requested, else null)."""
+        """Apply raw Google Sheets API batchUpdate requests for structure and formatting: adding, renaming or deleting sheets, formatting, merges, charts. To write cell values use sheets_update_sheet_values or sheets_append_sheet_values instead. Ten or more requests, or any delete* request, ask the user to confirm first; dry_run previews without changing anything. Requests apply atomically: if one is invalid, none is applied. Returns status 'ok', spreadsheet_id, replies (Google's, one per request in order, e.g. addSheet.properties.sheetId), count and spreadsheet (the sheets_get_spreadsheet shape when requested, else null)."""
+        if dry_run:
+            raise RuntimeError("dry_run is answered by the consent gate before the tool body runs.")
         try:
             return batch_update_spreadsheet_envelope(
                 await run_blocking(

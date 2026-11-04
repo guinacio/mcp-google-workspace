@@ -32,7 +32,7 @@ from mcp_google_workspace import tool_tiers
 from mcp_google_workspace.apps.operations import DASHBOARD_OPERATIONS
 from mcp_google_workspace.auth.grants import ALWAYS_AVAILABLE_TOOLS
 from mcp_google_workspace.common import component_annotations
-from mcp_google_workspace.common.approvals import CONSEQUENTIAL_TOOLS
+from mcp_google_workspace.common.consent import consent_capable_tools
 from mcp_google_workspace.common.operations import memory_operation_store, set_operation_store
 from mcp_google_workspace.common.production import _REMOTE_HIDDEN
 
@@ -134,12 +134,8 @@ def test_complete_turns_on_optional_integrations_unless_explicitly_off(monkeypat
 
 
 def test_prepare_offers_only_tools_of_the_active_tier(tiers, monkeypatch: pytest.MonkeyPatch, restore_server) -> None:
-    def offered(tier: str) -> list[str]:
-        return tiers[tier]["prepare_workspace_action"].input_schema["properties"]["tool_name"]["enum"]
-
-    assert "sheets_batch_update_spreadsheet" not in offered("core")
-    assert "sheets_batch_update_spreadsheet" in offered("extended")
-    assert set(offered("extended")) == CONSEQUENTIAL_TOOLS
+    # Every tool some call of which needs consent exists in the complete tier.
+    assert consent_capable_tools() <= set(tiers["complete"])
 
     server = _compose(monkeypatch)
 
@@ -200,7 +196,7 @@ def test_the_changelog_lists_every_retired_name_with_its_replacement() -> None:
 
 def test_every_registry_names_tools_that_exist(tiers) -> None:
     complete = set(tiers["complete"])
-    assert CONSEQUENTIAL_TOOLS <= set(tiers["extended"])
+    assert consent_capable_tools() <= complete
     assert _REMOTE_HIDDEN <= complete
     assert ALWAYS_AVAILABLE_TOOLS - {"search_tools", "call_tool"} <= complete
     assert tool_tiers.EXTENDED_TOOLS <= complete
@@ -210,23 +206,16 @@ def test_every_registry_names_tools_that_exist(tiers) -> None:
 
 def test_annotation_tables_name_tools_that_exist(tiers) -> None:
     bases = {name.split("_", 1)[1] for name in tiers["complete"] if "_" in name} | set(tiers["complete"])
-    bases.add("digest")  # tasks_tasks_digest: its local name starts with its namespace
-    tables = {
-        "_LOCAL_ONLY_TOOLS": component_annotations._LOCAL_ONLY_TOOLS,
-        "_MUTATING_TOOLS": component_annotations._MUTATING_TOOLS,
-        "_DESTRUCTIVE_TOOLS": component_annotations._DESTRUCTIVE_TOOLS,
-        "_IDEMPOTENT_TOOLS": component_annotations._IDEMPOTENT_TOOLS,
-        "_READ_ONLY_TOOLS": component_annotations._READ_ONLY_TOOLS,
-    }
-    stale = {table: sorted(set(names) - bases) for table, names in tables.items() if set(names) - bases}
-    assert stale == {}
+    stale = sorted(set(component_annotations._LOCAL_ONLY_TOOLS) - bases)
+    assert stale == []
 
 
-# (readOnly, destructive, idempotent) for every tool 2.0.0 added or reshaped.
+# (readOnly, destructive, idempotent) for every tool 2.0.0 added or reshaped; derived
+# from the consent table (destructive: some call of the tool needs consent).
 HINTS = {
-    "gmail_modify_messages": (False, False, True),
-    "gmail_delete": (False, True, False),
-    "gmail_reply": (False, False, False),
+    "gmail_modify_messages": (False, True, True),
+    "gmail_delete": (False, True, True),
+    "gmail_reply": (False, True, False),
     "gmail_save_draft": (False, False, False),
     "gmail_list_drafts": (True, False, True),
     "gmail_search_emails": (True, False, True),
@@ -234,9 +223,9 @@ HINTS = {
     "gmail_manage_labels": (False, True, False),
     "gmail_manage_filters": (False, True, False),
     "gmail_manage_forwarding": (False, True, False),
-    "gmail_manage_vacation": (False, False, True),
-    "drive_share_file": (False, False, False),
-    "drive_unshare_file": (False, True, False),
+    "gmail_manage_vacation": (False, True, True),
+    "drive_share_file": (False, True, False),
+    "drive_unshare_file": (False, True, True),
     "drive_list_permissions": (True, False, True),
     "drive_list_drives": (True, False, True),
     "drive_update_drive": (False, False, True),
@@ -248,7 +237,7 @@ HINTS = {
     "calendar_set_event_attachments": (False, True, True),
     "tasks_list_tasklists": (True, False, True),
     "tasks_list_tasks": (True, False, True),
-    "tasks_update_task": (False, False, True),
+    "tasks_update_task": (False, True, True),
     "people_search_contacts": (True, False, True),
     "people_manage_contact_groups": (False, False, False),
     "docs_read_document": (True, False, True),
@@ -317,7 +306,7 @@ def _mutating(calls: list[tuple[str, dict[str, Any]]]) -> list[str]:
         ("gmail_modify_messages", {"message_ids": [f"m{index}" for index in range(10)], "mark_read": True}),
     ],
 )
-def test_renamed_consequential_tools_still_require_prepare(google, tool: str, arguments: dict[str, Any]) -> None:
+def test_renamed_consequential_tools_still_require_consent(google, tool: str, arguments: dict[str, Any]) -> None:
     calls, _ = google
 
     async def call() -> Any:
@@ -326,7 +315,8 @@ def test_renamed_consequential_tools_still_require_prepare(google, tool: str, ar
 
     result = anyio.run(call)
     assert result.is_error is True
-    assert result.structured_content["code"] == "prepare_required"
+    assert result.structured_content["code"] == "confirmation_required"
+    assert result.structured_content["required_action"]["tool"] == "prepare_workspace_action"
     assert _mutating(calls) == []
 
 

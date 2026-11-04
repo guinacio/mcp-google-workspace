@@ -134,7 +134,7 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
     tools.append(("gmail_search_emails:unsubscribe", {"query": "unsubscribe", "max_results": 5}))
 
     # Gmail read one or more (after we have message_ids from search)
-    # gmail_send_email: optional; use confirm_send=False
+    # gmail_send_email: asks for consent (run with an elicitation-capable client or MCP_CONSENT=off)
     # send_email omitted to avoid sending real email (would need recipients.to)
     tools.append(("gmail_read_emails", None))  # filled from state
     tools.append(("gmail_manage_labels:create", {"action": "create", "name": QA_LABEL_NAME}))
@@ -200,7 +200,7 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
     tools.append(("calendar_create_event", event))
     tools.append(("calendar_read_events:created", None))  # event_id from create
     tools.append(("calendar_update_event", None))  # event_id, summary
-    tools.append(("calendar_delete_event", None))  # event_id, force=True
+    tools.append(("calendar_delete_event", None))  # event_id (asks for consent)
 
     # ---- Drive ----
     tools.append(("drive_list_files", {"page_size": 10, "order_by": "modifiedTime desc"}))
@@ -234,9 +234,9 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
     # ---- Keep (optional) ----
     if ENABLE_KEEP:
         tools.append(("keep_list_notes", {"page_size": 5}))
-        tools.append(("keep_create_note", {"title": "QA test note", "confirm_create": False}))
+        tools.append(("keep_create_note", {"title": "QA test note"}))
         tools.append(("keep_get_note", None))  # note_name from state
-        tools.append(("keep_delete_note", None))  # note_name, confirm_delete=False
+        tools.append(("keep_delete_note", None))  # note_name (asks for consent)
 
     # ---- Chat (optional) ----
     if ENABLE_CHAT:
@@ -244,9 +244,9 @@ async def run_tools(client: Client, state: dict, results: list[tuple[str, bool, 
         tools.append(("chat_get_space", None))  # space_name from state
         tools.append(("chat_list_messages", None))  # space_name
         tools.append(("chat_get_message", None))  # message_name
-        tools.append(("chat_create_message", None))  # space_name, text, notify=False
+        tools.append(("chat_create_message", None))  # space_name, text (asks for consent)
         tools.append(("chat_update_message", None))  # message_name, text
-        tools.append(("chat_delete_message", None))  # message_name, force=True
+        tools.append(("chat_delete_message", None))  # message_name (asks for consent)
 
     # Tools whose only parameter is a `request` model (Keep, Chat) take their
     # arguments under "request"; every other tool takes flat arguments.
@@ -395,7 +395,7 @@ def _tool_args(step: str, state: dict) -> dict | None:
     if step == "calendar_read_events:created" and state.get("event_id"):
         return {"event_ids": [state["event_id"]]}
     if step == "calendar_delete_event" and state.get("event_id"):
-        return {"event_id": state["event_id"], "force": True}
+        return {"event_id": state["event_id"]}
     if step == "drive_upload_file":
         args = {
             "local_path": state["drive_upload_path"],
@@ -490,7 +490,7 @@ def _tool_args(step: str, state: dict) -> dict | None:
     if step == "keep_get_note" and state.get("note_name"):
         return {"note_name": state["note_name"]}
     if step == "keep_delete_note" and state.get("note_name"):
-        return {"note_name": state["note_name"], "confirm_delete": False}
+        return {"note_name": state["note_name"]}
     if step == "chat_get_space" and state.get("space_name"):
         return {"space_name": state["space_name"]}
     if step == "chat_list_messages" and state.get("space_name"):
@@ -498,11 +498,11 @@ def _tool_args(step: str, state: dict) -> dict | None:
     if step == "chat_get_message" and state.get("message_name"):
         return {"message_name": state["message_name"]}
     if step == "chat_create_message" and state.get("space_name"):
-        return {"space_name": state["space_name"], "text": "QA test message", "notify": False}
+        return {"space_name": state["space_name"], "text": "QA test message"}
     if step == "chat_update_message" and state.get("message_name"):
         return {"message_name": state["message_name"], "text": "QA test message updated"}
     if step == "chat_delete_message" and state.get("message_name"):
-        return {"message_name": state["message_name"], "force": True}
+        return {"message_name": state["message_name"]}
     return None
 
 

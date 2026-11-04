@@ -1,8 +1,10 @@
 """One confirmation adapter for every consequential action, on both MCP eras.
 
-Every confirmation site calls :func:`confirm_destructive_action` after it has
-validated its arguments and computed the exact action and preview text, and
-before it performs any provider mutation. The adapter picks one branch:
+The consent gate (``common/consent.py``) calls
+:func:`confirm_destructive_action` from the confirmation guard, with the
+action name and preview text of the call's row in the consequential-call
+table, before the tool body runs; tools never call it themselves. The adapter
+picks one branch:
 
 * **MCP 2026-07-28 (multi round-trip, SEP-2322)** and in-task execution.
   There is no server-initiated request, so the first round *returns* an
@@ -13,8 +15,9 @@ before it performs any provider mutation. The adapter picks one branch:
 * **Handshake-era (legacy) requests.** Imperative ``ctx.elicit`` with the same
   schemas as before (``bool``, or an explicit ``confirm`` checkbox).
 * **Anything else** (no elicitation capability, unknown protocol version, no
-  request at all): fail closed with a ``confirmation_required`` tool result.
-  Unavailable confirmation is never treated as consent.
+  request at all): fail closed with ``confirmation_required``; the gate adds
+  the ``prepare_workspace_action`` next step. Unavailable confirmation is
+  never treated as consent.
 
 The asking round travels as an exception (:class:`ConfirmationInputRequired`)
 from the adapter to the confirmation guard that
@@ -320,30 +323,81 @@ def _safe_digest(binding: _ToolBinding | None) -> str | None:
         return None
 
 
-def install_confirmation_guard(component: Any, tool_name: str) -> None:
-    """Wrap an async tool body so the adapter can bind and ask (idempotent).
+def _call_context(arguments: Mapping[str, Any], context_kwarg: str | None) -> Context | None:
+    ctx = arguments.get(context_kwarg) if context_kwarg else None
+    if isinstance(ctx, Context):
+        return ctx
+    try:
+        from fastmcp.server.dependencies import get_context
 
-    Records ``(tool identity, validated arguments)`` for the duration of the
-    call and converts this call's :class:`ConfirmationInputRequired` into the
+        return get_context()
+    except Exception:  # noqa: BLE001 - no active request: nobody can be asked
+        return None
+
+
+def install_confirmation_guard(component: Any, tool_name: str, *, published_name: str | None = None) -> None:
+    """Wrap an async tool body so consent is enforced and the adapter can ask.
+
+    Before the body runs, the consent gate (``common/consent.py``) classifies
+    the call from ``published_name`` and its validated arguments and asks
+    for consent when the call is consequential. The guard records
+    ``(tool identity, validated arguments)`` for the duration of the call and
+    converts this call's :class:`ConfirmationInputRequired` into the
     ``InputRequiredResult`` the tool returns. The signature, annotations and
     source (via ``__wrapped__``) are preserved, so the published input and
     output schemas do not change.
     """
+    from .consent import CONSENT_TABLE, CallBinding, consent_scope, enforce_consent
+
     original = component.fn
     if getattr(original, "_workspace_confirmation_guard", False):
         return
+    published = published_name or tool_name
+    policy = CONSENT_TABLE.get(published)
     if not inspect.iscoroutinefunction(original):
+        if policy is not None and policy.may_be_consequential:
+            raise RuntimeError(f"{published} can be consequential and must be async to be gated.")
         return
     signature = inspect.signature(original)
     context_kwarg = find_kwarg_by_type(original, Context)
     module = getattr(inspect.unwrap(original), "__module__", "unknown")
     tool_key = f"{module}:{tool_name}"
+    defaults = {
+        name: parameter.default
+        for name, parameter in signature.parameters.items()
+        if parameter.default is not inspect.Parameter.empty and name != context_kwarg
+    }
+
+    async def gate(binding: _ToolBinding | None, raw: Mapping[str, Any]) -> Any:
+        if policy is None or not (policy.may_be_consequential or policy.dry_run):
+            return None
+        try:
+            if binding is None:
+                raise TypeError("arguments could not be bound")
+            # By alias: the published input schema's names (e.g. a filter's "from").
+            arguments = pydantic_core.to_jsonable_python(binding.arguments, by_alias=True)
+            compact = pydantic_core.to_jsonable_python(
+                {
+                    name: value
+                    for name, value in binding.arguments.items()
+                    if name not in defaults or value != defaults[name]
+                },
+                by_alias=True,
+            )
+        except (TypeError, ValueError, pydantic_core.PydanticSerializationError):
+            # Nothing to classify safely: never run a possibly consequential call.
+            raise ConfirmationRequiredError(published, f"Run {published}?") from None
+        return await enforce_consent(
+            CallBinding(published, arguments, binding.digest, compact), _call_context(raw, context_kwarg)
+        )
 
     @wraps(original)
     async def guarded(*args: Any, **kwargs: Any) -> Any:
+        raw: dict[str, Any] = {}
         try:
             bound = signature.bind(*args, **kwargs)
             bound.apply_defaults()
+            raw = dict(bound.arguments)
             arguments = {
                 name: value
                 for name, value in bound.arguments.items()
@@ -354,9 +408,10 @@ def install_confirmation_guard(component: Any, tool_name: str) -> None:
             binding = None
         token = _BINDING.set(binding)
         try:
-            with tracking_scope() as tracker:
+            with tracking_scope() as tracker, consent_scope():
                 try:
-                    result = await original(*args, **kwargs)
+                    decided = await gate(binding, raw)
+                    result = decided if decided is not None else await original(*args, **kwargs)
                 except ConfirmationInputRequired as ask:
                     if binding is None or ask.binding is not binding:
                         raise

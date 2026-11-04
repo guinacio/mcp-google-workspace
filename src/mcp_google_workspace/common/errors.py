@@ -377,26 +377,38 @@ class ConfirmationError(RecoverableToolError):
 
 
 class ConfirmationRequiredError(ConfirmationError):
-    """An action needs user confirmation that this request cannot collect.
+    """A consequential call needs consent that this request cannot collect.
 
-    Used when the client declared no elicitation capability, the protocol
-    version is unknown, or there is no live request (fail closed: unavailable
-    confirmation is never consent). The envelope carries the exact prompt.
+    Raised when the client declared no elicitation capability, the protocol
+    version is unknown, there is no live request, or ``MCP_CONSENT`` is
+    ``preview_only`` (fail closed: unavailable confirmation is never consent).
+    The consent gate sets ``required_action`` to the
+    ``prepare_workspace_action`` call that previews the same action;
+    ``details.preview`` carries the exact preview text.
     """
 
-    def __init__(self, action_name: str, prompt: str) -> None:
+    def __init__(
+        self,
+        action_name: str,
+        prompt: str,
+        *,
+        required_action: dict[str, Any] | None = None,
+        reason: str = "the client did not declare elicitation support",
+    ) -> None:
+        next_step = (
+            " Call prepare_workspace_action with required_action.arguments, show the user the "
+            "returned preview, then run it with commit_workspace_action."
+            if required_action is not None
+            else ""
+        )
         super().__init__(
             "confirmation_required",
             (
-                f"{action_name} requires explicit user confirmation, which this request "
-                "cannot collect (the client did not declare elicitation support). "
-                "No changes were made."
+                f"{action_name} needs the user's consent, which this request cannot ask for "
+                f"({reason}). No changes were made.{next_step}"
             ),
-            required_action={
-                "action": "request_host_confirmation",
-                "operation": action_name,
-                "prompt": prompt,
-            },
+            required_action=required_action,
+            details={"action": action_name, "preview": prompt},
         )
         self.action_name = action_name
         self.prompt = prompt

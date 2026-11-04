@@ -55,105 +55,6 @@ _LOCAL_ONLY_TOOLS = {
     "today",
 }
 
-_READ_ONLY_PREFIXES = (
-    "check_",
-    "download_",
-    "export_",
-    "find_",
-    "get_",
-    "list_",
-    "read_",
-    "search_",
-    "summarize_",
-)
-
-_MUTATING_PREFIXES = (
-    "add_",
-    "append_",
-    "apply_",
-    "archive_",
-    "batch_update_",
-    "complete_",
-    "copy_",
-    "create_",
-    "delete_",
-    "end_",
-    "hide_",
-    "mark_",
-    "modify_",
-    "move_",
-    "patch_",
-    "post_",
-    "remove_",
-    "replace_",
-    "reply_",
-    "reschedule_",
-    "respond_",
-    "send_",
-    "set_",
-    "share_",
-    "toggle_",
-    "trash_",
-    "unarchive_",
-    "unhide_",
-    "unshare_",
-    "update_",
-    "upload_",
-)
-
-_MUTATING_TOOLS = {
-    "download_attachment",
-    "download_file",
-    "next_range",
-    "prev_range",
-    "today",
-}
-
-_DESTRUCTIVE_PREFIXES = (
-    "delete_",
-    "remove_",
-    "trash_",
-)
-
-_DESTRUCTIVE_TOOLS = {
-    "archive_note",
-    # gmail_delete: trash or permanent deletion of messages or a thread.
-    "delete",
-    "end_active_conference",
-    # Action tools whose delete action removes the label, filter or address.
-    "manage_filters",
-    "manage_forwarding",
-    "manage_labels",
-    # Removing attachments from an event (calendar_set_event_attachments).
-    "set_event_attachments",
-    "unshare_file",
-}
-
-_IDEMPOTENT_TOOLS = {
-    "archive_note",
-    "manage_vacation",
-    "modify_messages",
-    "patch_note_checklist",
-    "patch_state",
-    "replace_document_text",
-    "replace_text_in_presentation",
-    "respond_to_event",
-    "set_event_attachments",
-    "set_form_publish_settings",
-    "set_state",
-    "today",
-    "unarchive_note",
-    "update_contact",
-    "update_drive",
-    "update_event",
-    "update_file_metadata",
-    "update_message",
-    "update_note",
-    "update_sheet_values",
-    "update_space",
-    "update_task",
-}
-
 _NAMESPACE_TITLES = {
     "apps": "Workspace Apps",
     "calendar": "Calendar",
@@ -186,15 +87,6 @@ _NAMESPACE_TAGS = {
     "sheets": {"sheets", "spreadsheets", "tables"},
     "slides": {"slides", "presentations", "decks"},
     "tasks": {"tasks", "todos", "task-management"},
-}
-
-_READ_ONLY_TOOLS = {
-    "get_mail_digest",
-    # resolve_workspace_resource re-reads metadata; it changes nothing.
-    "resolve_workspace_resource",
-    # tasks_digest: its local name starts with its namespace, so it splits to "digest".
-    "digest",
-    "get_calendar_digest",
 }
 
 _EXTRA_TOOL_TAGS = {
@@ -267,66 +159,46 @@ def _tool_tags(name: str, namespace_hint: str | None = None) -> set[str]:
     return tags
 
 
-def _is_read_only(base_name: str) -> bool:
-    if base_name in _READ_ONLY_TOOLS:
-        return True
-    if base_name in _MUTATING_TOOLS:
-        return False
-    if base_name.startswith(_MUTATING_PREFIXES):
-        return False
-    return base_name.startswith(_READ_ONLY_PREFIXES)
+def consent_hints(published_name: str) -> dict[str, bool]:
+    """``readOnlyHint``, ``destructiveHint`` and ``idempotentHint`` from the consent table.
 
+    Read-only: the tool never changes anything. Destructive: some call of the
+    tool is consequential and needs consent (sends, shares, permanent
+    deletion, forwarding, bulk changes). Idempotent: as the table states it.
+    """
+    from .consent import CONSENT_TABLE
 
-def _is_destructive(base_name: str, *, read_only: bool) -> bool:
-    if read_only:
-        return False
-    return base_name in _DESTRUCTIVE_TOOLS or base_name.startswith(_DESTRUCTIVE_PREFIXES)
-
-
-def _is_idempotent(base_name: str, *, read_only: bool) -> bool:
-    return read_only or base_name in _IDEMPOTENT_TOOLS
+    policy = CONSENT_TABLE.get(published_name)
+    if policy is None:
+        raise RuntimeError(f"{published_name} is not classified in the consent table (common/consent.py).")
+    read_only = policy.base == "read" and not policy.triggers
+    destructive = policy.may_be_consequential if policy.destructive is None else policy.destructive
+    return {
+        "read_only_hint": read_only,
+        "destructive_hint": False if read_only else destructive,
+        "idempotent_hint": True if read_only else policy.idempotent,
+    }
 
 
 def _open_world(base_name: str) -> bool:
     return base_name not in _LOCAL_ONLY_TOOLS
 
 
-def _merge_annotations(existing: ToolAnnotations | Mapping[str, Any] | None, *, base_name: str) -> ToolAnnotations:
+def _merge_annotations(
+    existing: ToolAnnotations | Mapping[str, Any] | None, *, base_name: str, published_name: str
+) -> ToolAnnotations:
     if isinstance(existing, ToolAnnotations):
         current = existing
     elif isinstance(existing, Mapping):
         current = ToolAnnotations.model_validate(existing)
     else:
-        current = None
-
-    read_only = _is_read_only(base_name)
-    destructive = _is_destructive(base_name, read_only=read_only)
-    idempotent = _is_idempotent(base_name, read_only=read_only)
-    open_world = _open_world(base_name)
-
-    derived: dict[str, bool] = {
-        "read_only_hint": read_only,
-        "destructive_hint": destructive,
-        "idempotent_hint": idempotent,
-        "open_world_hint": open_world,
-    }
-    if current is None:
-        return ToolAnnotations(
-            read_only_hint=read_only,
-            destructive_hint=destructive,
-            idempotent_hint=idempotent,
-            open_world_hint=open_world,
-        )
-    # Explicit hints (and the title) win; only unset hints are derived.
-    return current.model_copy(
-        update={
-            field: value
-            for field, value in derived.items()
-            if getattr(current, field) is None
-        }
-    )
-
-
+        current = ToolAnnotations()
+    # The consent table is authoritative for the three safety hints; only the
+    # title and openWorldHint may be set by the tool itself.
+    update: dict[str, Any] = dict(consent_hints(published_name))
+    if current.open_world_hint is None:
+        update["open_world_hint"] = _open_world(base_name)
+    return current.model_copy(update=update)
 
 
 def _enrich_parameters_schema(component: Any, *, namespace_hint: str | None) -> None:
@@ -441,7 +313,7 @@ _LIST_ENVELOPE_TOOLS = frozenset(
         "get_calendar_digest",
         "get_mail_digest",
         "get_thread",
-        "digest",  # tasks_digest (see _READ_ONLY_TOOLS)
+        "digest",  # tasks_tasks_digest: its local name starts with its namespace
     }
 )
 
@@ -542,7 +414,10 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
         # confirmation adapter and returns its multi-round-trip ask as this
         # tool's InputRequiredResult (common/confirmation.py). Installed after
         # output-schema inference, which reads the undecorated source.
-        install_confirmation_guard(tool_component, tool_component.name)
+        # Mounted namespace servers register local names (tasks_digest is
+        # published as tasks_tasks_digest); the root registers published ones.
+        published_name = f"{namespace_hint}_{tool_component.name}" if namespace_hint else tool_component.name
+        install_confirmation_guard(tool_component, tool_component.name, published_name=published_name)
         # Outermost of all: error envelopes on every path, plus execution-time
         # authorization/admission/deadline for background-task workers, which
         # run the tool function without FastMCP middleware (common/execution.py).
@@ -550,4 +425,5 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
         tool_component.annotations = _merge_annotations(
             tool_component.annotations,
             base_name=_base_tool_name(tool_component.name, namespace_hint=namespace_hint),
+            published_name=published_name,
         )

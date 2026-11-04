@@ -144,13 +144,6 @@ class CreateMessageRequest(ToolRequestModel):
             "omit for a message visible to the whole space."
         ),
     )
-    notify: bool = Field(
-        default=False,
-        description=(
-            "When true, the user is asked to confirm before the message is sent, and nothing is "
-            "posted if they decline; when false the message is posted without asking."
-        ),
-    )
 
 
 class DeleteMessageRequest(ToolRequestModel):
@@ -159,13 +152,6 @@ class DeleteMessageRequest(ToolRequestModel):
             "Chat message resource name in the form 'spaces/AAAA/messages/BBBB', the id field of "
             "chat_list_messages results; a bare message ID is rejected."
         )
-    )
-    force: bool = Field(
-        default=False,
-        description=(
-            "When true, delete without asking the user to confirm; when false the user is asked first "
-            "and nothing is deleted if they decline."
-        ),
     )
 
 
@@ -191,13 +177,6 @@ class PostSimpleMessageRequest(ToolRequestModel):
         description="Chat space resource name 'spaces/AAAA...' or the bare space ID, from chat_list_spaces."
     )
     text: str = Field(description="Text of the message to post.")
-    notify: bool = Field(
-        default=False,
-        description=(
-            "When true, the user is asked to confirm before the message is sent, and nothing is "
-            "posted if they decline; when false the message is posted without asking."
-        ),
-    )
 
 
 class ReplyToMessageRequest(ToolRequestModel):
@@ -208,13 +187,6 @@ class ReplyToMessageRequest(ToolRequestModel):
         )
     )
     text: str = Field(description="Text of the reply.")
-    notify: bool = Field(
-        default=False,
-        description=(
-            "When true, the user is asked to confirm before the reply is sent, and nothing is "
-            "posted if they decline; when false the reply is posted without asking."
-        ),
-    )
 
 
 class FindDirectMessageRequest(ToolRequestModel):

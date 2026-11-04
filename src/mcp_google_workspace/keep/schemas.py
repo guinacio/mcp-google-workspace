@@ -33,13 +33,6 @@ class CreateNoteRequest(ToolRequestModel):
         default_factory=list,
         description="Email addresses to share the note with; each is granted writer access after the note is created.",
     )
-    confirm_create: bool = Field(
-        default=False,
-        description=(
-            "When true, the user is asked to confirm before the note is created, and nothing is "
-            "created if they decline; when false the note is created without asking."
-        ),
-    )
 
     model_config = {
         "json_schema_extra": {
@@ -49,7 +42,6 @@ class CreateNoteRequest(ToolRequestModel):
                     "text_body": "Review launch checklist and customer emails.",
                     "checklist_items": [{"text": "Review calendar", "checked": False}],
                     "collaborator_emails": [],
-                    "confirm_create": False,
                 }
             ]
         }
@@ -77,13 +69,6 @@ class ListNotesRequest(ToolRequestModel):
 
 class DeleteNoteRequest(ToolRequestModel):
     note_name: str = Field(description=_NOTE_NAME_DESCRIPTION)
-    confirm_delete: bool = Field(
-        default=False,
-        description=(
-            "When true, the user is asked to confirm before the note is permanently deleted, and "
-            "nothing is deleted if they decline; when false (default) the note is deleted without asking."
-        ),
-    )
 
 
 class UpdateNoteRequest(ToolRequestModel):
@@ -134,7 +119,7 @@ class AppendNoteRequest(ToolRequestModel):
     )
     delete_original_on_apply: bool = Field(
         default=False,
-        description="When true and apply_via_replacement is true, permanently delete the original note after the replacement is created; ignored otherwise.",
+        description="When true and apply_via_replacement is true, permanently delete the original note after the replacement is created, once the user confirms; ignored otherwise.",
     )
 
 
@@ -169,5 +154,5 @@ class PatchChecklistItemRequest(ToolRequestModel):
     )
     delete_original_on_apply: bool = Field(
         default=False,
-        description="When true and apply_via_replacement is true, permanently delete the original note after the replacement is created; ignored otherwise.",
+        description="When true and apply_via_replacement is true, permanently delete the original note after the replacement is created, once the user confirms; ignored otherwise.",
     )

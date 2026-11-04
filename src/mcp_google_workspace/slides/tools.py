@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
@@ -181,8 +181,18 @@ def register_tools(server: FastMCP) -> None:
                 "deleteObject/updatePageElementTransform requests."
             ),
         ],
+        dry_run: Annotated[
+            bool,
+            (
+                "True returns the impact preview (status 'dry_run', preview with the request count by "
+                "kind, consent_required, action) without sending anything to Google."
+            ),
+        ] = False,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply raw Google Slides API batchUpdate requests for edits beyond text replacement: creating or deleting slides, adding shapes, images and tables, inserting or styling text. To replace existing or placeholder text across the deck use slides_replace_text_in_presentation instead. Requests apply atomically: if one is invalid, none is applied. Returns status ok, presentation_id, revision_id (the revision after the update), replies (Google's, one per request in order, e.g. createSlide.objectId for a new slide) and count."""
+        """Apply raw Google Slides API batchUpdate requests for edits beyond text replacement: creating or deleting slides, adding shapes, images and tables, inserting or styling text. To replace existing or placeholder text across the deck use slides_replace_text_in_presentation instead. Ten or more requests, or any delete* request, ask the user to confirm first; dry_run previews without changing anything. Requests apply atomically: if one is invalid, none is applied. Returns status ok, presentation_id, revision_id (the revision after the update), replies (Google's, one per request in order, e.g. createSlide.objectId for a new slide) and count."""
+        if dry_run:
+            raise RuntimeError("dry_run is answered by the consent gate before the tool body runs.")
         try:
             return batch_update_presentation_envelope(
                 await run_blocking(

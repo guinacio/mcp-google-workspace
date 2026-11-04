@@ -26,6 +26,7 @@ import mcp_google_workspace.gmail.tools.message_state as gmail_state
 import mcp_google_workspace.gmail.tools.messages as gmail_messages
 import mcp_google_workspace.gmail.tools.search as gmail_search
 import mcp_google_workspace.gmail.tools.settings as gmail_settings
+from mcp_google_workspace.common import confirmation
 from mcp_google_workspace.common.errors import RecoverableToolError
 from mcp_google_workspace.gmail.label_resolver import LabelResolver
 from mcp_google_workspace.gmail.server import gmail_mcp
@@ -106,7 +107,8 @@ def _call(
     if hasattr(module, "resolve_user_timezone"):
         monkeypatch.setattr(module, "resolve_user_timezone", _utc)
     if confirm is not None:
-        monkeypatch.setattr(module, "confirm_destructive_action", confirm)
+        # The consent gate around every tool asks through the confirmation adapter.
+        monkeypatch.setattr(confirmation, "confirm_destructive_action", confirm)
 
     async def scenario() -> dict[str, Any]:
         async with Client(gmail_mcp) as client:
@@ -302,25 +304,45 @@ def test_delete_moves_one_or_many_messages_and_a_thread_to_trash_without_asking(
     assert confirm.asked == []
 
 
+@pytest.mark.parametrize(("count", "asks"), [(9, False), (10, True), (11, True)])
+def test_trashing_ten_or_more_messages_asks_first(monkeypatch: pytest.MonkeyPatch, count: int, asks: bool) -> None:
+    declined = _Confirmations(False)
+    gmail = _Gmail()
+    ids = [f"m{index}" for index in range(count)]
+    result = _call(monkeypatch, gmail_state, gmail, "delete", {"message_ids": ids}, confirm=declined)
+    if asks:
+        assert [action for action, _ in declined.asked] == ["batch_trash"]
+        assert f"Move {count} Gmail messages" in declined.asked[0][1]
+        assert result["status"] == "cancelled" and gmail.paths() == []
+    else:
+        assert declined.asked == []
+        assert gmail.paths() == ["users.messages.trash"] * count
+
+
 @pytest.mark.parametrize(
     ("arguments", "action_name", "prompt", "google_call"),
     [
         (
             {"message_ids": ["m1"]},
             "delete_email",
-            "Permanently delete this email? This cannot be undone.",
+            "Permanently delete 1 Gmail message (m1)? This cannot be undone.",
             "users.messages.delete",
         ),
-        ({"message_ids": ["m1", "m2"]}, "batch_delete", "Permanently delete 2 messages?", "users.messages.batchDelete"),
+        (
+            {"message_ids": ["m1", "m2"]},
+            "batch_delete",
+            "Permanently delete 2 Gmail messages (m1, m2)? This cannot be undone.",
+            "users.messages.batchDelete",
+        ),
         (
             {"thread_id": "t1"},
             "delete_thread",
-            "Permanently delete thread t1? This cannot be undone.",
+            "Permanently delete every message in Gmail thread t1? This cannot be undone.",
             "users.threads.delete",
         ),
     ],
 )
-def test_permanent_delete_keeps_each_predecessors_confirmation(
+def test_permanent_delete_asks_with_its_exact_target(
     monkeypatch: pytest.MonkeyPatch,
     arguments: dict[str, Any],
     action_name: str,
@@ -441,7 +463,7 @@ def test_manage_labels_creates_updates_by_name_and_deletes_after_confirming(monk
     declined = _Confirmations(False)
     gmail = _Gmail()
     result = _call(monkeypatch, gmail_labels, gmail, "manage_labels", {"action": "delete", "label": "Receipts"}, confirm=declined)
-    assert declined.asked == [("delete_label", "Permanently delete Gmail label Label_2?")]
+    assert declined.asked == [("delete_label", "Delete Gmail label Receipts? Messages keep their other labels.")]
     assert result["status"] == "cancelled" and gmail.calls_to("users.labels.delete") == []
 
     accepted = _Confirmations(True)
@@ -462,8 +484,11 @@ def test_manage_labels_creates_updates_by_name_and_deletes_after_confirming(monk
 def test_manage_labels_names_the_missing_parameter(
     monkeypatch: pytest.MonkeyPatch, arguments: dict[str, Any], message: str
 ) -> None:
+    # A delete asks first (the gate runs before the tool body); nothing changes either way.
+    gmail = _Gmail()
     with pytest.raises(ToolError, match=message):
-        _call(monkeypatch, gmail_labels, _Gmail(), "manage_labels", arguments)
+        _call(monkeypatch, gmail_labels, gmail, "manage_labels", arguments, confirm=_Confirmations(True))
+    assert gmail.calls_to("users.labels.delete") == []
 
 
 def test_manage_filters_lists_creates_with_label_names_and_deletes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -490,7 +515,7 @@ def test_manage_filters_lists_creates_with_label_names_and_deletes(monkeypatch: 
 
     confirm = _Confirmations(True)
     deleted = _call(monkeypatch, gmail_filters, gmail, "manage_filters", {"action": "delete", "filter_id": "f1"}, confirm=confirm)
-    assert confirm.asked == [("delete_filter", "Permanently delete Gmail filter f1?")]
+    assert confirm.asked == [("delete_filter", "Delete Gmail filter f1?")]
     assert deleted["status"] == "ok" and gmail.calls_to("users.settings.filters.delete")[0].kwargs["id"] == "f1"
 
 
@@ -506,7 +531,21 @@ def test_manage_forwarding_covers_list_get_create_and_confirmed_delete(monkeypat
     assert _call(monkeypatch, gmail_settings, gmail, "manage_forwarding", {"action": "list"})["count"] == 1
     got = _call(monkeypatch, gmail_settings, gmail, "manage_forwarding", {"action": "get", "forwarding_email": "archive@example.com"})
     assert got["forwarding_address"] == address
-    made = _call(monkeypatch, gmail_settings, gmail, "manage_forwarding", {"action": "create", "forwarding_email": "archive@example.com"})
+    accepted = _Confirmations(True)
+    made = _call(
+        monkeypatch,
+        gmail_settings,
+        gmail,
+        "manage_forwarding",
+        {"action": "create", "forwarding_email": "archive@example.com"},
+        confirm=accepted,
+    )
+    assert accepted.asked == [
+        (
+            "create_forwarding_address",
+            "Add archive@example.com as a Gmail forwarding address? Gmail may email it a verification link.",
+        )
+    ]
     assert made["forwarding_address"]["verificationStatus"] == "pending"
     declined = _Confirmations(False)
     result = _call(
@@ -527,14 +566,22 @@ def test_manage_forwarding_covers_list_get_create_and_confirmed_delete(monkeypat
 def test_manage_vacation_reads_and_updates_the_auto_reply(monkeypatch: pytest.MonkeyPatch) -> None:
     gmail = _Gmail({"users.settings.getVacation": {"enableAutoReply": False}, "users.settings.updateVacation": {"enableAutoReply": True}})
     assert _call(monkeypatch, gmail_settings, gmail, "manage_vacation", {"action": "get"})["vacation"] == {"enableAutoReply": False}
+    accepted = _Confirmations(True)
     updated = _call(
         monkeypatch,
         gmail_settings,
         gmail,
         "manage_vacation",
         {"action": "update", "enable_auto_reply": True, "response_subject": "Away", "end_time": 1},
+        confirm=accepted,
     )
+    # Turning the auto-reply on asks first; turning it off does not.
+    assert [action for action, _ in accepted.asked] == ["update_vacation"]
+    assert accepted.asked[0][1].startswith("Turn on the Gmail auto-reply?")
+    assert "Subject: Away" in accepted.asked[0][1]
     assert updated["status"] == "ok"
+    off = _call(monkeypatch, gmail_settings, gmail, "manage_vacation", {"action": "update"}, confirm=accepted)
+    assert off["status"] == "ok" and len(accepted.asked) == 1
     assert gmail.calls_to("users.settings.updateVacation")[0].kwargs["body"] == {
         "enableAutoReply": True,
         "restrictToContacts": False,

@@ -5,7 +5,8 @@
   ],
   "protocol_version": "2025-11-25",
   "structured_content": {
-    "person_name": "people/c-wire-legacy",
+    "action": "delete_contact",
+    "reason": "The user declined; nothing was changed.",
     "status": "cancelled"
   }
 }

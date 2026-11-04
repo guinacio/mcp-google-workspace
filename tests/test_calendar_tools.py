@@ -7,6 +7,7 @@ from httplib2 import Response
 from jsonschema import Draft202012Validator
 
 import mcp_google_workspace.calendar.tools as calendar_tools
+from mcp_google_workspace.common import confirmation
 from mcp_google_workspace.calendar.tools import (
     _check_time_slot_conflicts,
     _idempotent_event_id,
@@ -646,7 +647,8 @@ def _set_attachments(
     monkeypatch.setattr(calendar_tools, "build_calendar_service", _CalendarService)
     monkeypatch.setattr(calendar_tools, "resolve_user_timezone", fake_timezone)
     monkeypatch.setattr(calendar_tools, "execute_google_request", fake_execute)
-    monkeypatch.setattr(calendar_tools, "confirm_destructive_action", fake_confirm)
+    # The consent gate around every tool asks through the confirmation adapter.
+    monkeypatch.setattr(confirmation, "confirm_destructive_action", fake_confirm)
 
     async def scenario() -> Any:
         async with Client(calendar_mcp) as client:
@@ -697,7 +699,12 @@ def test_set_event_attachments_remove_confirms_then_removes(monkeypatch) -> None
 
     assert result.is_error is False, result.content
     assert confirmations == [
-        ("remove_event_attachment", "Remove the selected attachment from event event-1?")
+        (
+            "remove_event_attachment",
+            "Change the attachments of event event-1: remove 3 (old, url-only, "
+            "https://drive.google.com/file/d/missing/view), add 0? The files stay in Drive. "
+            "Google emails no one (send_updates not set).",
+        )
     ]
     assert [item["title"] for item in (requests[1].body or {})["attachments"]] == ["Keep"]
     payload = result.structured_content
@@ -728,7 +735,11 @@ def test_set_event_attachments_declined_changes_nothing_not_even_the_additions(m
     assert result.is_error is False, result.content
     assert len(confirmations) == 1
     assert requests == []
-    assert result.structured_content == {"status": "cancelled", "event_id": "event-1"}
+    assert result.structured_content == {
+        "status": "cancelled",
+        "action": "remove_event_attachment",
+        "reason": "The user declined; nothing was changed.",
+    }
 
 
 def test_set_event_attachments_add_and_remove_in_one_patch(monkeypatch) -> None:

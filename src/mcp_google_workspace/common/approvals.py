@@ -1,27 +1,31 @@
-"""Prepare/commit for consequential actions, backed by operation records.
+"""Prepare/commit: consent for clients that cannot be asked directly.
 
-``prepare_workspace_action`` opens a ``prepared`` operation record
-(``common/operations.py``) that binds the exact tool and arguments to a
-one-time, principal-scoped commit token. ``commit_workspace_action`` claims it
-(``executing``), runs the bound call once, and the confirmation guard settles
-the record: ``awaiting_input`` when the bound tool asked a confirmation
+``prepare_workspace_action`` runs the named tool with the given arguments up
+to its consent gate (``common/consent.py``): the call is validated by the
+same input schema, authorization and middleware as a direct call, classified
+by the same table, and its preview rendered by the same renderer, but the
+tool body never runs. When the call is consequential, prepare opens a
+``prepared`` operation record (``common/operations.py``) binding the tool,
+the arguments and the digest of the validated arguments to a one-time,
+principal-scoped commit token, and returns the preview text.
+
+``commit_workspace_action`` claims the record (``executing``) and runs the
+bound call once with a commit grant for exactly that digest. The grant is the
+consent when the client cannot be asked (or ``MCP_CONSENT=preview_only``);
+a client that can ask is still asked, with the same preview. The confirmation
+guard settles the record: ``awaiting_input`` when the bound tool asked a
 question, back to ``prepared`` when nothing non-repeatable reached Google, or
 ``succeeded`` / ``failed`` / ``outcome_unknown``. A repeated commit of a
-finished operation returns its saved result instead of executing again (W4b).
-Tokens are never consumed destructively and never stored raw (records are
-keyed by a SHA-256 of the token).
+finished operation returns its saved result instead of executing again.
+Tokens are never stored raw (records are keyed by a SHA-256 of the token).
 """
 
 from __future__ import annotations
 
-from contextvars import ContextVar
-import os
 import secrets
 from typing import Any, Final
 
 from ..auth.identity import current_principal
-
-COMMIT_ACTIVE: ContextVar[bool] = ContextVar("mcp_commit_active", default=False)
 
 INVALID_COMMIT = "Commit token is invalid, expired, or belongs to another principal."
 
@@ -36,7 +40,6 @@ PRE_EXECUTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
     {
         "confirmation_required",
         "confirmation_invalid",
-        "prepare_required",
         "rate_limited",
         "server_draining",
         "principal_revoked",
@@ -47,54 +50,6 @@ PRE_EXECUTION_ERROR_CODES: Final[frozenset[str]] = frozenset(
 )
 
 
-CONSEQUENTIAL_TOOLS = {
-    "gmail_send_email",
-    "drive_share_file",
-    "gmail_modify_messages",
-    "calendar_update_event",
-    "sheets_batch_update_spreadsheet",
-}
-
-
-def requires_prepare(tool: str, arguments: dict[str, Any]) -> bool:
-    if tool == "gmail_send_email":
-        recipients = sum(len(arguments.get(key) or []) for key in ("to", "cc", "bcc"))
-        return recipients >= int(os.getenv("MCP_EMAIL_PREPARE_RECIPIENTS", "10"))
-    if tool == "drive_share_file":
-        # Creating a link-sharing grant; update mode (permission_id) takes no type.
-        return arguments.get("permission_type") == "anyone" or arguments.get("type") == "anyone"
-    if tool == "gmail_modify_messages":
-        return len(arguments.get("message_ids") or []) >= 10
-    if tool == "calendar_update_event":
-        return arguments.get("recurrence") is not None
-    if tool == "sheets_batch_update_spreadsheet":
-        return len(arguments.get("requests") or []) >= 10
-    return False
-
-
-def impact_preview(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    preview: dict[str, Any] = {"tool": tool, "warnings": [], "counts": {}}
-    if tool == "gmail_send_email":
-        preview["counts"] = {
-            key: len(arguments.get(key) or []) for key in ("to", "cc", "bcc", "attachments")
-        }
-        preview["subject"] = arguments.get("subject")
-        preview["warnings"] = ["This sends an external email and cannot be recalled reliably."]
-    elif tool == "drive_share_file":
-        preview["file_id"] = arguments.get("file_id")
-        preview["permission_type"] = arguments.get("permission_type") or arguments.get("type")
-        preview["warnings"] = ["This may expose a Drive resource outside the organization."]
-    elif tool == "gmail_modify_messages":
-        preview["counts"] = {"messages": len(arguments.get("message_ids") or [])}
-    elif tool == "calendar_update_event":
-        preview["event_id"] = arguments.get("event_id")
-        preview["warnings"] = ["This update may affect a recurring event series."]
-    elif tool == "sheets_batch_update_spreadsheet":
-        preview["spreadsheet_id"] = arguments.get("spreadsheet_id")
-        preview["counts"] = {"requests": len(arguments.get("requests") or [])}
-    return preview
-
-
 def commit_token_ttl_seconds() -> int:
     """Commit tokens follow ``MCP_CONFIRMATION_TTL_SECONDS`` (default 600 s)."""
     from .operations import pending_ttl_seconds
@@ -102,21 +57,47 @@ def commit_token_ttl_seconds() -> int:
     return pending_ttl_seconds()
 
 
-async def prepare_action(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+async def prepare_action(tool: str, arguments: dict[str, Any], *, server: Any = None) -> Any:
+    """Run ``tool`` up to its consent gate and open a commit token for it.
+
+    Returns the prepared payload, or the nested call's error result when the
+    call is invalid, unauthorized or needs no consent.
+    """
+    from fastmcp.tools import InputRequiredToolResult
+
+    from .consent import consent_capable_tools, preparing
+
+    if tool not in consent_capable_tools():
+        raise ValueError(f"{tool} never needs consent; call it directly.")
+    if server is None:
+        from ..server import workspace_mcp as server
+    with preparing(tool) as request:
+        result = await server.call_tool(tool, dict(arguments))
+    if isinstance(result, InputRequiredToolResult) or result.is_error:
+        # Validation, authorization or "no consent needed": the nested error says why.
+        return result
+    if not request.used or request.preview is None or request.digest is None or request.action is None:
+        raise RuntimeError(f"{tool} did not reach its consent gate; nothing was prepared.")
+    return await open_prepared_action(
+        tool, dict(arguments), action=request.action, preview=request.preview, digest=request.digest
+    )
+
+
+async def open_prepared_action(
+    tool: str, arguments: dict[str, Any], *, action: str, preview: str, digest: str
+) -> dict[str, Any]:
     """Open a ``prepared`` operation record and return its commit token."""
-    from .confirmation import arguments_digest
     from .operations import get_operation_store, operation_key
 
-    if tool not in CONSEQUENTIAL_TOOLS:
-        raise ValueError("This tool does not use the consequential-action prepare protocol.")
     token = "cmt_" + secrets.token_urlsafe(32)
     key = operation_key(current_principal().storage_key, token)
-    expires_at = await get_operation_store().open_commit(key, tool, arguments, arguments_digest(arguments))
+    expires_at = await get_operation_store().open_commit(key, tool, arguments, digest)
     return {
         "status": "prepared",
         "commit_token": token,
         "expires_at": int(expires_at),
-        "impact": impact_preview(tool, arguments),
+        "action": action,
+        "preview": preview,
         "next_action": {
             "tool": "commit_workspace_action",
             "arguments": {"commit_token": token},

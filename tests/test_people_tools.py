@@ -467,18 +467,23 @@ def test_delete_contact_asks_for_confirmation(accepted, service, monkeypatch):
         asked.append((action_name, message, kwargs))
         return accepted
 
-    monkeypatch.setattr("mcp_google_workspace.people.tools.confirm_destructive_action", confirm)
+    # The consent gate around every tool asks through the confirmation adapter.
+    monkeypatch.setattr("mcp_google_workspace.common.confirmation.confirm_destructive_action", confirm)
 
     result = _call("delete_contact", {"person_name": "c9"})
 
     # The message shows the name as passed; the deletion itself normalizes it.
-    assert asked == [("delete_contact", "Permanently delete contact c9?", {})]
+    assert asked == [("delete_contact", "Permanently delete contact c9?", {"explicit_confirm_field": False})]
     if accepted:
         assert service.people_api.calls == [("deleteContact", {"resourceName": "people/c9"})]
         assert result.structured_content == {"status": "deleted", "person_name": "people/c9"}
     else:
         assert service.people_api.calls == []
-        assert result.structured_content == {"status": "cancelled", "person_name": "c9"}
+        assert result.structured_content == {
+            "status": "cancelled",
+            "action": "delete_contact",
+            "reason": "The user declined; nothing was changed.",
+        }
 
 
 # --- presentation ---

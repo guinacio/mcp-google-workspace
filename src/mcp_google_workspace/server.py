@@ -6,7 +6,7 @@ import anyio
 import base64
 import os
 import secrets
-from typing import Annotated, Any, Literal, get_args
+from typing import Annotated, Any, Literal
 from fastmcp import FastMCP
 from googleapiclient.errors import HttpError
 from fastmcp.tools import InputRequiredToolResult, ToolResult
@@ -20,13 +20,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import __version__
 from .apps import apps_mcp, mount_apps_dashboard
 from .common.component_annotations import apply_default_tool_annotations
-from .common.fastmcp_compat import local_tools
 from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
 from .common.errors import RecoverableToolError, StructuredToolErrorMiddleware
 from .common.task_backend import install_tasks_extension
 from .common.production import (
     CapabilityCatalogMiddleware,
-    ConsequentialActionMiddleware,
     RUNTIME_STATE,
     ProductionControlMiddleware,
     build_version_payload,
@@ -58,12 +56,8 @@ from .common.timezone import in_account_timezone, resolve_user_timezone
 from .drive.presentation import file_kind
 from .gmail.helpers import gather_in_order
 from .gmail.presentation import envelope as gmail_envelope
-from .common.approvals import (
-    COMMIT_ACTIVE,
-    CONSEQUENTIAL_TOOLS,
-    INVALID_COMMIT,
-    prepare_action,
-)
+from .common.approvals import INVALID_COMMIT, prepare_action
+from .common.consent import TaskConsentMiddleware, committing, consent_mode
 from .common.operations import (
     OperationOutcomeMiddleware,
     get_operation_store,
@@ -111,7 +105,7 @@ workspace_mcp.add_middleware(StructuredToolErrorMiddleware())
 workspace_mcp.add_middleware(OperationOutcomeMiddleware())
 workspace_mcp.add_middleware(ProductionControlMiddleware())
 workspace_mcp.add_middleware(CapabilityCatalogMiddleware())
-workspace_mcp.add_middleware(ConsequentialActionMiddleware())
+workspace_mcp.add_middleware(TaskConsentMiddleware())
 workspace_mcp.add_middleware(ResourceHandleMiddleware())
 
 
@@ -534,45 +528,32 @@ async def resolve_workspace_resource(
     return {"resource": resource_handle(kind, resource_id), "verified": False}
 
 
-#: Tools that use prepare/commit (common/approvals.py CONSEQUENTIAL_TOOLS).
-ConsequentialToolName = Literal[
-    "calendar_update_event",
-    "drive_share_file",
-    "gmail_modify_messages",
-    "gmail_send_email",
-    "sheets_batch_update_spreadsheet",
-]
-if set(get_args(ConsequentialToolName)) != CONSEQUENTIAL_TOOLS:  # pragma: no cover - import-time guard
-    raise RuntimeError("ConsequentialToolName is out of sync with CONSEQUENTIAL_TOOLS.")
-
-
 @workspace_mcp.tool(name="prepare_workspace_action")
 async def prepare_workspace_action(
     tool_name: Annotated[
-        ConsequentialToolName,
+        str,
         (
-            "Published name of the tool to prepare: calendar_update_event, drive_share_file, "
-            "gmail_modify_messages, gmail_send_email or sheets_batch_update_spreadsheet (extended tool "
-            "tier only). No other tool uses prepare/commit."
+            "Published name of the tool to run, as in the required_action of its confirmation_required "
+            "error, e.g. 'gmail_send_email'."
         ),
     ],
     arguments: Annotated[
         dict[str, object],
         (
-            "The keyword arguments for tool_name exactly as in a direct call. They are stored unchanged, "
-            "not validated until commit, and cannot be edited afterwards."
+            "The arguments for tool_name exactly as in a direct call, as in that required_action. They are "
+            "validated now and bound to the token; they cannot be edited afterwards."
         ),
     ],
-) -> dict[str, object]:
-    """Preview a high-impact action and bind its exact arguments to a one-time commit token, then run it with
-    commit_workspace_action. A direct call fails with prepare_required for gmail_send_email with 10 or more
-    recipients by default (to, cc and bcc together), drive_share_file with type 'anyone', gmail_modify_messages
-    on 10 or more message_ids, calendar_update_event that sets recurrence, and sheets_batch_update_spreadsheet with 10
-    or more requests. Returns commit_token, expires_at (epoch seconds, 10 minutes ahead by default), impact (counts and
-    warnings) and next_action; nothing runs until commit."""
+) -> dict[str, object] | ToolResult:
+    """Preview a consequential call (sending mail, sharing, permanent deletion, forwarding, a bulk change) and
+    bind it to a one-time commit token, for clients that cannot ask the user directly: a direct call of such a
+    tool fails with confirmation_required and names this tool as the next step. Nothing runs here. Returns
+    status 'prepared', action, preview (the exact text to show the user before committing), commit_token,
+    expires_at (epoch seconds, 10 minutes ahead by default) and next_action; a call that needs no consent fails
+    with invalid_input naming the direct call."""
     if tool_name in hidden_tools():
         raise ValueError(f"{tool_name} is not available in the {tool_tier()} tool tier (MCP_TOOL_TIER).")
-    return await prepare_action(tool_name, arguments)
+    return await prepare_action(tool_name, dict(arguments), server=workspace_mcp)  # type: ignore[no-any-return]
 
 
 @workspace_mcp.tool(name="commit_workspace_action")
@@ -588,10 +569,11 @@ async def commit_workspace_action(
         ),
     ],
 ) -> dict[str, object] | ToolResult | mcp_types.InputRequiredResult:
-    """Run an action prepared with prepare_workspace_action, with exactly the bound arguments, at most once; the bound
-    tool's own checks and confirmation questions still apply. A token that is invalid, expired or another user's is
-    rejected. Returns status 'committed' with tool and the bound tool's result, that tool's error result if it
-    failed, or its confirmation question if it asks one."""
+    """Run the call prepared with prepare_workspace_action, with exactly the bound arguments, at most once; this is
+    the step that carries out a consequential action, so call it only after the user has seen the preview and
+    agreed. A client that can ask the user directly is still asked here. A token that is invalid, expired or
+    another user's is rejected. Returns status 'committed' with tool and the bound tool's result, that tool's
+    error result if it failed, or its confirmation question if it asks one."""
     store = get_operation_store()
     ref = operation_ref(commit_token)
     outcome = await store.claim(
@@ -609,17 +591,15 @@ async def commit_workspace_action(
         tracker.operation = outcome.handle
     tool = str(outcome.record["tool"])
     arguments = outcome.record.get("arguments")
-    if not isinstance(arguments, dict):
+    digest = outcome.record.get("args_digest")
+    if not isinstance(arguments, dict) or not isinstance(digest, str):
         raise ValueError(INVALID_COMMIT)
-    active_token = COMMIT_ACTIVE.set(True)
-    try:
-        # Re-enter the complete middleware chain so revocation, admission,
-        # deadlines, input limits, handle resolution, telemetry, and structured
-        # errors still apply at commit time. COMMIT_ACTIVE bypasses only the
-        # consequential-action gate for this exact bound invocation.
+    # Re-enter the complete middleware chain so revocation, admission,
+    # deadlines, input limits, handle resolution, telemetry, and structured
+    # errors still apply at commit time. The grant is consent for this exact
+    # bound call only: the gate checks the tool and the validated-argument digest.
+    with committing(tool, digest):
         result = await workspace_mcp.call_tool(tool, arguments)
-    finally:
-        COMMIT_ACTIVE.reset(active_token)
     if isinstance(result, InputRequiredToolResult):
         # The bound tool asked a confirmation question: nothing ran yet. The
         # guard parks the operation (awaiting_input) for the answering call.
@@ -642,10 +622,8 @@ def _apply_tool_tier(server: FastMCP) -> None:
     if not hidden:
         return
     server.disable(names=set(hidden), components={"tool"})
-    for component in local_tools(server):
-        if component.name == "prepare_workspace_action" and isinstance(component.parameters, dict):
-            choice = component.parameters["properties"]["tool_name"]
-            choice["enum"] = [name for name in choice["enum"] if name not in hidden]
 
 
 _apply_tool_tier(workspace_mcp)
+# An unknown MCP_CONSENT fails at startup, like an unknown MCP_TOOL_TIER.
+consent_mode()

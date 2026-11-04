@@ -26,9 +26,9 @@ app-only upload callbacks), Gmail from 44 tools to 16 (19 with the extended
 tier). Merged tools take the union of their predecessors' parameters, typed,
 and return the same envelope shapes. Retired names are removed outright: they
 are absent from `tools/list` and a call to one is the normal unknown-tool
-error. Confirmations, prepare/commit thresholds and every other gate are
-unchanged: each merged tool asks exactly when its predecessor asked, with the
-same confirmation text.
+error. The consolidation itself kept every gate: each merged tool asked
+exactly when its predecessor asked. The consent model below then replaces
+those gates.
 
 The default catalog shrinks from about 67,000 to about 47,000 estimated
 tokens (characters / 4; 58,746 to 40,892 with the cl100k tokenizer).
@@ -190,11 +190,139 @@ Tools above the active tier are not registered at all, and
   `calendar_get_calendar_context` open-world (it always read the account time
   zone from Google).
 
+### Consent for consequential calls
+
+One table (`CONSENT_TABLE` in `common/consent.py`, described in
+`docs/CONSENT.md`) classifies every call, from its tool and validated
+arguments, as read, write or consequential. Consequential calls (sending mail,
+replies, drafts, invitations and Chat messages; sharing and unsharing;
+permanent deletion; forwarding, filters that forward or trash, turning the
+auto-reply on; disconnecting; 10 or more items in one call) always need
+consent, and no argument can skip it. The confirmation guard asks before the
+tool body runs, on every path (direct calls, the `call_tool` search proxy,
+commits, background tasks); no tool asks by itself any more.
+
+- **Clients with elicitation** are asked as before, with a preview that says
+  exactly who, what and how many.
+- **Clients without elicitation** no longer hit a dead end: the call fails
+  with `confirmation_required` and `required_action` names
+  `prepare_workspace_action` with the call's arguments. Prepare returns the
+  same preview and a one-time token; `commit_workspace_action` runs exactly
+  that call once. The host's permission prompt on `commit_workspace_action`
+  is the human gate. A client that can elicit is still asked when it commits.
+- A task-capable call from a client that could never answer the task's
+  question is refused at submission with the same prepare step, instead of
+  parking a task until it expires.
+- `MCP_CONSENT=required|preview_only|off` (default `required`):
+  `preview_only` never elicits and routes every consequential call through
+  prepare/commit; `off` runs them without asking and logs a warning at every
+  start. An unknown value fails at startup.
+- `MCP_EMAIL_PREPARE_RECIPIENTS` (default 10) now only adds a "large send"
+  line to a send preview; every send asks.
+- `dry_run: true` on `gmail_modify_messages`, `gmail_delete`,
+  `docs_batch_update_document`, `sheets_batch_update_spreadsheet`,
+  `slides_batch_update_presentation` and `forms_batch_update_form` returns
+  `{status: "dry_run", preview, consent_required, action}` without any Google
+  call.
+- `readOnlyHint`, `destructiveHint` and `idempotentHint` come from the table
+  instead of name prefixes: `destructiveHint` is true for every tool some call
+  of which needs consent.
+
 ### Breaking changes
 
 Input schemas are closed (`additionalProperties: false`), so a caller that
 still sends a removed parameter gets the normal input-validation error.
 
+- **Consent: model-settable safety flags removed.** Each was a way for the
+  caller to skip or weaken the user's confirmation; whether a call asks now
+  depends only on what it does.
+  - `confirm_send` from `gmail_send_email` and `gmail_reply` (every send and
+    reply asks).
+  - `force` from `calendar_delete_event` and `chat_delete_message` (deleting
+    always asks).
+  - `confirm_permanent` from `drive_delete_file` (`delete_mode: permanent`
+    asks).
+  - `notify` from `chat_create_message`, `chat_post_message_simple` and
+    `chat_reply_to_message` (every post asks).
+  - `confirm_create` from `keep_create_note` (asks when it shares the note
+    with collaborators) and `confirm_delete` from `keep_delete_note` (always
+    asks).
+  - `confirm` from `disconnect_google_workspace` (asks).
+- **Consent: calls that now ask** (through elicitation, or prepare/commit for
+  clients without it), with what they did before:
+  - `gmail_send_email`: asked only with `confirm_send: true`, and 10 or more
+    recipients needed prepare/commit; now every send asks.
+  - `gmail_reply`: asked only with `confirm_send: true`; now always.
+  - `gmail_send_draft`: never asked; now always, with the draft's recipients.
+  - `gmail_delete` with `mode: trash` and 10 or more distinct `message_ids`:
+    never asked; now asks (a thread, and fewer messages, still do not).
+  - `gmail_modify_messages` with 10 or more distinct `message_ids`
+    (including restoring from Trash): needed prepare/commit, which an
+    elicitation-capable client could pass without being asked; now asks.
+  - `gmail_manage_filters` `create` with `forward` or a `TRASH` label,
+    `gmail_manage_forwarding` `create`, and `gmail_manage_vacation` `update`
+    that turns the auto-reply on: never asked; now ask.
+  - `calendar_create_event` with attendees: never asked; now asks.
+  - `calendar_update_event`: only `recurrence` needed prepare/commit; now it
+    asks when it sets `attendees` or `recurrence` or when `send_updates` is
+    `all` or `externalOnly`.
+  - `calendar_set_event_attachments`: asked when removing; now also when
+    `send_updates` emails guests.
+  - `drive_share_file` with `type: anyone`: asked and also needed
+    prepare/commit; now asks once, like every other share.
+  - `docs_`, `sheets_`, `slides_` and `forms_batch_update_*`: only Sheets with
+    10 or more requests needed prepare/commit; now each asks with 10 or more
+    requests or any `delete*` request.
+  - `tasks_update_task` with `deleted: true`: never asked; now asks like
+    `tasks_delete_task`.
+  - `keep_share_note`, `keep_unshare_note`, and `keep_append_note_content` /
+    `keep_patch_note_checklist` with `delete_original_on_apply`: never asked;
+    now ask. `meet_end_active_conference` and `meet_update_space` opening the
+    space to anyone (`accessType: OPEN`): never asked; now ask.
+  - The Apps dashboard no longer passes `force` when it cancels an event.
+    Cancelling an event, and saving one with guests, from the dashboard now
+    asks through the host; a host that cannot complete the question shows the
+    view's "ask the assistant in chat" message and nothing changes.
+- **Consent: changed contract.**
+  - `confirmation_required`: `required_action` is the
+    `prepare_workspace_action` call (`{tool, arguments: {tool_name,
+    arguments}}`) instead of `{action: "request_host_confirmation",
+    operation, prompt}`; the action name and preview text are in
+    `details.action` and `details.preview`.
+  - The `prepare_required` error code is gone; those calls return
+    `confirmation_required` like every other consequential call.
+  - `prepare_workspace_action` accepts any tool some call of which is
+    consequential (its `tool_name` enum is gone), validates the arguments like
+    a direct call, refuses a call that needs no consent with `invalid_input`
+    naming the direct call, and returns `action` and `preview` instead of
+    `impact`.
+  - A declined or cancelled confirmation returns `{status: "cancelled",
+    action, reason}` for every tool instead of each tool's own shape.
+  - The preview texts changed (they now list every recipient, the total, the
+    subject, the start of the text, roles and counts).
+  - A call whose arguments are invalid in a way only the tool body checks
+    (for example `drive_share_file` mixing create and update parameters) is
+    asked about first and then fails with the same validation error; nothing
+    changes either way.
+- **Annotations from the consent table.** `destructiveHint` becomes true for
+  `gmail_send_email`, `gmail_reply`, `gmail_send_draft`,
+  `gmail_modify_messages`, `gmail_manage_vacation`, `calendar_create_event`,
+  `calendar_update_event`, `drive_share_file`, `tasks_update_task`,
+  `disconnect_google_workspace`, `commit_workspace_action`, the four
+  `*_batch_update_*` tools, `chat_create_message`, `chat_post_message_simple`,
+  `chat_reply_to_message`, `keep_create_note`, `keep_append_note_content`,
+  `keep_patch_note_checklist`, `keep_share_note`, `keep_unshare_note` and
+  `meet_update_space`. `idempotentHint` becomes true for the delete and
+  unshare tools (`gmail_delete`, `gmail_delete_draft`,
+  `calendar_delete_event`, `drive_delete_file`, `drive_unshare_file`,
+  `people_delete_contact`, `tasks_delete_task`, `chat_delete_message`,
+  `keep_delete_note`, `keep_unshare_note`, `meet_end_active_conference`),
+  `disconnect_google_workspace` and `commit_workspace_action`, and false for
+  `keep_patch_note_checklist` (it creates a new note).
+  `prepare_workspace_action` is read-only. The Keep tools that only report
+  that Keep cannot do something (`keep_archive_note`, `keep_unarchive_note`,
+  `keep_update_note`, the label and checklist-item tools) are read-only and
+  not destructive.
 - **Removed parameters.** The server now always sends what the removed
   defaults sent.
   - `supports_all_drives` from `drive_list_files`, `drive_get_file`,

@@ -8,6 +8,14 @@ with one confirmation adapter that has a multi-round-trip (MRTR) branch for MCP
 with durable operation records, saved-result replay, and `outcome_unknown`
 reporting and reconciliation for non-idempotent Google calls (sections 6–9).
 
+> **2.0.0:** *when* consent is needed is now decided in one place, the
+> consequential-call table described in [`docs/CONSENT.md`](../CONSENT.md).
+> Tools no longer call the adapter themselves and the model-settable bypass
+> flags of section 3 are removed; the confirmation guard asks before the tool
+> body runs, and clients without elicitation get the prepare/commit step
+> instead of a dead end. The adapter, continuation state, operation records
+> and recovery described here are unchanged and are what the table uses.
+
 ## 1. Adapter
 
 Module: `src/mcp_google_workspace/common/confirmation.py`. Every one of the 24
@@ -118,7 +126,7 @@ warning; `/health/ready` fails when `MCP_WORKERS > 1`
 | Pagination wrapper (`_paginated_result`) | Only decorates dicts; an `InputRequiredResult` passes unchanged, also under the guard. | `test_pagination_wrapper_and_guard_leave_an_ask_unchanged` |
 | Output schemas / validation | The ask never carries `content`/`structuredContent` (FastMCP's `_on_call_tool` returns the raw `InputRequiredResult` before result normalization), so there is nothing for output validation to reject. All 23 site tools publish output schemas; their ask rounds and final results pass through the SDK and FastMCP clients. | `test_modern_ask_round_returns_input_required_before_any_mutation`, `test_guard_preserves_signature_and_published_schemas` |
 | `ProductionControlMiddleware` (admission/telemetry) | Counts an ask as outcome `input_required` (metric label, log line, span attribute `mcp.tool.round`), not `ok`. Each round is still admitted and rate-limited as a request. | `test_admission_telemetry_counts_an_ask_as_a_round_not_a_completion` |
-| `ConsequentialActionMiddleware` | Unchanged; the answering commit round runs under `COMMIT_ACTIVE`. | commit tests |
+| `ConsequentialActionMiddleware` | Removed in 2.0.0. The tool guard gates every call from the consent table; `TaskConsentMiddleware` refuses at submission a task-capable call whose task could never ask. A commit runs under a grant for exactly the prepared tool and argument digest. | `tests/test_confirmation_protocols.py`, `tests/test_consent_table.py` |
 | `commit_workspace_action` + operation record | Claims the record; an ask **parks** it (`awaiting_input`) and returns the question unwrapped (not `status: committed`); a nested `isError` result is returned as-is (previously wrapped as `committed`). | `test_commit_asking_round_keeps_the_approval_token`, `test_commit_decline_consumes_the_token_without_sending` |
 | `OperationOutcomeMiddleware` (W4b) | Sits between the error envelope and `ProductionControlMiddleware`; a failure or deadline while a non-repeatable Google call may have run becomes an `outcome_unknown` tool result. An ask passes through. | `test_deadline_while_a_send_executes_reports_outcome_unknown` |
 | BM25 `call_tool` proxy | Returns the nested `ToolResult` object, so the `InputRequiredToolResult` reaches the wire intact; the wire seal binds `call_tool` + its arguments, the app state binds the inner tool. | `test_bm25_call_tool_proxy_passes_the_ask_through_intact` |
@@ -144,9 +152,14 @@ A repeated commit of a finished operation returns the saved result (or the
 saved failure, or `outcome_unknown`); it never executes again. Two
 simultaneous commits: one claims, the other gets `operation_in_progress`.
 
-## 3. Confirmation bypass flags (inventory only — behavior unchanged)
+## 3. Confirmation bypass flags (removed in 2.0.0)
 
-Flags a caller can set so that a site runs **without** asking. Defaults are the
+All flags in this inventory are removed in 2.0.0; a caller that still sends
+one gets the input-validation error of the closed input schema. Whether a call
+asks is now decided by the consent table (`docs/CONSENT.md`). The inventory
+below records the 1.x behaviour.
+
+Flags a caller could set so that a site ran **without** asking. Defaults are the
 published input-schema defaults. Policy is an owner decision (plan section 9.1:
 the flags stay model-controlled); defaults and behavior are unchanged. W4b only
 fixed the stale descriptions and removed the dead `gmail_delete_thread.force`.

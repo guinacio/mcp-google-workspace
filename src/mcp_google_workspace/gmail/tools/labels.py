@@ -9,7 +9,6 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
-from ...common.confirmation import confirm_destructive_action
 from ..client import gmail_service
 from ..label_resolver import LabelResolver
 from ..schemas import LabelCreateRequest, LabelDeleteRequest, LabelUpdateRequest
@@ -144,10 +143,6 @@ def register(server: FastMCP) -> None:
             )
             return {"status": "ok", "action": action, "label": updated}
         delete_request = LabelDeleteRequest(label_id=label_id)
-        if not await confirm_destructive_action(
-            ctx, "delete_label", f"Permanently delete Gmail label {delete_request.label_id}?"
-        ):
-            return {"status": "cancelled", "action": action, "label_id": delete_request.label_id}
         LOGGER.debug(f"Deleting label {delete_request.label_id}.")
         await execute_google_request(
             service.users().labels().delete(userId="me", id=delete_request.label_id)
