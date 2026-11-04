@@ -1,0 +1,398 @@
+{
+  "token_estimate": "ceil(characters / 4)",
+  "page_limit_chars": 8000,
+  "messages": [
+    {
+      "name": "newsletter_fintech_security_87kb",
+      "html_heavy": true,
+      "html_chars": 89899,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Example Paybody,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-interp"
+      },
+      "after": {
+        "first_page_chars": 1182,
+        "first_page_tokens": 296,
+        "truncated": false,
+        "body_chars": 1182,
+        "snippet": "You're getting noticed"
+      }
+    },
+    {
+      "name": "newsletter_retail_sale",
+      "html_heavy": true,
+      "html_chars": 32312,
+      "text_part_chars": 33,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Autumn salebody,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-interp"
+      },
+      "after": {
+        "first_page_chars": 742,
+        "first_page_tokens": 186,
+        "truncated": false,
+        "body_chars": 742,
+        "snippet": "Up to 40% off coats, boots and knitwear."
+      }
+    },
+    {
+      "name": "newsletter_travel_mso",
+      "html_heavy": true,
+      "html_chars": 40508,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Winter escapesbody,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-int"
+      },
+      "after": {
+        "first_page_chars": 747,
+        "first_page_tokens": 187,
+        "truncated": false,
+        "body_chars": 747,
+        "snippet": "Lisbon, Vienna and Kyoto this winter."
+      }
+    },
+    {
+      "name": "newsletter_software_release",
+      "html_heavy": true,
+      "html_chars": 28086,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Release 4.2body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-interp"
+      },
+      "after": {
+        "first_page_chars": 545,
+        "first_page_tokens": 137,
+        "truncated": false,
+        "body_chars": 545,
+        "snippet": "Offline mode and faster search."
+      }
+    },
+    {
+      "name": "newsletter_news_digest_links",
+      "html_heavy": true,
+      "html_chars": 32715,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Morning briefingbody,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-i"
+      },
+      "after": {
+        "first_page_chars": 1001,
+        "first_page_tokens": 251,
+        "truncated": false,
+        "body_chars": 1001,
+        "snippet": "Cycle lanes, longer library hours and more."
+      }
+    },
+    {
+      "name": "newsletter_event_hidden_variants",
+      "html_heavy": true,
+      "html_chars": 33536,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Community meetupbody,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-i"
+      },
+      "after": {
+        "first_page_chars": 468,
+        "first_page_tokens": 117,
+        "truncated": false,
+        "body_chars": 468,
+        "snippet": "Save your seat for the community meetup."
+      }
+    },
+    {
+      "name": "newsletter_nonprofit_entities",
+      "html_heavy": true,
+      "html_chars": 27981,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Winter appealbody,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-inte"
+      },
+      "after": {
+        "first_page_chars": 669,
+        "first_page_tokens": 168,
+        "truncated": false,
+        "body_chars": 669,
+        "snippet": "Help us reach 3,000 coats this winter. We'd like to reach 3 000"
+      }
+    },
+    {
+      "name": "receipt_order_table",
+      "html_heavy": true,
+      "html_chars": 20318,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Order EX-20931body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%} table,td{mso-table-lspace:0pt;mso-table-rspace:0pt} img{-ms-int"
+      },
+      "after": {
+        "first_page_chars": 535,
+        "first_page_tokens": 134,
+        "truncated": false,
+        "body_chars": 535,
+        "snippet": "Your order EX-20931 is confirmed."
+      }
+    },
+    {
+      "name": "reply_chain_plain_quotes",
+      "html_heavy": false,
+      "html_chars": 102,
+      "text_part_chars": 359,
+      "before": {
+        "first_page_chars": 107,
+        "first_page_tokens": 27,
+        "truncated": false,
+        "snippet": "Thursday at 10 works for me. I'll book the small meeting room.  Ana  [quoted: 6 earlier messages in thread]"
+      },
+      "after": {
+        "first_page_chars": 107,
+        "first_page_tokens": 27,
+        "truncated": false,
+        "body_chars": 107,
+        "snippet": "Thursday at 10 works for me. I'll book the small meeting room. Ana On Tue, 3 Nov 2026"
+      }
+    },
+    {
+      "name": "reply_chain_outlook_signature",
+      "html_heavy": false,
+      "html_chars": 0,
+      "text_part_chars": 369,
+      "before": {
+        "first_page_chars": 120,
+        "first_page_tokens": 30,
+        "truncated": false,
+        "snippet": "Hi Ben,  The signed contract is attached to the original email. Let me know if anything is missing.  Best regards, Carla"
+      },
+      "after": {
+        "first_page_chars": 120,
+        "first_page_tokens": 30,
+        "truncated": false,
+        "body_chars": 120,
+        "snippet": "Hi Ben, The signed contract is attached to the original email. Let me know if anything is missing."
+      }
+    },
+    {
+      "name": "reply_chain_html_gmail_quote",
+      "html_heavy": false,
+      "html_chars": 419,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 71,
+        "first_page_tokens": 18,
+        "truncated": false,
+        "snippet": "Sounds good, see you there.  Dan  [quoted: 1 earlier message in thread]"
+      },
+      "after": {
+        "first_page_chars": 71,
+        "first_page_tokens": 18,
+        "truncated": false,
+        "body_chars": 71,
+        "snippet": "Sounds good, see you there. Dan On Mon, 2 Nov 2026 at 12:00, Eva Example <eva@example.net> wrote:"
+      }
+    },
+    {
+      "name": "reply_chain_mobile",
+      "html_heavy": false,
+      "html_chars": 0,
+      "text_part_chars": 196,
+      "before": {
+        "first_page_chars": 112,
+        "first_page_tokens": 28,
+        "truncated": false,
+        "snippet": "Yes, please go ahead and order the replacement part.  Sent from my phone  [quoted: 2 earlier messages in thread]"
+      },
+      "after": {
+        "first_page_chars": 112,
+        "first_page_tokens": 28,
+        "truncated": false,
+        "body_chars": 112,
+        "snippet": "Yes, please go ahead and order the replacement part. Sent from my phone On 2 Nov 2026"
+      }
+    },
+    {
+      "name": "plain_text_short",
+      "html_heavy": false,
+      "html_chars": 0,
+      "text_part_chars": 90,
+      "before": {
+        "first_page_chars": 89,
+        "first_page_tokens": 23,
+        "truncated": false,
+        "snippet": "Hi,  Can we move tomorrow's call to 3 pm? Something came up in the morning.  Thanks, Hugo"
+      },
+      "after": {
+        "first_page_chars": 89,
+        "first_page_tokens": 23,
+        "truncated": false,
+        "body_chars": 89,
+        "snippet": "Hi, Can we move tomorrow's call to 3 pm? Something came up in the morning. Thanks, Hugo"
+      }
+    },
+    {
+      "name": "plain_text_long_report",
+      "html_heavy": false,
+      "html_chars": 0,
+      "text_part_chars": 21610,
+      "before": {
+        "first_page_chars": 8000,
+        "first_page_tokens": 2000,
+        "truncated": true,
+        "snippet": "Hello all,  Here is the quarterly report in full.  1. On planning, the team reviewed the open items from last quarter and agreed on next steps. The ma"
+      },
+      "after": {
+        "first_page_chars": 7944,
+        "first_page_tokens": 1986,
+        "truncated": true,
+        "body_chars": 21609,
+        "snippet": "Hello all, Here is the quarterly report in full. 1. On planning, the team reviewed the open items"
+      }
+    },
+    {
+      "name": "html_only_entities",
+      "html_heavy": false,
+      "html_chars": 157,
+      "text_part_chars": 0,
+      "before": {
+        "first_page_chars": 92,
+        "first_page_tokens": 23,
+        "truncated": false,
+        "snippet": "Hi Jo, Here's the \"final\" agenda for Friday – R&D first, then sales & marketing. Cheers, Kai"
+      },
+      "after": {
+        "first_page_chars": 92,
+        "first_page_tokens": 23,
+        "truncated": false,
+        "body_chars": 92,
+        "snippet": "Hi Jo, Here's the \"final\" agenda for Friday – R&D first, then sales & marketing."
+      }
+    },
+    {
+      "name": "forwarded_with_attachment",
+      "html_heavy": false,
+      "html_chars": 0,
+      "text_part_chars": 338,
+      "before": {
+        "first_page_chars": 337,
+        "first_page_tokens": 85,
+        "truncated": false,
+        "snippet": "FYI, see the supplier's note below.  ---------- Forwarded message --------- From: Supplier Example <sales@supplier.example.com> Date: Mon, 2 Nov 2026 "
+      },
+      "after": {
+        "first_page_chars": 337,
+        "first_page_tokens": 85,
+        "truncated": false,
+        "body_chars": 337,
+        "snippet": "FYI, see the supplier's note below. ---------- Forwarded message --------- From: Supplier Example"
+      }
+    },
+    {
+      "name": "portuguese_notice",
+      "html_heavy": false,
+      "html_chars": 290,
+      "text_part_chars": 266,
+      "before": {
+        "first_page_chars": 265,
+        "first_page_tokens": 67,
+        "truncated": false,
+        "snippet": "Olá, Mário,  A reunião de condomínio foi remarcada para quinta-feira, às 19h30, no salão de festas. A pauta inclui a manutenção do elevador e a previs"
+      },
+      "after": {
+        "first_page_chars": 265,
+        "first_page_tokens": 67,
+        "truncated": false,
+        "body_chars": 265,
+        "snippet": "Olá, Mário, A reunião de condomínio foi remarcada para quinta-feira, às 19h30, no salão de festas."
+      }
+    },
+    {
+      "name": "german_text_only",
+      "html_heavy": false,
+      "html_chars": 0,
+      "text_part_chars": 349,
+      "before": {
+        "first_page_chars": 297,
+        "first_page_tokens": 75,
+        "truncated": false,
+        "snippet": "Sehr geehrte Frau Müller,  vielen Dank für Ihre Anfrage. Die Lieferung der Büromöbel erfolgt voraussichtlich in der 47. Kalenderwoche. Für Rückfragen "
+      },
+      "after": {
+        "first_page_chars": 297,
+        "first_page_tokens": 75,
+        "truncated": false,
+        "body_chars": 297,
+        "snippet": "Sehr geehrte Frau Müller, vielen Dank für Ihre Anfrage. Die Lieferung der Büromöbel erfolgt"
+      }
+    },
+    {
+      "name": "calendar_invite",
+      "html_heavy": false,
+      "html_chars": 463,
+      "text_part_chars": 299,
+      "before": {
+        "first_page_chars": 292,
+        "first_page_tokens": 73,
+        "truncated": false,
+        "snippet": "Mia Example has invited you to Design review  Tuesday 10 Nov 2026 14:00 – 14:30 (UTC)  Joining info: https://meet.example.com/abc-defg-hij  Reply for "
+      },
+      "after": {
+        "first_page_chars": 292,
+        "first_page_tokens": 73,
+        "truncated": false,
+        "body_chars": 292,
+        "snippet": "Mia Example has invited you to Design review Tuesday 10 Nov 2026 14:00 – 14:30 (UTC)"
+      }
+    },
+    {
+      "name": "plain_text_two_attachments",
+      "html_heavy": false,
+      "html_chars": 0,
+      "text_part_chars": 83,
+      "before": {
+        "first_page_chars": 82,
+        "first_page_tokens": 21,
+        "truncated": false,
+        "snippet": "Hello,  Please find the October invoice and the usage report attached.  Best, Noah"
+      },
+      "after": {
+        "first_page_chars": 82,
+        "first_page_tokens": 21,
+        "truncated": false,
+        "body_chars": 82,
+        "snippet": "Hello, Please find the October invoice and the usage report attached. Best, Noah"
+      }
+    }
+  ],
+  "totals": {
+    "before": {
+      "first_page_chars": 73864,
+      "first_page_tokens": 18470,
+      "truncated_messages": 9
+    },
+    "after": {
+      "first_page_chars": 15697,
+      "first_page_tokens": 3932,
+      "truncated_messages": 1
+    }
+  }
+}
