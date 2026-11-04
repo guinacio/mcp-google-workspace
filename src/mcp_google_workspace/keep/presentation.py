@@ -26,5 +26,4 @@ def note_envelope(
         "created_at": in_account_timezone(note.get("createTime"), account_timezone),
         "updated_at": in_account_timezone(note.get("updateTime"), account_timezone),
         "trashed_at": in_account_timezone(note.get("trashTime"), account_timezone),
-        "timezone": account_timezone,
     }

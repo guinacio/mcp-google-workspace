@@ -12,7 +12,7 @@ a normalized response and publish its open output schema (+2,724), other
 schemas follow their new shapes (+427), descriptions name the new fields
 (+949), and docs_read_document and drive_read_file are new (+1,040):
     default       67,342 (58,746); without output schemas 55,367 (48,573)
-    all optional  91,218 (79,292); without output schemas 72,770 (63,773)
+    all optional  91,202 (79,279); without output schemas 72,768 (63,772)
 2.0.0 before the response envelope:
     default       62,024 (53,907); without output schemas 53,528 (46,724)
     all optional  85,899 (74,453); without output schemas 70,930 (61,924)

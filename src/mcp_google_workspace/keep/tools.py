@@ -153,7 +153,7 @@ def register_tools(server: FastMCP) -> None:
 
         Find the name with keep_list_notes or keep_create_note first. Returns id, title, text
         (full, not truncated), checklist counts (total and completed), attachment_count,
-        created_at, updated_at, trashed_at and timezone.
+        created_at, updated_at and trashed_at in the account time zone.
         """
         service = keep_service()
         name = normalize_note_name(request.note_name)

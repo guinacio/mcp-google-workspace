@@ -136,6 +136,10 @@ area:
   normalized: `id, name, kind, mime_type, size, parent_ids, drive_id,
   web_url, trashed` instead of Google's `mimeType`, `parents`, `driveId`,
   `webViewLink`.
+- **Chat, Keep and Meet** (optional integrations): messages, notes,
+  conference records, participants, recordings and transcripts drop the
+  per-item `timezone`; list results already carry `account_timezone`, and
+  every timestamp keeps its offset.
 - **Calendar.** Event envelopes drop `timezone` and `source_start` /
   `source_end`; `event_timezone` names the zone the event was scheduled in
   when it differs from the account's, and `updated_at` is in the account's

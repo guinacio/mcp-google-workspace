@@ -12404,7 +12404,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get one Keep note with its full text, by bare ID or canonical 'notes/...' name.\n\nFind the name with keep_list_notes or keep_create_note first. Returns id, title, text (full, not truncated), checklist counts (total and completed), attachment_count, created_at, updated_at, trashed_at and timezone.",
+      "description": "Get one Keep note with its full text, by bare ID or canonical 'notes/...' name.\n\nFind the name with keep_list_notes or keep_create_note first. Returns id, title, text (full, not truncated), checklist counts (total and completed), attachment_count, created_at, updated_at and trashed_at in the account time zone.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -12474,9 +12474,6 @@
           },
           "text": {},
           "text_truncated": {},
-          "timezone": {
-            "type": "string"
-          },
           "title": {
             "type": [
               "string",
@@ -13266,7 +13263,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get one conference record by its ID or 'conferenceRecords/...' name.\n\nFind the name with meet_list_conference_records. Returns id, space_id, started_at, ended_at, expires_at and timezone, with timestamps in the account time zone.",
+      "description": "Get one conference record by its ID or 'conferenceRecords/...' name.\n\nFind the name with meet_list_conference_records. Returns id, space_id, started_at, ended_at and expires_at, with timestamps in the account time zone.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13327,9 +13324,6 @@
               "string",
               "null"
             ]
-          },
-          "timezone": {
-            "type": "string"
           }
         },
         "required": [],
@@ -13552,7 +13546,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List Meet conference records, one per meeting held in a space, with optional filtering.\n\nUse the id of a record with meet_get_conference_record, meet_list_conference_participants, meet_list_conference_recordings or meet_list_conference_transcripts. Returns conference_records (id, space_id, started_at, ended_at, expires_at, timezone), count, next_page_token and account_timezone.",
+      "description": "List Meet conference records, one per meeting held in a space, with optional filtering.\n\nUse the id of a record with meet_get_conference_record, meet_list_conference_participants, meet_list_conference_recordings or meet_list_conference_transcripts. Returns conference_records (id, space_id, started_at, ended_at, expires_at), count, next_page_token and account_timezone.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

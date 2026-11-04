@@ -14,7 +14,6 @@ def conference_envelope(record: dict[str, Any], *, account_timezone: str) -> dic
         "started_at": in_account_timezone(record.get("startTime"), account_timezone),
         "ended_at": in_account_timezone(record.get("endTime"), account_timezone),
         "expires_at": in_account_timezone(record.get("expireTime"), account_timezone),
-        "timezone": account_timezone,
     }
 
 
@@ -31,7 +30,6 @@ def participant_envelope(participant: dict[str, Any], *, account_timezone: str) 
         "identity_type": identity_type,
         "joined_at": in_account_timezone(participant.get("earliestStartTime"), account_timezone),
         "left_at": in_account_timezone(participant.get("latestEndTime"), account_timezone),
-        "timezone": account_timezone,
     }
 
 
@@ -41,7 +39,6 @@ def recording_envelope(recording: dict[str, Any], *, account_timezone: str) -> d
         "id": recording.get("name"),
         "started_at": in_account_timezone(recording.get("startTime"), account_timezone),
         "ended_at": in_account_timezone(recording.get("endTime"), account_timezone),
-        "timezone": account_timezone,
         "drive_file_id": destination.get("file"),
         "export_uri": recording.get("exportUri"),
     }
@@ -53,7 +50,6 @@ def transcript_envelope(transcript: dict[str, Any], *, account_timezone: str) ->
         "id": transcript.get("name"),
         "started_at": in_account_timezone(transcript.get("startTime"), account_timezone),
         "ended_at": in_account_timezone(transcript.get("endTime"), account_timezone),
-        "timezone": account_timezone,
         "document_id": destination.get("document"),
         "export_uri": transcript.get("exportUri"),
     }
