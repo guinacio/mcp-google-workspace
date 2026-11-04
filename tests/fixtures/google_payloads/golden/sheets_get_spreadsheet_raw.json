@@ -1,0 +1,347 @@
+{
+  "element_count": 8,
+  "format": "raw",
+  "next_offset": null,
+  "raw_chars": 4019,
+  "raw_sha256": "861cf88ed2a0a5012759e40e31a04712ebccebc3b10448c8c06b61c60a3d3a63",
+  "spreadsheet": {
+    "dataSourceSchedules": [],
+    "dataSources": [],
+    "developerMetadata": [
+      {
+        "location": {
+          "locationType": "SPREADSHEET",
+          "spreadsheet": true
+        },
+        "metadataId": 1,
+        "metadataKey": "owner_team",
+        "metadataValue": "finance",
+        "visibility": "DOCUMENT"
+      }
+    ],
+    "namedRanges": [
+      {
+        "name": "Totals",
+        "namedRangeId": "n1a2b3c4d5",
+        "range": {
+          "endColumnIndex": 2,
+          "endRowIndex": 13,
+          "sheetId": 0,
+          "startColumnIndex": 1,
+          "startRowIndex": 1
+        }
+      },
+      {
+        "name": "Q1Categories",
+        "namedRangeId": "n9z8y7x6w5",
+        "range": {
+          "endColumnIndex": 1,
+          "sheetId": 987654321,
+          "startColumnIndex": 0
+        }
+      },
+      {
+        "name": "OldTotals",
+        "namedRangeId": "n0removed1",
+        "range": {
+          "endColumnIndex": 2,
+          "endRowIndex": 5,
+          "sheetId": 555000111,
+          "startColumnIndex": 0,
+          "startRowIndex": 0
+        }
+      }
+    ],
+    "properties": {
+      "autoRecalc": "ON_CHANGE",
+      "defaultFormat": {
+        "backgroundColor": {
+          "blue": 1,
+          "green": 1,
+          "red": 1
+        },
+        "backgroundColorStyle": {
+          "rgbColor": {
+            "blue": 1,
+            "green": 1,
+            "red": 1
+          }
+        },
+        "padding": {
+          "bottom": 2,
+          "left": 3,
+          "right": 3,
+          "top": 2
+        },
+        "textFormat": {
+          "bold": false,
+          "fontFamily": "arial,sans,sans-serif",
+          "fontSize": 10,
+          "foregroundColor": {},
+          "foregroundColorStyle": {
+            "rgbColor": {}
+          },
+          "italic": false,
+          "strikethrough": false,
+          "underline": false
+        },
+        "verticalAlignment": "BOTTOM",
+        "wrapStrategy": "OVERFLOW_CELL"
+      },
+      "iterativeCalculationSettings": {
+        "convergenceThreshold": 0.001,
+        "maxIterations": 50
+      },
+      "locale": "en_US",
+      "spreadsheetTheme": {
+        "primaryFontFamily": "Arial",
+        "themeColors": [
+          {
+            "color": {
+              "rgbColor": {}
+            },
+            "colorType": "TEXT"
+          },
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 1,
+                "green": 1,
+                "red": 1
+              }
+            },
+            "colorType": "BACKGROUND"
+          },
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 0.95686275,
+                "green": 0.52156866,
+                "red": 0.25882354
+              }
+            },
+            "colorType": "ACCENT1"
+          },
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 0.8,
+                "green": 0.33333334,
+                "red": 0.06666667
+              }
+            },
+            "colorType": "LINK"
+          }
+        ]
+      },
+      "timeZone": "America/Sao_Paulo",
+      "title": "Budget 2026"
+    },
+    "sheets": [
+      {
+        "bandedRanges": [
+          {
+            "bandedRangeId": 1876543210,
+            "range": {
+              "endColumnIndex": 3,
+              "endRowIndex": 13,
+              "sheetId": 0,
+              "startColumnIndex": 0,
+              "startRowIndex": 0
+            },
+            "rowProperties": {
+              "firstBandColor": {
+                "blue": 1,
+                "green": 1,
+                "red": 1
+              },
+              "headerColor": {
+                "blue": 0.8,
+                "green": 0.4,
+                "red": 0.2
+              },
+              "secondBandColor": {
+                "blue": 1,
+                "green": 0.95,
+                "red": 0.9
+              }
+            }
+          }
+        ],
+        "conditionalFormats": [
+          {
+            "booleanRule": {
+              "condition": {
+                "type": "NUMBER_LESS",
+                "values": [
+                  {
+                    "userEnteredValue": "0"
+                  }
+                ]
+              },
+              "format": {
+                "backgroundColor": {
+                  "blue": 0.7647059,
+                  "green": 0.78039217,
+                  "red": 0.95686275
+                }
+              }
+            },
+            "ranges": [
+              {
+                "endColumnIndex": 3,
+                "endRowIndex": 1000,
+                "sheetId": 0,
+                "startColumnIndex": 2,
+                "startRowIndex": 1
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "gridProperties": {
+            "columnCount": 26,
+            "frozenColumnCount": 1,
+            "frozenRowCount": 1,
+            "rowCount": 1000
+          },
+          "index": 0,
+          "sheetId": 0,
+          "sheetType": "GRID",
+          "title": "Summary"
+        },
+        "protectedRanges": [
+          {
+            "description": "Header row",
+            "protectedRangeId": 1234567890,
+            "range": {
+              "endRowIndex": 1,
+              "sheetId": 0,
+              "startRowIndex": 0
+            },
+            "requestingUserCanEdit": true,
+            "warningOnly": true
+          }
+        ]
+      },
+      {
+        "charts": [
+          {
+            "chartId": 1122334455,
+            "position": {
+              "overlayPosition": {
+                "anchorCell": {
+                  "columnIndex": 4,
+                  "rowIndex": 2,
+                  "sheetId": 987654321
+                },
+                "heightPixels": 371,
+                "widthPixels": 600
+              }
+            },
+            "spec": {
+              "basicChart": {
+                "chartType": "COLUMN",
+                "domains": [
+                  {
+                    "domain": {
+                      "sourceRange": {
+                        "sources": [
+                          {
+                            "endColumnIndex": 1,
+                            "endRowIndex": 13,
+                            "sheetId": 987654321,
+                            "startColumnIndex": 0,
+                            "startRowIndex": 0
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ],
+                "legendPosition": "BOTTOM_LEGEND"
+              },
+              "title": "Q1 spend"
+            }
+          }
+        ],
+        "filterViews": [
+          {
+            "filterViewId": 445566,
+            "range": {
+              "endColumnIndex": 12,
+              "endRowIndex": 200,
+              "sheetId": 987654321,
+              "startColumnIndex": 0,
+              "startRowIndex": 0
+            },
+            "title": "Over budget"
+          }
+        ],
+        "properties": {
+          "gridProperties": {
+            "columnCount": 12,
+            "rowCount": 200
+          },
+          "index": 1,
+          "sheetId": 987654321,
+          "sheetType": "GRID",
+          "tabColor": {
+            "blue": 0.3,
+            "green": 0.6,
+            "red": 0.2
+          },
+          "tabColorStyle": {
+            "rgbColor": {
+              "blue": 0.3,
+              "green": 0.6,
+              "red": 0.2
+            }
+          },
+          "title": "Q1"
+        }
+      },
+      {
+        "properties": {
+          "gridProperties": {
+            "columnCount": 8,
+            "rowCount": 1000
+          },
+          "hidden": true,
+          "index": 2,
+          "sheetId": 1357924680,
+          "sheetType": "GRID",
+          "title": "Archive 2025"
+        }
+      },
+      {
+        "charts": [
+          {
+            "chartId": 99887766,
+            "position": {
+              "sheetId": 246813579
+            },
+            "spec": {
+              "pieChart": {
+                "legendPosition": "RIGHT_LEGEND"
+              },
+              "title": "Spend by month"
+            }
+          }
+        ],
+        "properties": {
+          "index": 3,
+          "sheetId": 246813579,
+          "sheetType": "OBJECT",
+          "title": "Spend chart"
+        }
+      }
+    ],
+    "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk/edit"
+  },
+  "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "title": "Budget 2026",
+  "truncated": false,
+  "url": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk/edit"
+}

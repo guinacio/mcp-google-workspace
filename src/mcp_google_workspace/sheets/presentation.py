@@ -2,7 +2,8 @@
 
 Pure functions that turn Sheets API payloads into the shapes the sheets_
 tools return: snake_case keys, A1 notation instead of grid indexes, and none
-of the formatting, theme, developer metadata or data source objects.
+of the formatting, theme, developer metadata or data source objects. The raw
+read (``raw_spreadsheet_view``) is the exception: Google's resource unchanged.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..common.raw_paging import RAW_LIMIT_CHARS, raw_resource_page
 from ..common.resources import clean_web_url
 
 _PLAIN_SHEET_TITLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -166,6 +168,31 @@ def spreadsheet_envelope(payload: dict[str, Any], *, include_grid_data: bool = F
         "url": clean_web_url(payload.get("spreadsheetUrl")),
         "sheets": [sheet_envelope(sheet, include_values=include_grid_data) for sheet in sheets],
         "named_ranges": [named_range_envelope(item, titles) for item in payload.get("namedRanges", [])],
+    }
+
+
+def raw_spreadsheet_view(payload: dict[str, Any], *, offset: int = 0, limit: int = RAW_LIMIT_CHARS) -> dict[str, Any]:
+    """sheets_get_spreadsheet (raw): Google's Spreadsheet resource under ``spreadsheet``, paged by sheet."""
+    paged = raw_resource_page(
+        payload,
+        id_key="spreadsheetId",
+        lists=("sheets",),
+        offset=offset,
+        limit=limit,
+        narrow_hint="narrow it with ranges or read its cells with sheets_read_sheet_values",
+    )
+    return {
+        "spreadsheet_id": payload.get("spreadsheetId"),
+        "title": payload.get("properties", {}).get("title"),
+        "url": clean_web_url(payload.get("spreadsheetUrl")),
+        "format": "raw",
+        "spreadsheet": dict(paged["page"]),
+        # Typed conversions, so the published output schema reads each field's type.
+        "truncated": bool(paged["next_offset"] is not None),
+        "next_offset": paged["next_offset"],
+        "element_count": int(paged["element_count"]),
+        "raw_chars": int(paged["raw_chars"]),
+        "raw_sha256": str(paged["raw_sha256"]),
     }
 
 

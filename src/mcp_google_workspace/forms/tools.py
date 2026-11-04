@@ -10,6 +10,7 @@ from googleapiclient.errors import HttpError
 from ..common.async_ops import run_blocking
 from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
+from ..tool_tiers import require_extended_tier
 from .client import forms_service
 from .presentation import (
     batch_update_form_envelope,
@@ -18,6 +19,7 @@ from .presentation import (
     form_responses_envelope,
     publish_settings_envelope,
     question_titles,
+    raw_form_view,
 )
 from .schemas import (
     BatchUpdateFormRequest,
@@ -127,12 +129,38 @@ _ENRICH_QUESTIONS = (
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_form")
-    def get_form(form_id: str) -> dict[str, Any]:
-        """Read a Google Form's structure: title, description, publish state and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns form_id, title, document_title, description, responder_url, revision_id, linked_spreadsheet_id, is_quiz, published and accepting_responses (both null for legacy forms), count and items, each with item_id, title, description, kind, question_id (for a grid, a list of question_id and row_title), required, question_type and options (choices, or scale bounds and labels)."""
+    def get_form(
+        form_id: str,
+        format: Annotated[
+            Literal["normalized", "raw"],
+            (
+                "'normalized' (the default) returns the structure described above. 'raw' returns Google's "
+                "Form resource unchanged in form (every setting, grading, feedback, image, video and "
+                "file-upload limit included), for forms_batch_update_form edits; it needs the extended "
+                "tool tier and fails with invalid_input under MCP_TOOL_TIER=core."
+            ),
+        ] = "normalized",
+        offset: Annotated[
+            int,
+            (
+                "Raw only (normalized ignores it): the next_offset of a truncated raw result. Raw pages "
+                "hold about 32,000 characters of JSON and are cut between whole items, the first page "
+                "holding every other field; joining items across pages gives Google's resource. 0 starts "
+                "at the beginning."
+            ),
+        ] = 0,
+    ) -> dict[str, Any]:
+        """Read a Google Form's structure: title, description, publish state and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns form_id, title, document_title, description, responder_url, revision_id, linked_spreadsheet_id, is_quiz, published and accepting_responses (both null for legacy forms), count and items, each with item_id, title, description, kind, question_id (for a grid, a list of question_id and row_title), required, question_type and options (choices, or scale bounds and labels). Format raw returns Google's Form instead, paged."""
+        request = GetFormRequest(form_id=form_id, format=format, offset=offset)
+        if request.format == "raw":
+            require_extended_tier("format", "raw", instead="Omit format for the normalized structure.")
         try:
-            return form_envelope(get_form_payload(GetFormRequest(form_id=form_id)))
+            payload = get_form_payload(request)
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
+        if request.format == "raw":
+            return raw_form_view(payload, offset=request.offset)
+        return form_envelope(payload)
 
     @server.tool(name="create_form")
     def create_form(

@@ -8,6 +8,7 @@ from mcp_google_workspace.forms.presentation import (
     form_envelope,
     form_responses_envelope,
     publish_settings_envelope,
+    raw_form_view,
     question_titles,
     response_envelope,
 )
@@ -25,6 +26,9 @@ def _titles() -> dict[str, str]:
 CASES: list[Case] = [
     Case("forms_get_form", "forms_get_form.json", form_envelope, items_key="items"),
     Case("forms_get_form_legacy", "forms_get_form_legacy.json", form_envelope, items_key="items"),
+    # format=raw; forms_get_form_quiz.json is hand-built from the Forms API reference
+    # (grading, feedback, option and question images, file upload, video and image items).
+    Case("forms_get_form_raw", "forms_get_form_quiz.json", raw_form_view, opaque_keys=("form",)),
     Case("forms_create_form", "forms_create_form.json", created_form_envelope),
     Case(
         "forms_batch_update_form",

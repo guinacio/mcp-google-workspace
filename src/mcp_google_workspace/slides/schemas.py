@@ -12,6 +12,8 @@ from ..common.request_model import ToolRequestModel
 class ReadPresentationRequest(ToolRequestModel):
     presentation_id: str = Field(description="Google Slides presentation file ID.")
     slide_ids: list[str] | None = Field(default=None)
+    format: Literal["normalized", "raw"] = Field(default="normalized")
+    offset: int = Field(default=0, ge=0)
 
 
 class CreatePresentationRequest(ToolRequestModel):

@@ -92,7 +92,7 @@ Reads accept retained keys and rewrite ciphertext with the active key. Remove an
 - `extended`: core plus the raw `*_batch_update_*` tools for Docs, Sheets, Slides and Forms, the Gmail settings tools (`gmail_manage_filters`, `gmail_manage_forwarding`, `gmail_manage_vacation`), `drive_update_drive` and `get_mcp_apps_diagnostics` (91 tools).
 - `complete`: extended plus every optional integration below (Apps dashboard, Chat, Keep, Meet, and Gemini when `GEMINI_API_KEY` is set) unless its `ENABLE_*` flag is explicitly `false`.
 
-Tools above the active tier are not registered: they are absent from `tools/list`, a call to one is an unknown tool, and `prepare_workspace_action` does not offer them. `get_google_connection_status` reports the active tier under `server.tool_tier`.
+Tools above the active tier are not registered: they are absent from `tools/list`, a call to one is an unknown tool, and `prepare_workspace_action` does not offer them. `format: raw` on `sheets_get_spreadsheet`, `slides_read_presentation` and `forms_get_form` (Google's resource unchanged, to read before a raw batch update) also needs `extended` or `complete`; under `core` it fails with `invalid_input`. `get_google_connection_status` reports the active tier under `server.tool_tier`.
 
 ### Consent
 
@@ -311,7 +311,7 @@ Drive (namespaced as `drive_*`):
 
 Sheets (namespaced as `sheets_*`):
 
-- `get_spreadsheet`, `create_spreadsheet`
+- `get_spreadsheet` (`format: raw` in the extended tier: Google's Spreadsheet resource, paged by sheet), `create_spreadsheet`
 - Values: `read_sheet_values` (one or many ranges), `update_sheet_values`, `append_sheet_values`
 - Extended tier: `batch_update_spreadsheet` (raw request escape hatch)
 
@@ -334,13 +334,13 @@ People (namespaced as `people_*`):
 
 Forms (namespaced as `forms_*`):
 
-- `get_form`, `create_form`, `set_form_publish_settings`
+- `get_form` (`format: raw` in the extended tier: Google's Form resource, paged by item), `create_form`, `set_form_publish_settings`
 - Responses: `list_form_responses` (`response_id` reads one)
 - Extended tier: `batch_update_form`
 
 Slides (namespaced as `slides_*`):
 
-- `read_presentation` (outline with each slide's text and notes; `slide_ids` adds element geometry), `create_presentation`, `get_slide_thumbnail`
+- `read_presentation` (outline with each slide's text and notes; `slide_ids` adds element geometry; `format: raw` in the extended tier: Google's Presentation, or the Pages of `slide_ids`, paged), `create_presentation`, `get_slide_thumbnail`
 - Text mutation: `replace_text_in_presentation`; extended tier: `batch_update_presentation`
 
 Apps (namespaced as `apps_*`, mounted when `ENABLE_APPS_DASHBOARD=true`):

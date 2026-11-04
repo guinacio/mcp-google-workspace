@@ -7,6 +7,8 @@ from mcp_google_workspace.slides.presentation import (
     created_presentation_envelope,
     page_envelope,
     presentation_envelope,
+    raw_pages_view,
+    raw_presentation_view,
     replace_text_envelope,
     thumbnail_envelope,
 )
@@ -18,6 +20,15 @@ PRESENTATION_ID = "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq"
 CASES: list[Case] = [
     Case("slides_get_presentation", "slides_get_presentation.json", presentation_envelope, items_key="slides"),
     Case("slides_get_slide_page", "slides_get_slide_page.json", page_envelope, items_key="elements"),
+    # format=raw: Google's Presentation, first page (the fixture is larger than one page).
+    Case("slides_read_presentation_raw", "slides_get_presentation.json", raw_presentation_view, opaque_keys=("presentation",)),
+    # format=raw with slide_ids: Google's Page resources from presentations.pages.get.
+    Case(
+        "slides_read_presentation_raw_pages",
+        "slides_get_slide_page.json",
+        lambda payload: raw_pages_view(PRESENTATION_ID, [payload]),
+        opaque_keys=("pages",),
+    ),
     Case(
         "slides_get_slide_thumbnail",
         "slides_get_slide_thumbnail.json",

@@ -5,6 +5,53 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
+## 2.1.0 — Unreleased
+
+Two capabilities 2.0.0 removed come back as opt-in parameters. Nothing is
+removed or renamed, and every response is unchanged unless the new option is
+passed. Upgrading needs no reconnect: scopes and the token store are
+unchanged.
+
+### Added
+
+- **`format: raw` on `sheets_get_spreadsheet`, `slides_read_presentation` and
+  `forms_get_form`**, so an existing file can be read in full before it is
+  edited with the raw `*_batch_update_*` tools. 2.0.0 normalized these reads
+  and dropped what such edits need (Sheets formats, conditional formats,
+  charts, merges, filters, protected and banded ranges, theme, data sources;
+  Slides masters, layouts, notes master, transforms, styles, fills; Forms
+  settings beyond the quiz flag, grading, images, media, file-upload limits).
+  `format` defaults to `normalized`, the 2.0 shape. With `raw` the result is
+  Google's resource unchanged, from `spreadsheets.get`, `presentations.get`
+  or `forms.get`, under `spreadsheet`, `presentation` or `form`, beside the
+  file's ID, `title`, `url` (Forms: `responder_url`), `revision_id` (Slides
+  and Forms) and `format: "raw"`. Slides with `slide_ids` reads each slide
+  with `presentations.pages.get` and returns Google's Page resources, in the
+  order given, under `pages`. Sheets passes `ranges` and `include_grid_data`
+  to Google as given, so grid data is only fetched when asked for.
+- **Raw results are paged by whole elements**, the contract of
+  `docs_read_document` `format: outline`: a page holds about 32,000
+  characters of JSON (`RAW_LIMIT_CHARS`), and the elements of the resource's
+  top-level lists are counted in order (sheets; slides, then layouts, then
+  masters; form items; then any other list). The first page has every other
+  field of the resource; later pages have the resource's ID field and their
+  slices of its lists; joining each list across pages, with the first page's
+  fields, gives Google's resource exactly, and a resource that fits one page
+  is returned as Google sent it. A new `offset` parameter (default 0, ignored
+  by `normalized`) takes the previous page's `next_offset`. Each raw result
+  carries `truncated`, `next_offset`, `element_count` and `raw_chars` /
+  `raw_sha256` (size and hash of the whole resource, to tell whether it
+  changed between pages). An element larger than a page comes alone on its
+  page; one larger than 128,000 characters (`RAW_ELEMENT_MAX_CHARS`) fails
+  with `invalid_input` naming how to narrow the read and, in
+  `details.next_offset`, the offset that skips it.
+- **The raw reads need the extended tool tier.** They are large and meant for
+  the raw batch-update tools, which are only published in `extended` and
+  `complete`. A published schema is the same in every tier, so `format`
+  lists `raw` in `core` too, and the call fails there with `invalid_input`
+  naming `MCP_TOOL_TIER=extended` (`details.required_tier`,
+  `details.tool_tier`) before any Google request.
+
 ## 2.0.1 — 2026-11-04
 
 Polish from the 2.0.0 live QA (issue #63) and the cheap items left over from
