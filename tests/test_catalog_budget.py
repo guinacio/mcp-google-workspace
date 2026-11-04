@@ -6,11 +6,17 @@ them equal to the live catalog) with the chars/4 estimate documented in
 2.0.0 catalog, so ordinary edits pass and a change that grows the catalog
 noticeably has to raise a ceiling here, in review.
 
-2.0.0 measurement (estimated tokens; cl100k in parentheses), after the
-response envelope (+5,318 default): the 37 former raw passthrough tools return
-a normalized response and publish its open output schema (+2,724), other
-schemas follow their new shapes (+427), descriptions name the new fields
-(+949), and docs_read_document and drive_read_file are new (+1,040):
+2.0.0 measurement (estimated tokens; cl100k in parentheses), after the tool
+consolidation: 142 default tools become 82 in the core tier (80 for the model
+plus the two app-only upload callbacks); the all-optional snapshot is the
+complete tier (143 tools, extended tools included):
+    default       46,646 (40,892); without output schemas 38,745 (34,106)
+    all optional  75,611 (65,738); without output schemas 60,146 (52,726)
+2.0.0 after the response envelope (+5,318 default): the 37 former raw
+passthrough tools return a normalized response and publish its open output
+schema (+2,724), other schemas follow their new shapes (+427), descriptions
+name the new fields (+949), and docs_read_document and drive_read_file are new
+(+1,040):
     default       67,342 (58,746); without output schemas 55,367 (48,573)
     all optional  91,202 (79,279); without output schemas 72,768 (63,772)
 2.0.0 before the response envelope:
@@ -35,8 +41,8 @@ if str(ROOT / "tests") not in sys.path:
 from contracts.catalog_budget import estimate_tokens, measure  # noqa: E402
 
 CEILINGS = {
-    "catalog_default.json": {"tokens": 74_000, "tokens_without_output_schemas": 61_000},
-    "catalog_all_optional.json": {"tokens": 100_000, "tokens_without_output_schemas": 80_000},
+    "catalog_default.json": {"tokens": 51_000, "tokens_without_output_schemas": 42_500},
+    "catalog_all_optional.json": {"tokens": 83_000, "tokens_without_output_schemas": 66_000},
 }
 
 

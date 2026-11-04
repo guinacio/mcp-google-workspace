@@ -14,8 +14,181 @@ schema, and API plumbing parameters are gone. Every response is normalized
 into one envelope (snake_case, local times, compact resource handles, one list
 shape), and Docs and Drive files can be read as text. The default catalog
 shrinks from about 89,000 to about 67,000 estimated tokens (characters / 4;
-75,444 to 58,746 with the cl100k tokenizer). Tool names, results and behaviour
-are unchanged except where listed under Breaking changes.
+75,444 to 58,746 with the cl100k tokenizer), and the tool consolidation below
+takes it to about 47,000 (40,892). Tool names, results and behaviour are
+unchanged except where listed under Tool consolidation and Breaking changes.
+
+### Tool consolidation and tiers
+
+The catalog is consolidated around tasks instead of Google API methods: the
+default catalog goes from 142 tools to 82 (80 for the model plus the two
+app-only upload callbacks), Gmail from 44 tools to 16 (19 with the extended
+tier). Merged tools take the union of their predecessors' parameters, typed,
+and return the same envelope shapes. Retired names are removed outright: they
+are absent from `tools/list` and a call to one is the normal unknown-tool
+error. Confirmations, prepare/commit thresholds and every other gate are
+unchanged: each merged tool asks exactly when its predecessor asked, with the
+same confirmation text.
+
+The default catalog shrinks from about 67,000 to about 47,000 estimated
+tokens (characters / 4; 58,746 to 40,892 with the cl100k tokenizer).
+
+#### Tool tiers
+
+`MCP_TOOL_TIER` selects how much of the catalog a deployment publishes:
+
+- `core` (default): the everyday tools of every core service.
+- `extended`: core plus the raw `docs_batch_update_document`,
+  `sheets_batch_update_spreadsheet`, `slides_batch_update_presentation` and
+  `forms_batch_update_form`, the Gmail settings tools
+  (`gmail_manage_filters`, `gmail_manage_forwarding`,
+  `gmail_manage_vacation`), `drive_update_drive` and
+  `get_mcp_apps_diagnostics` (82 to 91 tools).
+- `complete`: extended plus every optional integration (Apps dashboard,
+  Chat, Keep, Meet, and Gemini when `GEMINI_API_KEY` is set) whose `ENABLE_*`
+  flag is not explicitly `false`.
+
+Tools above the active tier are not registered at all, and
+`prepare_workspace_action` only offers tools of the active tier.
+`get_google_connection_status` reports the active tier under
+`server.tool_tier`. An unknown value fails at startup.
+
+#### Retired tools
+
+| Retired | Replacement | How |
+|---|---|---|
+| `gmail_mark_as_read` | `gmail_modify_messages` | `mark_read: true` |
+| `gmail_mark_as_unread` | `gmail_modify_messages` | `mark_read: false` |
+| `gmail_mark_as_spam` | `gmail_modify_messages` | `spam: true` |
+| `gmail_mark_as_not_spam` | `gmail_modify_messages` | `spam: false` (adds INBOX unless `archive: true`) |
+| `gmail_move_email` | `gmail_modify_messages` | `archive`, `add_labels`, `remove_labels` |
+| `gmail_apply_labels` | `gmail_modify_messages` | `add_labels`, `remove_labels` (names or IDs) |
+| `gmail_batch_modify` | `gmail_modify_messages` | `message_ids` with several IDs |
+| `gmail_modify_thread` | `gmail_modify_messages` | `thread_id` |
+| `gmail_untrash_email` | `gmail_modify_messages` | `untrash: true` |
+| `gmail_untrash_thread` | `gmail_modify_messages` | `thread_id`, `untrash: true` |
+| `gmail_delete_email` | `gmail_delete` | `mode: trash` (default) or `permanent` |
+| `gmail_batch_delete` | `gmail_delete` | `message_ids` with several IDs |
+| `gmail_delete_thread` | `gmail_delete` | `thread_id`, `mode: permanent` |
+| `gmail_trash_thread` | `gmail_delete` | `thread_id` (default `mode: trash`) |
+| `gmail_reply_email` | `gmail_reply` | `reply_all: false` (default) |
+| `gmail_reply_all_email` | `gmail_reply` | `reply_all: true` |
+| `gmail_list_threads` | `gmail_search_emails` | `group_by_thread: true` |
+| `gmail_list_attachments` | `gmail_read_emails` | `attachments[].download_id` |
+| `gmail_create_draft` | `gmail_save_draft` | without `draft_id` |
+| `gmail_update_draft` | `gmail_save_draft` | with `draft_id` |
+| `gmail_get_draft` | `gmail_list_drafts` | `draft_id` |
+| `gmail_create_label` | `gmail_manage_labels` | `action: create` |
+| `gmail_update_label` | `gmail_manage_labels` | `action: update` |
+| `gmail_delete_label` | `gmail_manage_labels` | `action: delete` |
+| `gmail_list_filters` | `gmail_manage_filters` | `action: list` (extended tier) |
+| `gmail_create_filter` | `gmail_manage_filters` | `action: create` (extended tier) |
+| `gmail_delete_filter` | `gmail_manage_filters` | `action: delete` (extended tier) |
+| `gmail_list_forwarding_addresses` | `gmail_manage_forwarding` | `action: list` (extended tier) |
+| `gmail_get_forwarding_address` | `gmail_manage_forwarding` | `action: get` (extended tier) |
+| `gmail_create_forwarding_address` | `gmail_manage_forwarding` | `action: create` (extended tier) |
+| `gmail_delete_forwarding_address` | `gmail_manage_forwarding` | `action: delete` (extended tier) |
+| `gmail_get_vacation_settings` | `gmail_manage_vacation` | `action: get` (extended tier) |
+| `gmail_update_vacation_settings` | `gmail_manage_vacation` | `action: update` (extended tier) |
+| `drive_create_permission` | `drive_share_file` | without `permission_id` |
+| `drive_update_permission` | `drive_share_file` | with `permission_id` |
+| `drive_delete_permission` | `drive_unshare_file` | same arguments |
+| `drive_get_permission` | `drive_list_permissions` | `permission_id` |
+| `drive_get_drive` | `drive_list_drives` | `drive_id` |
+| `drive_hide_drive` | `drive_update_drive` | `hidden: true` (extended tier) |
+| `drive_unhide_drive` | `drive_update_drive` | `hidden: false` (extended tier) |
+| `drive_get_file_content_capabilities` | `drive_get_file` | `is_google_native`, `can_download`, `export_formats` |
+| `drive_update_file_content` | `drive_upload_file` | `file_id` |
+| `drive_create_file_metadata` | `drive_upload_file` | no `local_path`/`uploaded_file` |
+| `drive_export_google_file` | `drive_download_file` | `export_mime_type` (Google files export by default) |
+| `calendar_list_calendars` | `calendar_get_calendar_context` | `calendars` (`include_calendars`, default true) |
+| `calendar_check_time_availability` | `calendar_find_free_time` | `all_free`, `calendars[].busy` |
+| `calendar_find_common_free_slots` | `calendar_find_free_time` | `suggested_slots` |
+| `calendar_add_event_attachment` | `calendar_set_event_attachments` | `add` |
+| `calendar_remove_event_attachment` | `calendar_set_event_attachments` | `remove` |
+| `calendar_download_event_attachment` | `drive_download_file` | the attachment's `file_id` from `calendar_read_events` |
+| `tasks_get_tasklist` | `tasks_list_tasklists` | `tasklist_id` |
+| `tasks_get_task` | `tasks_list_tasks` | `task_id` |
+| `tasks_complete_task` | `tasks_update_task` | `status: completed` (records now unless `completed` is given) |
+| `tasks_move_task` | `tasks_update_task` | `parent`, `previous`, `destination_tasklist_id`, `move_to_top` |
+| `people_list_contacts` | `people_search_contacts` | no `query` |
+| `people_list_contact_groups` | `people_manage_contact_groups` | `action: list` |
+| `people_create_contact_group` | `people_manage_contact_groups` | `action: create` |
+| `people_modify_contact_group_members` | `people_manage_contact_groups` | `action: modify_members` |
+| `docs_get_document` | `docs_read_document` | `format: outline` (`format: raw` is Google's Document) |
+| `sheets_get_sheet_values` | `sheets_read_sheet_values` | `ranges` with one range |
+| `sheets_batch_get_sheet_values` | `sheets_read_sheet_values` | `ranges` |
+| `slides_get_presentation` | `slides_read_presentation` | the outline (default) |
+| `slides_get_slide_page` | `slides_read_presentation` | `slide_ids` |
+| `forms_get_form_response` | `forms_list_form_responses` | `response_id` |
+| `files_file_manager` | `uploads_file_manager` | renamed |
+| `files_list_files` | `uploads_list_files` | one paged listing (`limit`, `cursor`) |
+| `files_list_files_page` | `uploads_list_files` | same parameters |
+| `files_read_file` | `uploads_read_file` | renamed |
+| `files_store_files` | `uploads_store_files` | renamed; app-only callback |
+| `files_delete_file` | `uploads_delete_file` | app-only callback (uploads expire on their own) |
+| `get_workspace_capabilities` | `get_google_connection_status` | `server` |
+| `refresh_workspace_catalog` | `get_google_connection_status` | `granted_capabilities`; list tools again after consent |
+
+#### Changed parameters and results
+
+- **Gmail labels by name.** Every Gmail tool that takes labels
+  (`gmail_search_emails`, `gmail_modify_messages`, `gmail_manage_labels`,
+  `gmail_manage_filters`) accepts label names as shown in Gmail or label
+  IDs. System labels (INBOX, UNREAD, STARRED, SPAM, TRASH, ...) match
+  case-insensitively without a request; other names cost one
+  `users.labels.list` per call. An unknown or ambiguous name fails with
+  `not_found`, the candidate labels in `details.candidates`, and nothing
+  changed; a label is never guessed or created. `gmail_search_emails`
+  `label_ids` is renamed `labels`; filter actions take `add_labels` and
+  `remove_labels`.
+- **`gmail_delete`** defaults to `mode: trash`, so deleting a thread
+  permanently (the old `gmail_delete_thread`) needs `mode: permanent`.
+- **`gmail_list_drafts`** list items are `{id, message_id, thread_id}`;
+  `gmail_save_draft` and `gmail_manage_labels` results gain `status` (and
+  `mode` or `action`).
+- **`calendar_create_event` / `calendar_update_event`**: the raw
+  `conference_data` object becomes `add_meet_link: bool`, and the raw
+  `reminders` object becomes `reminder_minutes: list[int]` (popup reminders;
+  `[]` means none). Email reminders and non-Meet conferencing are no longer
+  expressible.
+- **`calendar_find_free_time`** returns `all_free`, `calendars` (request
+  order, each with `id`, `free`, `busy`, `errors`), `suggested_slots` and
+  `total_suggestions`; every time is in `time_zone` (default the account's),
+  and working hours apply in that zone.
+- **`drive_list_files`** drops `corpora` and `spaces` (all drives are
+  searched, or the one `drive_id` names) and gains `folder_id`, `kind`,
+  `modified_after` and `full_text` filters. Without `drive_id` it now
+  searches shared drives too; before, it searched only the user's corpus.
+- **`drive_upload_file`** with `if_exists: skip` reports `status: ok`,
+  `mode: skipped` and the existing `file` (was `status: skipped`,
+  `existing_file`); new modes `replace` and `metadata_only`.
+- **`drive_download_file`** reports the source `mime_type` and the target
+  `export_mime_type`; `drive_get_file` drops Google's export URL map in
+  favour of `export_formats`.
+- **`docs_read_document`** gains `format: outline` (the former
+  `docs_get_document` result), `include_tabs_content` (default true in every
+  format) and `suggestions_view_mode`.
+- **`sheets_read_sheet_values`** always returns `value_ranges`, one entry per
+  requested range.
+- **`tasks_*`**: `tasklist_id` is optional (the default list) on every task
+  tool.
+- **`uploads_list_files`** is paged and returns `{files, count,
+  next_cursor}` instead of a bare list.
+- **`get_google_connection_status`** gains `server` (tier, namespaces,
+  capabilities, file inputs, tool search); the old catalog-refresh
+  `grant_revision` is gone.
+
+#### Fixed
+
+- The Apps dashboard's calendar picker read Google's raw calendar list
+  (`items`, `summary`) after responses were normalized, so it showed no
+  calendars; it now reads `calendar_get_calendar_context`'s `calendars`.
+- Listing uploads stored in S3 failed validation on the store's own `status`
+  field.
+- `resolve_workspace_resource` is annotated read-only, and
+  `calendar_get_calendar_context` open-world (it always read the account time
+  zone from Google).
 
 ### Breaking changes
 
