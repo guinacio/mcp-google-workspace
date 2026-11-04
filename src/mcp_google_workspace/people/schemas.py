@@ -18,6 +18,7 @@ SortOrder = Literal[
     "FIRST_NAME_ASCENDING",
     "LAST_NAME_ASCENDING",
 ]
+ContactGroupAction = Literal["list", "create", "modify_members"]
 ReadSourceType = Literal[
     "READ_SOURCE_TYPE_CONTACT",
     "READ_SOURCE_TYPE_PROFILE",
@@ -124,5 +125,8 @@ class ModifyContactGroupMembersRequest(ToolRequestModel):
     @model_validator(mode="after")
     def _ensure_changes(self) -> "ModifyContactGroupMembersRequest":
         if not self.resource_names_to_add and not self.resource_names_to_remove:
-            raise ValueError("At least one contact must be added or removed")
+            raise ValueError(
+                "action 'modify_members' requires resource_names_to_add or resource_names_to_remove "
+                "(at least one contact to add or remove)"
+            )
         return self
