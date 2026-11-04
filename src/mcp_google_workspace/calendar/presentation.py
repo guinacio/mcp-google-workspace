@@ -7,6 +7,9 @@ from typing import Any
 
 import pytz
 
+from ..common.resources import clean_web_url
+from ..common.timezone import in_account_timezone
+
 
 def _when(value: dict[str, Any] | None, *, account_timezone: str) -> str | None:
     value = value or {}
@@ -31,14 +34,16 @@ def event_envelope(event: dict[str, Any], *, account_timezone: str) -> dict[str,
         (entry.get("uri") for entry in entry_points if entry.get("entryPointType") in {"video", "more"}), None
     )
     organizer = event.get("organizer", {})
+    scheduled_zone = (event.get("start") or {}).get("timeZone")
     return {
         "id": event.get("id"),
         "title": event.get("summary") or "(untitled event)",
         "start": _when(event.get("start"), account_timezone=account_timezone),
         "end": _when(event.get("end"), account_timezone=account_timezone),
-        "timezone": None if "date" in event.get("start", {}) else account_timezone,
-        "source_start": (event.get("start") or {}).get("dateTime") or (event.get("start") or {}).get("date"),
-        "source_end": (event.get("end") or {}).get("dateTime") or (event.get("end") or {}).get("date"),
+        # The zone the event was scheduled in when it differs from the
+        # account's (a flight booked in another city); start and end are
+        # always converted to the account zone.
+        "event_timezone": scheduled_zone if scheduled_zone != account_timezone else None,
         "all_day": "date" in event.get("start", {}),
         "status": event.get("status"),
         "organizer": {"name": organizer.get("displayName"), "email": organizer.get("email")},
@@ -48,5 +53,99 @@ def event_envelope(event: dict[str, Any], *, account_timezone: str) -> dict[str,
         "meeting_url": meeting_url,
         "location": event.get("location"),
         "is_recurring": bool(event.get("recurringEventId") or event.get("recurrence")),
-        "updated_at": event.get("updated"),
+        "updated_at": in_account_timezone(event.get("updated"), account_timezone),
+    }
+
+
+def _attendee(attendee: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": attendee.get("displayName"),
+        "email": attendee.get("email"),
+        "response_status": attendee.get("responseStatus"),
+        "optional": bool(attendee.get("optional", False)),
+        "organizer": bool(attendee.get("organizer", False)),
+        "is_self": bool(attendee.get("self", False)),
+        "is_resource": bool(attendee.get("resource", False)),
+    }
+
+
+def _attachment(attachment: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "title": attachment.get("title"),
+        "file_url": attachment.get("fileUrl"),
+        "file_id": attachment.get("fileId"),
+        "mime_type": attachment.get("mimeType"),
+    }
+
+
+def event_detail(event: dict[str, Any], *, account_timezone: str) -> dict[str, Any]:
+    """The compact envelope plus what reading or changing one event needs."""
+    envelope = event_envelope(event, account_timezone=account_timezone)
+    return {
+        **envelope,
+        "url": clean_web_url(event.get("htmlLink")),
+        "description": event.get("description"),
+        "attendees": [_attendee(attendee) for attendee in event.get("attendees", [])],
+        "attachments": [_attachment(attachment) for attachment in event.get("attachments", [])],
+        "recurrence": event.get("recurrence", []),
+        "recurring_event_id": event.get("recurringEventId"),
+        "visibility": event.get("visibility"),
+        "transparency": event.get("transparency"),
+    }
+
+
+def calendar_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """One calendarList entry: what selecting a calendar_id needs."""
+    return {
+        "id": entry.get("id"),
+        "name": entry.get("summaryOverride") or entry.get("summary"),
+        "description": entry.get("description") or None,
+        "primary": bool(entry.get("primary", False)),
+        "access_role": entry.get("accessRole"),
+        "time_zone": entry.get("timeZone"),
+        "hidden": bool(entry.get("hidden", False)),
+    }
+
+
+def free_busy(
+    response: dict[str, Any], *, requested_ids: list[str], account_timezone: str
+) -> dict[str, Any]:
+    """Google's free/busy answer as one entry per requested calendar, in request order."""
+    calendars = response.get("calendars", {})
+    entries = []
+    for calendar_id in requested_ids:
+        details = calendars.get(calendar_id, {})
+        busy = [
+            {
+                "start": in_account_timezone(period.get("start"), account_timezone),
+                "end": in_account_timezone(period.get("end"), account_timezone),
+            }
+            for period in details.get("busy", [])
+        ]
+        errors = [str(error.get("reason") or error) for error in details.get("errors", [])]
+        entries.append(
+            {
+                "id": calendar_id,
+                # Unknown when Google could not read the calendar.
+                "free": None if errors else not busy,
+                "busy": busy,
+                "errors": errors,
+            }
+        )
+    return {
+        "time_min": in_account_timezone(response.get("timeMin"), account_timezone),
+        "time_max": in_account_timezone(response.get("timeMax"), account_timezone),
+        "all_free": all(entry["free"] is True for entry in entries),
+        "calendars": entries,
+        "account_timezone": account_timezone,
+    }
+
+
+def calendars_page(payload: dict[str, Any]) -> dict[str, Any]:
+    """calendarList.list as one page of calendar entries."""
+    calendars = [calendar_entry(entry) for entry in payload.get("items", [])]
+    return {
+        "calendars": calendars,
+        "count": len(calendars),
+        "next_page_token": payload.get("nextPageToken"),
     }

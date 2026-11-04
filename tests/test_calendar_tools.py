@@ -134,7 +134,12 @@ def test_read_events_batches_details_and_isolates_missing_ids(monkeypatch) -> No
     assert result["missing_event_ids"] == ["missing"]
     assert result["missing_count"] == 1
     assert result["events"][0]["id"] == "event-1"
-    assert result["events"][0]["attachments"][0]["fileId"] == "file-1"
+    assert result["events"][0]["attachments"][0] == {
+        "title": "Agenda",
+        "file_url": None,
+        "file_id": "file-1",
+        "mime_type": None,
+    }
 
 
 def test_respond_to_event_updates_only_authenticated_attendee(monkeypatch) -> None:
@@ -152,8 +157,12 @@ def test_respond_to_event_updates_only_authenticated_attendee(monkeypatch) -> No
         patched_bodies.append(request.body or {})
         return {"id": request.event_id, **(request.body or {})}
 
+    async def fake_timezone() -> str:
+        return "UTC"
+
     monkeypatch.setattr(calendar_tools, "build_calendar_service", _CalendarService)
     monkeypatch.setattr(calendar_tools, "execute_google_request", fake_execute)
+    monkeypatch.setattr(calendar_tools, "resolve_user_timezone", fake_timezone)
 
     async def scenario() -> dict:
         async with Client(calendar_mcp) as client:
@@ -165,8 +174,9 @@ def test_respond_to_event_updates_only_authenticated_attendee(monkeypatch) -> No
 
     result = asyncio.run(scenario())
 
-    assert result["success"] is True
+    assert result["status"] == "ok"
     assert result["response_status"] == "accepted"
+    assert result["event"]["my_response"] == "accepted"
     assert patched_bodies[0]["attendees"] == [
         {"email": "me@example.com", "self": True, "responseStatus": "accepted"},
         {"email": "other@example.com", "responseStatus": "accepted"},
@@ -286,7 +296,7 @@ def test_create_event_reports_a_failed_conflict_check_instead_of_hiding_it(monke
     assert result.is_error is False, result.content
     assert len(inserted) == 1
     payload = result.structured_content
-    assert payload["success"] is True
+    assert payload["status"] == "ok"
     assert payload["warnings"] == ["Could not check for conflicts: freebusy down"]
 
 
@@ -295,7 +305,7 @@ def test_create_event_without_conflict_has_no_warnings(monkeypatch) -> None:
 
     assert result.is_error is False
     assert len(inserted) == 1
-    assert "warnings" not in result.structured_content
+    assert result.structured_content["warnings"] == []
 
 
 class _DigestEvents:

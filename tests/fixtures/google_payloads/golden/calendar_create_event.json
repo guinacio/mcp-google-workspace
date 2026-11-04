@@ -1,0 +1,66 @@
+{
+  "deduplicated": false,
+  "event": {
+    "all_day": false,
+    "attachments": [],
+    "attendee_count": 3,
+    "attendees": [
+      {
+        "email": "bruno@example.com",
+        "is_resource": false,
+        "is_self": false,
+        "name": "Bruno Costa",
+        "optional": false,
+        "organizer": true,
+        "response_status": "accepted"
+      },
+      {
+        "email": "ana@example.com",
+        "is_resource": false,
+        "is_self": true,
+        "name": null,
+        "optional": false,
+        "organizer": false,
+        "response_status": "needsAction"
+      },
+      {
+        "email": "carla@example.org",
+        "is_resource": false,
+        "is_self": false,
+        "name": null,
+        "optional": true,
+        "organizer": false,
+        "response_status": "tentative"
+      }
+    ],
+    "description": "Budget, hiring plan, launch dates.",
+    "end": "2026-11-05T11:00:00-03:00",
+    "event_timezone": null,
+    "id": "4m2k9qexample0review",
+    "is_recurring": false,
+    "location": "Room 4",
+    "meeting_url": "https://meet.google.com/abc-defg-hij",
+    "my_response": "needsAction",
+    "organizer": {
+      "email": "bruno@example.com",
+      "name": "Bruno Costa"
+    },
+    "recurrence": [],
+    "recurring_event_id": null,
+    "requires_response": true,
+    "resource": {
+      "id": "4m2k9qexample0review",
+      "kind": "calendar_event",
+      "uri": "gcal-event:///4m2k9qexample0review"
+    },
+    "start": "2026-11-05T10:00:00-03:00",
+    "status": "confirmed",
+    "title": "Quarterly review",
+    "transparency": null,
+    "updated_at": "2026-11-02T06:14:03.512000-03:00",
+    "url": "https://www.google.com/calendar/event?eid=NG0yazlxZXhhbXBsZTByZXZpZXcgYW5hQGV4YW1wbGUuY29t",
+    "visibility": null
+  },
+  "status": "ok",
+  "warnings": []
+}
