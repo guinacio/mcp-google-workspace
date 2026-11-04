@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import Field
 
+from ..common.parameter_descriptions import SHARED_PARAMETER_DESCRIPTIONS
 from ..common.request_model import ToolRequestModel
 
 _SPACE_NAME = "Meet space resource name 'spaces/abc123' or the bare space ID, from meet_create_space."
@@ -14,7 +15,7 @@ _RECORD_NAME = (
     "meet_list_conference_records."
 )
 _PAGE_SIZE = "Maximum number of results to return in one page, from 1 to 100."
-_PAGE_TOKEN = "The next_page_token from the previous response of this same call; omit for the first page."
+_PAGE_TOKEN = SHARED_PARAMETER_DESCRIPTIONS["page_token"]
 
 
 class CreateSpaceRequest(ToolRequestModel):
