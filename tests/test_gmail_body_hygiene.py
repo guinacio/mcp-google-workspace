@@ -312,6 +312,8 @@ def test_link_urls_are_kept_once_and_never_hidden_behind_lookalike_text() -> Non
     assert repeated == "One (https://e.com/x) Two"
     assert html_to_text('<a href="javascript:alert(1)">Run</a> <a href="#top">Top</a>') == "Run Top"
     assert html_to_text('<a href="https://e.com/logo"><img src="logo.png" alt="Logo"></a>') == ""
+    padded = html_to_text('<a href="https://evil.example.net">' + "<span> </span>" * 80 + "Your bank</a>")
+    assert padded == "Your bank (https://evil.example.net)"
 
 
 def test_hostile_markup_is_converted_in_linear_time() -> None:
@@ -321,6 +323,7 @@ def test_hostile_markup_is_converted_in_linear_time() -> None:
     html_to_text("<div>" * 60_000 + "</span>" * 60_000 + "x")
     html_to_text("<div> </div>" * 60_000)
     html_to_text('<a href="https://e.com/x">t' * 30_000)
+    html_to_text("<a href='https://e.com/y'>" * 30_000 + "t" * 10 + "</a>" * 30_000)
     html_to_text("<head>" + "<meta>" * 60_000 + "<p>x")
     clean_body("hi\n" + "Sent from my phone\n" * 30_000 + "end")
     # Quadratic handling of any of these takes minutes; linear takes well under a second.

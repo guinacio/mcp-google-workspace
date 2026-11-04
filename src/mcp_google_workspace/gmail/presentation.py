@@ -172,13 +172,13 @@ class _HTMLText(HTMLParser):
         url = _bare_link(frame.href)
         if not _LINK_SCHEME.match(url) or url in self.links_seen:
             return
-        label_chunks = self.chunks[frame.link_start :]
-        if not "".join(label_chunks[:_LINK_LABEL_CHUNKS]).strip():
-            return  # an image or empty link: nothing to attach the URL to
-        # The URL is left out only when the text is exactly that URL; any other
-        # text, including text that merely contains it, shows the destination.
-        if len(label_chunks) <= _LINK_LABEL_CHUNKS:
-            label = re.sub(r"\s+", "", "".join(label_chunks))
+        # Only a short link text is inspected; a longer one always shows the URL.
+        if len(self.chunks) - frame.link_start <= _LINK_LABEL_CHUNKS:
+            label = re.sub(r"\s+", "", "".join(self.chunks[frame.link_start :]))
+            if not label:
+                return  # an image or empty link: nothing to attach the URL to
+            # The URL is left out only when the text is exactly that URL; any other
+            # text, including text that merely contains it, shows the destination.
             if _comparable_link(label) == _comparable_link(url):
                 return
         self.links_seen.add(url)
