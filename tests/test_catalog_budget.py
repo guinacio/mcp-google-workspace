@@ -6,6 +6,12 @@ them equal to the live catalog) with the chars/4 estimate documented in
 2.0.0 catalog, so ordinary edits pass and a change that grows the catalog
 noticeably has to raise a ceiling here, in review.
 
+2.0.0 after the consent model (estimated tokens; -287 default): the
+model-settable safety flags are gone, dry_run is new on the bulk and raw
+batch-update tools, prepare_workspace_action drops its tool_name enum, and
+descriptions say which calls ask:
+    default       46,359; without output schemas 38,498
+    all optional  75,404; without output schemas 59,979
 2.0.0 measurement (estimated tokens; cl100k in parentheses), after the tool
 consolidation: 142 default tools become 82 in the core tier (80 for the model
 plus the two app-only upload callbacks); the all-optional snapshot is the
