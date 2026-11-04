@@ -9,17 +9,16 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
-from ...common.confirmation import confirm_destructive_action
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
-from ..mime_utils import build_email_message, email_to_gmail_raw
+from ..mime_utils import build_email_message, decode_rfc2047, email_to_gmail_raw
 from ..helpers import (
     ATTACHMENTS_DESCRIPTION,
     HTML_BODY_DESCRIPTION,
     TEXT_BODY_DESCRIPTION,
     recipient_set,
 )
-from ..presentation import clean_message_content, clean_snippet
+from ..presentation import clean_message_content, clean_snippet, header_map
 from ..schemas import (
     AttachmentInput,
     CreateDraftRequest,
@@ -40,6 +39,26 @@ _DRAFT_THREAD_ID = (
 _SAVE_ATTACHMENTS = (
     ATTACHMENTS_DESCRIPTION + " When rewriting a draft, attachments already on it are dropped unless passed again."
 )
+
+
+async def load_draft_headers(draft_id: str) -> dict[str, Any]:
+    """The saved draft's recipients and subject, for the send preview."""
+    from email.utils import getaddresses
+
+    draft = await execute_google_request(
+        gmail_service().users().drafts().get(userId="me", id=draft_id, format="metadata")
+    )
+    headers = header_map(((draft.get("message") or {}).get("payload")) or {})
+
+    def addresses(name: str) -> list[str]:
+        return [address for _, address in getaddresses([headers.get(name, "")]) if address]
+
+    return {
+        "to": addresses("to"),
+        "cc": addresses("cc"),
+        "bcc": addresses("bcc"),
+        "subject": decode_rfc2047(headers.get("subject")) or "(no subject)",
+    }
 
 
 def _build_raw_message_payload(
@@ -260,10 +279,6 @@ def register(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Permanently delete one Gmail draft after asking the user to confirm; it does not go to Trash. To change a draft instead use gmail_save_draft with its draft_id. Returns status 'ok' with the draft_id, or status 'cancelled' if the user declines. Cannot be undone."""
         request = DeleteDraftRequest(draft_id=draft_id)
-        if not await confirm_destructive_action(
-            ctx, "delete_draft", f"Permanently delete Gmail draft {request.draft_id}?"
-        ):
-            return {"status": "cancelled", "draft_id": request.draft_id}
         service = gmail_service()
         LOGGER.debug(f"Deleting Gmail draft {request.draft_id}.")
         await execute_google_request(service.users().drafts().delete(userId="me", id=request.draft_id))
@@ -274,7 +289,7 @@ def register(server: FastMCP) -> None:
         draft_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Send an existing Gmail draft exactly as saved; Gmail removes it from Drafts once sent. Check its content with gmail_list_drafts (draft_id) and change it with gmail_save_draft first; gmail_send_email sends new mail without a draft. Returns status 'sent' with the sent message's message_id, thread_id and label_ids. Sends immediately, with no confirmation step."""
+        """Send an existing Gmail draft exactly as saved; Gmail removes it from Drafts once sent. Check its content with gmail_list_drafts (draft_id) and change it with gmail_save_draft first; gmail_send_email sends new mail without a draft. Returns status 'sent' with the sent message's message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is asked to approve the send first, shown the draft's recipients and subject."""
         request = SendDraftRequest(draft_id=draft_id)
         service = gmail_service()
         LOGGER.debug(f"Sending Gmail draft {request.draft_id}.")

@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import logging
 
+from dataclasses import dataclass
 from email.utils import getaddresses
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ...common.async_ops import execute_google_request
-from ...common.confirmation import confirm_destructive_action
+from ...common.consent import memoized
 from ...common.repeat_safety import note_reconciliation
 from ...common.timezone import resolve_user_timezone
 from ...file_uploads import require_local_filesystem, workspace_file_upload
@@ -27,7 +28,6 @@ from ..mime_utils import (
 from ..helpers import (
     ATTACHMENTS_DESCRIPTION as _ATTACHMENTS,
     HTML_BODY_DESCRIPTION as _HTML_BODY,
-    REPLY_CONFIRM_SEND_DESCRIPTION as _REPLY_CONFIRM_SEND,
     TEXT_BODY_DESCRIPTION as _TEXT_BODY,
     recipient_set,
 )
@@ -145,6 +145,60 @@ def _resolve_reply_recipients(
     return to, cc
 
 
+@dataclass(frozen=True)
+class ReplyContext:
+    """Who a reply goes to and the headers it continues, read from the source message."""
+
+    thread_id: str
+    subject: str
+    to: list[str]
+    cc: list[str]
+    source_message_id: str
+    references: str
+
+
+async def _read_reply_context(message_id: str, reply_all: bool) -> ReplyContext:
+    service = gmail_service()
+    LOGGER.debug(f"Loading Gmail reply context for message {message_id}.")
+    source = await execute_google_request(
+        service.users()
+        .messages()
+        .get(
+            userId="me",
+            id=message_id,
+            format="metadata",
+            metadataHeaders=_REPLY_METADATA_HEADERS,
+        )
+    )
+    thread_id = str(source.get("threadId") or "")
+    if not thread_id:
+        raise ValueError("The source email has no Gmail thread ID and cannot be replied to.")
+    headers = header_map(source.get("payload", {}))
+    source_message_id = _normalize_message_id(headers.get("message-id", ""))
+    references = _reply_references(headers.get("references", ""), source_message_id)
+    subject = decode_rfc2047(headers.get("subject"))
+
+    profile = await execute_google_request(service.users().getProfile(userId="me"))
+    own_addresses = {str(profile.get("emailAddress") or "")}
+    send_as = await execute_google_request(service.users().settings().sendAs().list(userId="me"))
+    own_addresses.update(
+        str(item.get("sendAsEmail") or "") for item in send_as.get("sendAs", []) if item.get("sendAsEmail")
+    )
+    own_addresses.discard("")
+    to, cc = _resolve_reply_recipients(headers, own_addresses=own_addresses, reply_all=reply_all)
+    return ReplyContext(thread_id, subject, to, cc, source_message_id, references)
+
+
+async def load_reply_context(message_id: str, *, reply_all: bool) -> ReplyContext:
+    """The reply's recipients and headers; read once per call (preview and send share it)."""
+    return cast(
+        ReplyContext,
+        await memoized(
+            ("gmail_reply_context", message_id, reply_all), lambda: _read_reply_context(message_id, reply_all)
+        ),
+    )
+
+
 async def _prepare_attachment_payloads(
     attachments: list[AttachmentInput],
     ctx: Context | None,
@@ -191,39 +245,17 @@ def register(server: FastMCP) -> None:
         text_body: Annotated[str | None, _TEXT_BODY] = None,
         html_body: Annotated[str | None, _HTML_BODY] = None,
         attachments: Annotated[list[AttachmentInput] | None, _ATTACHMENTS] = None,
-        confirm_send: Annotated[
-            bool,
-            (
-                "When true, the user is asked to approve the send (shown To, Subject and the attachment "
-                "count) before anything is sent: declining returns status 'cancelled', and a client that "
-                "cannot ask makes the call fail unsent. Default false sends immediately."
-            ),
-        ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Compose and send a new Gmail message, with a plain-text and/or HTML body and optional attachments. To answer an existing message inside its thread use gmail_reply; to save mail for review instead of sending it, use gmail_save_draft. Returns status 'sent' with the new message_id, thread_id and label_ids, or status 'cancelled' if confirm_send asked and the user declined. Sends immediately unless confirm_send is true, and by default a send to 10 or more recipients in total must first go through prepare_workspace_action."""
+        """Compose and send a new Gmail message, with a plain-text and/or HTML body and optional attachments. To answer an existing message inside its thread use gmail_reply; to save mail for review instead of sending it, use gmail_save_draft. Returns status 'sent' with the new message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is always asked to approve the send first (recipients, subject, the start of the text and the attachment count)."""
         request = SendEmailRequest(
             recipients=recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
             text_body=text_body,
             html_body=html_body,
             attachments=attachments or [],
-            confirm_send=confirm_send,
         )
         service = gmail_service()
-        if request.confirm_send:
-            if not await confirm_destructive_action(
-                ctx,
-                "send_email",
-                (
-                    f"Send email?\n"
-                    f"To: {', '.join(str(v) for v in request.recipients.to)}\n"
-                    f"Subject: {request.subject}\n"
-                    f"Attachments: {len(request.attachments)}"
-                ),
-                explicit_confirm_field=True,
-            ):
-                return {"status": "cancelled", "message": "User cancelled send."}
 
         LOGGER.debug("Building MIME email payload.")
         attachment_payloads = await _prepare_attachment_payloads(
@@ -262,63 +294,13 @@ def register(server: FastMCP) -> None:
         text_body: str | None,
         html_body: str | None,
         attachments: list[AttachmentInput],
-        confirm_send: bool,
         reply_all: bool,
         ctx: Context | None,
     ) -> dict[str, Any]:
         service = gmail_service()
-        LOGGER.debug(f"Loading Gmail reply context for message {message_id}.")
-        source = await execute_google_request(
-            service.users()
-            .messages()
-            .get(
-                userId="me",
-                id=message_id,
-                format="metadata",
-                metadataHeaders=_REPLY_METADATA_HEADERS,
-            )
-        )
-        thread_id = str(source.get("threadId") or "")
-        if not thread_id:
-            raise ValueError(
-                "The source email has no Gmail thread ID and cannot be replied to."
-            )
-        headers = header_map(source.get("payload", {}))
-        source_message_id = _normalize_message_id(headers.get("message-id", ""))
-        references = _reply_references(headers.get("references", ""), source_message_id)
-        subject = decode_rfc2047(headers.get("subject"))
-
-        profile = await execute_google_request(service.users().getProfile(userId="me"))
-        own_addresses = {str(profile.get("emailAddress") or "")}
-        send_as = await execute_google_request(
-            service.users().settings().sendAs().list(userId="me")
-        )
-        own_addresses.update(
-            str(item.get("sendAsEmail") or "")
-            for item in send_as.get("sendAs", [])
-            if item.get("sendAsEmail")
-        )
-        own_addresses.discard("")
-        to, cc = _resolve_reply_recipients(
-            headers,
-            own_addresses=own_addresses,
-            reply_all=reply_all,
-        )
-
-        if confirm_send:
-            if not await confirm_destructive_action(
-                ctx,
-                "reply_all_email" if reply_all else "reply_email",
-                (
-                    f"{'Reply all' if reply_all else 'Reply'} to email?\n"
-                    f"To: {', '.join(to)}\n"
-                    f"Cc: {', '.join(cc) or '(none)'}\n"
-                    f"Subject: {subject}\n"
-                    f"Attachments: {len(attachments)}"
-                ),
-                explicit_confirm_field=True,
-            ):
-                return {"status": "cancelled", "message": "User cancelled reply."}
+        context = await load_reply_context(message_id, reply_all=reply_all)
+        thread_id, subject, to, cc = context.thread_id, context.subject, context.to, context.cc
+        source_message_id, references = context.source_message_id, context.references
 
         attachment_payloads = await _prepare_attachment_payloads(attachments, ctx)
         email_message = build_email_message(
@@ -374,16 +356,14 @@ def register(server: FastMCP) -> None:
         text_body: Annotated[str | None, _TEXT_BODY] = None,
         html_body: Annotated[str | None, _HTML_BODY] = None,
         attachments: Annotated[list[AttachmentInput] | None, _ATTACHMENTS] = None,
-        confirm_send: Annotated[bool, _REPLY_CONFIRM_SEND] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Reply to one Gmail message inside its existing thread, to the sender only or with reply_all to everyone on it: the subject is reused and In-Reply-To and References point at that message, leaving out the account's own and send-as addresses (on your own sent mail the original recipients are kept). gmail_send_email starts a new conversation instead, and gmail_save_draft saves mail for review without sending. Returns status 'sent' with mode ('reply' or 'reply_all'), the new message_id, thread_id, to, cc and subject. Sends immediately unless confirm_send is true, which asks the user first and returns status 'cancelled' if declined."""
+        """Reply to one Gmail message inside its existing thread, to the sender only or with reply_all to everyone on it: the subject is reused and In-Reply-To and References point at that message, leaving out the account's own and send-as addresses (on your own sent mail the original recipients are kept). gmail_send_email starts a new conversation instead, and gmail_save_draft saves mail for review without sending. Returns status 'sent' with mode ('reply' or 'reply_all'), the new message_id, thread_id, to, cc and subject, or status 'cancelled' if the user declines. The user is always asked to approve the reply first, with its recipients."""
         sent = await _send_reply(
             message_id=message_id,
             text_body=text_body,
             html_body=html_body,
             attachments=attachments or [],
-            confirm_send=confirm_send,
             reply_all=reply_all,
             ctx=ctx,
         )

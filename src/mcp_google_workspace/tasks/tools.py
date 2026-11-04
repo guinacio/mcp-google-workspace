@@ -8,7 +8,6 @@ from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
-from ..common.confirmation import confirm_destructive_action
 from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone, user_now
 from .client import tasks_service
@@ -339,7 +338,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = None,
         deleted: Annotated[
-            bool | None, "True flags the task as deleted (it then lists only with show_deleted); false clears the flag."
+            bool | None, "True flags the task as deleted (it then lists only with show_deleted), after the user confirms, like tasks_delete_task; false clears the flag."
         ] = None,
         hidden: Annotated[
             bool | None, "Sets the hidden flag (true for completed tasks cleared from the list); Google documents it as read-only, so it may be ignored."
@@ -372,8 +371,9 @@ def register_tools(server: FastMCP) -> None:
                 "with parent, previous or destination_tasklist_id."
             ),
         ] = False,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Change an existing task: edit its fields, mark it done (status 'completed') or reopen it, move it within its list (parent, previous, move_to_top) or to another list (destination_tasklist_id). Only what you pass changes and at least one change is required; a move runs first, then the field changes on the list the task ends up in. Returns status 'ok' and task, shaped as in tasks_list_tasks: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url."""
+        """Change an existing task: edit its fields, mark it done (status 'completed') or reopen it, move it within its list (parent, previous, move_to_top) or to another list (destination_tasklist_id). Only what you pass changes and at least one change is required; a move runs first, then the field changes on the list the task ends up in. Returns status 'ok' and task, shaped as in tasks_list_tasks: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url. Flagging the task deleted asks the user to confirm first."""
         timezone_name = await resolve_user_timezone()
         list_id = tasklist_id or DEFAULT_TASKLIST
         request = UpdateTaskRequest(
@@ -416,16 +416,8 @@ def register_tools(server: FastMCP) -> None:
         tasklist_id: Annotated[str | None, _LIST_TASKLIST_ID] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a task from its task list (the default list when tasklist_id is omitted) after the user confirms. To only mark it done use tasks_update_task with status 'completed'. Returns status 'deleted' with task_id and tasklist_id; declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted."""
+        """Delete a task from its task list (the default list when tasklist_id is omitted) after the user confirms. To only mark it done use tasks_update_task with status 'completed'. Returns status 'deleted' with task_id and tasklist_id; declining returns status 'cancelled' with nothing deleted."""
         request = DeleteTaskRequest(tasklist_id=tasklist_id or DEFAULT_TASKLIST, task_id=task_id)
-        if not await confirm_destructive_action(
-            ctx, "delete_task", f"Permanently delete task {request.task_id}?"
-        ):
-            return {
-                "status": "cancelled",
-                "task_id": request.task_id,
-                "tasklist_id": request.tasklist_id,
-            }
         try:
             return await run_blocking(delete_task_payload, request)
         except HttpError as exc:

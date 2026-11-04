@@ -60,6 +60,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "tests") not in sys.path:
     sys.path.insert(0, str(ROOT / "tests"))
 
+from consent_testing import asks, classify_tools  # noqa: E402
 from contracts.confirmation_sites import OPTIONAL_FLAGS, GoogleRecorder, answer, mutations  # noqa: E402
 
 
@@ -87,7 +88,11 @@ def _context(name: str) -> MiddlewareContext[mt.CallToolRequestParams]:
 
 
 @pytest.fixture(autouse=True)
-def fresh_confirmation_state() -> Iterator[OperationStore]:
+def fresh_confirmation_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[OperationStore]:
+    # prepare_action runs its call through the root server, whose admission
+    # refuses work while an earlier in-process client left it draining.
+    monkeypatch.setattr(RUNTIME_STATE, "draining", False)
+    monkeypatch.setenv("MCP_RATE_LIMIT_PER_MINUTE", "100000")
     reset_confirmation_keys()
     store = memory_operation_store()
     set_operation_store(store)
@@ -294,7 +299,6 @@ _BULK_SEND = {
     "subject": "Announcement",
     "to": [f"person-{index}@example.com" for index in range(10)],
     "text_body": "Hello",
-    "confirm_send": True,
 }
 
 
@@ -415,7 +419,7 @@ def test_commit_failure_is_settled_from_what_reached_google(
         raise McpError(code=-32000, message="failed", data={"code": code})
 
     async def exercise() -> tuple[str, str | None]:
-        prepared = await prepare_action("gmail_modify_messages", {"message_ids": ["m"] * 10})
+        prepared = await prepare_action("gmail_modify_messages", {"message_ids": [f"m{index}" for index in range(10)], "mark_read": True})
         token = str(prepared["commit_token"])
         tool = await server_module.workspace_mcp.get_tool("commit_workspace_action")
         assert getattr(tool.fn, "_workspace_confirmation_guard", False) is True
@@ -442,12 +446,12 @@ def test_operation_claims_are_exclusive_releasable_and_never_consumed(fresh_conf
     store = fresh_confirmation_state
 
     async def exercise() -> list[str]:
-        token = str((await prepare_action("gmail_modify_messages", {"message_ids": ["m"] * 10}))["commit_token"])
+        token = str((await prepare_action("gmail_modify_messages", {"message_ids": [f"m{index}" for index in range(10)], "mark_read": True}))["commit_token"])
         key = operation_key(current_principal().storage_key, token)
         first = await store.claim(key, kind="commit", ref="r")
         second = await store.claim(key, kind="commit", ref="r")
         assert first.handle is not None and first.record is not None
-        assert first.record["arguments"] == {"message_ids": ["m"] * 10}
+        assert first.record["arguments"] == {"message_ids": [f"m{index}" for index in range(10)], "mark_read": True}
         await store.release(first.handle)
         third = await store.claim(key, kind="commit", ref="r")
         assert third.handle is not None
@@ -465,14 +469,14 @@ def test_operation_claims_are_exclusive_releasable_and_never_consumed(fresh_conf
 # ---------------------------------------------------------------------------
 
 
-def _tasked_server(mutated: list[str]) -> FastMCP:
+def _tasked_server(mutated: list[str], monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     server = FastMCP(name="tasked-confirmation")
     install_tasks_extension(server)
+    classify_tools(monkeypatch, {"purge_thing": asks("purge_thing", lambda arguments: f"Purge {arguments['thing_id']}?")})
 
     @server.tool(name="purge_thing", task=True)
     async def purge_thing(thing_id: str, ctx: Context) -> dict[str, Any]:
-        if not await confirm_destructive_action(ctx, "purge_thing", f"Purge {thing_id}?"):
-            return {"status": "cancelled"}
+        # The consent gate asks before this body runs.
         mutated.append(thing_id)
         return {"status": "purged", "thing_id": thing_id}
 
@@ -481,11 +485,13 @@ def _tasked_server(mutated: list[str]) -> FastMCP:
 
 
 @pytest.mark.parametrize(("accept", "expected"), [(True, "purged"), (False, "cancelled")])
-def test_tasked_tool_parks_for_input_and_resumes_via_tasks_update(accept: bool, expected: str) -> None:
+def test_tasked_tool_parks_for_input_and_resumes_via_tasks_update(
+    accept: bool, expected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """FastMCP 4.0.10 supports the guard pattern in tasks: input_required -> tasks/update."""
     mutated: list[str] = []
     prompts: list[str] = []
-    server = _tasked_server(mutated)
+    server = _tasked_server(mutated, monkeypatch)
 
     async def handler(message: str, _type: Any, params: Any, _context: Any) -> Any:
         prompts.append(message)

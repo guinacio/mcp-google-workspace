@@ -9,7 +9,7 @@ import secrets
 import requests
 from typing import Annotated, Any, Literal, get_args
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from starlette.requests import Request
@@ -194,9 +194,7 @@ def google_connection_status(
     }
 
 
-def disconnect_google_account(*, confirm: bool) -> dict[str, Any]:
-    if not confirm:
-        return {"status": "confirmation_required", "action": "Call again with confirm=true."}
+def disconnect_google_account() -> dict[str, Any]:
     principal = current_principal()
     store = get_token_store()
     credentials_json = store.load_credentials_json(principal)
@@ -315,20 +313,12 @@ def register_connection_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="disconnect_google_workspace")
-    async def disconnect_google_workspace_tool(
-        confirm: Annotated[
-            bool,
-            (
-                "Must be true to disconnect; false (the default) changes nothing and returns "
-                "status 'confirmation_required'."
-            ),
-        ] = False,
-    ) -> dict[str, Any]:
+    async def disconnect_google_workspace_tool(ctx: Context | None = None) -> dict[str, Any]:
         """Disconnect the calling user's Google account: revoke the grant at Google and delete this user's stored
-        credentials; other users' connections are untouched. Without confirm=true nothing happens. Returns status
-        'disconnected' with grant_revoked and revocation_error; the stored credentials are deleted even when revocation
-        fails. Reconnect later with connect_google_workspace."""
-        return await run_blocking(disconnect_google_account, confirm=confirm)
+        credentials; other users' connections are untouched. The user is asked to confirm first, and the call returns
+        status 'cancelled' if declined. Returns status 'disconnected' with grant_revoked and revocation_error; the
+        stored credentials are deleted even when revocation fails. Reconnect later with connect_google_workspace."""
+        return await run_blocking(disconnect_google_account)
 
 
 #: Authorization-response issuers accepted from Google (RFC 9207). Google is

@@ -18,7 +18,6 @@ from ..common.async_ops import (
     execute_google_request,
     run_blocking,
 )
-from ..common.confirmation import confirm_destructive_action
 from ..common.errors import RecoverableToolError
 from .presentation import (
     calendar_entry,
@@ -818,7 +817,7 @@ def register_tools(server: FastMCP) -> None:
         ] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_free_time first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees, attachments, recurrence and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. Guests receive invitations only as send_updates says."""
+        """Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_free_time first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. An event with guests asks the user to confirm first; they are emailed only as send_updates says."""
         request = CreateEventRequest(
             calendar_id=calendar_id,
             idempotency_key=idempotency_key,
@@ -1036,8 +1035,8 @@ def register_tools(server: FastMCP) -> None:
             list[str] | None,
             (
                 "New RFC 5545 recurrence lines replacing the old ones, e.g. "
-                "['RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10']. Passing it, even as an empty list, "
-                "requires prepare_workspace_action and commit_workspace_action."
+                "['RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10']. Passing it, even as an empty list, asks the "
+                "user to confirm first, because it changes every occurrence."
             ),
         ] = None,
         send_updates: Annotated[
@@ -1059,7 +1058,7 @@ def register_tools(server: FastMCP) -> None:
         ] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Passing recurrence fails with prepare_required until the call goes through prepare_workspace_action and commit_workspace_action. Returns status 'ok', event (the updated event in the calendar_read_events shape, times in timezone or else the account's zone) and warnings, non-empty when the conflict check could not run; guests are notified as send_updates says."""
+        """Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Changing the guest list or recurrence, or a send_updates that emails guests, asks the user to confirm first. Returns status 'ok', event (the updated event in the calendar_read_events shape, times in timezone or else the account's zone) and warnings, non-empty when the conflict check could not run; guests are notified as send_updates says."""
         request = UpdateEventRequest(
             event_id=event_id,
             calendar_id=calendar_id,
@@ -1237,7 +1236,7 @@ def register_tools(server: FastMCP) -> None:
         send_updates: SendUpdates | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Add files to and remove files from an existing event's attachments in one change, keeping the others; give add, remove or both. To replace the whole list use calendar_update_event, and to save an attached file use drive_download_file with its file_id. Returns status 'ok', event (the updated event in the calendar_read_events shape), added_count and removed_count (0 when nothing matched). When remove is given the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed."""
+        """Add files to and remove files from an existing event's attachments in one change, keeping the others; give add, remove or both. To replace the whole list use calendar_update_event, and to save an attached file use drive_download_file with its file_id. Returns status 'ok', event (the updated event in the calendar_read_events shape), added_count and removed_count (0 when nothing matched). Removing attachments, or a send_updates that emails guests, asks the user to confirm first; declining returns status 'cancelled' with nothing changed."""
         request = SetEventAttachmentsRequest(
             calendar_id=calendar_id,
             event_id=event_id,
@@ -1246,12 +1245,6 @@ def register_tools(server: FastMCP) -> None:
             send_updates=send_updates,
         )
         service = build_calendar_service()
-        if request.remove and not await confirm_destructive_action(
-            ctx,
-            "remove_event_attachment",
-            f"Remove the selected attachment from event {request.event_id}?",
-        ):
-            return {"status": "cancelled", "event_id": request.event_id}
         LOGGER.debug(f"Setting attachments on event {request.event_id}.")
         event = await execute_google_request(
             service.events()
@@ -1307,30 +1300,14 @@ def register_tools(server: FastMCP) -> None:
         ],
         calendar_id: str = "primary",
         send_updates: SendUpdates | None = None,
-        force: Annotated[
-            bool,
-            (
-                "Skip the interactive confirmation when true. Default false: the deletion "
-                "is confirmed with the user first (clients that cannot confirm get a "
-                "confirmation_required error and nothing is deleted)."
-            ),
-        ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete an event from a calendar. Unless force is true the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted. Returns status 'ok' and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says."""
+        """Delete an event from a calendar. The user is asked to confirm first, and declining returns status 'cancelled' with nothing deleted. Returns status 'ok' and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says."""
         request = DeleteEventRequest(
             calendar_id=calendar_id,
             event_id=event_id,
             send_updates=send_updates,
-            force=force,
         )
-        if not request.force:
-            if not await confirm_destructive_action(
-                ctx,
-                "delete_event",
-                f"Delete event {request.event_id} from calendar {request.calendar_id}?",
-            ):
-                return {"status": "cancelled"}
         service = build_calendar_service()
         await execute_google_request(
             service.events().delete(

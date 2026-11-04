@@ -6,6 +6,7 @@ from typing import Any
 import anyio
 import pytest
 
+from consent_testing import answer_consent, gated_tools
 from mcp_google_workspace.drive.tools import permissions as drive_permissions
 from mcp_google_workspace.gmail.tools import settings as gmail_settings
 
@@ -48,19 +49,18 @@ def test_get_forwarding_address_action_does_not_request_confirmation(
         assert request["forwardingEmail"] == "forward@example.com"
         return {"forwardingEmail": "forward@example.com", "verificationStatus": "accepted"}
 
-    async def unexpected_confirmation(*args: Any, **kwargs: Any) -> bool:
-        raise AssertionError("A read-only getter must not request confirmation")
-
     monkeypatch.setattr(gmail_settings, "gmail_service", Service)
     monkeypatch.setattr(gmail_settings, "execute_google_request", execute)
-    monkeypatch.setattr(gmail_settings, "confirm_destructive_action", unexpected_confirmation)
+    answers = answer_consent(monkeypatch, True)
+    tools = gated_tools(capture.tools, "gmail")
 
     async def call_get() -> dict[str, Any]:
-        return await capture.tools["manage_forwarding"]("get", "forward@example.com")
+        return await tools["manage_forwarding"]("get", "forward@example.com")
 
     result = anyio.run(call_get)
 
     assert result["forwarding_address"]["verificationStatus"] == "accepted"
+    assert answers.asked == []  # a read-only getter never asks
 
 
 def test_delete_forwarding_address_action_cancellation_skips_google_api(
@@ -68,13 +68,8 @@ def test_delete_forwarding_address_action_cancellation_skips_google_api(
 ) -> None:
     capture = _ToolCapture()
     gmail_settings.register(capture)  # type: ignore[arg-type]
-    confirmation: dict[str, str] = {}
-
-    async def cancel(ctx: Any, action: str, message: str) -> bool:
-        confirmation.update(action=action, message=message)
-        return False
-
-    monkeypatch.setattr(gmail_settings, "confirm_destructive_action", cancel)
+    answers = answer_consent(monkeypatch, False)
+    tools = gated_tools(capture.tools, "gmail")
     monkeypatch.setattr(
         gmail_settings,
         "gmail_service",
@@ -82,15 +77,15 @@ def test_delete_forwarding_address_action_cancellation_skips_google_api(
     )
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools["manage_forwarding"](
-            "delete", "forward@example.com", ctx=object()
-        )
+        return await tools["manage_forwarding"]("delete", "forward@example.com", ctx=None)
 
     result = anyio.run(call_tool)
 
-    assert result == {"status": "cancelled", "action": "delete", "forwarding_email": "forward@example.com"}
-    assert confirmation["action"] == "delete_forwarding_address"
-    assert "forward@example.com" in confirmation["message"]
+    assert result["status"] == "cancelled"
+    assert result["action"] == "delete_forwarding_address"
+    ((action, message),) = answers.asked
+    assert action == "delete_forwarding_address"
+    assert "forward@example.com" in message
 
 
 @pytest.mark.parametrize(
@@ -124,13 +119,9 @@ def test_permission_mutation_cancellation_skips_google_api(
 ) -> None:
     capture = _ToolCapture()
     drive_permissions.register(capture)  # type: ignore[arg-type]
-    confirmations: list[tuple[str, str]] = []
-
-    async def cancel(ctx: Any, action: str, message: str) -> bool:
-        confirmations.append((action, message))
-        return False
-
-    monkeypatch.setattr(drive_permissions, "confirm_destructive_action", cancel)
+    answers = answer_consent(monkeypatch, False)
+    confirmations = answers.asked
+    tools = gated_tools(capture.tools, "drive")
     monkeypatch.setattr(
         drive_permissions,
         "drive_service",
@@ -139,17 +130,18 @@ def test_permission_mutation_cancellation_skips_google_api(
 
     async def call_tool() -> dict[str, Any]:
         # Both grant paths are drive_share_file now; permission_id selects update.
-        return await capture.tools["share_file"](**arguments, ctx=object())
+        return await tools["share_file"](**arguments, ctx=None)
 
     result = anyio.run(call_tool)
 
     assert result["status"] == "cancelled"
-    assert result["file_id"] == "file-1"
+    assert result["action"] == tool_name
     assert confirmations[0][0] == tool_name
     assert "file-1" in confirmations[0][1]
     if tool_name == "create_permission":
-        assert "role owner" in confirmations[0][1]
-        assert "transfer ownership" in confirmations[0][1]
+        assert "with user writer@example.com as owner" in confirmations[0][1]
+        assert "transfers ownership" in confirmations[0][1]
     else:
-        assert "set role to writer" in confirmations[0][1]
-        assert "set file discovery to True" in confirmations[0][1]
+        assert "permission-1" in confirmations[0][1]
+        assert "role writer" in confirmations[0][1]
+        assert "discoverable True" in confirmations[0][1]

@@ -217,14 +217,6 @@ class DeleteEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
     event_id: str = Field(description="Calendar event ID to delete.")
     send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for deletion.")
-    force: bool = Field(
-        default=False,
-        description=(
-            "Skip the interactive confirmation when true. Default false: the deletion "
-            "is confirmed with the user first (clients that cannot confirm get a "
-            "confirmation_required error and nothing is deleted)."
-        ),
-    )
 
 
 class EventAttendeeInput(ToolRequestModel):

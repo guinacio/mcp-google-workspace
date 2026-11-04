@@ -32,6 +32,8 @@ import mcp_google_workspace.gmail.tools.history as gmail_history
 import mcp_google_workspace.gmail.tools.messages as gmail_messages
 import mcp_google_workspace.gmail.tools.search as gmail_search
 
+from consent_testing import answer_consent, gated
+
 
 class _ToolCapture:
     def __init__(self) -> None:
@@ -139,13 +141,31 @@ def test_extract_message_bodies():
     assert "<p>html</p>" in bodies["html"]
 
 
-def test_send_email_defaults_to_no_confirmation():
-    request = SendEmailRequest(
-        recipients={"to": ["a@example.com"]},
-        subject="Test",
+@pytest.mark.parametrize("accepted", [False, True])
+def test_send_email_always_asks_before_sending(monkeypatch, accepted) -> None:
+    """There is no flag to skip the question: every send is previewed and asked first."""
+    assert "confirm_send" not in SendEmailRequest.model_fields
+    service, execute, sent_bodies = _reply_api({"id": "unused", "threadId": "thread-new"})
+    capture = _ToolCapture()
+    gmail_messages.register(capture)  # type: ignore[arg-type]
+    monkeypatch.setattr(gmail_messages, "gmail_service", lambda: service)
+    monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
+    answers = answer_consent(monkeypatch, accepted)
+    send = gated(capture.tools["send_email"], "gmail_send_email")
+
+    result = anyio.run(
+        lambda: send(subject="Test", to=["a@example.com"], text_body="Hello", ctx=None)
     )
 
-    assert request.confirm_send is False
+    assert answers.asked == [
+        (
+            "send_email",
+            "Send this email?\nTo: a@example.com\nCc: (none)\nBcc: (none)\nRecipients: 1 in total\n"
+            "Subject: Test\nText: Hello\nAttachments: 0",
+        )
+    ]
+    assert len(sent_bodies) == (1 if accepted else 0)
+    assert result["status"] == ("sent" if accepted else "cancelled")
 
 
 def test_reply_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> None:
@@ -235,7 +255,7 @@ def test_reply_all_includes_participants_once_and_excludes_self(
 
 
 @pytest.mark.parametrize("reply_all", [False, True])
-def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, reply_all) -> None:
+def test_declined_reply_sends_nothing(monkeypatch, reply_all) -> None:
     source = {
         "id": "source-cancelled",
         "threadId": "thread-cancelled",
@@ -254,34 +274,33 @@ def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, reply_all) -> N
     monkeypatch.setattr(gmail_messages, "gmail_service", lambda: service)
     monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
 
-    class DecliningContext:
-        # Legacy (handshake-era) request from a client that declared
-        # elicitation, where the adapter's imperative branch applies.
-        is_background_task = False
-        request_context = SimpleNamespace(protocol_version="2025-11-25")
-        session = SimpleNamespace(client_capabilities=SimpleNamespace(elicitation=object()))
-
-        async def info(self, _message: str) -> None:
-            return None
-
-        async def elicit(self, *_args, **_kwargs):
-            return SimpleNamespace(action="decline", data=None)
+    answers = answer_consent(monkeypatch, False)
+    reply = gated(capture.tools["reply"], "gmail_reply")
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools["reply"](
+        return await reply(
             "source-cancelled",
             reply_all=reply_all,
             text_body="Thanks for the update.",
-            confirm_send=True,
-            ctx=DecliningContext(),
+            ctx=None,
         )
 
     result = anyio.run(call_tool)
 
-    assert result["status"] == "cancelled"
-    assert result["to"] == []
-    assert result["cc"] == []
-    assert result["label_ids"] == []
+    assert result == {
+        "status": "cancelled",
+        "action": "reply_all_email" if reply_all else "reply_email",
+        "reason": "The user declined; nothing was changed.",
+    }
+    # The preview names the real recipients, read from the source message.
+    assert answers.asked == [
+        (
+            "reply_all_email" if reply_all else "reply_email",
+            f"{'Reply all' if reply_all else 'Reply'} to this email?\nTo: alice@example.com\nCc: (none)\n"
+            "Bcc: (none)\nRecipients: 1 in total\nSubject: Project update\nText: Thanks for the update.\n"
+            "Attachments: 0",
+        )
+    ]
     assert sent_bodies == []
 
 

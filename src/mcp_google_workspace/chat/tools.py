@@ -12,7 +12,6 @@ from ..common.timezone import resolve_user_timezone
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
-from ..common.confirmation import confirm_destructive_action
 from ..common.repeat_safety import generated_request_id
 from .client import chat_service, normalize_message_name, normalize_space_name, normalize_user_name, resolve_space_members
 from .presentation import enrich_messages, space_envelope
@@ -39,7 +38,7 @@ ListMessagesArg = Annotated[ListMessagesRequest, "Space, paging, filter, orderin
 GetMessageArg = Annotated[GetMessageRequest, "Identifies the Chat message to fetch."]
 ListSpaceMembersArg = Annotated[ListSpaceMembersRequest, "Space and paging options for listing the people in one Chat space."]
 CreateMessageArg = Annotated[CreateMessageRequest, "Target space, text and delivery options for a new Chat message."]
-DeleteMessageArg = Annotated[DeleteMessageRequest, "Identifies the Chat message to delete and whether to skip the confirmation prompt."]
+DeleteMessageArg = Annotated[DeleteMessageRequest, "Identifies the Chat message to delete."]
 UpdateMessageArg = Annotated[UpdateMessageRequest, "Identifies the Chat message to edit, its new text and the fields to update."]
 PostSimpleMessageArg = Annotated[PostSimpleMessageRequest, "Target space and text for a plain-text Chat message."]
 ReplyToMessageArg = Annotated[ReplyToMessageRequest, "The message to reply to and the reply text."]
@@ -214,7 +213,7 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="create_message")
     async def create_message(request: CreateMessageArg, ctx: Context) -> dict[str, Any]:
-        """Post a text message to a Chat space, optionally into a thread through thread_key. For a plain post use chat_post_message_simple, and to answer an existing message use chat_reply_to_message. Returns status 'ok' and the created Chat message (name, thread, createTime). The message is visible to the whole space; with notify true the user is asked to confirm first and the call returns status 'cancelled' if declined."""
+        """Post a text message to a Chat space, optionally into a thread through thread_key. For a plain post use chat_post_message_simple, and to answer an existing message use chat_reply_to_message. Returns status 'ok' and the created Chat message (name, thread, createTime). The user is asked to confirm the post first, and the call returns status 'cancelled' if declined; the message is visible to the whole space."""
         service = chat_service()
         parent = normalize_space_name(request.space_name)
         body: dict[str, Any] = {"text": request.text}
@@ -232,28 +231,14 @@ def register_tools(server: FastMCP) -> None:
             "messageReplyOption": request.message_reply_option,
         }
         LOGGER.debug(f"Creating Chat message in {parent}.")
-        if request.notify:
-            if not await confirm_destructive_action(
-                ctx,
-                "create_message",
-                f"Send Chat message to {parent}?",
-            ):
-                return {"status": "cancelled"}
         created = await _execute_message_request(service.spaces().messages().create(**query))
         return {"status": "ok", "message": created}
 
     @server.tool(name="delete_message")
     async def delete_message(request: DeleteMessageArg, ctx: Context) -> dict[str, Any]:
-        """Delete one Chat message by resource name. Unless force is true the user is asked to confirm first, and the call returns status 'cancelled' if declined. Returns status 'ok' with the message_name. Deleting a message cannot be undone."""
+        """Delete one Chat message by resource name. The user is asked to confirm first, and the call returns status 'cancelled' if declined. Returns status 'ok' with the message_name. Deleting a message cannot be undone."""
         service = chat_service()
         name = normalize_message_name(request.message_name)
-        if not request.force:
-            if not await confirm_destructive_action(
-                ctx,
-                "delete_message",
-                f"Delete Chat message {name}?",
-            ):
-                return {"status": "cancelled"}
         await execute_google_request(service.spaces().messages().delete(name=name))
         return {"status": "ok", "message_name": name}
 
@@ -274,16 +259,9 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="post_message_simple")
     async def post_message_simple(request: PostSimpleMessageArg, ctx: Context) -> dict[str, Any]:
-        """Post a simple text message to a Chat space."""
+        """Post a simple text message to a Chat space. The user is asked to confirm the post first, and the call returns status 'cancelled' if declined."""
         service = chat_service()
         parent = normalize_space_name(request.space_name)
-        if request.notify:
-            if not await confirm_destructive_action(
-                ctx,
-                "post_message_simple",
-                f"Send Chat message to {parent}?",
-            ):
-                return {"status": "cancelled"}
         created = await _execute_message_request(
             service.spaces().messages().create(
                 parent=parent,
@@ -295,16 +273,9 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="reply_to_message")
     async def reply_to_message(request: ReplyToMessageArg, ctx: Context) -> dict[str, Any]:
-        """Reply to an existing message, preserving its thread context."""
+        """Reply to an existing message, preserving its thread context. The user is asked to confirm the reply first, and the call returns status 'cancelled' if declined."""
         service = chat_service()
         message_name = normalize_message_name(request.message_name)
-        if request.notify:
-            if not await confirm_destructive_action(
-                ctx,
-                "reply_to_message",
-                f"Reply to Chat message {message_name}?",
-            ):
-                return {"status": "cancelled"}
         source = await execute_google_request(service.spaces().messages().get(name=message_name))
         parent = message_name.split("/messages/", 1)[0]
         body: dict[str, Any] = {"text": request.text}

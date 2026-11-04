@@ -120,13 +120,6 @@ class DeleteFileRequest(ToolRequestModel):
         default="trash",
         description="'trash' moves the file to Drive's trash (restorable); 'permanent' deletes it irreversibly after confirmation.",
     )
-    confirm_permanent: bool = Field(
-        default=True,
-        description=(
-            "Must stay true for delete_mode='permanent' (false is rejected); a permanent "
-            "delete is always confirmed interactively. Ignored for delete_mode='trash'."
-        ),
-    )
 
 
 class DownloadFileRequest(ToolRequestModel):

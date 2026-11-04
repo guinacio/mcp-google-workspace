@@ -13,7 +13,6 @@ from fastmcp import Context, FastMCP
 
 from ...auth.google_auth import LazyGoogleRequest, materialize_google_request
 from ...common.async_ops import execute_google_request, run_blocking
-from ...common.confirmation import confirm_destructive_action
 from ...common.repeat_safety import track_provider_call
 from ...common.timezone import resolve_user_timezone, user_now
 from ...file_uploads import require_local_filesystem, workspace_file_upload
@@ -786,24 +785,16 @@ def register(server: FastMCP) -> None:
         delete_mode: Annotated[
             Literal["trash", "permanent"],
             (
-                "'trash' moves the file to Drive's trash, where it can be restored, with no "
-                "confirmation; 'permanent' deletes it irreversibly after asking the user to confirm."
+                "'trash' moves the file to Drive's trash, where it can be restored; 'permanent' deletes it "
+                "irreversibly after asking the user to confirm."
             ),
         ] = "trash",
-        confirm_permanent: Annotated[
-            bool,
-            (
-                "Must stay true for delete_mode='permanent' (false is rejected); a permanent "
-                "delete is always confirmed interactively. Ignored for delete_mode='trash'."
-            ),
-        ] = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_unshare_file instead. Returns status 'ok' with mode 'trash' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline."""
         request = DeleteFileRequest(
             file_id=file_id,
             delete_mode=delete_mode,
-            confirm_permanent=confirm_permanent,
         )
         service = drive_service()
         if request.delete_mode == "trash":
@@ -817,16 +808,6 @@ def register(server: FastMCP) -> None:
                 )
             )
             return {"status": "ok", "mode": "trash", "file": file_summary(updated)}
-        if not request.confirm_permanent:
-            raise ValueError(
-                "Permanent deletion requires confirm_permanent=true and interactive confirmation."
-            )
-        if not await confirm_destructive_action(
-            ctx,
-            "delete_file",
-            f"Permanently delete Drive file {request.file_id}? This cannot be undone.",
-        ):
-            return {"status": "cancelled", "mode": "permanent"}
         LOGGER.debug(f"Permanently deleting Drive file {request.file_id}.")
         await execute_google_request(
             service.files().delete(

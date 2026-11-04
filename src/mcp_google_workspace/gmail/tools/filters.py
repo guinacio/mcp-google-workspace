@@ -9,7 +9,6 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
-from ...common.confirmation import confirm_destructive_action
 from ..client import gmail_service
 from ..label_resolver import LabelResolver
 from ..schemas import CreateFilterRequest, DeleteFilterRequest, FilterActionInput, FilterCriteriaInput
@@ -38,7 +37,7 @@ def register(server: FastMCP) -> None:
         filter_id: Annotated[str | None, "For delete: the filter's id, as returned by action 'list'."] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List, create or delete Gmail filters, the rules that label, archive, mark read or forward incoming mail as it arrives. A filter acts only on mail that arrives afterwards; to change existing messages use gmail_modify_messages. Returns action with filters and count for list, status 'ok' and filter (including its id) for create, or status 'ok' and filter_id for delete; status 'cancelled' if the user declines a delete. Deleting asks the user to confirm; mail a filter already labeled or moved stays as it is."""
+        """List, create or delete Gmail filters, the rules that label, archive, mark read or forward incoming mail as it arrives. A filter acts only on mail that arrives afterwards; to change existing messages use gmail_modify_messages. Returns action with filters and count for list, status 'ok' and filter (including its id) for create, or status 'ok' and filter_id for delete; status 'cancelled' if the user declines. Deleting, and creating a filter that forwards or trashes mail, asks the user to confirm first; mail a filter already labeled or moved stays as it is."""
         if action == "list":
             LOGGER.debug("Listing Gmail filters.")
             result = await execute_google_request(gmail_service().users().settings().filters().list(userId="me"))
@@ -70,10 +69,6 @@ def register(server: FastMCP) -> None:
         if not filter_id:
             raise ValueError("action 'delete' requires filter_id.")
         delete_request = DeleteFilterRequest(filter_id=filter_id)
-        if not await confirm_destructive_action(
-            ctx, "delete_filter", f"Permanently delete Gmail filter {delete_request.filter_id}?"
-        ):
-            return {"status": "cancelled", "action": action, "filter_id": delete_request.filter_id}
         LOGGER.debug(f"Deleting Gmail filter {delete_request.filter_id}.")
         await execute_google_request(
             gmail_service().users().settings().filters().delete(userId="me", id=delete_request.filter_id)

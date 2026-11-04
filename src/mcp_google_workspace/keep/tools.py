@@ -9,7 +9,6 @@ from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
-from ..common.confirmation import confirm_destructive_action
 from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
 from .client import keep_service, normalize_note_name
@@ -110,17 +109,10 @@ def register_tools(server: FastMCP) -> None:
 
         Keep cannot edit notes afterwards, so to change content use keep_append_note_content or
         keep_patch_note_checklist. Returns status 'ok' with the created note, whose name field
-        ('notes/...') identifies it for later calls. With confirm_create true the user is asked first and the call returns
-        status 'cancelled' if declined. Collaborators are given writer access.
+        ('notes/...') identifies it for later calls. Collaborators are given writer access; sharing with
+        collaborators asks the user to confirm first, and the call returns status 'cancelled' if declined.
         """
         service = keep_service()
-        if request.confirm_create:
-            if not await confirm_destructive_action(
-                ctx,
-                "create_note",
-                f"Create Keep note titled '{request.title or '(untitled)'}'?",
-            ):
-                return {"status": "cancelled"}
 
         note = _build_note_body(request)
         LOGGER.debug("Creating Google Keep note.")
@@ -203,19 +195,11 @@ def register_tools(server: FastMCP) -> None:
     async def delete_note(request: DeleteNoteArg, ctx: Context) -> dict[str, Any]:
         """Permanently delete a Keep note; this cannot be undone.
 
-        Find the note name with keep_list_notes. Returns status 'ok' with the note_name. With
-        confirm_delete true the user is asked first and the call returns status 'cancelled'
-        if declined.
+        Find the note name with keep_list_notes. Returns status 'ok' with the note_name. The user
+        is asked to confirm first, and the call returns status 'cancelled' if declined.
         """
         service = keep_service()
         name = normalize_note_name(request.note_name)
-        if request.confirm_delete:
-            if not await confirm_destructive_action(
-                ctx,
-                "delete_note",
-                f"Permanently delete Keep note {name}? This cannot be undone.",
-            ):
-                return {"status": "cancelled"}
         try:
             await execute_google_request(service.notes().delete(name=name))
         except HttpError as exc:
@@ -509,7 +493,8 @@ def register_tools(server: FastMCP) -> None:
 
         To revoke access use keep_unshare_note. Returns status 'ok' and result, the Keep batch
         response whose permissions list holds one entry per collaborator with the permission
-        name needed for keep_unshare_note.
+        name needed for keep_unshare_note. The user is asked to confirm first, and the call returns
+        status 'cancelled' if declined.
         """
         service = keep_service()
         note_name = normalize_note_name(request.note_name)
@@ -537,6 +522,7 @@ def register_tools(server: FastMCP) -> None:
 
         Permission names come from keep_share_note results. Returns status 'ok' and
         removed_permissions, the names that were removed. The owner's permission cannot be removed.
+        The user is asked to confirm first, and the call returns status 'cancelled' if declined.
         """
         service = keep_service()
         note_name = normalize_note_name(request.note_name)

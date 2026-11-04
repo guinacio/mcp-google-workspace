@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
@@ -141,7 +141,7 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="update_space")
-    def update_space(
+    async def update_space(
         space_name: SpaceNameArg,
         config: Annotated[
             dict[str, Any],
@@ -151,32 +151,35 @@ def register_tools(server: FastMCP) -> None:
             str | None,
             "Comma-separated Space field paths to update, e.g. 'config.accessType,config.moderation'; omit to use 'config'.",
         ] = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Change the configuration of an existing Meet space, such as who can join without knocking.
 
         To read the current settings first use meet_get_space. Returns the updated Space
-        resource, including its config.
+        resource, including its config. Opening a space to anyone with the link (accessType OPEN)
+        asks the user to confirm first.
         """
         try:
-            return update_space_payload(
+            return await run_blocking(
+                update_space_payload,
                 UpdateSpaceRequest(
                     space_name=space_name,
                     config=config,
                     update_mask=update_mask,
-                )
+                ),
             )
         except HttpError as exc:
             raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="end_active_conference")
-    def end_active_conference(space_name: SpaceNameArg) -> dict[str, Any]:
+    async def end_active_conference(space_name: SpaceNameArg, ctx: Context | None = None) -> dict[str, Any]:
         """End the conference currently running in a Meet space, disconnecting every participant.
 
-        The space itself remains and can host a new conference. Returns the Meet API's empty
-        response once the conference has ended.
+        The space itself remains and can host a new conference. The user is asked to confirm
+        first. Returns the Meet API's empty response once the conference has ended.
         """
         try:
-            return end_active_conference_payload(EndActiveConferenceRequest(space_name=space_name))
+            return await run_blocking(end_active_conference_payload, EndActiveConferenceRequest(space_name=space_name))
         except HttpError as exc:
             raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 

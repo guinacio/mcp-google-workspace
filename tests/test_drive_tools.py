@@ -14,6 +14,8 @@ from mcp_google_workspace.drive.tools import drives as drive_drives
 from mcp_google_workspace.drive.tools import files as drive_files
 from mcp_google_workspace.drive.tools import permissions as drive_permissions
 
+from consent_testing import ConsentAnswers, answer_consent, gated_tools
+
 
 async def _list_drive_tools() -> dict[str, Any]:
     tools = await drive_mcp.list_tools(run_middleware=False)
@@ -149,16 +151,6 @@ class _FakeDrive:
         return [kwargs for name, kwargs in self.calls if name == key]
 
 
-class _Confirmations:
-    def __init__(self, answer: bool) -> None:
-        self.answer = answer
-        self.asked: list[tuple[str, str]] = []
-
-    async def __call__(self, ctx: Any, action: str, message: str) -> bool:
-        self.asked.append((action, message))
-        return self.answer
-
-
 async def _execute(request: _Request) -> Any:
     return request.execute()
 
@@ -178,9 +170,10 @@ def drive(monkeypatch: pytest.MonkeyPatch) -> _FakeDrive:
 
 
 def _tools(module: Any) -> dict[str, Callable[..., Any]]:
+    """The module's tools behind the consent gate every registered tool gets."""
     capture = _ToolCapture()
     module.register(capture)
-    return capture.tools
+    return gated_tools(capture.tools, "drive")
 
 
 def _run(function: Callable[..., Any], **arguments: Any) -> Any:
@@ -190,10 +183,8 @@ def _run(function: Callable[..., Any], **arguments: Any) -> Any:
     return anyio.run(call)
 
 
-def _confirm(monkeypatch: pytest.MonkeyPatch, module: Any, answer: bool) -> _Confirmations:
-    confirmations = _Confirmations(answer)
-    monkeypatch.setattr(module, "confirm_destructive_action", confirmations)
-    return confirmations
+def _confirm(monkeypatch: pytest.MonkeyPatch, answer: bool) -> ConsentAnswers:
+    return answer_consent(monkeypatch, answer)
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +487,7 @@ def test_download_refuses_what_it_cannot_save(drive: _FakeDrive, saved: list[Any
 def test_share_file_creates_a_grant_after_the_create_permission_confirmation(
     monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive
 ) -> None:
-    confirmations = _confirm(monkeypatch, drive_permissions, True)
+    confirmations = _confirm(monkeypatch, True)
     drive.responses["permissions.create"] = {"id": "perm-1", "type": "user", "role": "writer"}
     result = _run(
         _tools(drive_permissions)["share_file"],
@@ -510,7 +501,11 @@ def test_share_file_creates_a_grant_after_the_create_permission_confirmation(
     )
 
     assert confirmations.asked == [
-        ("create_permission", "Grant access to ada@example.com on Drive file file-1 with role writer, expiration 2026-12-31T00:00:00Z?")
+        (
+            "create_permission",
+            "Share Drive file file-1 with user ada@example.com as writer? "
+            "Access expires 2026-12-31T00:00:00Z. No notification email.",
+        )
     ]
     assert result == {"status": "ok", "mode": "created", "permission": {"id": "perm-1", "type": "user", "role": "writer"}}
     (create,) = drive.called("permissions.create")
@@ -519,8 +514,8 @@ def test_share_file_creates_a_grant_after_the_create_permission_confirmation(
     assert create["useDomainAdminAccess"] is False and create["supportsAllDrives"] is True
 
 
-def test_share_file_create_cancelled_keeps_the_previous_shape(monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive) -> None:
-    confirmations = _confirm(monkeypatch, drive_permissions, False)
+def test_share_file_create_declined_changes_nothing(monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive) -> None:
+    confirmations = _confirm(monkeypatch, False)
     result = _run(
         _tools(drive_permissions)["share_file"],
         file_id="file-1",
@@ -530,16 +525,20 @@ def test_share_file_create_cancelled_keeps_the_previous_shape(monkeypatch: pytes
     )
 
     assert confirmations.asked == [
-        ("create_permission", "Grant access to anyone on Drive file file-1 with role reader, file discovery disabled?")
+        ("create_permission", "Share Drive file file-1 with anyone with the link (no sign-in needed) as reader?")
     ]
-    assert result == {"status": "cancelled", "file_id": "file-1", "grantee": "anyone", "role": "reader"}
+    assert result == {
+        "status": "cancelled",
+        "action": "create_permission",
+        "reason": "The user declined; nothing was changed.",
+    }
     assert drive.calls == []
 
 
 def test_share_file_with_permission_id_updates_after_the_update_permission_confirmation(
     monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive
 ) -> None:
-    confirmations = _confirm(monkeypatch, drive_permissions, True)
+    confirmations = _confirm(monkeypatch, True)
     drive.responses["permissions.update"] = {"id": "perm-1", "role": "commenter"}
     result = _run(
         _tools(drive_permissions)["share_file"],
@@ -554,8 +553,8 @@ def test_share_file_with_permission_id_updates_after_the_update_permission_confi
     assert confirmations.asked == [
         (
             "update_permission",
-            "Update permission perm-1 on Drive file file-1: set role to commenter, set file discovery to True, "
-            "set expiration to 2026-12-01T00:00:00Z, remove expiration?",
+            "Change permission perm-1 on Drive file file-1: role commenter, expires 2026-12-01T00:00:00Z, "
+            "no expiration, discoverable True?",
         )
     ]
     assert result == {"status": "ok", "mode": "updated", "permission": {"id": "perm-1", "role": "commenter"}}
@@ -565,7 +564,7 @@ def test_share_file_with_permission_id_updates_after_the_update_permission_confi
 
 
 def test_share_file_update_transfers_ownership_and_cancels(monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive) -> None:
-    confirmations = _confirm(monkeypatch, drive_permissions, False)
+    confirmations = _confirm(monkeypatch, False)
     result = _run(
         _tools(drive_permissions)["share_file"],
         file_id="file-1",
@@ -575,9 +574,16 @@ def test_share_file_update_transfers_ownership_and_cancels(monkeypatch: pytest.M
     )
 
     assert confirmations.asked == [
-        ("update_permission", "Update permission perm-1 on Drive file file-1: set role to owner, transfer ownership?")
+        (
+            "update_permission",
+            "Change permission perm-1 on Drive file file-1: role owner? This transfers ownership of the file.",
+        )
     ]
-    assert result == {"status": "cancelled", "file_id": "file-1", "permission_id": "perm-1"}
+    assert result == {
+        "status": "cancelled",
+        "action": "update_permission",
+        "reason": "The user declined; nothing was changed.",
+    }
     assert drive.calls == []
 
 
@@ -595,13 +601,15 @@ def test_share_file_update_transfers_ownership_and_cancels(monkeypatch: pytest.M
         ({}, "needs type and role"),
     ],
 )
-def test_share_file_rejects_mode_mismatches_before_confirming(
+def test_share_file_rejects_mode_mismatches_without_changing_anything(
     monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive, arguments: dict[str, Any], message: str
 ) -> None:
-    confirmations = _confirm(monkeypatch, drive_permissions, True)
+    # Every share asks first (the consent gate runs before the tool body), so
+    # the mismatch is reported after the question; nothing reaches Google.
+    confirmations = _confirm(monkeypatch, True)
     with pytest.raises(ValueError, match=message):
         _run(_tools(drive_permissions)["share_file"], file_id="file-1", **arguments)
-    assert confirmations.asked == [] and drive.calls == []
+    assert len(confirmations.asked) == 1 and drive.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -613,11 +621,18 @@ def test_share_file_rejects_mode_mismatches_before_confirming(
 def test_unshare_file_confirms_with_delete_permission(
     monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive, answer: bool
 ) -> None:
-    confirmations = _confirm(monkeypatch, drive_permissions, answer)
+    confirmations = _confirm(monkeypatch, answer)
     result = _run(_tools(drive_permissions)["unshare_file"], file_id="file-1", permission_id="perm-1")
 
     assert confirmations.asked == [("delete_permission", "Remove permission perm-1 from Drive file file-1?")]
-    assert result == {"status": "ok" if answer else "cancelled", "file_id": "file-1", "permission_id": "perm-1"}
+    if answer:
+        assert result == {"status": "ok", "file_id": "file-1", "permission_id": "perm-1"}
+    else:
+        assert result == {
+            "status": "cancelled",
+            "action": "delete_permission",
+            "reason": "The user declined; nothing was changed.",
+        }
     expected = [{"fileId": "file-1", "permissionId": "perm-1", "supportsAllDrives": True, "useDomainAdminAccess": False}]
     assert drive.called("permissions.delete") == (expected if answer else [])
 

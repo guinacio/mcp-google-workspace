@@ -22,11 +22,6 @@ ATTACHMENTS_DESCRIPTION = (
     "Files to attach, each with exactly one source: uploaded_file (an upload handle from "
     "uploads_file_manager) or file_path (local stdio servers only)."
 )
-REPLY_CONFIRM_SEND_DESCRIPTION = (
-    "When true, the user is asked to approve the reply (shown To, Cc, Subject and the attachment "
-    "count) before anything is sent: declining returns status 'cancelled', and a client that cannot "
-    "ask makes the call fail unsent. Default false sends immediately."
-)
 
 
 # Cap concurrent per-message fetches so a large heartbeat/digest cannot open a

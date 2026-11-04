@@ -8,7 +8,6 @@ from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
-from ..common.confirmation import confirm_destructive_action
 from ..common.errors import provider_tool_error
 from .client import normalize_contact_group_name, normalize_person_name, people_service
 from .schemas import (
@@ -399,12 +398,8 @@ def register_tools(server: FastMCP) -> None:
         person_name: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Permanently delete one Google contact, found with people_search_contacts. The user is asked to confirm first: the call returns status 'cancelled' if declined, and fails with confirmation_required when the client cannot ask. Returns status 'deleted' with the person_name (people/...). These tools cannot restore a deleted contact."""
+        """Permanently delete one Google contact, found with people_search_contacts. The user is asked to confirm first, and the call returns status 'cancelled' if declined. Returns status 'deleted' with the person_name (people/...). These tools cannot restore a deleted contact."""
         request = DeleteContactRequest(person_name=person_name)
-        if not await confirm_destructive_action(
-            ctx, "delete_contact", f"Permanently delete contact {request.person_name}?"
-        ):
-            return {"status": "cancelled", "person_name": request.person_name}
         try:
             return await run_blocking(delete_contact_payload, request)
         except HttpError as exc:

@@ -1,19 +1,22 @@
-"""Confirmation sites on both MCP protocol eras, through the one adapter.
+"""Safety matrix: every consequential call, every client kind, every outcome.
 
-All 24 confirmation sites (see ``contracts/confirmation_sites.py``) call
-``common.confirmation.confirm_destructive_action``:
+For each trigger of the consequential-call table (``contracts/confirmation_sites.py``
+generated from ``common/consent.py``) and each client kind:
 
-* MCP 2026-07-28 (multi round-trip): the first call returns
-  ``resultType: input_required`` with one form elicitation and a sealed
-  continuation, before any mutation. Retrying with an ``accept`` answer
-  executes exactly one mutation; ``decline``/``cancel`` execute none.
-* A modern host that declared no elicitation capability gets the fail-closed
-  ``confirmation_required`` tool result and no mutation.
-* Handshake-era (legacy) requests keep imperative elicitation through the
-  adapter's legacy branch.
+* **MCP 2026-07-28 with elicitation** (multi round-trip): the first call returns
+  ``input_required`` before any mutation; accept executes exactly once,
+  decline/cancel/no answer execute nothing.
+* **Handshake-era with elicitation**: imperative ``ctx.elicit``; same outcomes.
+* **Either era without elicitation**: ``confirmation_required`` naming
+  ``prepare_workspace_action``; prepare executes nothing and returns the same
+  preview text; commit executes exactly once; a repeated commit replays; no
+  commit, or an expired token, executes nothing.
+* **Background tasks** (the raw batch-update tools): the task parks for input;
+  accept executes once, decline nothing.
 
-Continuation-security cases (tampering, expiry, replay, ...) live in
-``test_confirmation_adapter.py``.
+"Exactly once" is the Google mutations of the same call with consent disabled
+(``MCP_CONSENT=off``), so multi-request tools (bulk trash, share + notify) are
+compared with what the call really does.
 """
 
 from __future__ import annotations
@@ -30,8 +33,10 @@ import mcp_types
 import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.client.elicitation import ElicitResult
+from fastmcp_tasks import call_tool_task
 
 import mcp_google_workspace.auth.google_auth as google_auth
+import mcp_google_workspace.auth.google_oauth as google_oauth
 import mcp_google_workspace.server as server_module
 from mcp_google_workspace.common.operations import OperationStore, memory_operation_store, set_operation_store
 
@@ -41,28 +46,30 @@ if str(ROOT / "tests") not in sys.path:
 
 from contracts.confirmation_sites import (  # noqa: E402
     CONFIRMATION_SITES,
-    EXPLICIT_CONFIRM_SITES,
+    FOREGROUND_SITE_IDS,
+    FOREGROUND_SITES,
+    FULL_TABLE_ENV,
     OPTIONAL_FLAGS,
     SITE_IDS,
-    confirmation_operation,
+    TASK_SITE_IDS,
+    TASK_SITES,
     GoogleRecorder,
     answer,
     answer_field,
+    confirmation_operation,
+    explicit_confirm,
     mutations,
 )
 
 
 @pytest.fixture(scope="module")
 def workspace() -> Iterator[FastMCP]:
-    """Root composition with Chat and Keep mounted and the extended tier, restored afterwards."""
-    tracked = (*OPTIONAL_FLAGS, "MCP_RATE_LIMIT_PER_MINUTE", "MCP_TOOL_TIER")
+    """Root composition serving every table tool, restored afterwards."""
+    tracked = (*OPTIONAL_FLAGS, "MCP_RATE_LIMIT_PER_MINUTE", "MCP_TOOL_TIER", "MCP_CONSENT")
     previous = {name: os.environ.get(name) for name in tracked}
-    for name in OPTIONAL_FLAGS:
+    for name in (*OPTIONAL_FLAGS, "MCP_CONSENT"):
         os.environ.pop(name, None)
-    os.environ["ENABLE_CHAT"] = "true"
-    os.environ["ENABLE_KEEP"] = "true"
-    # The Gmail settings sites (filters, forwarding) are extended-tier tools.
-    os.environ["MCP_TOOL_TIER"] = "extended"
+    os.environ.update(FULL_TABLE_ENV)
     # Hundreds of rounds from one local principal; admission limits are not
     # under test here.
     os.environ["MCP_RATE_LIMIT_PER_MINUTE"] = "100000"
@@ -77,9 +84,24 @@ def workspace() -> Iterator[FastMCP]:
         importlib.reload(server_module)
 
 
+class _Clock:
+    def __init__(self) -> None:
+        self.offset = 0.0
+
+    def __call__(self) -> float:
+        import time
+
+        return time.time() + self.offset
+
+
+@pytest.fixture
+def clock() -> _Clock:
+    return _Clock()
+
+
 @pytest.fixture(autouse=True)
-def operation_store() -> Iterator[OperationStore]:
-    store = memory_operation_store()
+def operation_store(clock: _Clock) -> Iterator[OperationStore]:
+    store = memory_operation_store(clock=clock)
     set_operation_store(store)
     try:
         yield store
@@ -93,7 +115,34 @@ def google_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(
         google_auth, "_build_service_now", lambda *_args, **_kwargs: GoogleRecorder(calls)
     )
+
+    def disconnect() -> dict[str, Any]:
+        # Revocation and credential deletion are not Google API client calls.
+        calls.append("oauth.credentials.delete")
+        return {"status": "disconnected", "grant_revoked": True, "revocation_error": None}
+
+    monkeypatch.setattr(google_oauth, "disconnect_google_account", disconnect)
     return calls
+
+
+async def _plain_call(server: FastMCP, tool: str, arguments: dict[str, Any]) -> Any:
+    async with Client(server) as client:
+        return await client.call_tool(tool, arguments, raise_on_error=False)
+
+
+def _baseline(
+    server: FastMCP, tool: str, arguments: dict[str, Any], calls: list[str], monkeypatch: pytest.MonkeyPatch
+) -> list[str]:
+    """The Google mutations of one unconsented run (MCP_CONSENT=off)."""
+    monkeypatch.setenv("MCP_CONSENT", "off")
+    try:
+        anyio.run(_plain_call, server, tool, arguments)
+    finally:
+        monkeypatch.delenv("MCP_CONSENT")
+    done = mutations(calls)
+    calls.clear()
+    assert done, f"{tool} executed no mutation even without consent: the case does not exercise it"
+    return done
 
 
 async def _never_called(*_args: Any) -> Any:  # pragma: no cover - raw rounds drive MRTR by hand
@@ -125,10 +174,22 @@ async def _two_rounds(
         return first, after_ask, second
 
 
-@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
+def _message(result: mcp_types.InputRequiredResult) -> str:
+    request = (result.input_requests or {})["confirm"]
+    assert isinstance(request, mcp_types.ElicitRequest)
+    return request.params.message
+
+
+# ---------------------------------------------------------------------------
+# MCP 2026-07-28, elicitation-capable client
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("tool", "arguments"), FOREGROUND_SITES, ids=FOREGROUND_SITE_IDS)
 def test_modern_ask_round_returns_input_required_before_any_mutation(
     workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any]
 ) -> None:
+    """Also the "no answer" outcome: the client never answers, nothing runs."""
     first, after_ask, _ = anyio.run(_two_rounds, workspace, tool, arguments, None, google_calls)
 
     assert after_ask == []
@@ -139,27 +200,32 @@ def test_modern_ask_round_returns_input_required_before_any_mutation(
     assert isinstance(request, mcp_types.ElicitRequest)
     assert request.params.mode == "form"
     assert request.params.message
-    expected_field = "confirm" if tool in EXPLICIT_CONFIRM_SITES else "value"
+    expected_field = "confirm" if explicit_confirm(tool, arguments) else "value"
     assert answer_field(first) == expected_field
     assert request.params.requested_schema["properties"][expected_field]["type"] == "boolean"
 
 
-@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
-def test_modern_accept_executes_exactly_one_mutation(
-    workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any]
+@pytest.mark.parametrize(("tool", "arguments"), FOREGROUND_SITES, ids=FOREGROUND_SITE_IDS)
+def test_modern_accept_executes_exactly_once(
+    workspace: FastMCP,
+    google_calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
 ) -> None:
+    expected = _baseline(workspace, tool, arguments, google_calls, monkeypatch)
     _, after_ask, second = anyio.run(_two_rounds, workspace, tool, arguments, "accept", google_calls)
 
     assert after_ask == []
     assert isinstance(second, mcp_types.CallToolResult)
     assert second.is_error is False, second.content
     assert (second.structured_content or {}).get("status") != "cancelled"
-    assert len(mutations(google_calls)) == 1, google_calls
+    assert mutations(google_calls) == expected
 
 
 @pytest.mark.parametrize("action", ["decline", "cancel"])
-@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
-def test_modern_decline_or_cancel_executes_no_mutation(
+@pytest.mark.parametrize(("tool", "arguments"), FOREGROUND_SITES, ids=FOREGROUND_SITE_IDS)
+def test_modern_decline_or_cancel_executes_nothing(
     workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any], action: str
 ) -> None:
     _, after_ask, second = anyio.run(_two_rounds, workspace, tool, arguments, action, google_calls)
@@ -167,7 +233,11 @@ def test_modern_decline_or_cancel_executes_no_mutation(
     assert after_ask == []
     assert isinstance(second, mcp_types.CallToolResult)
     assert second.is_error is False
-    assert (second.structured_content or {}).get("status") == "cancelled"
+    assert second.structured_content == {
+        "status": "cancelled",
+        "action": confirmation_operation(tool, arguments),
+        "reason": "The user declined; nothing was changed.",
+    }
     assert mutations(google_calls) == []
 
 
@@ -177,95 +247,321 @@ async def _invoke(
     arguments: dict[str, Any],
     *,
     mode: str,
-    accept: bool | None,
+    answer_with: str | None,
     prompts: list[str],
 ) -> Any:
-    """Call through the real FastMCP client; ``accept=None`` declares no elicitation."""
+    """Call through the real FastMCP client; ``answer_with=None`` declares no elicitation."""
 
     async def handler(message: str, _type: Any, params: Any, _context: Any) -> Any:
         prompts.append(message)
-        if not accept:
-            return ElicitResult(action="decline")
+        if answer_with == "no_response":
+            raise RuntimeError("the user closed the dialog without answering")
+        if answer_with != "accept":
+            return ElicitResult(action=answer_with)  # type: ignore[arg-type]
         return {name: True for name in params.requested_schema.get("properties", {})}
 
-    kwargs: dict[str, Any] = {} if accept is None else {"elicitation_handler": handler}
+    kwargs: dict[str, Any] = {} if answer_with is None else {"elicitation_handler": handler}
     async with Client(server, mode=mode, **kwargs) as client:  # type: ignore[arg-type]
         expected = "2026-07-28" if mode == "auto" else "2025-11-25"
         assert client.protocol_version == expected
         return await client.call_tool(tool, arguments, raise_on_error=False)
 
 
-@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
+@pytest.mark.parametrize(("tool", "arguments"), FOREGROUND_SITES, ids=FOREGROUND_SITE_IDS)
 def test_modern_client_driver_answers_and_completes(
-    workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any]
+    workspace: FastMCP,
+    google_calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
 ) -> None:
     """The stock client resolves input_required through its elicitation handler."""
+    expected = _baseline(workspace, tool, arguments, google_calls, monkeypatch)
     prompts: list[str] = []
     result = anyio.run(
-        lambda: _invoke(workspace, tool, arguments, mode="auto", accept=True, prompts=prompts)
+        lambda: _invoke(workspace, tool, arguments, mode="auto", answer_with="accept", prompts=prompts)
     )
 
     assert len(prompts) == 1
     assert result.is_error is False
-    assert len(mutations(google_calls)) == 1, google_calls
+    assert mutations(google_calls) == expected
+
+
+# ---------------------------------------------------------------------------
+# Handshake-era (legacy) sessions with elicitation: ctx.elicit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("outcome", ["decline", "cancel", "no_response"])
+@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
+def test_legacy_unconfirmed_call_executes_nothing(
+    workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any], outcome: str
+) -> None:
+    prompts: list[str] = []
+    if outcome == "no_response":
+        # The elicitation request itself fails: the call fails, nothing runs.
+        with pytest.raises(Exception, match="without answering"):
+            anyio.run(
+                lambda: _invoke(workspace, tool, arguments, mode="legacy", answer_with=outcome, prompts=prompts)
+            )
+    else:
+        result = anyio.run(
+            lambda: _invoke(workspace, tool, arguments, mode="legacy", answer_with=outcome, prompts=prompts)
+        )
+        assert result.is_error is False
+        assert (result.structured_content or {}).get("status") == "cancelled"
+    assert len(prompts) == 1
+    assert mutations(google_calls) == []
 
 
 @pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
-@pytest.mark.parametrize("mode", ["auto", "legacy"])
-def test_host_without_elicitation_fails_closed_with_tool_result_and_no_mutation(
-    workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any], mode: str
+def test_legacy_accepted_call_executes_exactly_once(
+    workspace: FastMCP,
+    google_calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
 ) -> None:
+    expected = _baseline(workspace, tool, arguments, google_calls, monkeypatch)
     prompts: list[str] = []
     result = anyio.run(
-        lambda: _invoke(workspace, tool, arguments, mode=mode, accept=None, prompts=prompts)
+        lambda: _invoke(workspace, tool, arguments, mode="legacy", answer_with="accept", prompts=prompts)
     )
 
-    assert prompts == []
-    assert result.is_error is True
-    envelope = result.structured_content
+    assert len(prompts) == 1
+    assert result.is_error is False, result.content
+    assert mutations(google_calls) == expected
+
+
+# ---------------------------------------------------------------------------
+# Clients without elicitation: confirmation_required -> prepare -> commit
+# ---------------------------------------------------------------------------
+
+
+async def _fallback(
+    server: FastMCP,
+    tool: str,
+    arguments: dict[str, Any],
+    *,
+    mode: str,
+    calls: list[str],
+    commits: int,
+    clock: _Clock | None = None,
+) -> dict[str, Any]:
+    async with Client(server, mode=mode) as client:  # type: ignore[arg-type]
+        direct = await client.call_tool(tool, arguments, raise_on_error=False)
+        after_direct = mutations(calls)
+        envelope = direct.structured_content or {}
+        step = envelope.get("required_action") or {}
+        prepared = await client.call_tool(step.get("tool", ""), step.get("arguments", {}), raise_on_error=False)
+        after_prepare = mutations(calls)
+        if clock is not None:
+            clock.offset += 3600
+        results = [
+            await client.call_tool(
+                "commit_workspace_action",
+                {"commit_token": (prepared.structured_content or {}).get("commit_token", "")},
+                raise_on_error=False,
+            )
+            for _ in range(commits)
+        ]
+    return {
+        "direct": direct,
+        "after_direct": after_direct,
+        "prepared": prepared,
+        "after_prepare": after_prepare,
+        "commits": results,
+    }
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
+def test_client_without_elicitation_gets_the_prepare_step_and_commit_executes_once(
+    workspace: FastMCP,
+    google_calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
+    mode: str,
+) -> None:
+    expected = _baseline(workspace, tool, arguments, google_calls, monkeypatch)
+    flow = anyio.run(lambda: _fallback(workspace, tool, arguments, mode=mode, calls=google_calls, commits=2))
+
+    direct = flow["direct"]
+    assert direct.is_error is True
+    envelope = direct.structured_content
     assert envelope["code"] == "confirmation_required"
     assert envelope["retryable"] is False
-    action = envelope["required_action"]
-    assert action["action"] == "request_host_confirmation"
-    assert action["operation"] == confirmation_operation(tool, arguments)
-    assert action["prompt"]
     assert "No changes were made" in envelope["message"]
-    assert "confirmation_required" in result.content[0].text
-    assert mutations(google_calls) == []
+    assert envelope["required_action"]["tool"] == "prepare_workspace_action"
+    assert envelope["required_action"]["arguments"]["tool_name"] == tool
+    action = confirmation_operation(tool, arguments)
+    assert envelope["details"]["action"] == action
+    assert flow["after_direct"] == []
+
+    prepared = flow["prepared"].structured_content
+    assert flow["prepared"].is_error is False, flow["prepared"].content
+    assert prepared["status"] == "prepared"
+    assert prepared["action"] == action
+    # The same preview text the elicitation would show.
+    assert prepared["preview"] == envelope["details"]["preview"]
+    assert flow["after_prepare"] == []
+
+    first, again = flow["commits"]
+    assert first.is_error is False, first.content
+    assert first.structured_content["status"] == "committed"
+    assert first.structured_content["tool"] == tool
+    # A repeated commit returns the saved result; it never executes again.
+    assert again.is_error is False
+    assert mutations(google_calls) == expected
 
 
-# Legacy (handshake-era) connections: the adapter's thin ctx.elicit branch.
 @pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
-def test_legacy_declined_confirmation_executes_no_mutation(
-    workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any]
+def test_uncommitted_or_expired_token_executes_nothing(
+    workspace: FastMCP, google_calls: list[str], clock: _Clock, tool: str, arguments: dict[str, Any]
 ) -> None:
-    prompts: list[str] = []
-    result = anyio.run(
-        lambda: _invoke(workspace, tool, arguments, mode="legacy", accept=False, prompts=prompts)
+    """The "no answer" outcome of prepare/commit: the token expires unused."""
+    flow = anyio.run(
+        lambda: _fallback(workspace, tool, arguments, mode="auto", calls=google_calls, commits=1, clock=clock)
     )
 
-    assert len(prompts) == 1
-    assert result.is_error is False
-    assert (result.structured_content or {}).get("status") == "cancelled"
+    (late,) = flow["commits"]
+    assert late.is_error is True
+    assert "invalid, expired" in late.content[0].text
     assert mutations(google_calls) == []
 
 
-@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES, ids=SITE_IDS)
-def test_legacy_accepted_confirmation_reaches_mutation(
+@pytest.mark.parametrize(("tool", "arguments"), FOREGROUND_SITES, ids=FOREGROUND_SITE_IDS)
+def test_prepare_and_elicitation_show_the_same_preview(
     workspace: FastMCP, google_calls: list[str], tool: str, arguments: dict[str, Any]
 ) -> None:
-    prompts: list[str] = []
-    try:
-        anyio.run(
-            lambda: _invoke(workspace, tool, arguments, mode="legacy", accept=True, prompts=prompts)
-        )
-    except Exception:  # noqa: BLE001 - the recorder returns placeholder API payloads
-        # Only whether the confirmed mutation was attempted matters here; the
-        # placeholder provider response may not satisfy the tool's result schema.
-        pass
+    async def run() -> tuple[str, str]:
+        first, _, _ = await _two_rounds(workspace, tool, arguments, None, google_calls)
+        async with Client(workspace) as client:
+            prepared = await client.call_tool(
+                "prepare_workspace_action", {"tool_name": tool, "arguments": arguments}, raise_on_error=False
+            )
+        return _message(first), (prepared.structured_content or {}).get("preview", "")
 
+    elicited, previewed = anyio.run(run)
+    assert elicited == previewed
+    assert mutations(google_calls) == []
+
+
+@pytest.mark.parametrize("answer_with", ["accept", "decline"])
+@pytest.mark.parametrize(("tool", "arguments"), CONFIRMATION_SITES[:6], ids=SITE_IDS[:6])
+def test_a_client_that_can_ask_is_still_asked_when_it_commits(
+    workspace: FastMCP,
+    google_calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
+    answer_with: str,
+) -> None:
+    """Prepare/commit never replaces the user's own answer when the client can elicit."""
+    expected = _baseline(workspace, tool, arguments, google_calls, monkeypatch)
+    prompts: list[str] = []
+
+    async def handler(message: str, _type: Any, params: Any, _context: Any) -> Any:
+        prompts.append(message)
+        if answer_with != "accept":
+            return ElicitResult(action="decline")
+        return {name: True for name in params.requested_schema.get("properties", {})}
+
+    async def run() -> tuple[Any, Any]:
+        async with Client(workspace, elicitation_handler=handler) as client:
+            prepared = await client.call_tool(
+                "prepare_workspace_action", {"tool_name": tool, "arguments": arguments}
+            )
+            committed = await client.call_tool(
+                "commit_workspace_action",
+                {"commit_token": prepared.structured_content["commit_token"]},
+                raise_on_error=False,
+            )
+        return prepared, committed
+
+    prepared, committed = anyio.run(run)
+    assert prompts == [prepared.structured_content["preview"]]
+    assert committed.is_error is False
+    if answer_with == "accept":
+        assert mutations(google_calls) == expected
+    else:
+        assert mutations(google_calls) == []
+
+
+# ---------------------------------------------------------------------------
+# Background tasks (the task-capable table tools)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("answer_with", ["accept", "decline"])
+@pytest.mark.parametrize(("tool", "arguments"), TASK_SITES, ids=TASK_SITE_IDS)
+def test_task_mode_call_parks_for_consent(
+    workspace: FastMCP,
+    google_calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
+    answer_with: str,
+) -> None:
+    expected = _baseline(workspace, tool, arguments, google_calls, monkeypatch)
+    prompts: list[str] = []
+
+    async def handler(message: str, _type: Any, params: Any, _context: Any) -> Any:
+        assert mutations(google_calls) == []  # the ask happens before any mutation
+        prompts.append(message)
+        if answer_with != "accept":
+            return ElicitResult(action="decline")
+        return {name: True for name in params.requested_schema.get("properties", {})}
+
+    async def run() -> Any:
+        async with Client(workspace, elicitation_handler=handler) as client:
+            task = await call_tool_task(client, tool, arguments)
+            return await task.result()
+
+    result = anyio.run(run)
     assert len(prompts) == 1
-    assert mutations(google_calls), google_calls
+    assert result.is_error is False
+    if answer_with == "accept":
+        assert mutations(google_calls) == expected
+    else:
+        assert result.structured_content["status"] == "cancelled"
+        assert mutations(google_calls) == []
+
+
+@pytest.mark.parametrize("consent", ["required", "preview_only"])
+@pytest.mark.parametrize(("tool", "arguments"), TASK_SITES, ids=TASK_SITE_IDS)
+def test_task_that_could_never_ask_is_refused_before_it_is_created(
+    workspace: FastMCP,
+    google_calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tool: str,
+    arguments: dict[str, Any],
+    consent: str,
+) -> None:
+    """A task cannot read the client's capabilities, so the submission is checked.
+
+    Without elicitation (or with MCP_CONSENT=preview_only) the call gets the
+    prepare step at once instead of a task parked on a question nobody can answer.
+    """
+    monkeypatch.setenv("MCP_CONSENT", consent)
+
+    async def run() -> Any:
+        handler = {"elicitation_handler": _never_called} if consent == "preview_only" else {}
+        async with Client(workspace, **handler) as client:  # type: ignore[arg-type]
+            return await client.call_tool(tool, arguments, raise_on_error=False)
+
+    result = anyio.run(run)
+    assert result.is_error is True
+    assert result.structured_content["code"] == "confirmation_required"
+    assert result.structured_content["required_action"]["tool"] == "prepare_workspace_action"
+    assert result.structured_content["details"]["preview"]
+    assert mutations(google_calls) == []
+
+
+# ---------------------------------------------------------------------------
+# The adapter is the only way to ask
+# ---------------------------------------------------------------------------
 
 
 def test_only_the_adapter_uses_imperative_elicitation() -> None:
@@ -279,6 +575,19 @@ def test_only_the_adapter_uses_imperative_elicitation() -> None:
         if ".elicit(" in path.read_text(encoding="utf-8")
     )
     assert offenders == ["common/confirmation.py"]
+
+
+def test_no_tool_asks_for_consent_by_itself() -> None:
+    """Every consent decision comes from the table: no tool calls the adapter."""
+    import mcp_google_workspace
+
+    root = Path(mcp_google_workspace.__file__).parent
+    offenders = sorted(
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.py")
+        if "confirm_destructive_action(" in path.read_text(encoding="utf-8")
+    )
+    assert offenders == ["common/confirmation.py", "common/consent.py"]
 
 
 class _NoElicitContext:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
@@ -173,8 +173,18 @@ def register_tools(server: FastMCP) -> None:
         include_form_in_response: Annotated[
             bool, "Also return the updated form, in the forms_get_form shape, in the form field of the result."
         ] = False,
+        dry_run: Annotated[
+            bool,
+            (
+                "True returns the impact preview (status 'dry_run', preview with the request count by "
+                "kind, consent_required, action) without sending anything to Google."
+            ),
+        ] = False,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. The form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, revision_id (the revision after the update), replies (Google's, one per request in order; createItem gives itemId and questionId), count and form (the forms_get_form shape with include_form_in_response, else null)."""
+        """Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. Ten or more requests, or any delete* request, ask the user to confirm first; dry_run only previews. Returns status ok, form_id, revision_id (the revision after the update), replies (Google's, one per request in order; createItem gives itemId and questionId), count and form (the forms_get_form shape with include_form_in_response, else null)."""
+        if dry_run:
+            raise RuntimeError("dry_run is answered by the consent gate before the tool body runs.")
         try:
             return batch_update_form_envelope(
                 await run_blocking(

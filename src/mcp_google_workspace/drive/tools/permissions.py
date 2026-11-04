@@ -9,7 +9,6 @@ from typing import Annotated, Any
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
-from ...common.confirmation import confirm_destructive_action
 from ..client import drive_service
 from ..schemas import (
     CreatePermissionRequest,
@@ -33,31 +32,7 @@ _WRITTEN_PERMISSION_FIELDS = "id,type,role,emailAddress,domain,displayName,allow
 _CREATE_ONLY_PARAMETERS = ("type", "email_address", "domain", "email_message", "send_notification_email")
 
 
-async def _create_permission(request: CreatePermissionRequest, ctx: Context | None) -> dict[str, Any]:
-    grantee = request.email_address or request.domain or request.type
-    create_details = [f"role {request.role}"]
-    if request.allow_file_discovery is not None:
-        create_details.append(
-            f"file discovery {'enabled' if request.allow_file_discovery else 'disabled'}"
-        )
-    if request.expiration_time is not None:
-        create_details.append(f"expiration {request.expiration_time}")
-    if request.transfer_ownership:
-        create_details.append("transfer ownership")
-    if not await confirm_destructive_action(
-        ctx,
-        "create_permission",
-        (
-            f"Grant access to {grantee} on Drive file {request.file_id} "
-            f"with {', '.join(create_details)}?"
-        ),
-    ):
-        return {
-            "status": "cancelled",
-            "file_id": request.file_id,
-            "grantee": grantee,
-            "role": request.role,
-        }
+async def _create_permission(request: CreatePermissionRequest) -> dict[str, Any]:
     service = drive_service()
     body: dict[str, Any] = {
         "type": request.type,
@@ -91,34 +66,7 @@ async def _create_permission(request: CreatePermissionRequest, ctx: Context | No
     return {"status": "ok", "mode": "created", "permission": created}
 
 
-async def _update_permission(request: UpdatePermissionRequest, ctx: Context | None) -> dict[str, Any]:
-    update_details: list[str] = []
-    if request.role is not None:
-        update_details.append(f"set role to {request.role}")
-    if request.allow_file_discovery is not None:
-        update_details.append(
-            f"set file discovery to {request.allow_file_discovery}"
-        )
-    if request.expiration_time is not None:
-        update_details.append(f"set expiration to {request.expiration_time}")
-    if request.remove_expiration:
-        update_details.append("remove expiration")
-    if request.transfer_ownership:
-        update_details.append("transfer ownership")
-    change_summary = ", ".join(update_details) or "apply the requested changes"
-    if not await confirm_destructive_action(
-        ctx,
-        "update_permission",
-        (
-            f"Update permission {request.permission_id} "
-            f"on Drive file {request.file_id}: {change_summary}?"
-        ),
-    ):
-        return {
-            "status": "cancelled",
-            "file_id": request.file_id,
-            "permission_id": request.permission_id,
-        }
+async def _update_permission(request: UpdatePermissionRequest) -> dict[str, Any]:
     service = drive_service()
     body: dict[str, Any] = {}
     if request.role is not None:
@@ -221,7 +169,7 @@ def register(server: FastMCP) -> None:
             (
                 "Who receives access, required to create a grant: 'user' or 'group' (set "
                 "email_address), 'domain' (everyone in a Google Workspace domain; set domain), or "
-                "'anyone' (anyone with the link, no sign-in; requires prepare_workspace_action first)."
+                "'anyone' (anyone with the link, no sign-in)."
             ),
         ] = None,
         role: Annotated[
@@ -262,7 +210,7 @@ def register(server: FastMCP) -> None:
         transfer_ownership: bool | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled'. It asks the user to confirm, Google emails new user and group grantees by default, and type 'anyone' first requires prepare_workspace_action, then commit_workspace_action."""
+        """Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled' if the user declines. Every share or change asks the user to confirm first, shown who gets which access; Google emails new user and group grantees by default."""
         if permission_id is not None:
             rejected = [
                 name
@@ -291,7 +239,6 @@ def register(server: FastMCP) -> None:
                     remove_expiration=remove_expiration,
                     transfer_ownership=transfer_ownership,
                 ),
-                ctx,
             )
         if remove_expiration:
             raise ValueError(
@@ -316,7 +263,6 @@ def register(server: FastMCP) -> None:
                 email_message=email_message,
                 transfer_ownership=transfer_ownership,
             ),
-            ctx,
         )
 
     @server.tool(name="unshare_file")
@@ -325,21 +271,11 @@ def register(server: FastMCP) -> None:
         permission_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Revoke one person's, group's, domain's or link's access to a Drive file or folder. Find the permission_id with drive_list_permissions; to lower access instead of removing it use drive_share_file with permission_id. Returns status 'ok' with file_id and permission_id, or status 'cancelled'. It asks the user to confirm first; undo by granting access again with drive_share_file."""
+        """Revoke one person's, group's, domain's or link's access to a Drive file or folder. Find the permission_id with drive_list_permissions; to lower access instead of removing it use drive_share_file with permission_id. Returns status 'ok' with file_id and permission_id, or status 'cancelled' if the user declines. It asks the user to confirm first; undo by granting access again with drive_share_file."""
         request = DeletePermissionRequest(
             file_id=file_id,
             permission_id=permission_id,
         )
-        if not await confirm_destructive_action(
-            ctx,
-            "delete_permission",
-            f"Remove permission {request.permission_id} from Drive file {request.file_id}?",
-        ):
-            return {
-                "status": "cancelled",
-                "file_id": request.file_id,
-                "permission_id": request.permission_id,
-            }
         service = drive_service()
         LOGGER.debug(
             f"Deleting permission {request.permission_id} from file {request.file_id}."
