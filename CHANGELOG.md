@@ -5,6 +5,67 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
+## 1.0.1 — Unreleased
+
+Correctness fixes to the published output schemas and the error envelope. No
+tool, parameter or successful response shape is removed or renamed.
+
+### Fixed
+
+- **Output schemas no longer reject real Google responses.** Every published
+  `outputSchema` is now open (`additionalProperties: true`), and a field is
+  typed only when the code or an explicit list says so; a plural name is no
+  longer taken as proof of an array. Clients that validate
+  `structuredContent` (as the MCP specification asks) previously rejected
+  `docs_get_document` (`namedStyles` is an object) and `people_list_contacts`
+  (`totalItems` was not listed), and would have rejected
+  `sheets_get_spreadsheet` (`namedRanges` is a list there, an object in Docs).
+  The schemas of the Google passthrough tools (Docs, Sheets, Slides, Forms,
+  People, calendar list and availability, Tasks writes) and of all inferred
+  schemas widen; nothing narrows.
+- **Google HTTP failures from Gmail, Drive, Calendar, Chat and Gemini tools
+  are classified** (issue #51). A raw provider error used to reach the client
+  as JSON-RPC `-32603` / `internal_error` with no status and no next step.
+  It is now an `isError` result with the same codes the other namespaces
+  already used: 400 `invalid_input`, 401 `reauth_required`, 403
+  `permission_denied`, 404/410 `not_found`, 409/412 `conflict`, 429
+  `rate_limited`, 5xx `provider_unavailable`, with `provider_status` set.
+- **A 403 for a missing OAuth scope says so.** Both classification paths
+  read Google's machine-readable reason (`errors[].reason` or
+  `details[].reason`): `insufficientPermissions` /
+  `ACCESS_TOKEN_SCOPE_INSUFFICIENT` becomes `missing_capability` with
+  `required_action: {tool: connect_google_workspace, arguments:
+  {capabilities: [<service>]}}` (the service is read from the request URL),
+  quota reasons become `rate_limited`, `accessNotConfigured` keeps
+  `permission_denied` with an `enable_api_in_google_cloud_project` next step.
+  The reason is echoed as `details.provider_reason`.
+- **Protocol errors are no longer classified twice.** An error the execution
+  guard had already turned into a JSON-RPC error (server draining, revoked
+  principal, unexpected fault) was re-classified by the middleware after
+  FastMCP wrapped it, which reduced every one of them to `internal_error`.
+  The original code and envelope are now forwarded unchanged.
+- **Calendar time-slot conflicts are errors, not successes.**
+  `calendar_create_event` and `calendar_update_event` used to return
+  `{"error": ..., "status": "CONFLICT"}` as a successful result. They now
+  return an `isError` result with code `conflict`, the overlapping events
+  under `details.conflicting_events`, and, with
+  `on_conflict="suggest_next_slot"`, free alternatives under
+  `details.suggested_slots`. When the conflict check itself fails the event
+  is still written and the response carries a `warnings` list saying the
+  slot was not verified, instead of silently proceeding.
+- **`serverInfo.version` is the package version.** It reported FastMCP's
+  version (`4.1.6`).
+- **Drive file metadata no longer invents values.** `shared`, `starred`,
+  `trashed`, `owners` and `parent_ids` are `null` when Google did not return
+  the field (a narrower `fields` mask, or a shared-drive file without
+  owners); they were `false` or `[]`.
+
+### Changed
+
+- `gmail_search_emails` fetches the details of its hits concurrently (the
+  same bounded helper `gmail_get_mail_digest` uses) instead of one request
+  after another; results keep Gmail's order.
+
 ## 1.0.0 — 2026-11-03
 
 The first stable release. This version migrates the server from FastMCP
