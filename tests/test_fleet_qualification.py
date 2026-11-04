@@ -590,7 +590,9 @@ def test_legacy_client_lists_calls_and_confirms_through_the_proxy(fleet: Fleet, 
 
     version, tools, deleted = anyio.run(scenario)
     assert version == LEGACY
-    assert "files_list_files" in tools
+    # The front page lists each core service's entry point; plumbing such as the
+    # upload picker stays reachable by name but is not part of the listing.
+    assert "gmail_search_emails" in tools
     assert deleted.structured_content["status"] == "deleted"
     assert prompts == [f"Permanently delete contact people/{contact}?"]
     assert len(fleet.calls_matching(contact)) == 1
