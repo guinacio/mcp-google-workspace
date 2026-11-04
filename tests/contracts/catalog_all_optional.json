@@ -4381,7 +4381,7 @@
           },
           "format": {
             "default": "text",
-            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
+            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out; an index inside an element's text counts UTF-16 units, so most emoji take two. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
             "enum": [
               "text",
               "markdown",

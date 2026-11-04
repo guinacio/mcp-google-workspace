@@ -799,6 +799,8 @@ def test_get_mail_digest_returns_received_and_sent_without_triage_or_thread_dedu
     }
     assert "people" not in result
     assert "automated" not in result
+    # The digest is not a checkpoint source (gmail_check_mail_updates is); no always-null cursor.
+    assert "next_history_id" not in result
     for message in result["messages"]:
         assert not {
             "category",

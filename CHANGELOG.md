@@ -650,6 +650,9 @@ area:
 - `gmail_save_draft` with `thread_id` set only the thread ID, without the
   `In-Reply-To` and `References` headers Gmail needs to keep the draft in
   the thread. They now point at the thread's latest message.
+- The `docs_read_document` outline description now says that an index
+  inside an element's text counts UTF-16 units (most emoji take two), as
+  Google's indices do; the indices it returns were already Google's own.
 - The dashboard's event editor saved only through the form's `submit` event,
   which a sandbox without `allow-forms` blocks; it now saves from the submit
   button (and Enter in a field) in either sandbox.
