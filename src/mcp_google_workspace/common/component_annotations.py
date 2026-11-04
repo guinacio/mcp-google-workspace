@@ -310,9 +310,11 @@ def simplify_optional_properties(schema: Any) -> None:
 _LIST_ENVELOPE_TOOLS = frozenset(
     {
         "check_mail_updates",
+        "get_calendar_context",
         "get_calendar_digest",
         "get_mail_digest",
         "get_thread",
+        "read_emails",
         "digest",  # tasks_tasks_digest: its local name starts with its namespace
     }
 )

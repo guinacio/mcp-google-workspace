@@ -2164,7 +2164,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Check the free/busy times of up to 50 calendars or people over one window. To test a chosen time, pass it as the window and read all_free; to find meeting times, read suggested_slots, then book with calendar_create_event. Returns all_free (true only when every calendar was read and is free for the whole window), calendars in request order (id, free, null when unreadable, busy periods, errors such as notFound), suggested_slots (start/end within working hours when every readable calendar is free; unreadable ones count as free), total_suggestions, timezone (the zone of every time) and the window and slot settings used.",
+      "description": "Check the free/busy times of up to 50 calendars or people over one window. To test a chosen time, pass it as the window and read all_free; to find meeting times, read suggested_slots, then book with calendar_create_event. Returns all_free (true only when every calendar was read and is free for the whole window), calendars in request order (id, free, null when unreadable, busy periods, errors such as notFound), suggested_slots (start/end within working hours when every readable calendar is free; unreadable ones count as free), total_suggestions and count (both the number of suggested_slots), timezone (the zone of every time) and the window and slot settings used.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2247,6 +2247,10 @@
             "items": {},
             "type": "array"
           },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
           "granularity_minutes": {
             "type": "integer"
           },
@@ -2278,7 +2282,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as \"tomorrow at 3pm\" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone (IANA name), utc_offset, current_local_time, current_utc_time and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden.",
+      "description": "Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as \"tomorrow at 3pm\" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone and timezone_name (both the IANA name), utc_offset, current_local_time, current_utc_time (also as utc_datetime), count, has_more (false), next_page_token, fetched_at and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2317,6 +2321,10 @@
               "null"
             ]
           },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
           "current_date": {
             "type": [
               "string",
@@ -2342,10 +2350,28 @@
             ]
           },
           "day_of_week": {},
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "timezone": {
             "type": "string"
           },
-          "timezone_name": {},
+          "timezone_name": {
+            "type": "string"
+          },
           "utc_datetime": {
             "type": [
               "string",
@@ -8058,7 +8084,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the content of one to 100 Gmail messages by ID, all at the same detail level. Use it after gmail_search_emails, gmail_get_mail_digest or gmail_check_mail_updates, which return only snippets; gmail_get_thread reads a whole conversation at once. Returns messages (id, thread_id, from, to, subject, date, snippet, label_ids, attachments with filename, mime_type, size and the download_id gmail_download_attachment takes, and, by format, body with truncated and next_offset), missing_message_ids for IDs that no longer exist instead of failing the call, and account_timezone.",
+      "description": "Read the content of one to 100 Gmail messages by ID, all at the same detail level. Use it after gmail_search_emails, gmail_get_mail_digest or gmail_check_mail_updates, which return only snippets; gmail_get_thread reads a whole conversation at once. Returns messages (id, thread_id, from, to, subject, date, snippet, label_ids, attachments with filename, mime_type, size and the download_id gmail_download_attachment takes, and, by format, body with truncated and next_offset), missing_count and missing_message_ids for IDs that no longer exist instead of failing the call, account_timezone, and count, has_more (always false), next_page_token and fetched_at.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -8119,7 +8145,20 @@
           "account_timezone": {
             "type": "string"
           },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
           "format": {},
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
           "messages": {
             "items": {},
             "type": "array"
@@ -8130,6 +8169,13 @@
           "missing_message_ids": {
             "items": {},
             "type": "array"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [],
@@ -13044,7 +13090,7 @@
         "openWorldHint": false,
         "readOnlyHint": true
       },
-      "description": "List the user's Workspace Files uploads from uploads_file_manager, newest first, a page at a time; they are staged on the MCP server, not in Google Drive (for Drive use drive_list_files). Pass an upload_id as uploaded_file to drive_upload_file, the attachments of gmail_send_email, gmail_reply and gmail_save_draft, or the Gemini media tools. Returns files (upload_id, display_name, type, size, uploaded_at, expires_at, remaining_quota_bytes, ...), count and next_cursor, which is null once a page comes back short.",
+      "description": "List the user's Workspace Files uploads from uploads_file_manager, newest first, a page at a time; they are staged on the MCP server, not in Google Drive (for Drive use drive_list_files). Pass an upload_id as uploaded_file to drive_upload_file, the attachments of gmail_send_email, gmail_reply and gmail_save_draft, or the Gemini media tools. Returns files (upload_id, display_name, type, size, uploaded_at, expires_at, remaining_quota_bytes, ...), count, next_cursor, which is null once a page comes back short, and the same cursor as next_page_token with has_more and fetched_at.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13086,6 +13132,18 @@
             "description": "Number of files returned in this page.",
             "minimum": 0,
             "type": "integer"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC3339 time when this response was fetched."
           },
           "files": {
             "description": "Uploaded file summaries in this page.",
@@ -13186,6 +13244,11 @@
             },
             "type": "array"
           },
+          "has_more": {
+            "default": false,
+            "description": "Whether next_cursor is set.",
+            "type": "boolean"
+          },
           "next_cursor": {
             "anyOf": [
               {
@@ -13197,6 +13260,18 @@
             ],
             "default": null,
             "description": "Cursor for the next page, or null at the end."
+          },
+          "next_page_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The same value as next_cursor."
           }
         },
         "required": [

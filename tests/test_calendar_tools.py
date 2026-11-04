@@ -509,6 +509,17 @@ def test_get_calendar_context_lists_every_calendar_across_pages(monkeypatch) -> 
             "hidden": True,
         },
     ]
+    # The shared list envelope (2.0.1); every page was read.
+    assert (payload["count"], payload["has_more"], payload["next_page_token"]) == (2, False, None)
+    assert payload["fetched_at"]
+
+
+def test_get_calendar_context_names_the_zone_and_keeps_the_utc_alias(monkeypatch) -> None:
+    payload, _ = _calendar_context(monkeypatch, include_calendars=False)
+
+    # timezone_name was the abbreviation strftime gives ("CET", or "-03" for zones without one).
+    assert payload["timezone_name"] == payload["timezone"] == "Europe/Berlin"
+    assert payload["utc_datetime"] == payload["current_utc_time"]
 
 
 def test_get_calendar_context_without_calendars_skips_the_calendar_list(monkeypatch) -> None:
@@ -516,6 +527,7 @@ def test_get_calendar_context_without_calendars_skips_the_calendar_list(monkeypa
 
     assert list_calls == []
     assert payload["calendars"] is None
+    assert payload["count"] == 0
     assert payload["timezone"] == "Europe/Berlin"
     assert payload["current_date"]
 

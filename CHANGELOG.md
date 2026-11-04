@@ -29,8 +29,24 @@ otherwise; no tool, parameter or dependency is added or removed.
   tab's `headers`, `footers`, `footnotes` and `named_ranges` come with its
   first element; a tab begun on an earlier page has `continued: true` and its
   `content` only.
+- **The list envelope on the remaining list-shaped reads.**
+  `gmail_read_emails` gains `count`, `has_more` (always false),
+  `next_page_token` (null) and `fetched_at` beside `missing_count` and
+  `missing_message_ids`, which stay. `calendar_get_calendar_context` gains
+  `count` (the calendars listed; 0 with `include_calendars: false`),
+  `has_more` (false: every page is read), `next_page_token` (null) and
+  `fetched_at`. `uploads_list_files` gains `has_more`, `next_page_token` (the
+  same value as `next_cursor`, which stays) and `fetched_at`.
+- **`calendar_find_free_time`** gains `count`, the number of
+  `suggested_slots`; `total_suggestions` stays with the same value.
 
 ### Changed
+
+- **`calendar_get_calendar_context` `timezone_name`** is the IANA zone name
+  (the same value as `timezone`) instead of the abbreviation Python's
+  `tzname()` gave, which for many zones is only an offset such as `"-03"`; the
+  offset stays in `utc_offset`. `utc_datetime` keeps the value of
+  `current_utc_time` and is now described as its alias rather than removed.
 
 - **`docs_read_document` outline of a long document** returns its first page
   instead of the whole outline (a document whose outline fits in one page is

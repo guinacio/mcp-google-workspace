@@ -129,6 +129,14 @@ class UploadedFilePage(BaseModel):
     next_cursor: str | None = Field(
         default=None, description="Cursor for the next page, or null at the end."
     )
+    # The shared list envelope (2.0.1); next_page_token repeats next_cursor.
+    has_more: bool = Field(default=False, description="Whether next_cursor is set.")
+    next_page_token: str | None = Field(
+        default=None, description="The same value as next_cursor."
+    )
+    fetched_at: str | None = Field(
+        default=None, description="RFC3339 time when this response was fetched."
+    )
 
 
 class UploadStore(Protocol):
@@ -707,7 +715,8 @@ class WorkspaceFileUpload(FileUpload):
             are staged on the MCP server, not in Google Drive (for Drive use drive_list_files). Pass an upload_id as
             uploaded_file to drive_upload_file, the attachments of gmail_send_email, gmail_reply and gmail_save_draft,
             or the Gemini media tools. Returns files (upload_id, display_name, type, size, uploaded_at, expires_at,
-            remaining_quota_bytes, ...), count and next_cursor, which is null once a page comes back short."""
+            remaining_quota_bytes, ...), count, next_cursor, which is null once a page comes back short, and the
+            same cursor as next_page_token with has_more and fetched_at."""
             if not 1 <= limit <= 100:
                 raise ValueError("limit must be between 1 and 100")
             try:
@@ -729,6 +738,9 @@ class WorkspaceFileUpload(FileUpload):
                 ],
                 count=len(files),
                 next_cursor=next_cursor,
+                has_more=next_cursor is not None,
+                next_page_token=next_cursor,
+                fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             )
 
         for raw_component in local_tools(self):
