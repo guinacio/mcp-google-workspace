@@ -1994,6 +1994,35 @@
             },
             "type": "array"
           },
+          "reminders": {
+            "description": "Reminders with their method, at most 5, each {minutes (0 to 40320, minutes before the start), method ('popup' or 'email', an email to the calendar's owner)}, e.g. [{\"minutes\": 1440, \"method\": \"email\"}, {\"minutes\": 10, \"method\": \"popup\"}]. An empty list sets no reminders; omit it to use the calendar's default reminders. Use instead of reminder_minutes; passing both is an error.",
+            "items": {
+              "additionalProperties": false,
+              "description": "Pass this as a JSON object payload to the tool. Do not pass a raw string for the full request.",
+              "properties": {
+                "method": {
+                  "description": "'popup' alerts on the user's devices; 'email' emails the user (the calendar's owner).",
+                  "enum": [
+                    "popup",
+                    "email"
+                  ],
+                  "type": "string"
+                },
+                "minutes": {
+                  "description": "Minutes before the event's start, 0 to 40320 (4 weeks).",
+                  "maximum": 40320,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "minutes",
+                "method"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "send_updates": {
             "description": "Who Google emails the invitation: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar) or 'none'. When omitted, Google's default of sending no notification applies.",
             "enum": [
@@ -3021,6 +3050,35 @@
             "description": "New popup reminders, in minutes before the start (each 0 to 40320, at most 5), replacing the event's reminders, e.g. [10, 60]. An empty list removes all reminders; omit it to leave them unchanged.",
             "items": {
               "type": "integer"
+            },
+            "type": "array"
+          },
+          "reminders": {
+            "description": "New reminders with their method, replacing the event's reminders, at most 5, each {minutes (0 to 40320, minutes before the start), method ('popup' or 'email', an email to the calendar's owner)}, e.g. [{\"minutes\": 1440, \"method\": \"email\"}]. An empty list removes all reminders; omit it to leave them unchanged. Use instead of reminder_minutes; passing both is an error.",
+            "items": {
+              "additionalProperties": false,
+              "description": "Pass this as a JSON object payload to the tool. Do not pass a raw string for the full request.",
+              "properties": {
+                "method": {
+                  "description": "'popup' alerts on the user's devices; 'email' emails the user (the calendar's owner).",
+                  "enum": [
+                    "popup",
+                    "email"
+                  ],
+                  "type": "string"
+                },
+                "minutes": {
+                  "description": "Minutes before the event's start, 0 to 40320 (4 weeks).",
+                  "maximum": 40320,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "minutes",
+                "method"
+              ],
+              "type": "object"
             },
             "type": "array"
           },
@@ -5980,13 +6038,27 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Form's structure: title, description, publish state and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns form_id, title, document_title, description, responder_url, revision_id, linked_spreadsheet_id, is_quiz, published and accepting_responses (both null for legacy forms), count and items, each with item_id, title, description, kind, question_id (for a grid, a list of question_id and row_title), required, question_type and options (choices, or scale bounds and labels).",
+      "description": "Read a Google Form's structure: title, description, publish state and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns form_id, title, document_title, description, responder_url, revision_id, linked_spreadsheet_id, is_quiz, published and accepting_responses (both null for legacy forms), count and items, each with item_id, title, description, kind, question_id (for a grid, a list of question_id and row_title), required, question_type and options (choices, or scale bounds and labels). Format raw returns Google's Form instead, paged.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "form_id": {
             "description": "Google Forms form ID: the Drive file ID, also the long ID in the form's edit URL (not the responder URL).",
             "type": "string"
+          },
+          "format": {
+            "default": "normalized",
+            "description": "'normalized' (the default) returns the structure described above. 'raw' returns Google's Form resource unchanged in form (every setting, grading, feedback, image, video and file-upload limit included), for forms_batch_update_form edits; it needs the extended tool tier and fails with invalid_input under MCP_TOOL_TIER=core.",
+            "enum": [
+              "normalized",
+              "raw"
+            ],
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Raw only (normalized ignores it): the next_offset of a truncated raw result. Raw pages hold about 32,000 characters of JSON and are cut between whole items, the first page holding every other field; joining items across pages gives Google's resource. 0 starts at the beginning.",
+            "type": "integer"
           }
         },
         "required": [
@@ -6018,11 +6090,20 @@
           },
           "description": {},
           "document_title": {},
+          "element_count": {
+            "type": "integer"
+          },
+          "form": {
+            "type": "object"
+          },
           "form_id": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "format": {
+            "type": "string"
           },
           "is_quiz": {
             "type": "boolean"
@@ -6037,7 +6118,14 @@
               "null"
             ]
           },
+          "next_offset": {},
           "published": {},
+          "raw_chars": {
+            "type": "integer"
+          },
+          "raw_sha256": {
+            "type": "string"
+          },
           "responder_url": {
             "type": [
               "string",
@@ -6055,6 +6143,9 @@
               "string",
               "null"
             ]
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -11665,14 +11756,28 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Sheets spreadsheet's structure: its title, locale and every sheet (tab) with its ID and grid size. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for cell values use sheets_read_sheet_values. Returns spreadsheet_id, title, locale, spreadsheet_time_zone (the file's own setting), url, named_ranges (name, named_range_id, A1 range) and sheets, each with sheet_id, title, index, type, row_count, column_count, frozen_row_count, frozen_column_count and hidden. With include_grid_data each sheet also has values (rows of displayed cell text) and values_start (the cell of values[0][0]), else both are null.",
+      "description": "Read a spreadsheet's structure: its title, locale and every sheet (tab) with its ID and grid size. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for cell values use sheets_read_sheet_values. Returns spreadsheet_id, title, locale, spreadsheet_time_zone (the file's own setting), url, named_ranges (name, named_range_id, A1 range) and sheets, each with sheet_id, title, index, type, row_count, column_count, frozen_row_count, frozen_column_count and hidden. With include_grid_data each sheet also has values (displayed cell text) and values_start (the cell of values[0][0]), else both are null; format raw returns Google's JSON instead, paged.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "format": {
+            "default": "normalized",
+            "description": "'normalized' (the default) returns the summary described above. 'raw' returns Google's Spreadsheet resource unchanged in spreadsheet, with the formats, conditional formats, charts, merges, filters, protected and banded ranges and data sources the summary leaves out, for sheets_batch_update_spreadsheet edits; it needs the extended tool tier and fails with invalid_input under MCP_TOOL_TIER=core.",
+            "enum": [
+              "normalized",
+              "raw"
+            ],
+            "type": "string"
+          },
           "include_grid_data": {
             "default": false,
-            "description": "Also return each sheet's cell values, as displayed, in sheets[].values; this can be very large, so limit it with ranges. For values alone use sheets_read_sheet_values.",
+            "description": "Also return each sheet's cell values, as displayed, in sheets[].values (raw: Google's data with every cell's formatting); this can be very large, so limit it with ranges. For values alone use sheets_read_sheet_values.",
             "type": "boolean"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Raw only (normalized ignores it): the next_offset of a truncated raw result. Raw pages hold about 32,000 characters of JSON and are cut between whole sheets, the first page holding every other field; joining each list across pages gives Google's resource. raw_chars and raw_sha256 describe the whole resource. 0 starts at the beginning.",
+            "type": "integer"
           },
           "ranges": {
             "description": "A1 ranges that limit the response to the sheets (and, with include_grid_data, the cells) they cover, e.g. ['Sheet1!A1:C10']; basic A1 notation as in sheets_read_sheet_values, so a bare sheet name is rejected. Omitted, every sheet is returned.",
@@ -11709,14 +11814,30 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
+          "element_count": {
+            "type": "integer"
+          },
+          "format": {
+            "type": "string"
+          },
           "locale": {},
           "named_ranges": {
             "items": {},
             "type": "array"
           },
+          "next_offset": {},
+          "raw_chars": {
+            "type": "integer"
+          },
+          "raw_sha256": {
+            "type": "string"
+          },
           "sheets": {
             "items": {},
             "type": "array"
+          },
+          "spreadsheet": {
+            "type": "object"
           },
           "spreadsheet_id": {
             "type": [
@@ -11730,6 +11851,9 @@
               "string",
               "null"
             ]
+          },
+          "truncated": {
+            "type": "boolean"
           },
           "url": {
             "type": [
@@ -12186,16 +12310,30 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Slides presentation as an outline: every slide with its title, text, speaker notes and page elements, or with slide_ids only those slides, their elements adding size and position for layout edits. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for a picture of a slide use slides_get_slide_thumbnail. Returns presentation_id, title, revision_id, url, page_size (width_pt, height_pt), count and slides, each with object_id (the page_object_id other slides_ tools take), index, layout, title, text (one shape per line, in reading order), notes and elements (object_id, type, placeholder, text; with slide_ids size and position too).",
+      "description": "Read a Google Slides presentation as an outline: every slide with its title, text, speaker notes and page elements, or with slide_ids only those slides, their elements adding size and position for layout edits. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for a picture of a slide use slides_get_slide_thumbnail. Returns presentation_id, title, revision_id, url, page_size (width_pt, height_pt), count and slides, each with object_id (the page_object_id other slides_ tools take), index, layout, title, text (one shape per line), notes and elements (object_id, type, placeholder, text). Format raw returns Google's JSON instead, paged.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "format": {
+            "default": "normalized",
+            "description": "'normalized' (the default) returns the outline described above. 'raw' returns Google's Presentation resource unchanged in presentation (masters, layouts, notes master, transforms, styles and fills included), or with slide_ids Google's Page resources in pages, for slides_batch_update_presentation edits; it needs the extended tool tier and fails with invalid_input under MCP_TOOL_TIER=core.",
+            "enum": [
+              "normalized",
+              "raw"
+            ],
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Raw only (normalized ignores it): the next_offset of a truncated raw result. Raw pages hold about 32,000 characters of JSON and are cut between whole slides, layouts and masters, in that order, the first page holding every other field; joining each list across pages gives Google's resource. 0 starts at the beginning.",
+            "type": "integer"
+          },
           "presentation_id": {
             "description": "Google Slides presentation ID: the Drive file ID, also the long ID in the presentation's URL.",
             "type": "string"
           },
           "slide_ids": {
-            "description": "Object IDs of slides to read in detail, from the object_id of a slide in an earlier result: only those slides come back, in the order given, each element with its size (width_pt, height_pt) and position (x_pt, y_pt of the top-left corner). Omitted, every slide is outlined without geometry.",
+            "description": "Object IDs of slides to read in detail, from the object_id of a slide in an earlier result: only those slides come back, in the order given, each element with its size (width_pt, height_pt) and position (x_pt, y_pt of the top-left corner). Omitted, every slide is outlined without geometry. With format raw, Google's Page of each, in pages.",
             "items": {
               "type": "string"
             },
@@ -12229,17 +12367,37 @@
             "description": "Number of items in this response.",
             "type": "integer"
           },
+          "element_count": {
+            "type": "integer"
+          },
+          "format": {
+            "type": "string"
+          },
+          "next_offset": {},
           "page_size": {
             "type": [
               "object",
               "null"
             ]
           },
+          "pages": {
+            "items": {},
+            "type": "array"
+          },
+          "presentation": {
+            "type": "object"
+          },
           "presentation_id": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "raw_chars": {
+            "type": "integer"
+          },
+          "raw_sha256": {
+            "type": "string"
           },
           "revision_id": {
             "type": [
@@ -12256,6 +12414,9 @@
               "string",
               "null"
             ]
+          },
+          "truncated": {
+            "type": "boolean"
           },
           "url": {
             "type": [

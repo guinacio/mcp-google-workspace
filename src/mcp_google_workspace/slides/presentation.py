@@ -3,13 +3,16 @@
 Pure functions that turn Slides API payloads into the shapes the slides_
 tools return: an outline of slides with their text and speaker notes, page
 elements typed and in reading order, and geometry in points. Masters,
-layouts (once their names are resolved), styles and fills are dropped.
+layouts (once their names are resolved), styles and fills are dropped, except
+by the raw read (``raw_presentation_view``), which is Google's JSON unchanged.
 """
 
 from __future__ import annotations
 
 import math
 from typing import Any
+
+from ..common.raw_paging import RAW_LIMIT_CHARS, raw_resource_page
 
 EMU_PER_PT = 12700
 _TITLE_PLACEHOLDERS = ("TITLE", "CENTERED_TITLE")
@@ -265,6 +268,65 @@ def presentation_envelope(payload: dict[str, Any], *, slide_ids: list[str] | Non
         "page_size": page_size_envelope(payload.get("pageSize")),
         "slides": [slide_outline(slide, index, layout_names, geometry=detailed) for index, slide in selected],
         "count": len(selected),
+    }
+
+
+_RAW_SLIDES_HINT = "read that slide alone with slide_ids, or its text with format normalized"
+
+
+def raw_presentation_view(payload: dict[str, Any], *, offset: int = 0, limit: int = RAW_LIMIT_CHARS) -> dict[str, Any]:
+    """slides_read_presentation (raw): Google's Presentation resource under ``presentation``.
+
+    Paged by slide, then layout, then master (the order ``lists`` gives).
+    """
+    paged = raw_resource_page(
+        payload,
+        id_key="presentationId",
+        lists=("slides", "layouts", "masters"),
+        offset=offset,
+        limit=limit,
+        narrow_hint=_RAW_SLIDES_HINT,
+    )
+    return {
+        "presentation_id": payload.get("presentationId"),
+        "title": payload.get("title"),
+        "revision_id": payload.get("revisionId"),
+        "url": presentation_url(payload.get("presentationId")),
+        "format": "raw",
+        "presentation": dict(paged["page"]),
+        # Typed conversions, so the published output schema reads each field's type.
+        "truncated": bool(paged["next_offset"] is not None),
+        "next_offset": paged["next_offset"],
+        "element_count": int(paged["element_count"]),
+        "raw_chars": int(paged["raw_chars"]),
+        "raw_sha256": str(paged["raw_sha256"]),
+    }
+
+
+def raw_pages_view(
+    presentation_id: str, pages: list[dict[str, Any]], *, offset: int = 0, limit: int = RAW_LIMIT_CHARS
+) -> dict[str, Any]:
+    """slides_read_presentation (raw, slide_ids): Google's Page resources, in the order asked, under ``pages``."""
+    paged = raw_resource_page(
+        {"pages": pages},
+        id_key=None,
+        lists=("pages",),
+        offset=offset,
+        limit=limit,
+        narrow_hint=_RAW_SLIDES_HINT,
+    )
+    return {
+        "presentation_id": presentation_id,
+        # Every Page carries the presentation's revision.
+        "revision_id": pages[0].get("revisionId") if pages else None,
+        "url": presentation_url(presentation_id),
+        "format": "raw",
+        "pages": list(paged["page"].get("pages", [])),
+        "truncated": bool(paged["next_offset"] is not None),
+        "next_offset": paged["next_offset"],
+        "element_count": int(paged["element_count"]),
+        "raw_chars": int(paged["raw_chars"]),
+        "raw_sha256": str(paged["raw_sha256"]),
     }
 
 

@@ -17,6 +17,21 @@ ReminderMinutes = Annotated[int, Field(ge=0, le=40320)]
 MAX_REMINDERS = 5
 
 
+class EventReminderInput(ToolRequestModel):
+    minutes: ReminderMinutes = Field(description="Minutes before the event's start, 0 to 40320 (4 weeks).")
+    method: Literal["popup", "email"] = Field(
+        description="'popup' alerts on the user's devices; 'email' emails the user (the calendar's owner)."
+    )
+
+
+def _check_one_reminder_form(request: "CreateEventRequest | UpdateEventRequest") -> None:
+    if request.reminder_minutes is not None and request.reminders is not None:
+        raise ValueError(
+            "Pass reminders or reminder_minutes, not both: reminder_minutes sets popup reminders only, "
+            "reminders sets each reminder's method."
+        )
+
+
 class ListEventsRequest(ToolRequestModel):
     calendar_id: str = Field(
         default="primary",
@@ -165,11 +180,21 @@ class CreateEventRequest(ToolRequestModel):
         max_length=MAX_REMINDERS,
         description="Popup reminders, in minutes before the start; empty means none, omitted means calendar defaults.",
     )
+    reminders: list[EventReminderInput] | None = Field(
+        default=None,
+        max_length=MAX_REMINDERS,
+        description="Reminders with their method; empty means none, omitted means calendar defaults.",
+    )
     recurrence: list[str] | None = Field(default=None, description="Recurrence rules (RRULE strings).")
     on_conflict: Literal["fail", "suggest_next_slot"] = Field(
         default="fail",
         description="Conflict strategy when requested time overlaps existing events.",
     )
+
+    @model_validator(mode="after")
+    def _one_reminder_form(self) -> "CreateEventRequest":
+        _check_one_reminder_form(self)
+        return self
 
 
 class UpdateEventRequest(ToolRequestModel):
@@ -206,12 +231,22 @@ class UpdateEventRequest(ToolRequestModel):
         max_length=MAX_REMINDERS,
         description="Replacement popup reminders, in minutes before the start; empty removes all, omitted keeps them.",
     )
+    reminders: list[EventReminderInput] | None = Field(
+        default=None,
+        max_length=MAX_REMINDERS,
+        description="Replacement reminders with their method; empty removes all, omitted keeps them.",
+    )
     recurrence: list[str] | None = Field(default=None, description="Updated recurrence rules.")
     send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for update.")
     on_conflict: Literal["fail", "suggest_next_slot"] = Field(
         default="fail",
         description="Conflict strategy when updated time overlaps existing events.",
     )
+
+    @model_validator(mode="after")
+    def _one_reminder_form(self) -> "UpdateEventRequest":
+        _check_one_reminder_form(self)
+        return self
 
 
 class DeleteEventRequest(ToolRequestModel):

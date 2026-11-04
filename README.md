@@ -92,7 +92,7 @@ Reads accept retained keys and rewrite ciphertext with the active key. Remove an
 - `extended`: core plus the raw `*_batch_update_*` tools for Docs, Sheets, Slides and Forms, the Gmail settings tools (`gmail_manage_filters`, `gmail_manage_forwarding`, `gmail_manage_vacation`), `drive_update_drive` and `get_mcp_apps_diagnostics` (91 tools).
 - `complete`: extended plus every optional integration below (Apps dashboard, Chat, Keep, Meet, and Gemini when `GEMINI_API_KEY` is set) unless its `ENABLE_*` flag is explicitly `false`.
 
-Tools above the active tier are not registered: they are absent from `tools/list`, a call to one is an unknown tool, and `prepare_workspace_action` does not offer them. `get_google_connection_status` reports the active tier under `server.tool_tier`.
+Tools above the active tier are not registered: they are absent from `tools/list`, a call to one is an unknown tool, and `prepare_workspace_action` does not offer them. `format: raw` on `sheets_get_spreadsheet`, `slides_read_presentation` and `forms_get_form` (Google's resource unchanged, to read before a raw batch update) also needs `extended` or `complete`; under `core` it fails with `invalid_input`. `get_google_connection_status` reports the active tier under `server.tool_tier`.
 
 ### Consent
 
@@ -293,7 +293,7 @@ Calendar (namespaced as `calendar_*`):
 - `search_events`, `read_events`, `get_calendar_digest`
 - `get_calendar_context`: the account time zone and current time, plus the user's calendars
 - `find_free_time`: one FreeBusy query that reports whether a window is free for everyone (`all_free`, busy periods per calendar) and suggests slots of a given length inside working hours
-- `create_event`, `update_event` (`add_meet_link`, `reminder_minutes`, `send_updates`, color, visibility, transparency, attendees, attachments, recurrence), `respond_to_event`, `delete_event`
+- `create_event`, `update_event` (`add_meet_link`, `reminder_minutes` or `reminders` with popup and email methods, `send_updates`, color, visibility, transparency, attendees, attachments, recurrence), `respond_to_event`, `delete_event`
 - `set_event_attachments`: add and remove attachments in one change; attached Drive files download through `drive_download_file`
 - Conflict prevention: create/update run overlap checks and fail with `conflict` when the slot is unavailable; updates exclude the event being moved
 - Retry safety: pass a stable `idempotency_key` to `create_event`; the App does this automatically and Google Calendar stores a deterministic event ID
@@ -311,7 +311,7 @@ Drive (namespaced as `drive_*`):
 
 Sheets (namespaced as `sheets_*`):
 
-- `get_spreadsheet`, `create_spreadsheet`
+- `get_spreadsheet` (`format: raw` in the extended tier: Google's Spreadsheet resource, paged by sheet), `create_spreadsheet`
 - Values: `read_sheet_values` (one or many ranges), `update_sheet_values`, `append_sheet_values`
 - Extended tier: `batch_update_spreadsheet` (raw request escape hatch)
 
@@ -334,13 +334,13 @@ People (namespaced as `people_*`):
 
 Forms (namespaced as `forms_*`):
 
-- `get_form`, `create_form`, `set_form_publish_settings`
+- `get_form` (`format: raw` in the extended tier: Google's Form resource, paged by item), `create_form`, `set_form_publish_settings`
 - Responses: `list_form_responses` (`response_id` reads one)
 - Extended tier: `batch_update_form`
 
 Slides (namespaced as `slides_*`):
 
-- `read_presentation` (outline with each slide's text and notes; `slide_ids` adds element geometry), `create_presentation`, `get_slide_thumbnail`
+- `read_presentation` (outline with each slide's text and notes; `slide_ids` adds element geometry; `format: raw` in the extended tier: Google's Presentation, or the Pages of `slide_ids`, paged), `create_presentation`, `get_slide_thumbnail`
 - Text mutation: `replace_text_in_presentation`; extended tier: `batch_update_presentation`
 
 Apps (namespaced as `apps_*`, mounted when `ENABLE_APPS_DASHBOARD=true`):

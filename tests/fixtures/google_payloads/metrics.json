@@ -134,6 +134,12 @@
       "tokens_per_item": 40
     },
     {
+      "name": "forms_get_form_raw",
+      "fixture": "forms_get_form_quiz.json",
+      "payload_tokens": 504,
+      "response_tokens": 598
+    },
+    {
       "name": "forms_create_form",
       "fixture": "forms_create_form.json",
       "payload_tokens": 105,
@@ -276,6 +282,18 @@
       "response_tokens": 85
     },
     {
+      "name": "sheets_get_spreadsheet_raw",
+      "fixture": "sheets_get_spreadsheet.json",
+      "payload_tokens": 1005,
+      "response_tokens": 1099
+    },
+    {
+      "name": "sheets_get_spreadsheet_raw_formatting",
+      "fixture": "sheets_get_spreadsheet_formatting.json",
+      "payload_tokens": 2222,
+      "response_tokens": 2314
+    },
+    {
       "name": "sheets_create_spreadsheet",
       "fixture": "sheets_create_spreadsheet.json",
       "payload_tokens": 302,
@@ -344,6 +362,18 @@
       "response_tokens": 380,
       "items": 7,
       "tokens_per_item": 45
+    },
+    {
+      "name": "slides_read_presentation_raw",
+      "fixture": "slides_get_presentation.json",
+      "payload_tokens": 4386,
+      "response_tokens": 4489
+    },
+    {
+      "name": "slides_read_presentation_raw_pages",
+      "fixture": "slides_get_slide_page.json",
+      "payload_tokens": 2730,
+      "response_tokens": 2825
     },
     {
       "name": "slides_get_slide_thumbnail",

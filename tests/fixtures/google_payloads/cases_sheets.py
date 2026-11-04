@@ -7,6 +7,7 @@ from mcp_google_workspace.sheets.presentation import (
     batch_sheet_values_envelope,
     batch_update_spreadsheet_envelope,
     created_spreadsheet_envelope,
+    raw_spreadsheet_view,
     sheet_values_envelope,
     spreadsheet_envelope,
     update_values_envelope,
@@ -25,6 +26,15 @@ CASES: list[Case] = [
         items_key="sheets",
     ),
     Case("sheets_get_spreadsheet_minimal", "sheets_get_spreadsheet_minimal.json", lambda payload: spreadsheet_envelope(payload)),
+    # format=raw: Google's resource unchanged. sheets_get_spreadsheet_formatting.json is
+    # hand-built from the Sheets API reference (charts, merges, filters, theme, cell formats).
+    Case("sheets_get_spreadsheet_raw", "sheets_get_spreadsheet.json", raw_spreadsheet_view, opaque_keys=("spreadsheet",)),
+    Case(
+        "sheets_get_spreadsheet_raw_formatting",
+        "sheets_get_spreadsheet_formatting.json",
+        raw_spreadsheet_view,
+        opaque_keys=("spreadsheet",),
+    ),
     Case("sheets_create_spreadsheet", "sheets_create_spreadsheet.json", created_spreadsheet_envelope, items_key="sheets"),
     Case(
         "sheets_get_sheet_values",

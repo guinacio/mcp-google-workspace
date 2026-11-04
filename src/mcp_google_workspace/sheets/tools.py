@@ -9,12 +9,14 @@ from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
 from ..common.errors import provider_tool_error
+from ..tool_tiers import require_extended_tier
 from .client import sheets_service
 from .presentation import (
     append_values_envelope,
     batch_sheet_values_envelope,
     batch_update_spreadsheet_envelope,
     created_spreadsheet_envelope,
+    raw_spreadsheet_view,
     spreadsheet_envelope,
     update_values_envelope,
 )
@@ -106,8 +108,9 @@ def register_tools(server: FastMCP) -> None:
         include_grid_data: Annotated[
             bool,
             (
-                "Also return each sheet's cell values, as displayed, in sheets[].values; this can be "
-                "very large, so limit it with ranges. For values alone use sheets_read_sheet_values."
+                "Also return each sheet's cell values, as displayed, in sheets[].values (raw: Google's "
+                "data with every cell's formatting); this can be very large, so limit it with ranges. "
+                "For values alone use sheets_read_sheet_values."
             ),
         ] = False,
         ranges: Annotated[
@@ -118,21 +121,43 @@ def register_tools(server: FastMCP) -> None:
                 "bare sheet name is rejected. Omitted, every sheet is returned."
             ),
         ] = None,
+        format: Annotated[
+            Literal["normalized", "raw"],
+            (
+                "'normalized' (the default) returns the summary described above. 'raw' returns Google's "
+                "Spreadsheet resource unchanged in spreadsheet, with the formats, conditional formats, "
+                "charts, merges, filters, protected and banded ranges and data sources the summary leaves "
+                "out, for sheets_batch_update_spreadsheet edits; it needs the extended tool tier and fails "
+                "with invalid_input under MCP_TOOL_TIER=core."
+            ),
+        ] = "normalized",
+        offset: Annotated[
+            int,
+            (
+                "Raw only (normalized ignores it): the next_offset of a truncated raw result. Raw pages "
+                "hold about 32,000 characters of JSON and are cut between whole sheets, the first page "
+                "holding every other field; joining each list across pages gives Google's resource. "
+                "raw_chars and raw_sha256 describe the whole resource. 0 starts at the beginning."
+            ),
+        ] = 0,
     ) -> dict[str, Any]:
-        """Read a Google Sheets spreadsheet's structure: its title, locale and every sheet (tab) with its ID and grid size. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for cell values use sheets_read_sheet_values. Returns spreadsheet_id, title, locale, spreadsheet_time_zone (the file's own setting), url, named_ranges (name, named_range_id, A1 range) and sheets, each with sheet_id, title, index, type, row_count, column_count, frozen_row_count, frozen_column_count and hidden. With include_grid_data each sheet also has values (rows of displayed cell text) and values_start (the cell of values[0][0]), else both are null."""
+        """Read a spreadsheet's structure: its title, locale and every sheet (tab) with its ID and grid size. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for cell values use sheets_read_sheet_values. Returns spreadsheet_id, title, locale, spreadsheet_time_zone (the file's own setting), url, named_ranges (name, named_range_id, A1 range) and sheets, each with sheet_id, title, index, type, row_count, column_count, frozen_row_count, frozen_column_count and hidden. With include_grid_data each sheet also has values (displayed cell text) and values_start (the cell of values[0][0]), else both are null; format raw returns Google's JSON instead, paged."""
+        request = GetSpreadsheetRequest(
+            spreadsheet_id=spreadsheet_id,
+            include_grid_data=include_grid_data,
+            ranges=ranges or [],
+            format=format,
+            offset=offset,
+        )
+        if request.format == "raw":
+            require_extended_tier("format", "raw", instead="Omit format for the normalized structure.")
         try:
-            return spreadsheet_envelope(
-                get_spreadsheet_payload(
-                    GetSpreadsheetRequest(
-                        spreadsheet_id=spreadsheet_id,
-                        include_grid_data=include_grid_data,
-                        ranges=ranges or [],
-                    )
-                ),
-                include_grid_data=include_grid_data,
-            )
+            payload = get_spreadsheet_payload(request)
         except HttpError as exc:
             raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id) from exc
+        if request.format == "raw":
+            return raw_spreadsheet_view(payload, offset=request.offset)
+        return spreadsheet_envelope(payload, include_grid_data=include_grid_data)
 
     @server.tool(name="create_spreadsheet")
     def create_spreadsheet(

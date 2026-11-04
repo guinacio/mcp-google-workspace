@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any
 
+import pytest
 from fastmcp import Client
 from googleapiclient.errors import HttpError
 from httplib2 import Response
@@ -626,6 +627,98 @@ def test_update_event_leaves_reminders_and_conference_unchanged_by_default(monke
     assert patches[0].kwargs["conferenceDataVersion"] == 0
 
 
+# --- reminders with a method (2.1.0) -------------------------------------------------
+
+EMAIL_AND_POPUP = [
+    {"minutes": 1440, "method": "email"},
+    {"minutes": 10, "method": "popup"},
+    {"minutes": 10, "method": "email"},
+]
+EMAIL_AND_POPUP_OVERRIDES = {
+    "useDefault": False,
+    "overrides": [
+        {"method": "email", "minutes": 10},
+        {"method": "popup", "minutes": 10},
+        {"method": "email", "minutes": 1440},
+    ],
+}
+
+
+def test_create_event_reminders_send_each_method(monkeypatch) -> None:
+    result, inserted, _ = _create_event_scenario(monkeypatch, [], reminders=EMAIL_AND_POPUP)
+
+    assert result.is_error is False, result.content
+    assert inserted[0]["reminders"] == EMAIL_AND_POPUP_OVERRIDES
+
+
+def test_create_event_empty_reminders_means_no_reminders(monkeypatch) -> None:
+    _, inserted, _ = _create_event_scenario(monkeypatch, [], reminders=[])
+
+    assert inserted[0]["reminders"] == {"useDefault": False, "overrides": []}
+
+
+def test_update_event_reminders_replace_the_event_reminders(monkeypatch) -> None:
+    result, patches = _update_event(monkeypatch, reminders=EMAIL_AND_POPUP)
+
+    assert result.is_error is False, result.content
+    assert patches[0].body == {"reminders": EMAIL_AND_POPUP_OVERRIDES}
+
+
+def test_update_event_empty_reminders_removes_reminders(monkeypatch) -> None:
+    _, patches = _update_event(monkeypatch, reminders=[])
+
+    assert patches[0].body == {"reminders": {"useDefault": False, "overrides": []}}
+
+
+@pytest.mark.parametrize(
+    "reminders",
+    [
+        [{"minutes": -1, "method": "popup"}],
+        [{"minutes": 40321, "method": "email"}],
+        [{"minutes": 10, "method": "sms"}],
+        [{"minutes": 10}],
+        [{"minutes": value, "method": "email"} for value in range(6)],
+    ],
+    ids=["negative", "over-4-weeks", "unknown-method", "no-method", "six"],
+)
+def test_reminders_outside_googles_limits_are_rejected(monkeypatch, reminders) -> None:
+    # The published schema rejects most of these before the tool runs; the request model the rest.
+    result, inserted, _ = _create_event_scenario(monkeypatch, [], reminders=reminders)
+    assert result.is_error is True
+    assert inserted == []
+
+    result, patches = _update_event(monkeypatch, reminders=reminders)
+    assert result.is_error is True
+    assert patches == []
+
+
+def test_reminders_and_reminder_minutes_together_are_an_input_error(monkeypatch) -> None:
+    both = {"reminders": [{"minutes": 30, "method": "email"}], "reminder_minutes": [10]}
+
+    result, inserted, _ = _create_event_scenario(monkeypatch, [], **both)
+    assert result.is_error is True
+    envelope = result.structured_content
+    assert envelope["code"] == "invalid_input"
+    assert "reminders or reminder_minutes, not both" in envelope["message"]
+    assert inserted == []
+
+    result, patches = _update_event(monkeypatch, **both)
+    assert result.is_error is True
+    assert "reminders or reminder_minutes, not both" in result.structured_content["message"]
+    assert patches == []
+
+
+def test_reminder_minutes_still_sets_popup_reminders_beside_the_new_parameter(monkeypatch) -> None:
+    """reminder_minutes keeps its 2.0 behaviour: popup only, sorted, duplicates once."""
+    _, inserted, _ = _create_event_scenario(monkeypatch, [], reminder_minutes=[30, 5, 30])
+    assert inserted[0]["reminders"] == {
+        "useDefault": False,
+        "overrides": [{"method": "popup", "minutes": 5}, {"method": "popup", "minutes": 30}],
+    }
+    _, patches = _update_event(monkeypatch, reminder_minutes=[30])
+    assert patches[0].body == {"reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]}}
+
+
 # --- calendar_set_event_attachments -----------------------------------------------
 
 EXISTING_ATTACHMENTS = [
@@ -840,3 +933,31 @@ def test_search_events_pages_with_the_next_page_token_it_returns(monkeypatch) ->
     assert first["next_page_token"] == "page-2" and second["next_page_token"] is None
     assert "pageToken" not in sent[0] and sent[1]["pageToken"] == "page-2"
     assert sent[1]["timeMin"] == window["time_min"] and sent[1]["timeMax"] == window["time_max"]
+
+
+def test_reminder_limits_are_published_and_rejected_as_invalid_input() -> None:
+    from mcp_google_workspace.server import workspace_mcp
+
+    async def scenario() -> tuple[Any, Any]:
+        async with Client(workspace_mcp) as client:
+            listed = {tool.name: tool for tool in await client.list_tools()}
+            result = await client.call_tool(
+                "calendar_create_event",
+                {
+                    "summary": "Planning",
+                    "start_datetime": "2026-07-12T10:00:00",
+                    "end_datetime": "2026-07-12T11:00:00",
+                    "reminders": [{"minutes": 40321, "method": "email"}],
+                },
+                raise_on_error=False,
+            )
+        return listed, result
+
+    listed, result = asyncio.run(scenario())
+    for tool in ("calendar_create_event", "calendar_update_event"):
+        item = listed[tool].input_schema["properties"]["reminders"]["items"]
+        assert item["properties"]["minutes"]["maximum"] == 40320
+        assert item["properties"]["method"]["enum"] == ["popup", "email"]
+    assert result.is_error is True
+    assert result.structured_content["code"] == "invalid_input"
+    assert any(entry["field"].startswith("reminders") for entry in result.structured_content["field_errors"])

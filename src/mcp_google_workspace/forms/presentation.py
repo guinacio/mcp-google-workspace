@@ -2,13 +2,15 @@
 
 Pure functions that turn Forms API payloads into the shapes the forms_ tools
 return: a form's items with their question IDs, types and options, its publish
-state, and submitted responses with answers labelled by question.
+state, and submitted responses with answers labelled by question. The raw read
+(``raw_form_view``) returns Google's Form resource unchanged instead.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from ..common.raw_paging import RAW_LIMIT_CHARS, raw_resource_page
 from ..common.resources import clean_web_url
 from ..common.timezone import in_account_timezone
 
@@ -174,6 +176,32 @@ def form_envelope(payload: dict[str, Any]) -> dict[str, Any]:
         "accepting_responses": accepting,
         "items": [form_item_envelope(item) for item in items],
         "count": len(items),
+    }
+
+
+def raw_form_view(payload: dict[str, Any], *, offset: int = 0, limit: int = RAW_LIMIT_CHARS) -> dict[str, Any]:
+    """forms_get_form (raw): Google's Form resource under ``form``, paged by item."""
+    paged = raw_resource_page(
+        payload,
+        id_key="formId",
+        lists=("items",),
+        offset=offset,
+        limit=limit,
+        narrow_hint="read its question with format normalized",
+    )
+    return {
+        "form_id": payload.get("formId"),
+        "title": payload.get("info", {}).get("title"),
+        "revision_id": payload.get("revisionId"),
+        "responder_url": clean_web_url(payload.get("responderUri")),
+        "format": "raw",
+        "form": dict(paged["page"]),
+        # Typed conversions, so the published output schema reads each field's type.
+        "truncated": bool(paged["next_offset"] is not None),
+        "next_offset": paged["next_offset"],
+        "element_count": int(paged["element_count"]),
+        "raw_chars": int(paged["raw_chars"]),
+        "raw_sha256": str(paged["raw_sha256"]),
     }
 
 

@@ -31,6 +31,8 @@ class GetSpreadsheetRequest(ToolRequestModel):
     spreadsheet_id: str = Field(description="Spreadsheet file ID.")
     include_grid_data: bool = Field(default=False, description="Include grid cell data when true.")
     ranges: list[str] = Field(default_factory=list, description="Optional A1 ranges to limit the response.")
+    format: Literal["normalized", "raw"] = Field(default="normalized")
+    offset: int = Field(default=0, ge=0)
 
     @field_validator("ranges")
     @classmethod
