@@ -8283,7 +8283,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and for an in-thread reply gmail_reply sets the reply headers that a draft made here lacks. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId).",
+      "description": "Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and gmail_reply replies in a thread right away with the reply recipients filled in. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -8367,7 +8367,7 @@
             "type": "string"
           },
           "thread_id": {
-            "description": "Gmail thread to file the draft under (thread_id from search or read results). Only the thread ID is set; the In-Reply-To and References headers Gmail's threading also expects are not added, so the draft may not join the thread. For a real reply use gmail_reply.",
+            "description": "Gmail thread to file the draft under as a reply (thread_id from search or read results): In-Reply-To and References point at the thread's latest message, so keep the thread's subject for Gmail to join it.",
             "type": "string"
           },
           "to": {

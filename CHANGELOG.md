@@ -647,6 +647,9 @@ area:
   offset on every later day of the window, so across a DST change the
   suggested slots moved by an hour. Each day's hours are now local time in
   `time_zone`.
+- `gmail_save_draft` with `thread_id` set only the thread ID, without the
+  `In-Reply-To` and `References` headers Gmail needs to keep the draft in
+  the thread. They now point at the thread's latest message.
 - The dashboard's event editor saved only through the form's `submit` event,
   which a sandbox without `allow-forms` blocks; it now saves from the submit
   button (and Enter in a field) in either sandbox.
