@@ -72,6 +72,8 @@ def workspace() -> FastMCP:
     for name in ["ENABLE_CHAT", "ENABLE_GEMINI", "ENABLE_KEEP", "ENABLE_MEET"]:
         mp.delenv(name, raising=False)
     mp.setenv("ENABLE_APPS_DASHBOARD", "true")
+    # get_mcp_apps_diagnostics is published from the extended tool tier up.
+    mp.setenv("MCP_TOOL_TIER", "extended")
     root = importlib.reload(server_module).workspace_mcp
     mp.undo()
     yield root
@@ -97,8 +99,9 @@ def test_local_principal_gets_every_registered_operation_with_real_tool_names(wo
     assert names["getDashboard"] == "apps_get_dashboard"
     assert names["patchState"] == "apps_patch_state"
     assert names["createEvent"] == "calendar_create_event"
-    assert names["listCalendars"] == "calendar_list_calendars"
-    assert names["markEmailSpam"] == "gmail_mark_as_spam"
+    assert names["listCalendars"] == "calendar_get_calendar_context"
+    assert names["markEmailSpam"] == "gmail_modify_messages"
+    assert names["deleteEmail"] == "gmail_delete"
     for op, entry in manifest["operations"].items():
         assert entry["mutates"] is (op not in READS), op
     # The manifest is UI metadata: never in the model-visible structured content.
@@ -232,16 +235,15 @@ EXPECTED_VISIBILITY = {
     "apps_get_event_detail": ["app"],
     "apps_get_email_detail": ["app"],
     "apps_get_email_attachment": ["app"],
-    "files_file_manager": ["model"],
-    "files_store_files": ["app"],
-    "files_delete_file": ["app", "model"],
-    "files_list_files": ["model"],
-    "files_list_files_page": ["model"],
-    "files_read_file": ["model"],
+    "uploads_file_manager": ["model"],
+    "uploads_store_files": ["app"],
+    "uploads_delete_file": ["app"],
+    "uploads_list_files": ["model"],
+    "uploads_read_file": ["model"],
 }
 
 
-def test_every_apps_and_files_tool_declares_its_intended_visibility(workspace) -> None:
+def test_every_apps_and_uploads_tool_declares_its_intended_visibility(workspace) -> None:
     async def listing():
         async with Client(workspace) as client:
             return {tool.name: tool for tool in await client.list_tools()}
@@ -250,7 +252,7 @@ def test_every_apps_and_files_tool_declares_its_intended_visibility(workspace) -
     declared = {
         name: tool.meta["ui"]["visibility"]
         for name, tool in tools.items()
-        if name.startswith(("apps_", "files_"))
+        if name.startswith(("apps_", "uploads_"))
     }
     assert declared == EXPECTED_VISIBILITY
 
@@ -276,7 +278,7 @@ def test_prefab_picker_is_served_bundled_without_external_csp_domains(workspace)
     async def run():
         async with Client(workspace) as client:
             tools = {tool.name: tool for tool in await client.list_tools()}
-            uri = tools["files_file_manager"].meta["ui"]["resourceUri"]
+            uri = tools["uploads_file_manager"].meta["ui"]["resourceUri"]
             resources = {str(item.uri): item for item in await client.list_resources()}
             contents = await client.read_resource(uri)
             diagnostics = await client.call_tool("get_mcp_apps_diagnostics", {})

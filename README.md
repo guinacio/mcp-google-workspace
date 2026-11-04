@@ -84,6 +84,16 @@ Mounted secret document:
 
 Reads accept retained keys and rewrite ciphertext with the active key. Remove an old key only after a rotation/restore drill confirms all durable records have been rewritten.
 
+### Tool tiers
+
+`MCP_TOOL_TIER` selects how much of the catalog is published:
+
+- `core` (default): the everyday tools of every core service (82 tools).
+- `extended`: core plus the raw `*_batch_update_*` tools for Docs, Sheets, Slides and Forms, the Gmail settings tools (`gmail_manage_filters`, `gmail_manage_forwarding`, `gmail_manage_vacation`), `drive_update_drive` and `get_mcp_apps_diagnostics` (91 tools).
+- `complete`: extended plus every optional integration below (Apps dashboard, Chat, Keep, Meet, and Gemini when `GEMINI_API_KEY` is set) unless its `ENABLE_*` flag is explicitly `false`.
+
+Tools above the active tier are not registered: they are absent from `tools/list`, a call to one is an unknown tool, and `prepare_workspace_action` does not offer them. `get_google_connection_status` reports the active tier under `server.tool_tier`.
+
 ### Optional service feature flags
 
 Sheets, Docs, Tasks, People, Forms, and Slides are mounted by default and their scopes are always requested.
@@ -210,7 +220,7 @@ $env:MCP_SECRET_FILE="/run/secrets/mcp-google-workspace.json"
 uv run python -m mcp_google_workspace.server_http
 ```
 
-Clients connect with an OIDC bearer JWT. The server validates its signature (JWKS), issuer, audience and expiry, and requires `iss`, `sub` and `exp`; the verified `iss` + `sub` selects an isolated encrypted Google token. MCP bearer tokens are never forwarded to Google. A request without a valid token gets `401` with a `WWW-Authenticate` challenge whose `resource_metadata` points to the RFC 9728 document served at `/.well-known/oauth-protected-resource<base path>/mcp`, which names the issuer as the authorization server (the server does not implement an authorization server or dynamic client registration). Each user calls `connect_google_workspace`, opens its returned URL and completes Google consent; `tools/list` reflects the caller's current grants on every request (`refresh_workspace_catalog` only reports them). The callback is PKCE-protected, one-time, checks the RFC 9207 `iss` parameter when present, and cannot connect Google credentials to a different MCP principal.
+Clients connect with an OIDC bearer JWT. The server validates its signature (JWKS), issuer, audience and expiry, and requires `iss`, `sub` and `exp`; the verified `iss` + `sub` selects an isolated encrypted Google token. MCP bearer tokens are never forwarded to Google. A request without a valid token gets `401` with a `WWW-Authenticate` challenge whose `resource_metadata` points to the RFC 9728 document served at `/.well-known/oauth-protected-resource<base path>/mcp`, which names the issuer as the authorization server (the server does not implement an authorization server or dynamic client registration). Each user calls `connect_google_workspace`, opens its returned URL and completes Google consent; `tools/list` reflects the caller's current grants on every request (`get_google_connection_status` reports them). The callback is PKCE-protected, one-time, checks the RFC 9207 `iss` parameter when present, and cannot connect Google credentials to a different MCP principal.
 
 ### Docker / GHCR
 
@@ -249,105 +259,76 @@ gh attestation verify \
 
 ## Notable MCP tools
 
+The catalog is organised around tasks rather than Google API methods: one tool per job, with typed parameters, and an `action` enum where a resource has several operations. The default `core` tier publishes 82 tools (80 for the model plus two app-only upload callbacks); see [Tool tiers](#tool-tiers) for the rest.
+
 Gmail (namespaced as `gmail_*` in composed server):
 
-- `send_email`, `reply_email`, `reply_all_email` (true Gmail-thread replies with RFC reply headers)
-- `search_emails` (compact metadata-first inbox listing and Gmail query surface)
-- `read_emails` (consistent one-to-100 message hydration with selectable detail level)
+- `search_emails` (Gmail query plus sender, recipient, subject, unread, attachment and age filters; `group_by_thread` lists conversations)
 - `get_mail_digest`, `check_mail_updates` (unbiased received/sent feeds, including routed and automated mail)
-- `list_labels`, `create_label`, `update_label`, `delete_label`, `apply_labels`
-- `list_attachments`, `download_attachment`
-- `mark_as_read`, `mark_as_unread`, `move_email`, `delete_email`
-- `untrash_email`, `mark_as_spam`, `mark_as_not_spam`
-- `batch_modify`, `batch_delete`
-- `list_filters`, `create_filter`, `delete_filter`
-- Drafts: `list_drafts`, `get_draft`, `create_draft`, `update_draft`, `delete_draft`, `send_draft`
-- Threads: `list_threads`, `get_thread` (clean latest message by default), `modify_thread`, `trash_thread`, `untrash_thread`, `delete_thread`
-- Forwarding addresses: `list_forwarding_addresses`, `get_forwarding_address`, `create_forwarding_address`, `delete_forwarding_address`
-- Vacation settings: `get_vacation_settings`, `update_vacation_settings`
+- `read_emails` (one to 100 messages at one detail level; attachments carry their `download_id`), `get_thread`, `download_attachment`
+- `send_email`, `reply` (true Gmail-thread replies with RFC reply headers; `reply_all` copies everyone)
+- `modify_messages`: labels by name or ID, read/unread, archive or back to the inbox, spam/not spam and restore from Trash, for messages or a whole thread
+- `delete`: Trash (default) or permanent deletion of messages or a thread
+- Drafts: `save_draft` (create, or rewrite with `draft_id`), `list_drafts` (`draft_id` reads one), `send_draft`, `delete_draft`
+- Labels: `list_labels`, `manage_labels` (`create`, `update`, `delete`)
+- Extended tier: `manage_filters`, `manage_forwarding`, `manage_vacation`
+
+Label parameters accept names as shown in Gmail ("Clients/Acme") or IDs; system labels such as INBOX, UNREAD or STARRED match case-insensitively. A name costs one `users.labels.list` per call; an unknown or ambiguous name fails with `not_found` and the candidate labels, and no label is ever created implicitly.
 
 Calendar (namespaced as `calendar_*`):
 
-- `search_events`, `read_events`, `get_calendar_digest`, `list_calendars`, `get_calendar_context`
-- `check_time_availability`, `create_event`, `update_event`, `respond_to_event`, `delete_event`
-- Smart scheduling: `find_common_free_slots`
-- Event attachments: metadata is included by `read_events`; mutations use `add_event_attachment`, `remove_event_attachment`, `download_event_attachment`
-- Event styling + conferencing fields on create/update: `color_id`, `visibility`, `transparency`, `conference_data`
-- Conflict prevention: create/update run overlap checks and return `status: "CONFLICT"` when the slot is unavailable; updates exclude the event being moved
+- `search_events`, `read_events`, `get_calendar_digest`
+- `get_calendar_context`: the account time zone and current time, plus the user's calendars
+- `find_free_time`: one FreeBusy query that reports whether a window is free for everyone (`all_free`, busy periods per calendar) and suggests slots of a given length inside working hours
+- `create_event`, `update_event` (`add_meet_link`, `reminder_minutes`, `send_updates`, color, visibility, transparency, attendees, attachments, recurrence), `respond_to_event`, `delete_event`
+- `set_event_attachments`: add and remove attachments in one change; attached Drive files download through `drive_download_file`
+- Conflict prevention: create/update run overlap checks and fail with `conflict` when the slot is unavailable; updates exclude the event being moved
 - Retry safety: pass a stable `idempotency_key` to `create_event`; the App does this automatically and Google Calendar stores a deterministic event ID
 
-### Calendar availability tools
-
-Use the availability tool that matches the scheduling intent:
-
-- `check_time_availability`: verify a proposed `timeMin`/`timeMax` interval for one or more calendar IDs. Use this when the exact time is already known.
-- `find_common_free_slots`: discover candidate intervals across participants inside a broader search window. Use this when the exact meeting time is not known yet.
-
-### Calendar smart scheduling (`find_common_free_slots`)
-
-`find_common_free_slots` returns candidate meeting slots (not raw FreeBusy output) for all participants in a time window.
-
-Inputs:
-
-- `participants`: list of calendar IDs/emails
-- `time_min`, `time_max`: RFC3339 window
-- `slot_duration_minutes`: desired meeting duration
-- `granularity_minutes`: candidate step size
-- `max_results`: result cap
-- `time_zone`: optional timezone used in FreeBusy query
-- `working_hours_start`, `working_hours_end`: optional daily working-hours filter (`HH:MM`, 24h)
-
-`participants` must be sent as a native JSON array, for example `["primary", "rodrigo@example.com"]`. Use the canonical `slot_duration_minutes` field.
-
-Working-hours defaults:
-
-- `working_hours_start`: `08:00`
-- `working_hours_end`: `17:00`
+`find_free_time` takes `participants` (calendar IDs or attendee emails, as a native JSON array), `time_min`/`time_max`, `slot_duration_minutes` (default 30), `granularity_minutes` (15), `max_results` (10), `time_zone` and `working_hours_start`/`working_hours_end` (`08:00`/`17:00`). To check one proposed time, pass it as the window and read `all_free`.
 
 Drive (namespaced as `drive_*`):
 
-- Files/content: `list_files`, `get_file`, `create_folder`, `create_file_metadata`, `upload_file`
-- File mutations: `update_file_metadata`, `update_file_content`, `move_file`, `copy_file`, `delete_file`
-- Content retrieval: `download_file`, `export_google_file`, `get_file_content_capabilities`
-- Sharing: `list_permissions`, `get_permission`, `create_permission`, `update_permission`, `delete_permission`
-- Shared Drives: `list_drives`, `get_drive`, `hide_drive`, `unhide_drive`
-- Progress reporting: `upload_file`, `update_file_content`, `download_file`, and `export_google_file` emit MCP progress updates
-- Use Drive for file discovery when you need Docs, Sheets, Slides, or Forms file IDs by MIME type or name
+- Find and read: `list_files` (Drive query plus `folder_id`, `kind`, `modified_after` and `full_text` filters), `get_file` (metadata plus how the content can be retrieved), `read_file` (text of Docs, Sheets, Slides and text files)
+- Write: `upload_file` (new file from an upload or local path, replace an existing file's content with `file_id`, or an empty/native Google file from metadata alone), `create_folder`, `update_file_metadata`, `move_file`, `copy_file`, `delete_file`
+- Save locally: `download_file` (stored files, and Google files exported to PDF or `export_mime_type`; local stdio only)
+- Sharing: `list_permissions`, `share_file` (new grant, or change one with `permission_id`), `unshare_file`
+- Shared drives: `list_drives`; extended tier: `update_drive` (hide or unhide)
+- Progress reporting: `upload_file` and `download_file` emit MCP progress updates
 
 Sheets (namespaced as `sheets_*`):
 
 - `get_spreadsheet`, `create_spreadsheet`
-- Values: `get_sheet_values`, `batch_get_sheet_values`, `append_sheet_values`, `update_sheet_values`
-- Raw request escape hatch: `batch_update_spreadsheet`
+- Values: `read_sheet_values` (one or many ranges), `update_sheet_values`, `append_sheet_values`
+- Extended tier: `batch_update_spreadsheet` (raw request escape hatch)
 
 Docs (namespaced as `docs_*`):
 
-- `get_document`, `create_document`
+- `read_document` (`text`, `markdown`, `outline` with the indices batch updates need, or `raw`), `create_document`
 - Convenience text mutations: `append_document_text`, `replace_document_text`
-- Raw request escape hatch: `batch_update_document`
+- Extended tier: `batch_update_document`
 
 Tasks (namespaced as `tasks_*`):
 
-- Task lists: `list_tasklists`, `get_tasklist`, `create_tasklist`
-- Tasks: `list_tasks`, `get_task`, `create_task`, `update_task`, `complete_task`, `move_task`, `delete_task`
+- Task lists: `list_tasklists` (`tasklist_id` reads one), `create_tasklist`
+- Tasks: `list_tasks` (`task_id` reads one), `tasks_digest`, `create_task`, `update_task` (fields, completion, and moves within or across lists), `delete_task`; every task tool defaults to the account's default list
 
 People (namespaced as `people_*`):
 
-- Contacts: `list_contacts`, `search_contacts`, `get_contact`, `create_contact`, `update_contact`, `delete_contact`
-- Contact groups: `list_contact_groups`, `create_contact_group`, `modify_contact_group_members`
+- Contacts: `search_contacts` (without `query` it lists every contact), `get_contact`, `create_contact`, `update_contact`, `delete_contact`
+- Contact groups: `manage_contact_groups` (`list`, `create`, `modify_members`)
 - Scope note: v1 is personal contacts only; Workspace directory lookup is intentionally excluded
 
 Forms (namespaced as `forms_*`):
 
-- `get_form`, `create_form`, `batch_update_form`
-- Publishing: `set_form_publish_settings`
-- Responses: `list_form_responses`, `get_form_response`
+- `get_form`, `create_form`, `set_form_publish_settings`
+- Responses: `list_form_responses` (`response_id` reads one)
+- Extended tier: `batch_update_form`
 
 Slides (namespaced as `slides_*`):
 
-- `get_presentation`, `create_presentation`
-- Slide reads: `get_slide_page`, `get_slide_thumbnail`
-- Text mutation and raw request escape hatch: `replace_text_in_presentation`, `batch_update_presentation`
+- `read_presentation` (outline with each slide's text and notes; `slide_ids` adds element geometry), `create_presentation`, `get_slide_thumbnail`
+- Text mutation: `replace_text_in_presentation`; extended tier: `batch_update_presentation`
 
 Apps (namespaced as `apps_*`, mounted when `ENABLE_APPS_DASHBOARD=true`):
 
@@ -484,33 +465,32 @@ These features depend on active MCP client support and may be silently unavailab
 
 ### MCP Apps File Picker
 
-The composed server exposes `files_file_manager`, built with FastMCP Prefab and delivered through the standard MCP Apps wire protocol. Its model-visible tool references a generated `ui://prefab/tool/.../renderer.html` resource served as `text/html;profile=mcp-app`; the rendered app provides drag-and-drop and native file selection. It is intended for hosted clients such as Claude where a server-local path is not useful and sending binary data through the model context is wasteful.
+The composed server exposes `uploads_file_manager`, built with FastMCP Prefab and delivered through the standard MCP Apps wire protocol. Its model-visible tool references a generated `ui://prefab/tool/.../renderer.html` resource served as `text/html;profile=mcp-app`; the rendered app provides drag-and-drop and native file selection. It is intended for hosted clients such as Claude where a server-local path is not useful and sending binary data through the model context is wasteful.
 
 Typical flow:
 
-1. Call `files_file_manager` and let the user choose one or more files (up to 25 MiB each).
+1. Call `uploads_file_manager` and let the user choose one or more files (up to 25 MiB each).
 2. Use the opaque `upl_...` handle returned by the picker as `uploaded_file` in a Workspace tool. `display_name` is presentation-only.
 3. The integration reads the bytes directly from scoped server storage; the binary payload does not pass through the model context.
 
 `uploaded_file` is supported by:
 
-- Gmail `send_email`, `create_draft`, and `update_draft` attachments
-- Drive `upload_file` and `update_file_content`
+- Gmail `send_email`, `reply` and `save_draft` attachments
+- Drive `upload_file` (new files and content replacement)
 - Gemini `edit_image`, `describe_video`, and `analyze_audio`
 
 Local/stdio uploads live in process memory, scoped to the trusted-local principal (not to an MCP connection, so they survive across requests) and use the same `upl_...` handles, TTL, quota, and content checks as remote uploads; see [Local stdio trust boundary](#local-stdio-trust-boundary). A single remote instance can use encrypted filesystem objects plus SQLite metadata through `MCP_UPLOAD_DB`. Multi-worker production uses Redis metadata and S3-compatible encrypted object storage by configuring `MCP_REDIS_URL` and `MCP_UPLOAD_S3_BUCKET` (plus optional `MCP_UPLOAD_S3_ENDPOINT` and `MCP_UPLOAD_S3_PREFIX`). Uploads use opaque handles, expire after one hour, and have a 250 MiB per-principal aggregate quota by default. Configure `MCP_UPLOAD_TTL_SECONDS` and `MCP_UPLOAD_QUOTA_BYTES` as needed. Uploads are MIME-sniffed, archive expansion is bounded, checksums are verified, and `MCP_REQUIRE_MALWARE_SCAN=true` enforces ClamAV through `MCP_CLAMAV_HOST`/`MCP_CLAMAV_PORT`. Raw host paths are absent from the remote catalog and rejected at runtime.
 
-Use `files_delete_file` to remove an upload before its TTL expires.
-Use `files_list_files_page` with `limit` and `cursor` when a principal has many uploads.
-`get_mcp_apps_diagnostics` reports the UI resource, renderer mode, generated hidden callback addresses, and can run a temporary store/delete self-test with `run_self_test=true`.
+Uploads expire on their own; `uploads_list_files` lists them a page at a time (`limit`, `cursor`).
+`get_mcp_apps_diagnostics` (extended tier) reports the UI resource, renderer mode, generated hidden callback addresses, and can run a temporary store/delete self-test with `run_self_test=true`.
 
-The picker always serves the self-contained renderer bundled in the locked `prefab-ui` version (every transport, not only the MCPB), so its resource declares no CSP domains and loads nothing from a CDN. `files_list_files`, `files_list_files_page` and `files_read_file` are model-only; `files_store_files` is the picker's app-only upload callback.
+The picker always serves the self-contained renderer bundled in the locked `prefab-ui` version (every transport, not only the MCPB), so its resource declares no CSP domains and loads nothing from a CDN. `uploads_list_files` and `uploads_read_file` are model-only; `uploads_store_files` and `uploads_delete_file` are the picker's app-only callbacks.
 
 **Requires:** an MCP client with MCP Apps/iframe rendering support. Clients without Apps support can still use Google Drive file IDs or trusted local/stdio paths.
 
 ### Progressive Tool Discovery
 
-Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to the connection and consent tools, `search_workspace`, the main read entry point of each core service (`gmail_search_emails`, `gmail_get_mail_digest`, `calendar_search_events`, `calendar_get_calendar_digest`, `drive_list_files`, `tasks_tasks_digest`), plus `search_tools` and `call_tool`; hidden tools, including the upload picker and diagnostics, remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. The catalog is sorted and evaluated against the caller's current grants on every request (and re-checked when a tool is called, so a stale catalog cannot run a revoked capability); `refresh_workspace_catalog` reports the grants and sends no notification.
+Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to the connection and consent tools, `search_workspace`, the main read entry point of each core service (`gmail_search_emails`, `gmail_get_mail_digest`, `calendar_search_events`, `calendar_get_calendar_digest`, `drive_list_files`, `tasks_tasks_digest`), plus `search_tools` and `call_tool`; hidden tools, including the upload picker and diagnostics, remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. The catalog is sorted and evaluated against the caller's current grants on every request (and re-checked when a tool is called, so a stale catalog cannot run a revoked capability); after a consent, list tools again (`get_google_connection_status` reports the grants; no notification is sent).
 
 Configuration:
 
@@ -521,7 +501,7 @@ Configuration:
 
 The official MCPB manifest declares `MCP_CLIENT_MODEL=claude`, so Claude Desktop receives the complete catalog. For a manual Claude Desktop stdio configuration, add the same environment variable explicitly.
 
-`get_workspace_capabilities` reports enabled namespaces, OAuth capability names, and supported file-input strategies. `search_workspace` searches Drive (names and content), contacts, and Gmail concurrently and returns normalized hits: Gmail hits carry subject, sender, date and snippet. `docs_read_document` and `drive_read_file` return a document or file as text (Docs also as Markdown) in pages, with the same `next_offset`, `body_chars` and `body_sha256` paging fields as email bodies, so a remote client can read content without the server's filesystem.
+`get_google_connection_status` reports, besides the user's grants, the active tool tier, enabled namespaces, OAuth capability names, and supported file-input strategies. `search_workspace` searches Drive (names and content), contacts, and Gmail concurrently and returns normalized hits: Gmail hits carry subject, sender, date and snippet. `docs_read_document` and `drive_read_file` return a document or file as text (Docs also as Markdown) in pages, with the same `next_offset`, `body_chars` and `body_sha256` paging fields as email bodies, so a remote client can read content without the server's filesystem.
 
 ### Incremental Google Consent
 

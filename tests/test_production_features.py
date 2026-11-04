@@ -96,8 +96,8 @@ def test_consequential_action_policy_is_cost_and_impact_aware() -> None:
     assert "body" not in preview
 
     batch = {"message_ids": [f"message-{index}" for index in range(10)]}
-    assert requires_prepare("gmail_batch_modify", batch)
-    assert impact_preview("gmail_batch_modify", batch)["counts"] == {"messages": 10}
+    assert requires_prepare("gmail_modify_messages", batch)
+    assert impact_preview("gmail_modify_messages", batch)["counts"] == {"messages": 10}
 
 
 def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
@@ -117,7 +117,7 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
     async def exercise() -> tuple[dict[str, object], object]:
         tool = await workspace_mcp.get_tool("commit_workspace_action")
         assert tool is not None
-        prepared = await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10})
+        prepared = await prepare_action("gmail_modify_messages", {"message_ids": ["m"] * 10})
         token = str(prepared["commit_token"])
 
         async def dispatch(name, arguments, **kwargs):
@@ -142,7 +142,7 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
     finally:
         set_operation_store(None)
     assert observed == {
-        "name": "gmail_batch_modify",
+        "name": "gmail_modify_messages",
         "arguments": {"message_ids": ["m"] * 10},
         "kwargs": {},
         "commit_active": True,
@@ -163,7 +163,7 @@ def test_commit_context_does_not_bypass_revocation_admission(monkeypatch) -> Non
         )
         context = MiddlewareContext(
             message=mt.CallToolRequestParams(
-                name="gmail_batch_modify",
+                name="gmail_modify_messages",
                 arguments={"message_ids": ["m"] * 10},
             ),
             method="tools/call",
@@ -512,7 +512,7 @@ def test_framework_wrapped_errors_keep_their_recovery_envelope() -> None:
     cause = RecoverableToolError(
         "picker_required",
         "Use the Workspace Files picker.",
-        required_action={"tool": "files_file_manager", "arguments": {}},
+        required_action={"tool": "uploads_file_manager", "arguments": {}},
     )
     try:
         raise ToolError("Error calling tool 'upload_file': Use the picker") from cause
@@ -522,7 +522,7 @@ def test_framework_wrapped_errors_keep_their_recovery_envelope() -> None:
     result = _run_error_middleware(error)
     assert isinstance(result, ToolResult) and result.is_error is True
     assert result.structured_content["code"] == "picker_required"
-    assert result.structured_content["required_action"] == {"tool": "files_file_manager", "arguments": {}}
+    assert result.structured_content["required_action"] == {"tool": "uploads_file_manager", "arguments": {}}
 
 
 def test_confirmation_required_is_an_error_tool_result_not_a_protocol_error() -> None:

@@ -212,7 +212,10 @@ def _layout_names(payload: dict[str, Any]) -> dict[str, str]:
     return names
 
 
-def slide_outline(slide: dict[str, Any], index: int, layout_names: dict[str, str]) -> dict[str, Any]:
+def slide_outline(
+    slide: dict[str, Any], index: int, layout_names: dict[str, str], *, geometry: bool = False
+) -> dict[str, Any]:
+    """One slide's title, text, notes and elements; with ``geometry`` each element adds size and position."""
     ordered = _reading_order(slide.get("pageElements", []))
     layout_id = (slide.get("slideProperties") or {}).get("layoutObjectId")
     return {
@@ -222,22 +225,46 @@ def slide_outline(slide: dict[str, Any], index: int, layout_names: dict[str, str
         "title": _slide_title(ordered),
         "text": _slide_text(ordered),
         "notes": speaker_notes(slide),
-        "elements": [_outline_element(element) for element, _ in ordered],
+        "elements": [
+            _geometry_element(element, absolute) if geometry else _outline_element(element)
+            for element, absolute in ordered
+        ],
     }
 
 
-def presentation_envelope(payload: dict[str, Any]) -> dict[str, Any]:
-    """A presentation as an outline: every slide's title, text, notes and elements."""
+def _selected_slides(slides: list[dict[str, Any]], slide_ids: list[str] | None) -> list[tuple[int, dict[str, Any]]]:
+    """(deck index, slide) for every slide, or for the requested IDs in the order given."""
+    indexed = list(enumerate(slides))
+    if not slide_ids:
+        return indexed
+    by_id = {slide.get("objectId"): (index, slide) for index, slide in indexed}
+    requested = list(dict.fromkeys(slide_ids))
+    missing = [slide_id for slide_id in requested if slide_id not in by_id]
+    if missing:
+        raise ValueError(
+            f"slide_ids not found in this presentation: {', '.join(missing)}; use the object_id of a "
+            "slide from slides_read_presentation"
+        )
+    return [by_id[slide_id] for slide_id in requested]
+
+
+def presentation_envelope(payload: dict[str, Any], *, slide_ids: list[str] | None = None) -> dict[str, Any]:
+    """A presentation as an outline: every slide's title, text, notes and elements.
+
+    With ``slide_ids`` only those slides, in the order given, each element
+    with its size and position.
+    """
     layout_names = _layout_names(payload)
-    slides = payload.get("slides", [])
+    selected = _selected_slides(payload.get("slides", []), slide_ids)
+    detailed = bool(slide_ids)
     return {
         "presentation_id": payload.get("presentationId"),
         "title": payload.get("title"),
         "revision_id": payload.get("revisionId"),
         "url": presentation_url(payload.get("presentationId")),
         "page_size": page_size_envelope(payload.get("pageSize")),
-        "slides": [slide_outline(slide, index, layout_names) for index, slide in enumerate(slides)],
-        "count": len(slides),
+        "slides": [slide_outline(slide, index, layout_names, geometry=detailed) for index, slide in selected],
+        "count": len(selected),
     }
 
 

@@ -26,13 +26,14 @@ from mcp_google_workspace.common.task_backend import (
 )
 
 _DEFAULT_TASK_TOOLS = {
-    "calendar_download_event_attachment",
-    "docs_batch_update_document",
     "drive_download_file",
-    "drive_export_google_file",
     "drive_upload_file",
-    "forms_batch_update_form",
     "gmail_download_attachment",
+}
+# The raw batchUpdate tools are published from the extended tool tier up.
+_EXTENDED_TASK_TOOLS = {
+    "docs_batch_update_document",
+    "forms_batch_update_form",
     "sheets_batch_update_spreadsheet",
     "slides_batch_update_presentation",
 }
@@ -51,6 +52,7 @@ _TRACKED_ENV = (
     "GEMINI_API_KEY",
     "MCP_TOOL_SEARCH",
     "MCP_CLIENT_MODEL",
+    "MCP_TOOL_TIER",
 )
 
 
@@ -172,9 +174,10 @@ async def _task_capable_tools(server: FastMCP) -> tuple[set[str], set[str], dict
     ("env", "expected"),
     [
         ({}, _DEFAULT_TASK_TOOLS),
+        ({"MCP_TOOL_TIER": "extended"}, _DEFAULT_TASK_TOOLS | _EXTENDED_TASK_TOOLS),
         ({"ENABLE_GEMINI": "true", "GEMINI_API_KEY": "test-key"}, _DEFAULT_TASK_TOOLS | _GEMINI_TASK_TOOLS),
     ],
-    ids=["default", "gemini"],
+    ids=["default", "extended", "gemini"],
 )
 def test_root_negotiates_task_capable_tools(
     restore_workspace: None, env: dict[str, str], expected: set[str]
@@ -183,7 +186,7 @@ def test_root_negotiates_task_capable_tools(
     declared, advertised, extensions = anyio.run(_task_capable_tools, server)
     assert declared == expected
     assert advertised == expected
-    assert len(declared) == (9 if not env else 13)
+    assert len(declared) == len(expected)
     assert TASKS_EXTENSION_ID in extensions
 
 
@@ -218,7 +221,7 @@ def test_task_tool_runs_as_background_task_on_the_root_queue(
     monkeypatch.setattr(
         google_auth, "_build_service_now", lambda *_a, **_k: _SheetsRecorder(calls)
     )
-    server = _reload({})
+    server = _reload({"MCP_TOOL_TIER": "extended"})
 
     async def scenario() -> tuple[str, Any]:
         async with Client(server) as client:
@@ -239,7 +242,7 @@ def test_search_discovered_task_tool_runs_through_the_call_proxy(
     monkeypatch.setattr(
         google_auth, "_build_service_now", lambda *_a, **_k: _SheetsRecorder(calls)
     )
-    server = _reload({"MCP_TOOL_SEARCH": "on"})
+    server = _reload({"MCP_TOOL_SEARCH": "on", "MCP_TOOL_TIER": "extended"})
     tool_discovery._CONFIGURED_SERVERS.clear()
     assert tool_discovery.configure_tool_search(server)
 

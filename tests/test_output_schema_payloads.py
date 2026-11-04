@@ -32,11 +32,21 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "google_payloads"
 
 # (tool, fixture, arguments, raw top-level fields the old heuristic typed wrongly or did not list)
 CASES: list[tuple[str, str, dict[str, Any], tuple[str, ...]]] = [
-    ("docs_get_document", "docs_get_document.json", {"document_id": "doc-1"}, ("namedStyles", "inlineObjects", "positionedObjects")),
-    ("people_list_contacts", "people_list_contacts.json", {"page_size": 2}, ("totalItems", "totalPeople")),
-    ("calendar_list_calendars", "calendar_list_calendars.json", {}, ("nextSyncToken", "items")),
+    (
+        "docs_read_document",
+        "docs_get_document.json",
+        {"document_id": "doc-1", "format": "outline"},
+        ("namedStyles", "inlineObjects", "positionedObjects"),
+    ),
+    ("people_search_contacts", "people_list_contacts.json", {"page_size": 2}, ("totalItems", "totalPeople")),
+    ("calendar_get_calendar_context", "calendar_list_calendars.json", {}, ("nextSyncToken", "items")),
     ("sheets_get_spreadsheet", "sheets_get_spreadsheet.json", {"spreadsheet_id": "sheet-1"}, ("dataSources", "developerMetadata")),
-    ("slides_get_presentation", "slides_get_presentation.json", {"presentation_id": "pres-1"}, ("notesMaster", "masters", "layouts")),
+    (
+        "slides_read_presentation",
+        "slides_get_presentation.json",
+        {"presentation_id": "pres-1"},
+        ("notesMaster", "masters", "layouts"),
+    ),
     ("forms_get_form", "forms_get_form.json", {"form_id": "form-1"}, ("publishSettings", "settings")),
 ]
 

@@ -87,7 +87,7 @@ def test_legacy_initialize_then_tools_list_then_safe_call(client: TestClient) ->
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {"name": "get_workspace_capabilities", "arguments": {}},
+            "params": {"name": "resolve_workspace_resource", "arguments": {"uri": "gcal-event:///evt-1"}},
         },
     )
     assert called.status_code == 200, called.text
@@ -101,7 +101,7 @@ def test_legacy_initialize_then_tools_list_then_safe_call(client: TestClient) ->
         "tools_list": {
             "status_code": listed.status_code,
             "actual_tool_count_over_100": len(by_name) >= 100,
-            "named_tools": {"get_workspace_capabilities": by_name["get_workspace_capabilities"]},
+            "named_tools": {"get_google_connection_status": by_name["get_google_connection_status"]},
         },
         "safe_call": {"status_code": called.status_code, "result": called.json()["result"]},
     }

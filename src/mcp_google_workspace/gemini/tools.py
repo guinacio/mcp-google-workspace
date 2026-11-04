@@ -54,7 +54,7 @@ DriveFileIdArg = Annotated[
 
 def _upload_text(kind: str) -> str:
     return (
-        f"Upload handle (upl_...) returned by files_file_manager after the user picks a {kind} file; "
+        f"Upload handle (upl_...) returned by uploads_file_manager after the user picks a {kind} file; "
         f"the file must have a {kind}/* type. Give exactly one of input_path, drive_file_id or "
         "uploaded_file."
     )

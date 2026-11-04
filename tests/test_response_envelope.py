@@ -131,8 +131,11 @@ def _is_list_tool(name: str) -> bool:
 
 def test_every_list_tool_publishes_the_same_envelope_keys() -> None:
     tools = anyio.run(_published_tools)
-    list_tools = sorted(name for name in tools if _is_list_tool(name) and not name.startswith("files_"))
-    assert {"calendar_list_calendars", "people_list_contacts", "tasks_tasks_digest", "gmail_get_thread"} <= set(list_tools)
+    list_tools = sorted(name for name in tools if _is_list_tool(name) and not name.startswith("uploads_"))
+    assert {
+        "people_search_contacts", "tasks_tasks_digest", "gmail_get_thread", "gmail_list_drafts",
+        "drive_list_permissions", "drive_list_drives", "forms_list_form_responses",
+    } <= set(list_tools)
     problems: dict[str, Any] = {}
     for name in list_tools:
         schema = tools[name].output_schema
@@ -434,7 +437,7 @@ def test_drive_read_file_refuses_what_it_cannot_read(monkeypatch: pytest.MonkeyP
     assert error["code"] == "invalid_input"
     assert reason in error["message"]
     assert error["required_action"] == {
-        "tool": "drive_get_file_content_capabilities",
+        "tool": "drive_get_file",
         "arguments": {"file_id": file_id},
     }
     if file_id in {"pdf", "big", "form"}:

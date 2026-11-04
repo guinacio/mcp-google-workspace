@@ -478,7 +478,7 @@ _ANCHOR_DATE_TEXT = (
 )
 _TIMEZONE_TEXT = "IANA time zone name, e.g. 'Europe/Berlin', used for the range boundaries and shown times."
 _SELECTED_CALENDARS_TEXT = (
-    "Calendar IDs whose events the view shows, from calendar_list_calendars; 'primary' is the "
+    "Calendar IDs whose events the view shows, from calendar_get_calendar_context; 'primary' is the "
     "user's main calendar."
 )
 _INBOX_QUERY_TEXT = (

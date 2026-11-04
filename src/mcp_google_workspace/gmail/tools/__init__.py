@@ -4,7 +4,6 @@ from fastmcp import FastMCP
 
 from . import (
     attachments,
-    batch,
     drafts,
     filters,
     history,
@@ -23,7 +22,6 @@ def register_tools(server: FastMCP) -> None:
     labels.register(server)
     filters.register(server)
     attachments.register(server)
-    batch.register(server)
     drafts.register(server)
     threads.register(server)
     history.register(server)

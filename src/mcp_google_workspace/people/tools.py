@@ -14,6 +14,7 @@ from .client import normalize_contact_group_name, normalize_person_name, people_
 from .schemas import (
     GROUP_FIELDS,
     PERSON_FIELDS,
+    ContactGroupAction,
     CreateContactGroupRequest,
     CreateContactRequest,
     DeleteContactRequest,
@@ -187,68 +188,108 @@ _DISPLAY_NAME = (
     "from the structured name), so it is not expected to be stored; set given_name and family_name instead."
 )
 
+# The people_manage_contact_groups parameters each action reads.
+_GROUP_ACTION_PARAMETERS: dict[str, frozenset[str]] = {
+    "list": frozenset({"page_size", "page_token"}),
+    "create": frozenset({"name"}),
+    "modify_members": frozenset({"group_name", "resource_names_to_add", "resource_names_to_remove"}),
+}
+
+
+def _reject_unused(action: str, **values: Any) -> None:
+    """Refuse a parameter the action does not read, rather than silently dropping it."""
+    unused = sorted(
+        key
+        for key, value in values.items()
+        if value not in (None, "", []) and key not in _GROUP_ACTION_PARAMETERS[action]
+    )
+    if unused:
+        raise ValueError(f"{', '.join(unused)} not used by action {action!r}")
+
 
 def register_tools(server: FastMCP) -> None:
-    @server.tool(name="list_contacts")
-    def list_contacts(
-        page_size: Annotated[int, "Contacts per page, 1 to 1000."] = 100,
-        page_token: str | None = None,
+    @server.tool(name="search_contacts")
+    def search_contacts(
+        query: Annotated[
+            str | None,
+            (
+                "Text matched against the start of the words in contacts' names, email addresses, "
+                "phone numbers and organizations, e.g. 'jo' finds 'John Smith' but 'ohn' does not; "
+                "omit it to list every saved contact, page by page."
+            ),
+        ] = None,
+        page_size: Annotated[
+            int | None,
+            (
+                "Contacts per response. Listing (no query): 1 to 1000, default 100. Searching: 1 to 100, "
+                "default 20, and Google returns at most 30 matches."
+            ),
+        ] = None,
+        page_token: Annotated[
+            str | None,
+            (
+                "The next_page_token of the previous listing response; omit for the first page. Listing "
+                "only: a search has no further pages."
+            ),
+        ] = None,
         sort_order: Annotated[
             SortOrder | None,
             (
-                "Order of the contacts: LAST_MODIFIED_ASCENDING (Google's default when omitted), "
-                "LAST_MODIFIED_DESCENDING, FIRST_NAME_ASCENDING or LAST_NAME_ASCENDING."
+                "Order when listing: LAST_MODIFIED_ASCENDING (Google's default when omitted), "
+                "LAST_MODIFIED_DESCENDING, FIRST_NAME_ASCENDING or LAST_NAME_ASCENDING. Not allowed with "
+                "query, whose matches come in Google's relevance order."
             ),
         ] = None,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """List the user's saved Google contacts, one page at a time. To find a contact by name, email or phone use people_search_contacts instead. Returns contacts, each with resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails and phones (each {value, type}, type being Google's label such as 'work' or 'mobile', or null), organizations ({name, title}) and biography; plus count, total (all saved contacts) and next_page_token."""
-        try:
-            return contacts_page(
-                list_contacts_payload(
-                    ListContactsRequest(
-                        page_size=page_size,
-                        page_token=page_token,
-                        sort_order=sort_order,
-                        sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+        """Find the user's saved Google contacts whose name, email, phone or organization starts with query, or, without query, list every saved contact page by page (sort_order, page_token). A search returns at most 30 matches in one response with no paging. Returns contacts, each with resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography; plus count, total (all saved contacts, null for a search) and next_page_token (null for a search)."""
+        read_sources: list[ReadSourceType] = sources or ["READ_SOURCE_TYPE_CONTACT"]
+        if query is None or not query.strip():
+            try:
+                page = contacts_page(
+                    list_contacts_payload(
+                        ListContactsRequest(
+                            page_size=page_size if page_size is not None else 100,
+                            page_token=page_token,
+                            sort_order=sort_order,
+                            sources=read_sources,
+                        )
                     )
                 )
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc) from exc
-
-    @server.tool(name="search_contacts")
-    def search_contacts(
-        query: Annotated[
-            str,
-            (
-                "Text matched against the start of the words in contacts' names, email addresses, "
-                "phone numbers and organizations, e.g. 'jo' finds 'John Smith' but 'ohn' does not."
-            ),
-        ],
-        page_size: Annotated[int, "Maximum matches to return, 1 to 100; Google returns at most 30."] = 20,
-        sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
-    ) -> dict[str, Any]:
-        """Find the user's saved Google contacts whose name, email, phone or organization starts with the query text. To page through every contact use people_list_contacts; there is no paging here. Returns contacts (each with resource_name, etag, name, given_name, family_name, emails and phones as {value, type}, organizations and biography, as in people_list_contacts) and count; contacts is empty when nothing matches."""
-        try:
-            return contact_search_result(
-                search_contacts_payload(
-                    SearchContactsRequest(
-                        query=query,
-                        page_size=page_size,
-                        sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
+            except HttpError as exc:
+                raise provider_tool_error(exc) from exc
+        else:
+            if page_token is not None:
+                raise ValueError("page_token applies only to listing contacts (no query); a search has no paging")
+            if sort_order is not None:
+                raise ValueError("sort_order applies only to listing contacts (no query); search matches come in relevance order")
+            try:
+                page = contact_search_result(
+                    search_contacts_payload(
+                        SearchContactsRequest(
+                            query=query,
+                            page_size=page_size if page_size is not None else 20,
+                            sources=read_sources,
+                        )
                     )
                 )
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, query=query) from exc
+            except HttpError as exc:
+                raise provider_tool_error(exc, query=query) from exc
+        # A search reports no total and has no further page.
+        total = page.get("total")
+        return {
+            "contacts": list(page["contacts"]),
+            "count": page["count"],
+            "total": int(total) if total is not None else None,
+            "next_page_token": page.get("next_page_token"),
+        }
 
     @server.tool(name="get_contact")
     def get_contact(
         person_name: str,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Read one Google contact by its resource name, found with people_search_contacts or people_list_contacts. Use it to fetch the current etag before people_update_contact. Returns contact: resource_name, etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography."""
+        """Read one Google contact by its resource name, found with people_search_contacts. Use it to fetch the current etag before people_update_contact. Returns contact: resource_name, etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography."""
         try:
             return {
                 "contact": contact_envelope(
@@ -300,8 +341,8 @@ def register_tools(server: FastMCP) -> None:
         etag: Annotated[
             str | None,
             (
-                "The contact's current etag, from people_get_contact, people_list_contacts or "
-                "people_search_contacts. Google requires it to check that the contact has not changed "
+                "The contact's current etag, from people_get_contact or people_search_contacts. "
+                "Google requires it to check that the contact has not changed "
                 "since it was read, and rejects a stale one."
             ),
         ] = None,
@@ -358,7 +399,7 @@ def register_tools(server: FastMCP) -> None:
         person_name: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Permanently delete one Google contact, found with people_search_contacts or people_list_contacts. The user is asked to confirm first: the call returns status 'cancelled' if declined, and fails with confirmation_required when the client cannot ask. Returns status 'deleted' with the person_name (people/...). These tools cannot restore a deleted contact."""
+        """Permanently delete one Google contact, found with people_search_contacts. The user is asked to confirm first: the call returns status 'cancelled' if declined, and fails with confirmation_required when the client cannot ask. Returns status 'deleted' with the person_name (people/...). These tools cannot restore a deleted contact."""
         request = DeleteContactRequest(person_name=person_name)
         if not await confirm_destructive_action(
             ctx, "delete_contact", f"Permanently delete contact {request.person_name}?"
@@ -369,49 +410,98 @@ def register_tools(server: FastMCP) -> None:
         except HttpError as exc:
             raise provider_tool_error(exc, person_name=person_name) from exc
 
-    @server.tool(name="list_contact_groups")
-    async def list_contact_groups(
-        page_size: Annotated[int, "Contact groups per page, 1 to 1000."] = 100,
-        page_token: str | None = None,
+    @server.tool(name="manage_contact_groups")
+    async def manage_contact_groups(
+        action: Annotated[
+            ContactGroupAction,
+            (
+                "'list' pages through the user's contact groups; 'create' adds an empty group called name; "
+                "'modify_members' adds contacts to and removes contacts from the group group_name."
+            ),
+        ],
+        name: Annotated[
+            str | None,
+            "Name of the new group; required for 'create'. Google rejects a name the user already has for a group.",
+        ] = None,
+        group_name: Annotated[
+            str | None,
+            (
+                "Contact group resource name, e.g. 'contactGroups/myContacts', as resource_name in 'list' "
+                "results; required for 'modify_members'. A bare ID is prefixed automatically."
+            ),
+        ] = None,
+        resource_names_to_add: Annotated[
+            list[str] | None,
+            (
+                "For 'modify_members': contact resource names (people/...) from people_search_contacts to "
+                "add to the group; this list or resource_names_to_remove must be non-empty."
+            ),
+        ] = None,
+        resource_names_to_remove: Annotated[
+            list[str] | None,
+            "For 'modify_members': contact resource names (people/...) to remove from the group.",
+        ] = None,
+        page_size: Annotated[int | None, "For 'list': contact groups per page, 1 to 1000, default 100."] = None,
+        page_token: Annotated[
+            str | None, "For 'list': the next_page_token of the previous 'list' response; omit for the first page."
+        ] = None,
     ) -> dict[str, Any]:
-        """List the user's contact groups (labels), including system groups such as myContacts and starred. To change a group's members use people_modify_contact_group_members, and to add a group use people_create_contact_group. Returns contact_groups, each with resource_name (contactGroups/..., the group_name other people_ tools take), name (Google's display name, localized for system groups), group_type ('user' or 'system') and member_count; plus count, total and next_page_token."""
-        try:
-            return contact_groups_page(
-                await run_blocking(
-                    list_contact_groups_payload,
-                    ListContactGroupsRequest(page_size=page_size, page_token=page_token),
+        """Work with the user's contact groups (labels): 'list' pages through them, system groups such as myContacts and starred included; 'create' adds an empty group; 'modify_members' adds and removes contacts (from people_search_contacts) in one group in a single call. Every result echoes action. 'list' returns contact_groups (resource_name, the group_name to pass; name; group_type 'user' or 'system'; member_count), count, total and next_page_token; 'create' returns status 'ok' and contact_group; 'modify_members' returns status 'ok', group_name, not_found and cannot_remove_last_group (both empty when every change applied)."""
+        _reject_unused(
+            action,
+            name=name,
+            group_name=group_name,
+            resource_names_to_add=resource_names_to_add,
+            resource_names_to_remove=resource_names_to_remove,
+            page_size=page_size,
+            page_token=page_token,
+        )
+        if action == "list":
+            try:
+                groups = contact_groups_page(
+                    await run_blocking(
+                        list_contact_groups_payload,
+                        ListContactGroupsRequest(
+                            page_size=page_size if page_size is not None else 100, page_token=page_token
+                        ),
+                    )
                 )
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc) from exc
-
-    @server.tool(name="create_contact_group")
-    async def create_contact_group(
-        name: Annotated[str, "Name of the new group; Google rejects a name the user already has for a group."],
-    ) -> dict[str, Any]:
-        """Create a new, empty contact group (label) in the user's Google Contacts. Add contacts to it afterwards with people_modify_contact_group_members. Returns status 'ok' and contact_group: resource_name (contactGroups/..., the group_name other people_ tools take), name, group_type ('user') and member_count (0)."""
-        try:
-            created = await run_blocking(create_contact_group_payload, CreateContactGroupRequest(name=name))
-            return {"status": "ok", "contact_group": contact_group_envelope(created)}
-        except HttpError as exc:
-            raise provider_tool_error(exc, name=name) from exc
-
-    @server.tool(name="modify_contact_group_members")
-    def modify_contact_group_members(
-        group_name: str,
-        resource_names_to_add: list[str] | None = None,
-        resource_names_to_remove: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Add contacts to and remove contacts from one contact group in a single call; at least one of the two lists must be non-empty. Contact resource names come from people_search_contacts or people_list_contacts, group names from people_list_contact_groups. Returns status 'ok', group_name (contactGroups/...), not_found (contacts that do not exist) and cannot_remove_last_group (contacts not removed because this is their only group); both lists are empty when every change applied."""
+            except HttpError as exc:
+                raise provider_tool_error(exc, action=action) from exc
+            total = groups["total"]
+            return {
+                "action": "list",
+                "contact_groups": list(groups["contact_groups"]),
+                "count": groups["count"],
+                "total": int(total) if total is not None else None,
+                "next_page_token": groups["next_page_token"],
+            }
+        if action == "create":
+            if not name:
+                raise ValueError("action 'create' requires name")
+            try:
+                created = await run_blocking(create_contact_group_payload, CreateContactGroupRequest(name=name))
+            except HttpError as exc:
+                raise provider_tool_error(exc, action=action, name=name) from exc
+            return {"status": "ok", "action": "create", "contact_group": contact_group_envelope(created)}
+        if not group_name:
+            raise ValueError("action 'modify_members' requires group_name")
         request = ModifyContactGroupMembersRequest(
             group_name=group_name,
             resource_names_to_add=resource_names_to_add or [],
             resource_names_to_remove=resource_names_to_remove or [],
         )
         try:
-            return group_members_result(
-                modify_contact_group_members_payload(request),
+            members = group_members_result(
+                await run_blocking(modify_contact_group_members_payload, request),
                 group_name=normalize_contact_group_name(request.group_name),
             )
         except HttpError as exc:
-            raise provider_tool_error(exc, group_name=group_name) from exc
+            raise provider_tool_error(exc, action=action, group_name=group_name) from exc
+        return {
+            "status": "ok",
+            "action": "modify_members",
+            "group_name": str(members["group_name"]),
+            "not_found": list(members["not_found"]),
+            "cannot_remove_last_group": list(members["cannot_remove_last_group"]),
+        }

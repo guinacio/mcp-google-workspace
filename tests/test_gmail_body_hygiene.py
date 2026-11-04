@@ -470,14 +470,14 @@ def test_read_emails_clean_pages_reassemble_a_long_body(monkeypatch: pytest.Monk
     assert all(page.endswith("\n\n") for page in pages[:-1])
 
 
-def test_get_draft_full_returns_the_cleaned_body(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_drafts_one_draft_full_returns_the_cleaned_body(monkeypatch: pytest.MonkeyPatch) -> None:
     message = {**_CORPUS["html_only_entities"].message, "labelIds": ["DRAFT"]}
 
     def responder(call: _Call) -> dict[str, Any]:
         assert call.path == "users.drafts.get"
         return {"id": "r-1", "message": message}
 
-    result = _call_tool(monkeypatch, gmail_drafts, responder, "get_draft", {"draft_id": "r-1"})
+    result = _call_tool(monkeypatch, gmail_drafts, responder, "list_drafts", {"draft_id": "r-1"})["drafts"][0]
     assert result["body"] == "Hi Jo,\nHere's the \"final\" agenda for Friday – R&D first, then sales & marketing.\nCheers,\nKai"
     assert result["snippet"] == "Hi Jo, Here's the \"final\" agenda for Friday – R&D first, then sales & marketing."
     assert result["body_chars"] == len(result["body"]) and len(result["body_sha256"]) == 64

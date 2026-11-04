@@ -140,6 +140,8 @@ async def _call_picker_over_bundle_stdio(tmp_path: Path):
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["UV_CACHE_DIR"] = str(tmp_path / "uv-cache")
+    # The diagnostics tool below is published from the extended tool tier up.
+    env["MCP_TOOL_TIER"] = "extended"
     # --no-sync/--frozen keep this subprocess from re-resolving or syncing the
     # shared project .venv (uv otherwise performs a package-check/sync pass on
     # every `uv run`, mutating the same environment the outer pytest process
@@ -168,7 +170,7 @@ async def _call_picker_over_bundle_stdio(tmp_path: Path):
         diagnostics = await client.call_tool("get_mcp_apps_diagnostics", {})
         uri = diagnostics.structured_content["resource_uri"]
         contents = await client.read_resource(uri)
-        result = await client.call_tool("files_file_manager", {})
+        result = await client.call_tool("uploads_file_manager", {})
         action_tool = f"{hash_tool('Workspace Files', 'store_files')}_store_files"
         backend = await client.call_tool(action_tool, {"files": []})
     return names, uri, contents, result, action_tool, backend, diagnostics
@@ -179,7 +181,7 @@ def test_bundle_stdio_lists_and_calls_prefab_file_manager(tmp_path) -> None:
         _call_picker_over_bundle_stdio, tmp_path
     )
 
-    assert "files_file_manager" not in names
+    assert "uploads_file_manager" not in names
     assert "gmail_search_emails" in names
     assert len(names) <= 17
     assert {"search_tools", "call_tool"} <= names
@@ -227,13 +229,13 @@ async def _upload_lifecycle_over_bundle_stdio(tmp_path: Path):
             },
         )
         upload_id = stored.structured_content["result"][0]["upload_id"]
-        listed = await client.call_tool("files_list_files", {})
-        page = await client.call_tool("files_list_files_page", {"limit": 10})
+        listed = await client.call_tool("uploads_list_files", {})
+        page = await client.call_tool("uploads_list_files", {"limit": 10})
         read = await client.call_tool(
-            "call_tool", {"name": "files_read_file", "arguments": {"name": upload_id}}
+            "call_tool", {"name": "uploads_read_file", "arguments": {"name": upload_id}}
         )
         deleted = await client.call_tool(delete_tool, {"name": upload_id})
-        after = await client.call_tool("files_list_files", {})
+        after = await client.call_tool("uploads_list_files", {})
     return upload_id, listed, page, read, deleted, after
 
 
@@ -243,12 +245,12 @@ def test_bundle_stdio_uploads_persist_across_requests(tmp_path) -> None:
     )
 
     assert upload_id.startswith("upl_")
-    assert [item["upload_id"] for item in listed.structured_content["result"]] == [upload_id]
-    assert listed.structured_content["result"][0]["display_name"] == "bundle.txt"
+    assert [item["upload_id"] for item in listed.structured_content["files"]] == [upload_id]
+    assert listed.structured_content["files"][0]["display_name"] == "bundle.txt"
     assert page.structured_content["count"] == 1
     assert "bundle upload persists" in json.dumps(read.structured_content)
     assert deleted.structured_content == {"status": "deleted", "name": upload_id}
-    assert after.structured_content["result"] == []
+    assert after.structured_content["files"] == []
 
 
 def test_google_service_builder_uses_runtime_timeout_and_retry(monkeypatch) -> None:

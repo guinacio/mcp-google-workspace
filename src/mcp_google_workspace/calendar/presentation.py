@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import pytz
 
@@ -69,11 +71,29 @@ def _attendee(attendee: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_DRIVE_HOSTS = frozenset({"drive.google.com", "docs.google.com"})
+_DRIVE_PATH_ID = re.compile(r"/d/([a-zA-Z0-9_-]+)")
+_DRIVE_QUERY_ID = re.compile(r"[?&]id=([a-zA-Z0-9_-]+)")
+
+
+def drive_file_id_from_url(file_url: str | None) -> str | None:
+    """The Drive file ID in a Drive, Docs, Sheets or Slides URL, if it has one."""
+    if not file_url:
+        return None
+    if (urlparse(file_url).hostname or "").lower() not in _DRIVE_HOSTS:
+        return None
+    match = _DRIVE_PATH_ID.search(file_url) or _DRIVE_QUERY_ID.search(file_url)
+    return match.group(1) if match else None
+
+
 def _attachment(attachment: dict[str, Any]) -> dict[str, Any]:
+    file_url = attachment.get("fileUrl")
     return {
         "title": attachment.get("title"),
-        "file_url": attachment.get("fileUrl"),
-        "file_id": attachment.get("fileId"),
+        "file_url": file_url,
+        # Attachments added by URL alone carry no fileId; the ID in a Drive
+        # URL is the same file, and is what drive_download_file takes.
+        "file_id": attachment.get("fileId") or drive_file_id_from_url(file_url),
         "mime_type": attachment.get("mimeType"),
     }
 

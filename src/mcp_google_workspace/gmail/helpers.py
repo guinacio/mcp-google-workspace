@@ -20,7 +20,7 @@ HTML_BODY_DESCRIPTION = (
 )
 ATTACHMENTS_DESCRIPTION = (
     "Files to attach, each with exactly one source: uploaded_file (an upload handle from "
-    "files_file_manager) or file_path (local stdio servers only)."
+    "uploads_file_manager) or file_path (local stdio servers only)."
 )
 REPLY_CONFIRM_SEND_DESCRIPTION = (
     "When true, the user is asked to approve the reply (shown To, Cc, Subject and the attachment "

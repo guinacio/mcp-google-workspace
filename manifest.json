@@ -58,6 +58,7 @@
         "MCP_CREDENTIALS_DIR": "${user_config.credentials_dir}",
         "MCP_USER_TOKEN_DIR": "${user_config.user_token_dir}",
         "MCP_LOCAL_PRINCIPAL": "${user_config.local_principal}",
+        "MCP_TOOL_TIER": "${user_config.tool_tier}",
         "ENABLE_APPS_DASHBOARD": "${user_config.enable_apps_dashboard}",
         "ENABLE_CHAT": "${user_config.enable_chat}",
         "ENABLE_GEMINI": "${user_config.enable_gemini}",
@@ -100,6 +101,13 @@
       "title": "Local Principal",
       "description": "Stable local identity used only by the stdio bundle instance.",
       "default": "local-user",
+      "required": false
+    },
+    "tool_tier": {
+      "type": "string",
+      "title": "Tool Tier",
+      "description": "core (default) publishes the everyday tools; extended adds the raw batch-update tools, Gmail filters, forwarding and vacation, shared-drive visibility and diagnostics; complete also mounts every optional integration that is not switched off below.",
+      "default": "core",
       "required": false
     },
     "enable_apps_dashboard": {

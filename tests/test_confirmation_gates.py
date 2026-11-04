@@ -22,7 +22,7 @@ class _ToolCapture:
         return decorator
 
 
-def test_get_forwarding_address_does_not_request_confirmation(
+def test_get_forwarding_address_action_does_not_request_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     capture = _ToolCapture()
@@ -55,12 +55,15 @@ def test_get_forwarding_address_does_not_request_confirmation(
     monkeypatch.setattr(gmail_settings, "execute_google_request", execute)
     monkeypatch.setattr(gmail_settings, "confirm_destructive_action", unexpected_confirmation)
 
-    result = anyio.run(capture.tools["get_forwarding_address"], "forward@example.com")
+    async def call_get() -> dict[str, Any]:
+        return await capture.tools["manage_forwarding"]("get", "forward@example.com")
+
+    result = anyio.run(call_get)
 
     assert result["forwarding_address"]["verificationStatus"] == "accepted"
 
 
-def test_delete_forwarding_address_cancellation_skips_google_api(
+def test_delete_forwarding_address_action_cancellation_skips_google_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     capture = _ToolCapture()
@@ -79,13 +82,13 @@ def test_delete_forwarding_address_cancellation_skips_google_api(
     )
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools["delete_forwarding_address"](
-            "forward@example.com", ctx=object()
+        return await capture.tools["manage_forwarding"](
+            "delete", "forward@example.com", ctx=object()
         )
 
     result = anyio.run(call_tool)
 
-    assert result == {"status": "cancelled", "forwarding_email": "forward@example.com"}
+    assert result == {"status": "cancelled", "action": "delete", "forwarding_email": "forward@example.com"}
     assert confirmation["action"] == "delete_forwarding_address"
     assert "forward@example.com" in confirmation["message"]
 
@@ -135,7 +138,8 @@ def test_permission_mutation_cancellation_skips_google_api(
     )
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools[tool_name](**arguments, ctx=object())
+        # Both grant paths are drive_share_file now; permission_id selects update.
+        return await capture.tools["share_file"](**arguments, ctx=object())
 
     result = anyio.run(call_tool)
 

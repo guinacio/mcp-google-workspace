@@ -1,7 +1,8 @@
 import anyio
+import pytest
 
 from mcp_google_workspace.forms.server import forms_mcp
-from mcp_google_workspace.forms.presentation import question_titles, response_envelope
+from mcp_google_workspace.forms.presentation import form_responses_envelope, question_titles, response_envelope
 from mcp_google_workspace.forms.tools import (
     BatchUpdateFormRequest,
     CreateFormRequest,
@@ -91,7 +92,7 @@ def test_forms_server_registers_expected_tools():
     assert "batch_update_form" in tool_names
     assert "set_form_publish_settings" in tool_names
     assert "list_form_responses" in tool_names
-    assert "get_form_response" in tool_names
+    assert "get_form_response" not in tool_names
 
 
 def test_forms_request_builders():
@@ -287,3 +288,141 @@ def test_forms_tools_return_inferable_literal_shapes():
         schema = infer_tool_output_schema(inspect.unwrap(listed[name].fn))
         assert schema is not None, name
         assert keys <= set(schema["properties"]), (name, sorted(schema["properties"]))
+
+
+# --- forms_list_form_responses: the page and one response by response_id ---------------
+
+
+class _AnyExec:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def execute(self, *_args, **_kwargs):
+        return json.loads(json.dumps(self._payload))
+
+
+class _RoutingFormsService:
+    """forms().get, responses().list and responses().get, each with its own payload; records every call."""
+
+    def __init__(self, form, page):
+        self.form = form
+        self.page = page
+        self.calls = []
+
+    def forms(self):
+        return self
+
+    def responses(self):
+        return _RoutingResponses(self)
+
+    def get(self, **kwargs):
+        self.calls.append(("forms.get", kwargs))
+        return _AnyExec(self.form)
+
+
+class _RoutingResponses:
+    def __init__(self, service):
+        self.service = service
+
+    def list(self, **kwargs):
+        self.service.calls.append(("responses.list", kwargs))
+        return _AnyExec(self.service.page)
+
+    def get(self, **kwargs):
+        self.service.calls.append(("responses.get", kwargs))
+        wanted = kwargs["responseId"]
+        return _AnyExec(next(item for item in self.service.page["responses"] if item["responseId"] == wanted))
+
+
+def _list_responses(monkeypatch, arguments):
+    service = _RoutingFormsService(_fixture("forms_get_form.json"), _fixture("forms_list_form_responses.json"))
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: service)
+
+    async def fake_timezone():
+        return _TIMEZONE
+
+    monkeypatch.setattr("mcp_google_workspace.forms.tools.resolve_user_timezone", fake_timezone)
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool("forms_list_form_responses", {"form_id": "form-1", **arguments})
+
+    return anyio.run(scenario), service
+
+
+@pytest.mark.parametrize("enrich", [True, False])
+def test_list_form_responses_page_honours_paging_filter_and_enrichment(monkeypatch, enrich):
+    result, service = _list_responses(
+        monkeypatch,
+        {"page_size": 10, "page_token": "tok", "filter": "timestamp > 2026-01-01T00:00:00Z", "enrich_questions": enrich},
+    )
+
+    assert result.is_error is False, result.content
+    assert ("responses.list", {
+        "formId": "form-1", "pageSize": 10, "pageToken": "tok", "filter": "timestamp > 2026-01-01T00:00:00Z",
+    }) in service.calls
+    assert any(call[0] == "forms.get" for call in service.calls) is enrich
+    page = _fixture("forms_list_form_responses.json")
+    titles = question_titles(_fixture("forms_get_form.json")) if enrich else {}
+    expected = form_responses_envelope(page, titles, form_id="form-1", account_timezone=_TIMEZONE)
+    structured = result.structured_content
+    assert {key: structured[key] for key in expected} == json.loads(json.dumps(expected))
+    assert structured["next_page_token"] == page["nextPageToken"]
+    assert structured["has_more"] is True
+
+
+@pytest.mark.parametrize("enrich", [True, False])
+def test_list_form_responses_response_id_returns_a_one_item_list(monkeypatch, enrich):
+    page = _fixture("forms_list_form_responses.json")
+    wanted = page["responses"][1]
+    # Paging and filter parameters are ignored with response_id.
+    result, service = _list_responses(
+        monkeypatch,
+        {"response_id": wanted["responseId"], "page_token": "ignored", "filter": "ignored", "enrich_questions": enrich},
+    )
+
+    assert result.is_error is False, result.content
+    assert ("responses.get", {"formId": "form-1", "responseId": wanted["responseId"]}) in service.calls
+    assert all(call[0] != "responses.list" for call in service.calls)
+    assert any(call[0] == "forms.get" for call in service.calls) is enrich
+    structured = result.structured_content
+    assert structured["count"] == 1
+    assert structured["next_page_token"] is None
+    assert structured["has_more"] is False
+    assert structured["account_timezone"] == _TIMEZONE
+    titles = question_titles(_fixture("forms_get_form.json")) if enrich else {}
+    assert structured["responses"] == [
+        json.loads(json.dumps(response_envelope(wanted, titles, account_timezone=_TIMEZONE)))
+    ]
+    answers = structured["responses"][0]["answers"]
+    assert any(answer["question"] != answer["question_id"] for answer in answers) is enrich
+
+
+def test_list_form_responses_error_context_names_the_response(monkeypatch):
+    from googleapiclient.errors import HttpError
+    from httplib2 import Response
+
+    class _Missing:
+        def forms(self):
+            return self
+
+        def responses(self):
+            return self
+
+        def get(self, **_kwargs):
+            raise HttpError(Response({"status": "404"}), b'{"error":{"message":"Not found"}}')
+
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _Missing())
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool(
+                "forms_list_form_responses",
+                {"form_id": "form-1", "response_id": "resp-9"},
+                raise_on_error=False,
+            )
+
+    result = anyio.run(scenario)
+    assert result.is_error is True
+    assert result.structured_content["provider_status"] == 404
+    assert result.structured_content["details"]["context"] == {"form_id": "form-1", "response_id": "resp-9"}

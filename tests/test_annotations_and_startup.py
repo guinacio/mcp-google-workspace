@@ -29,6 +29,20 @@ async def _list_server_tools(server):
     return {tool.name: tool for tool in tools}
 
 
+def _extended_tier_tools(monkeypatch) -> dict:
+    """The catalog with the extended tool tier (batch updates, Gmail settings) on."""
+    import importlib
+
+    import mcp_google_workspace.server as server_module
+
+    monkeypatch.setenv("MCP_TOOL_TIER", "extended")
+    try:
+        return anyio.run(_list_server_tools, importlib.reload(server_module).workspace_mcp)
+    finally:
+        monkeypatch.delenv("MCP_TOOL_TIER")
+        importlib.reload(server_module)
+
+
 def test_workspace_tool_catalog_has_strong_metadata() -> None:
     tools = anyio.run(_list_server_tools, workspace_mcp)
 
@@ -72,7 +86,7 @@ def test_workspace_startup_does_not_fetch_google_credentials(monkeypatch) -> Non
     assert "calendar_search_events" in tools
     assert "drive_list_files" in tools
     assert "sheets_get_spreadsheet" in tools
-    assert "docs_get_document" in tools
+    assert "docs_read_document" in tools
 
 
 def test_workspace_tools_include_safety_annotations() -> None:
@@ -83,17 +97,17 @@ def test_workspace_tools_include_safety_annotations() -> None:
     assert tools["gmail_read_emails"].annotations.read_only_hint is True
     assert tools["gmail_send_email"].annotations.read_only_hint is False
     assert tools["gmail_send_email"].annotations.idempotent_hint is False
-    assert tools["gmail_reply_email"].annotations.read_only_hint is False
-    assert tools["gmail_reply_all_email"].annotations.read_only_hint is False
+    assert tools["gmail_reply"].annotations.read_only_hint is False
     assert tools["drive_delete_file"].annotations.destructive_hint is True
-    assert tools["calendar_get_calendar_context"].annotations.open_world_hint is False
+    # It reads the account time zone and calendar list from Google.
+    assert tools["calendar_get_calendar_context"].annotations.open_world_hint is True
     assert tools["sheets_get_spreadsheet"].annotations.read_only_hint is True
     assert tools["tasks_delete_task"].annotations.destructive_hint is True
     assert tools["drive_list_files"].title == "Drive List Files"
     assert "drive" in tools["drive_list_files"].tags
     assert "browse" in tools["drive_list_files"].tags
     assert tools["drive_upload_file"].task_config.mode == "optional"
-    assert tools["docs_batch_update_document"].task_config.mode == "optional"
+    assert tools["drive_download_file"].task_config.mode == "optional"
 
 
 # Hand-written schemas for server-owned shapes (the upload picker's staging
@@ -101,8 +115,8 @@ def test_workspace_tools_include_safety_annotations() -> None:
 # comes from Google. Every inferred or registered schema is open, so a field
 # the provider adds or reshapes never fails client-side validation (1.0.1).
 _CLOSED_OUTPUT_SCHEMAS = {
-    "files_delete_file", "files_file_manager", "files_list_files", "files_list_files_page",
-    "files_read_file", "files_store_files", "get_mcp_apps_diagnostics",
+    "uploads_delete_file", "uploads_file_manager", "uploads_list_files", "uploads_list_files",
+    "uploads_read_file", "uploads_store_files", "get_mcp_apps_diagnostics",
     "apps_get_state", "apps_next_range", "apps_patch_state", "apps_prev_range", "apps_set_state", "apps_today",
 }
 
@@ -137,10 +151,8 @@ def test_gmail_attachment_inputs_publish_the_complete_closed_schema() -> None:
 
     for tool_name in (
         "gmail_send_email",
-        "gmail_reply_email",
-        "gmail_reply_all_email",
-        "gmail_create_draft",
-        "gmail_update_draft",
+        "gmail_reply",
+        "gmail_save_draft",
     ):
         parameters = tools[tool_name].parameters
         Draft202012Validator.check_schema(parameters)
@@ -191,21 +203,15 @@ def test_gmail_attachment_inputs_publish_the_complete_closed_schema() -> None:
     )
 
 
-def test_workspace_input_schemas_are_closed_documented_and_unbounded_by_default() -> None:
+def test_workspace_input_schemas_are_closed_documented_and_unbounded_by_default(monkeypatch) -> None:
     """Objects are closed unless reviewed, nested fields are documented, and the
     generic anti-abuse limits are enforced by middleware without being published
     (tests/test_production_features.py pins the enforcement)."""
-    tools = anyio.run(_list_server_tools, workspace_mcp)
+    tools = _extended_tier_tools(monkeypatch)
     # These are intentional Google-defined polymorphic request maps or the generic
     # encrypted prepare/commit argument envelope. Every other object must be closed.
     reviewed_open_objects = {
         "prepare_workspace_action.arguments",
-        "calendar_create_event.conference_data",
-        "calendar_create_event.reminders",
-        "calendar_update_event.conference_data",
-        "calendar_update_event.reminders",
-        "drive_create_file_metadata.app_properties",
-        "drive_create_file_metadata.properties",
         "drive_update_file_metadata.app_properties",
         "drive_update_file_metadata.properties",
         "sheets_batch_update_spreadsheet.requests[]",
@@ -310,7 +316,7 @@ def test_headline_parameter_descriptions_document_real_semantics() -> None:
         ("prepare_workspace_action", "tool_name", ["gmail_send_email"]),
         ("commit_workspace_action", "commit_token", ["one-time", "10 minutes", "saved result"]),
         ("gmail_read_emails", "offset", ["character offset"]),
-        ("calendar_check_time_availability", "items", ["calendar"]),
+        ("calendar_find_free_time", "participants", ["calendar"]),
     ]
 
     for tool_name, param_name, required_substrings in checks:

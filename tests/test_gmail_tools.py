@@ -148,7 +148,7 @@ def test_send_email_defaults_to_no_confirmation():
     assert request.confirm_send is False
 
 
-def test_reply_email_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> None:
+def test_reply_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> None:
     source = {
         "id": "source-1",
         "threadId": "thread-1",
@@ -170,7 +170,7 @@ def test_reply_email_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> Non
     monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools["reply_email"](
+        return await capture.tools["reply"](
             "source-1", text_body="Thanks for the update."
         )
 
@@ -188,7 +188,7 @@ def test_reply_email_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> Non
     assert str(message["References"]) == "<root@example.com> <source-1@example.com>"
 
 
-def test_reply_all_email_includes_participants_once_and_excludes_self(
+def test_reply_all_includes_participants_once_and_excludes_self(
     monkeypatch,
 ) -> None:
     source = {
@@ -217,8 +217,8 @@ def test_reply_all_email_includes_participants_once_and_excludes_self(
     monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools["reply_all_email"](
-            "source-2", html_body="<p>Works for me.</p>"
+        return await capture.tools["reply"](
+            "source-2", reply_all=True, html_body="<p>Works for me.</p>"
         )
 
     result = anyio.run(call_tool)
@@ -234,8 +234,8 @@ def test_reply_all_email_includes_participants_once_and_excludes_self(
     assert str(message["References"]) == "<source-2@example.com>"
 
 
-@pytest.mark.parametrize("tool_name", ["reply_email", "reply_all_email"])
-def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, tool_name) -> None:
+@pytest.mark.parametrize("reply_all", [False, True])
+def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, reply_all) -> None:
     source = {
         "id": "source-cancelled",
         "threadId": "thread-cancelled",
@@ -268,8 +268,9 @@ def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, tool_name) -> N
             return SimpleNamespace(action="decline", data=None)
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools[tool_name](
+        return await capture.tools["reply"](
             "source-cancelled",
+            reply_all=reply_all,
             text_body="Thanks for the update.",
             confirm_send=True,
             ctx=DecliningContext(),
@@ -856,18 +857,18 @@ def test_gather_in_order_surfaces_one_error_when_several_workers_fail() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tool_name", "arguments"),
+    "arguments",
     [
-        ("apply_labels", {"message_id": "m1"}),
-        ("move_email", {"message_id": "m1"}),
-        ("batch_modify", {"message_ids": ["m1"]}),
+        {"message_ids": ["m1"]},
+        {"thread_id": "t1"},
+        {"message_ids": ["m1", "m2"], "add_labels": []},
     ],
 )
-def test_label_modify_tools_reject_empty_label_id_lists(tool_name: str, arguments: dict) -> None:
-    # Matches modify_thread: empty add/remove lists must raise, not silently no-op.
+def test_modify_messages_rejects_a_call_that_changes_nothing(arguments: dict) -> None:
+    # Empty label lists and no flags must raise, not silently no-op.
     async def scenario() -> None:
         async with Client(gmail_mcp) as client:
-            await client.call_tool(tool_name, arguments)
+            await client.call_tool("modify_messages", arguments)
 
-    with pytest.raises(ToolError, match="At least one of add_label_ids/remove_label_ids"):
+    with pytest.raises(ToolError, match="Nothing to change"):
         asyncio.run(scenario())

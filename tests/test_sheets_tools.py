@@ -4,21 +4,19 @@ from fastmcp import Client
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
-from mcp_google_workspace.sheets.schemas import GetSheetValuesRequest
+from mcp_google_workspace.sheets.schemas import ReadSheetValuesRequest
 from mcp_google_workspace.sheets.server import sheets_mcp
 from mcp_google_workspace.sheets.tools import (
     AppendSheetValuesRequest,
-    BatchGetSheetValuesRequest,
     BatchUpdateSpreadsheetRequest,
     CreateSpreadsheetRequest,
     GetSpreadsheetRequest,
     UpdateSheetValuesRequest,
     append_sheet_values_payload,
-    batch_get_sheet_values_payload,
     batch_update_spreadsheet_payload,
     create_spreadsheet_payload,
-    get_sheet_values_payload,
     get_spreadsheet_payload,
+    read_sheet_values_payload,
     update_sheet_values_payload,
 )
 
@@ -95,19 +93,22 @@ def test_sheets_server_registers_expected_tools():
     tool_names = anyio.run(_list_tool_names, sheets_mcp)
     assert "get_spreadsheet" in tool_names
     assert "create_spreadsheet" in tool_names
-    assert "get_sheet_values" in tool_names
-    assert "batch_get_sheet_values" in tool_names
+    assert "read_sheet_values" in tool_names
+    assert "get_sheet_values" not in tool_names
+    assert "batch_get_sheet_values" not in tool_names
     assert "append_sheet_values" in tool_names
     assert "update_sheet_values" in tool_names
     assert "batch_update_spreadsheet" in tool_names
 
 
 def test_sheets_request_validates_a1_ranges():
-    request = GetSheetValuesRequest(spreadsheet_id="sheet-1", range_a1="Sheet1!A1:B10")
-    assert request.range_a1 == "Sheet1!A1:B10"
+    request = ReadSheetValuesRequest(spreadsheet_id="sheet-1", ranges=["Sheet1!A1:B10"])
+    assert request.ranges == ["Sheet1!A1:B10"]
 
-    with pytest.raises(ValueError):
-        GetSheetValuesRequest(spreadsheet_id="sheet-1", range_a1="not-a-range")
+    with pytest.raises(ValueError, match="ranges must use basic A1 notation"):
+        ReadSheetValuesRequest(spreadsheet_id="sheet-1", ranges=["Sheet1!A1", "not-a-range"])
+    with pytest.raises(ValueError, match="ranges cannot be empty"):
+        ReadSheetValuesRequest(spreadsheet_id="sheet-1", ranges=[])
 
 
 def test_sheets_payload_helpers(monkeypatch):
@@ -118,11 +119,11 @@ def test_sheets_payload_helpers(monkeypatch):
         GetSpreadsheetRequest(spreadsheet_id="sheet-1", include_grid_data=True, ranges=["Sheet1!A1:B2"])
     )
     created = create_spreadsheet_payload(CreateSpreadsheetRequest(title="Roadmap", sheet_titles=["Q1"]))
-    values = get_sheet_values_payload(
-        GetSheetValuesRequest(spreadsheet_id="sheet-1", range_a1="Sheet1!A1:B2")
+    values = read_sheet_values_payload(
+        ReadSheetValuesRequest(spreadsheet_id="sheet-1", ranges=["Sheet1!A1:B2"])
     )
-    batch = batch_get_sheet_values_payload(
-        BatchGetSheetValuesRequest(spreadsheet_id="sheet-1", ranges=["Sheet1!A1:A2", "Sheet1!B1:B2"])
+    batch = read_sheet_values_payload(
+        ReadSheetValuesRequest(spreadsheet_id="sheet-1", ranges=["Sheet1!A1:A2", "Sheet1!B1:B2"])
     )
     appended = append_sheet_values_payload(
         AppendSheetValuesRequest(spreadsheet_id="sheet-1", range_a1="Sheet1!A1", values=[["a", 1]])
@@ -139,7 +140,14 @@ def test_sheets_payload_helpers(monkeypatch):
 
     assert spreadsheet["kwargs"]["spreadsheetId"] == "sheet-1"
     assert created["kwargs"]["body"]["sheets"][0]["properties"]["title"] == "Q1"
-    assert values["kwargs"]["range"] == "Sheet1!A1:B2"
+    assert values["kwargs"] == {
+        "spreadsheetId": "sheet-1",
+        "ranges": ["Sheet1!A1:B2"],
+        "majorDimension": "ROWS",
+        "valueRenderOption": None,
+        "dateTimeRenderOption": None,
+    }
+    assert [call[0] for call in service.api.values_api.calls] == ["batchGet", "batchGet", "append", "update"]
     assert batch["kwargs"]["ranges"] == ["Sheet1!A1:A2", "Sheet1!B1:B2"]
     assert appended["kwargs"]["body"]["values"] == [["a", 1]]
     assert updated["kwargs"]["body"]["values"] == [["b", 2]]
@@ -158,11 +166,11 @@ def test_sheets_tool_annotations():
 
 def test_a1_range_accepts_whole_column_and_row_ranges():
     for value in ("A1", "Sheet1!A1:B10", "A:A", "Sheet1!A:C", "1:5", "My Sheet!2:2"):
-        request = GetSheetValuesRequest(spreadsheet_id="sheet-1", range_a1=value)
-        assert request.range_a1 == value
+        request = ReadSheetValuesRequest(spreadsheet_id="sheet-1", ranges=[value])
+        assert request.ranges == [value]
     for invalid in ("A:", ":B", "Sheet1!", "A1:B:C"):
         with pytest.raises(ValueError):
-            GetSheetValuesRequest(spreadsheet_id="sheet-1", range_a1=invalid)
+            ReadSheetValuesRequest(spreadsheet_id="sheet-1", ranges=[invalid])
 
 
 class _FailingExec:
@@ -177,18 +185,18 @@ class _FailingSheetsService:
     def values(self):
         return self
 
-    def get(self, **kwargs):
+    def batchGet(self, **kwargs):
         return _FailingExec()
 
 
-def test_get_sheet_values_tool_returns_structured_error(monkeypatch):
+def test_read_sheet_values_tool_returns_structured_error(monkeypatch):
     monkeypatch.setattr("mcp_google_workspace.sheets.tools.sheets_service", _FailingSheetsService)
 
     async def scenario():
         async with Client(sheets_mcp) as client:
             result = await client.call_tool(
-                "get_sheet_values",
-                {"spreadsheet_id": "sheet-1", "range_a1": "A:C"},
+                "read_sheet_values",
+                {"spreadsheet_id": "sheet-1", "ranges": ["A:C"]},
                 raise_on_error=False,
             )
             assert result.is_error is True
@@ -201,7 +209,7 @@ def test_get_sheet_values_tool_returns_structured_error(monkeypatch):
     assert result["code"] == "invalid_input"
     assert result["provider_status"] == 400
     assert result["details"]["context"]["spreadsheet_id"] == "sheet-1"
-    assert result["details"]["context"]["range_a1"] == "A:C"
+    assert result["details"]["context"]["ranges"] == ["A:C"]
 
 
 # --- Normalized responses (2.0.0) -------------------------------------------------
@@ -321,11 +329,20 @@ def test_get_spreadsheet_end_to_end_returns_the_normalized_shape(monkeypatch):
 
 
 def test_batch_update_spreadsheet_end_to_end_with_a_minimal_payload(monkeypatch):
+    import importlib
+
+    import mcp_google_workspace.server as server_module
+
     payload = {"spreadsheetId": "sheet-1", "replies": [{}]}
     monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+    # The raw batchUpdate tools are published from the extended tool tier up.
+    monkeypatch.setenv("MCP_TOOL_TIER", "extended")
+    extended = importlib.reload(server_module).workspace_mcp
+    monkeypatch.delenv("MCP_TOOL_TIER")
+    importlib.reload(server_module)
 
     async def scenario():
-        async with Client(workspace_mcp) as client:
+        async with Client(extended) as client:
             return await client.call_tool(
                 "sheets_batch_update_spreadsheet",
                 {"spreadsheet_id": "sheet-1", "requests": [{"addSheet": {"properties": {"title": "Q2"}}}]},
@@ -345,8 +362,7 @@ def test_sheets_tools_return_inferable_literal_shapes():
     expected = {
         "get_spreadsheet": {"spreadsheet_id", "title", "locale", "spreadsheet_time_zone", "url", "sheets", "named_ranges"},
         "create_spreadsheet": {"status", "spreadsheet_id", "title", "url", "sheets"},
-        "get_sheet_values": {"spreadsheet_id", "range", "major_dimension", "values", "row_count"},
-        "batch_get_sheet_values": {"spreadsheet_id", "value_ranges", "count"},
+        "read_sheet_values": {"spreadsheet_id", "value_ranges", "count"},
         "append_sheet_values": {"status", "spreadsheet_id", "table_range", "updated_range", "updated_values"},
         "update_sheet_values": {"status", "spreadsheet_id", "updated_range", "updated_cells", "updated_values"},
         "batch_update_spreadsheet": {"status", "spreadsheet_id", "replies", "count", "spreadsheet"},
@@ -355,3 +371,119 @@ def test_sheets_tools_return_inferable_literal_shapes():
         schema = infer_tool_output_schema(inspect.unwrap(listed[name].fn))
         assert schema is not None, name
         assert keys <= set(schema["properties"]), (name, sorted(schema["properties"]))
+
+
+# --- sheets_read_sheet_values: one range and several ---------------------------
+
+
+class _BatchGetService(_PayloadService):
+    """Records the keyword arguments of values().batchGet()."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+        self.kwargs = []
+
+    def __call__(self, *_args, **kwargs):
+        if kwargs:
+            self.kwargs.append(kwargs)
+        return self
+
+
+def _read_values(monkeypatch, payload, arguments):
+    service = _BatchGetService(payload)
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: service)
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool("sheets_read_sheet_values", arguments, raise_on_error=False)
+
+    return anyio.run(scenario), service
+
+
+def test_read_sheet_values_one_range_is_a_one_item_list(monkeypatch):
+    payload = {
+        "spreadsheetId": "sheet-1",
+        "valueRanges": [{"range": "Sheet1!A1:B2", "majorDimension": "ROWS", "values": [["a", "1"], ["b", "2"]]}],
+    }
+    result, service = _read_values(monkeypatch, payload, {"spreadsheet_id": "sheet-1", "ranges": ["Sheet1!A1:B2"]})
+
+    assert result.is_error is False, result.content
+    assert "batchGet" in service.calls and "get" not in service.calls
+    assert service.kwargs[-1] == {
+        "spreadsheetId": "sheet-1",
+        "ranges": ["Sheet1!A1:B2"],
+        "majorDimension": "ROWS",
+        "valueRenderOption": None,
+        "dateTimeRenderOption": None,
+    }
+    assert result.structured_content == {
+        "spreadsheet_id": "sheet-1",
+        "value_ranges": [
+            {"range": "Sheet1!A1:B2", "major_dimension": "ROWS", "values": [["a", "1"], ["b", "2"]], "row_count": 2}
+        ],
+        "count": 1,
+    }
+
+
+def test_read_sheet_values_several_ranges_keep_request_order_and_empty_ranges(monkeypatch):
+    payload = _fixture("sheets_batch_get_sheet_values.json")
+    ranges = [entry["range"] for entry in payload["valueRanges"]]
+    result, service = _read_values(monkeypatch, payload, {"spreadsheet_id": "sheet-1", "ranges": ranges})
+
+    assert result.is_error is False, result.content
+    assert service.kwargs[-1]["ranges"] == ranges
+    structured = result.structured_content
+    assert structured["count"] == len(ranges)
+    assert [entry["range"] for entry in structured["value_ranges"]] == ranges
+    for entry, raw in zip(structured["value_ranges"], payload["valueRanges"], strict=True):
+        assert entry["values"] == raw.get("values", [])
+        assert entry["row_count"] == len(raw.get("values", []))
+
+
+def test_read_sheet_values_empty_range_reports_an_empty_list(monkeypatch):
+    payload = {"spreadsheetId": "sheet-1", "valueRanges": [{"range": "Sheet1!A1:B2", "majorDimension": "ROWS"}]}
+    result, _ = _read_values(monkeypatch, payload, {"spreadsheet_id": "sheet-1", "ranges": ["Sheet1!A1:B2"]})
+    assert result.structured_content["value_ranges"][0]["values"] == []
+    assert result.structured_content["value_ranges"][0]["row_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ({"value_render_option": "FORMULA"}, {"valueRenderOption": "FORMULA"}),
+        ({"value_render_option": "UNFORMATTED_VALUE"}, {"valueRenderOption": "UNFORMATTED_VALUE"}),
+        ({"value_render_option": "FORMATTED_VALUE"}, {"valueRenderOption": "FORMATTED_VALUE"}),
+        (
+            {"value_render_option": "UNFORMATTED_VALUE", "date_time_render_option": "SERIAL_NUMBER"},
+            {"valueRenderOption": "UNFORMATTED_VALUE", "dateTimeRenderOption": "SERIAL_NUMBER"},
+        ),
+        ({"date_time_render_option": "FORMATTED_STRING"}, {"dateTimeRenderOption": "FORMATTED_STRING"}),
+        ({"major_dimension": "COLUMNS"}, {"majorDimension": "COLUMNS"}),
+    ],
+)
+@pytest.mark.parametrize("ranges", [["Sheet1!A1:B2"], ["Sheet1!A1:B2", "Sheet2!A:B"]])
+def test_read_sheet_values_passes_each_render_option(monkeypatch, arguments, expected, ranges):
+    payload = {"spreadsheetId": "sheet-1", "valueRanges": [{"range": item} for item in ranges]}
+    result, service = _read_values(monkeypatch, payload, {"spreadsheet_id": "sheet-1", "ranges": ranges, **arguments})
+
+    assert result.is_error is False, result.content
+    sent = service.kwargs[-1]
+    assert sent["ranges"] == ranges
+    for key, value in expected.items():
+        assert sent[key] == value
+    assert result.structured_content["count"] == len(ranges)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"ranges": []},
+        {"ranges": ["Sheet1!A2:C"]},
+        {"ranges": ["Sheet1!A1"], "value_render_option": "AS_IS"},
+        {"ranges": ["Sheet1!A1"], "major_dimension": "DIAGONAL"},
+    ],
+)
+def test_read_sheet_values_rejects_invalid_input(monkeypatch, arguments):
+    result, service = _read_values(monkeypatch, {}, {"spreadsheet_id": "sheet-1", **arguments})
+    assert result.is_error is True
+    assert service.kwargs == []

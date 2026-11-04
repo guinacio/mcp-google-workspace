@@ -44,6 +44,7 @@ from contracts.confirmation_sites import (  # noqa: E402
     EXPLICIT_CONFIRM_SITES,
     OPTIONAL_FLAGS,
     SITE_IDS,
+    confirmation_operation,
     GoogleRecorder,
     answer,
     answer_field,
@@ -53,13 +54,15 @@ from contracts.confirmation_sites import (  # noqa: E402
 
 @pytest.fixture(scope="module")
 def workspace() -> Iterator[FastMCP]:
-    """Root composition with Chat and Keep mounted, restored afterwards."""
-    tracked = (*OPTIONAL_FLAGS, "MCP_RATE_LIMIT_PER_MINUTE")
+    """Root composition with Chat and Keep mounted and the extended tier, restored afterwards."""
+    tracked = (*OPTIONAL_FLAGS, "MCP_RATE_LIMIT_PER_MINUTE", "MCP_TOOL_TIER")
     previous = {name: os.environ.get(name) for name in tracked}
     for name in OPTIONAL_FLAGS:
         os.environ.pop(name, None)
     os.environ["ENABLE_CHAT"] = "true"
     os.environ["ENABLE_KEEP"] = "true"
+    # The Gmail settings sites (filters, forwarding) are extended-tier tools.
+    os.environ["MCP_TOOL_TIER"] = "extended"
     # Hundreds of rounds from one local principal; admission limits are not
     # under test here.
     os.environ["MCP_RATE_LIMIT_PER_MINUTE"] = "100000"
@@ -224,7 +227,7 @@ def test_host_without_elicitation_fails_closed_with_tool_result_and_no_mutation(
     assert envelope["retryable"] is False
     action = envelope["required_action"]
     assert action["action"] == "request_host_confirmation"
-    assert action["operation"] == tool.split("_", 1)[1]
+    assert action["operation"] == confirmation_operation(tool, arguments)
     assert action["prompt"]
     assert "No changes were made" in envelope["message"]
     assert "confirmation_required" in result.content[0].text

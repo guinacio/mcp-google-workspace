@@ -322,7 +322,7 @@ def test_oversized_results_are_not_retained_and_replay_says_so(monkeypatch: pyte
 
 
 def test_simultaneous_claims_have_exactly_one_winner(store) -> None:
-    token = _prepare("gmail_batch_modify", {"message_ids": ["m"] * 10})
+    token = _prepare("gmail_modify_messages", {"message_ids": ["m"] * 10})
     key = operation_key(current_principal().storage_key, token)
 
     async def race() -> list[str]:
@@ -648,7 +648,7 @@ def test_expired_operations_cannot_be_claimed(backend, store, clock, monkeypatch
     monkeypatch.setattr(confirmation.time, "time", real_time)
 
     # Commit tokens and awaiting_input records: expired records are gone.
-    token = _prepare("gmail_batch_modify", {"message_ids": ["m"] * 10})
+    token = _prepare("gmail_modify_messages", {"message_ids": ["m"] * 10})
     key = operation_key(current_principal().storage_key, token)
     if backend == "memory":
         clock.advance(operations.pending_ttl_seconds() + 1)

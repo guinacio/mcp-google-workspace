@@ -633,9 +633,9 @@ def _verify_step(call: ProviderCall) -> dict[str, Any]:
     if method.startswith("gmail.users.labels."):
         return {"tool": "gmail_list_labels", "arguments": {}}
     if method.startswith("gmail.users.settings.filters."):
-        return {"tool": "gmail_list_filters", "arguments": {}}
+        return {"tool": "gmail_manage_filters", "arguments": {"action": "list"}}
     if method.startswith("gmail.users.settings.forwardingAddresses."):
-        return {"tool": "gmail_list_forwarding_addresses", "arguments": {}}
+        return {"tool": "gmail_manage_forwarding", "arguments": {"action": "list"}}
     if service == "calendar":
         return {
             "tool": "calendar_search_events",
@@ -655,9 +655,9 @@ def _verify_step(call: ProviderCall) -> dict[str, Any]:
     if service == "sheets":
         return {"tool": "drive_list_files", "arguments": {"order_by": "createdTime desc", "page_size": 10}}
     if service == "docs" and "documentId" in ids:
-        return {"tool": "docs_get_document", "arguments": {"document_id": ids["documentId"]}}
+        return {"tool": "docs_read_document", "arguments": {"document_id": ids["documentId"], "format": "outline"}}
     if service == "slides" and "presentationId" in ids:
-        return {"tool": "slides_get_presentation", "arguments": {"presentation_id": ids["presentationId"]}}
+        return {"tool": "slides_read_presentation", "arguments": {"presentation_id": ids["presentationId"]}}
     if service == "forms" and "formId" in ids:
         return {"tool": "forms_get_form", "arguments": {"form_id": ids["formId"]}}
     if method.startswith("tasks.tasks.") and "tasklist" in ids:
@@ -665,9 +665,9 @@ def _verify_step(call: ProviderCall) -> dict[str, Any]:
     if service == "tasks":
         return {"tool": "tasks_list_tasklists", "arguments": {}}
     if method.startswith("people.contactGroups."):
-        return {"tool": "people_list_contact_groups", "arguments": {}}
+        return {"tool": "people_manage_contact_groups", "arguments": {"action": "list"}}
     if service == "people":
-        return {"tool": "people_list_contacts", "arguments": {}}
+        return {"tool": "people_search_contacts", "arguments": {}}
     if service == "keep":
         return {"tool": "keep_list_notes", "arguments": {"request": {}}}
     if service == "chat" and "parent" in ids:

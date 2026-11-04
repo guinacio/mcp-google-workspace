@@ -14,6 +14,7 @@ from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ..client import gmail_service
 from ..helpers import gather_in_order
+from ..label_resolver import LabelResolver
 from ..presentation import envelope, mail_feed_envelope
 from ..schemas import DigestRequest, SearchEmailRequest
 
@@ -45,6 +46,17 @@ def _build_search_query(request: SearchEmailRequest) -> str | None:
     if not terms:
         return None
     return " ".join(terms)
+
+
+# What a search hit needs from each message: headers, labels and the attachment
+# parts, without any body data.
+_HIT_FIELDS = (
+    "id,threadId,labelIds,snippet,internalDate,"
+    "payload(mimeType,filename,headers,"
+    "body(attachmentId,size),"
+    "parts(mimeType,filename,headers,body(attachmentId,size),"
+    "parts(mimeType,filename,body(attachmentId,size))))"
+)
 
 
 def register(server: FastMCP) -> None:
@@ -113,15 +125,20 @@ def register(server: FastMCP) -> None:
                 "ANDed with the helper filters; with no query, labels or filters, all mail outside Spam and Trash matches."
             ),
         ] = None,
-        label_ids: Annotated[
-            list[str],
+        labels: Annotated[
+            list[str] | None,
             (
-                "Only messages that carry every one of these label IDs: system labels such as INBOX or "
-                "UNREAD, or user label IDs (Label_...) from gmail_list_labels. Label names are not accepted."
+                "Only mail that carries every one of these labels, given by name as shown in Gmail (e.g. "
+                "'Clients/Acme') or by ID; system labels such as INBOX or UNREAD match case-insensitively. "
+                "An unknown or ambiguous name fails with not_found and the candidate labels."
             ),
-        ] = [],
+        ] = None,
         max_results: Annotated[
-            int, "Messages per page, 1 to 500 (default 25); each hit is fetched separately, so large pages are slower."
+            int,
+            (
+                "Messages (or, with group_by_thread, conversations) per page, 1 to 500 (default 25); each hit "
+                "is fetched separately, so large pages are slower."
+            ),
         ] = 25,
         page_token: str | None = None,
         include_spam_trash: bool = False,
@@ -143,12 +160,19 @@ def register(server: FastMCP) -> None:
         newer_than_days: Annotated[
             int | None, "Only mail from the last N days, 1 to 3650, translated to Gmail's newer_than:{N}d query operator."
         ] = None,
+        group_by_thread: Annotated[
+            bool,
+            (
+                "When true, returns conversations instead of messages: threads, each summarized by its newest "
+                "message plus message_count. Default false returns individual messages."
+            ),
+        ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Find Gmail messages with a Gmail search query and optional helper filters (sender, recipient, subject, unread, attachments, age), ANDed together, a page at a time; Spam and Trash are left out unless include_spam_trash is true. Use gmail_get_mail_digest for a plain recent feed, gmail_check_mail_updates to poll for new mail since a saved checkpoint, and gmail_list_threads to get conversations. Returns messages (id, thread_id, from, subject, date, snippet, unread, has_attachments, is_draft, is_sent), next_page_token, result_size_estimate and effective_query, the exact query sent to Gmail. Read bodies with gmail_read_emails."""
+        """Find Gmail messages, or with group_by_thread whole conversations, by a Gmail search query, labels (names or IDs) and helper filters (sender, recipient, subject, unread, attachments, age), ANDed together, a page at a time; Spam and Trash are left out unless include_spam_trash is true. Use gmail_get_mail_digest for a plain recent feed and gmail_check_mail_updates to poll for new mail since a saved checkpoint. Returns messages (id, thread_id, from, subject, date, snippet, unread, has_attachments, is_draft, is_sent) or threads (the same plus message_count), next_page_token, result_size_estimate and effective_query. Read bodies with gmail_read_emails or gmail_get_thread."""
         request = SearchEmailRequest(
             query=query,
-            label_ids=label_ids,
+            label_ids=list(labels or []),
             max_results=max_results,
             page_token=page_token,
             include_spam_trash=include_spam_trash,
@@ -160,21 +184,51 @@ def register(server: FastMCP) -> None:
             newer_than_days=newer_than_days,
         )
         service = gmail_service()
+        label_ids = await LabelResolver(service, execute_google_request).resolve_all(request.label_ids)
         account_timezone = await resolve_user_timezone()
         query_str = _build_search_query(request)
         LOGGER.debug("Running Gmail search query.")
+        listing = service.users().threads() if group_by_thread else service.users().messages()
         result = await execute_google_request(
-            service.users()
-            .messages()
-            .list(
+            listing.list(
                 userId="me",
                 q=query_str,
-                labelIds=request.label_ids or None,
+                labelIds=label_ids or None,
                 maxResults=request.max_results,
                 pageToken=request.page_token,
                 includeSpamTrash=request.include_spam_trash,
             )
         )
+        if group_by_thread:
+            # One bounded-concurrency read per thread, without body data.
+            threads = await gather_in_order(
+                [item["id"] for item in result.get("threads", [])],
+                lambda thread_id: execute_google_request(
+                    service.users().threads().get(
+                        userId="me", id=thread_id, format="full", fields=f"id,messages({_HIT_FIELDS})"
+                    )
+                ),
+            )
+            summaries = []
+            for thread in threads:
+                thread_messages = thread.get("messages", [])
+                if thread_messages:
+                    summaries.append(
+                        {
+                            **envelope(thread_messages[-1], account_timezone=account_timezone),
+                            "message_count": len(thread_messages),
+                        }
+                    )
+            if ctx is not None:
+                await ctx.report_progress(len(summaries), request.max_results, "Threads listed")
+            return {
+                "threads": summaries,
+                "count": len(summaries),
+                "result_size_estimate": result.get("resultSizeEstimate", 0),
+                "next_page_token": result.get("nextPageToken"),
+                "effective_query": query_str,
+                "account_timezone": account_timezone,
+            }
         messages = result.get("messages", [])
         # One bounded-concurrency fetch per hit (the same helper the digest
         # uses) instead of a sequential round trip per message.
@@ -182,16 +236,7 @@ def register(server: FastMCP) -> None:
             [item["id"] for item in messages],
             lambda message_id: execute_google_request(
                 service.users().messages().get(
-                    userId="me",
-                    id=message_id,
-                    format="full",
-                    fields=(
-                        "id,threadId,labelIds,snippet,internalDate,"
-                        "payload(mimeType,filename,headers,"
-                        "body(attachmentId,size),"
-                        "parts(mimeType,filename,headers,body(attachmentId,size),"
-                        "parts(mimeType,filename,body(attachmentId,size))))"
-                    ),
+                    userId="me", id=message_id, format="full", fields=_HIT_FIELDS
                 )
             ),
         )
@@ -200,6 +245,7 @@ def register(server: FastMCP) -> None:
             await ctx.report_progress(len(messages), request.max_results, "Search results loaded")
         return {
             "messages": envelopes,
+            "count": len(envelopes),
             "result_size_estimate": result.get("resultSizeEstimate", 0),
             "next_page_token": result.get("nextPageToken"),
             "effective_query": query_str,

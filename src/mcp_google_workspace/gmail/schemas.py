@@ -18,7 +18,7 @@ class AttachmentInput(ToolRequestModel):
         "json_schema_extra": {
             "description": (
                 "Email attachment. Provide exactly one source: uploaded_file for a file "
-                "selected with the Workspace Files MCP App (files_file_manager), or file_path for local stdio use."
+                "selected with the Workspace Files MCP App (uploads_file_manager), or file_path for local stdio use."
             ),
             "oneOf": [
                 {
@@ -41,7 +41,7 @@ class AttachmentInput(ToolRequestModel):
     )
     uploaded_file: str | None = Field(
         default=None,
-        description="Upload handle (upl_...) of a file the user picked in files_file_manager, as listed by files_list_files.",
+        description="Upload handle (upl_...) of a file the user picked in uploads_file_manager, as listed by uploads_list_files.",
     )
     mime_type: str | None = Field(
         default=None,
@@ -129,26 +129,8 @@ class SearchEmailRequest(ToolRequestModel):
     )
 
 
-class ModifyMessageRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID to modify.")
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove.")
 
 
-class BatchModifyRequest(ToolRequestModel):
-    message_ids: list[str] = Field(description="Message IDs to modify.")
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add to all messages.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove from all messages.")
-
-
-class DeleteMessageRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID to delete.")
-    permanent: bool = Field(default=False, description="Permanently delete instead of moving to trash.")
-
-
-class BatchDeleteRequest(ToolRequestModel):
-    message_ids: list[str] = Field(description="Message IDs to delete.")
-    permanent: bool = Field(default=False, description="Permanently delete instead of moving to trash.")
 
 
 class LabelCreateRequest(ToolRequestModel):
@@ -172,13 +154,10 @@ class LabelDeleteRequest(ToolRequestModel):
     label_id: str = Field(description="Label ID to delete.")
 
 
-class ListAttachmentsRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID to inspect for attachments.")
-
 
 class DownloadAttachmentRequest(ToolRequestModel):
     message_id: str = Field(description="Message ID that contains the attachment.")
-    attachment_id: str = Field(description="Attachment ID returned by list_attachments.")
+    attachment_id: str = Field(description="Attachment download_id returned by read_emails.")
     output_path: str = Field(description="Local output path where bytes will be saved.")
 
 
@@ -239,28 +218,29 @@ class FilterCriteriaInput(ToolRequestModel):
 
 
 class FilterActionInput(ToolRequestModel):
-    add_label_ids: list[str] = Field(
+    add_labels: list[str] = Field(
         default_factory=list,
         description=(
-            "Label IDs to add to matching mail: system labels such as STARRED or IMPORTANT, or user "
-            "label IDs (Label_...) from gmail_list_labels. Label names are not accepted."
+            "Labels to add to matching mail, by name as shown in Gmail or by ID; system labels such as "
+            "STARRED or IMPORTANT match case-insensitively."
         ),
     )
-    remove_label_ids: list[str] = Field(
+    remove_labels: list[str] = Field(
         default_factory=list,
-        description="Label IDs to remove from matching mail, e.g. INBOX to archive it or UNREAD to mark it read.",
+        description="Labels to remove from matching mail, by name or ID, e.g. INBOX to archive it or UNREAD to mark it read.",
     )
     forward: str | None = Field(
         default=None,
-        description="Email address to forward matching mail to; it must be an 'accepted' address from gmail_list_forwarding_addresses.",
+        description="Email address to forward matching mail to; it must be an 'accepted' address from gmail_manage_forwarding.",
     )
 
-    def to_api(self) -> dict[str, object]:
+    def to_api(self, *, add_label_ids: list[str], remove_label_ids: list[str]) -> dict[str, object]:
+        """The Gmail filter action, with label names already resolved to IDs."""
         payload: dict[str, object] = {}
-        if self.add_label_ids:
-            payload["addLabelIds"] = self.add_label_ids
-        if self.remove_label_ids:
-            payload["removeLabelIds"] = self.remove_label_ids
+        if add_label_ids:
+            payload["addLabelIds"] = add_label_ids
+        if remove_label_ids:
+            payload["removeLabelIds"] = remove_label_ids
         if self.forward is not None:
             payload["forward"] = self.forward
         return payload
@@ -313,36 +293,17 @@ class SendDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to send.")
 
 
-class ListThreadsRequest(ToolRequestModel):
-    query: str | None = Field(default=None, description="Optional Gmail query to filter threads.")
-    label_ids: list[str] = Field(default_factory=list, description="Optional label IDs filter for thread list.")
-    max_results: int = Field(default=25, ge=1, le=500, description="Maximum threads to return.")
-    page_token: str | None = Field(default=None, description="Pagination token from previous response.")
-    include_spam_trash: bool = Field(default=False, description="Include spam/trash in thread listing.")
-
 
 class GetThreadRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID to fetch.")
     format: Literal["full", "metadata", "minimal"] = Field(default="full", description="Gmail API message format for thread payload.")
 
 
-class ModifyThreadRequest(ToolRequestModel):
-    thread_id: str = Field(description="Thread ID to modify.")
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add to all thread messages.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove from all thread messages.")
-
-
-class ThreadIdRequest(ToolRequestModel):
-    thread_id: str = Field(description="Thread ID.")
 
 
 class ForwardingAddressRequest(ToolRequestModel):
     forwarding_email: EmailStr = Field(description="Forwarding email address.")
 
-
-class GetVacationSettingsRequest(ToolRequestModel):
-    # No args currently needed; request model kept for consistency.
-    include_placeholder: bool = Field(default=False, description="Placeholder field; ignored by API call.")
 
 
 class UpdateVacationSettingsRequest(ToolRequestModel):
@@ -354,12 +315,3 @@ class UpdateVacationSettingsRequest(ToolRequestModel):
     restrict_to_domain: bool = Field(default=False, description="Send auto-replies only within workspace domain.")
     start_time: int | None = Field(default=None, ge=0, description="Start time as epoch milliseconds.")
     end_time: int | None = Field(default=None, ge=0, description="End time as epoch milliseconds.")
-
-
-class MessageIdRequest(ToolRequestModel):
-    message_id: str = Field(description="Gmail message ID.")
-
-
-class MarkNotSpamRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID currently in spam.")
-    add_to_inbox: bool = Field(default=True, description="Add INBOX label while removing SPAM.")

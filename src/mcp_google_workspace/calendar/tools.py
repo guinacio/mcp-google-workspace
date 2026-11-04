@@ -4,41 +4,42 @@ from __future__ import annotations
 
 import logging
 
-import re
 from hashlib import sha256
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn
+from uuid import uuid4
 
 import pytz
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
-from ..auth import build_calendar_service, build_drive_service
+from ..auth import build_calendar_service
 from ..common.async_ops import (
     execute_google_request,
     run_blocking,
 )
 from ..common.confirmation import confirm_destructive_action
-from ..common.downloads import stream_google_download
 from ..common.errors import RecoverableToolError
-from .presentation import calendars_page, event_detail, event_envelope, free_busy
+from .presentation import (
+    calendar_entry,
+    drive_file_id_from_url,
+    event_detail,
+    event_envelope,
+    free_busy,
+)
 from ..common.timezone import resolve_user_timezone, user_now
 from .schemas import (
     SendUpdates,
-    AddEventAttachmentRequest,
     CreateEventRequest,
     DeleteEventRequest,
-    DownloadEventAttachmentRequest,
     EventAttachmentInput,
+    EventAttachmentSelector,
     EventAttendeeInput,
-    CalendarIdInput,
-    FindCommonFreeSlotsRequest,
-    FreeBusyRequest,
+    FindFreeTimeRequest,
     ReadEventsRequest,
     RespondToEventRequest,
     ListEventsRequest,
-    RemoveEventAttachmentRequest,
+    SetEventAttachmentsRequest,
     UpdateEventRequest,
 )
 
@@ -62,25 +63,33 @@ def _validate_and_fix_datetime(dt_string: str | None, timezone_name: str) -> str
 
 
 
-GOOGLE_EXPORT_MIME_DEFAULTS = {
-    "application/vnd.google-apps.document": "application/pdf",
-    "application/vnd.google-apps.spreadsheet": "application/pdf",
-    "application/vnd.google-apps.presentation": "application/pdf",
-    "application/vnd.google-apps.drawing": "image/png",
-}
+def _meet_conference_request(request_key: str | None) -> dict[str, Any]:
+    """conferenceData asking Google to create a new Meet link.
+
+    Google deduplicates creation by requestId; a create retried with the same
+    idempotency_key reuses it, every other call gets a fresh one.
+    """
+    request_id = (
+        sha256(f"meet:{request_key}".encode("utf-8")).hexdigest()
+        if request_key
+        else uuid4().hex
+    )
+    return {
+        "createRequest": {
+            "requestId": request_id,
+            "conferenceSolutionKey": {"type": "hangoutsMeet"},
+        }
+    }
 
 
-def _extract_drive_file_id(file_url: str | None) -> str | None:
-    if not file_url:
-        return None
-    # Common Drive URL forms: /d/{id}/..., ?id={id}
-    match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_url)
-    if match:
-        return match.group(1)
-    match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_url)
-    if match:
-        return match.group(1)
-    return None
+def _popup_reminders(minutes: list[int]) -> dict[str, Any]:
+    """reminders for popup alerts at these minutes before start; [] means none."""
+    return {
+        "useDefault": False,
+        "overrides": [
+            {"method": "popup", "minutes": value} for value in sorted(set(minutes))
+        ],
+    }
 
 
 def _idempotent_event_id(key: str) -> str:
@@ -464,7 +473,7 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Read the full details of one to 100 events from one calendar by ID. Use it after calendar_search_events or calendar_get_calendar_digest when you need the description, guest list or attachments, which those compact results leave out. Returns events with the compact fields plus url, description, attendees (name, email, response_status, optional, organizer, is_self, is_resource), attachments (title, file_url, file_id, mime_type), recurrence, recurring_event_id, visibility and transparency, and account_timezone (the zone of start and end); IDs that do not exist are listed in missing_event_ids instead of failing the call."""
+        """Read the full details of one to 100 events from one calendar by ID. Use it after calendar_search_events or calendar_get_calendar_digest when you need the description, guest list or attachments, which those compact results leave out. Returns events with the compact fields plus url, description, attendees (name, email, response_status, optional, organizer, is_self, is_resource), attachments (title, file_url, mime_type and the Drive file_id that drive_download_file takes), recurrence, recurring_event_id, visibility and transparency, and account_timezone (the zone of start and end); IDs that do not exist are listed in missing_event_ids instead of failing the call."""
         request = ReadEventsRequest(
             calendar_id=calendar_id,
             event_ids=event_ids,
@@ -534,18 +543,32 @@ def register_tools(server: FastMCP) -> None:
             "account_timezone": user_timezone,
         }
 
-    @server.tool(name="list_calendars")
-    async def list_calendars() -> dict[str, Any]:
-        """List the calendars in the user's calendar list: their own, shared and subscribed calendars. Use it to find a calendar_id other than 'primary' for the other calendar tools. Returns calendars, each with id (the calendar_id), name (the user's own name for it when set), description, primary (true for the main calendar), access_role (owner, writer, reader or freeBusyReader), time_zone and hidden, plus count and next_page_token."""
-        service = build_calendar_service()
-        return calendars_page(await execute_google_request(service.calendarList().list()))
-
     @server.tool(name="get_calendar_context")
-    async def get_calendar_context() -> dict[str, Any]:
-        """Get the account's Calendar time zone and the current date and time in it. Call it before turning relative phrases such as "tomorrow at 3pm" into the times other calendar tools take. Returns current_date, current_time, day_of_week, timezone (IANA name), utc_offset, current_local_time and current_utc_time."""
+    async def get_calendar_context(
+        include_calendars: Annotated[
+            bool,
+            (
+                "Also list every calendar in the user's calendar list (all pages). False returns "
+                "only the clock and time zone, with calendars null, and skips that lookup."
+            ),
+        ] = True,
+    ) -> dict[str, Any]:
+        """Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as "tomorrow at 3pm" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone (IANA name), utc_offset, current_local_time, current_utc_time and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden."""
         user_tz = await resolve_user_timezone()
         now_local = user_now(user_tz)
         now_utc = now_local.astimezone(pytz.UTC)
+        calendars: list[dict[str, Any]] = []
+        if include_calendars:
+            service = build_calendar_service()
+            page_token: str | None = None
+            while True:
+                page = await execute_google_request(
+                    service.calendarList().list(pageToken=page_token)
+                )
+                calendars.extend(calendar_entry(entry) for entry in page.get("items", []))
+                page_token = page.get("nextPageToken")
+                if not page_token:
+                    break
         return {
             "current_date": now_local.strftime("%Y-%m-%d"),
             "current_time": now_local.strftime("%H:%M:%S"),
@@ -556,58 +579,42 @@ def register_tools(server: FastMCP) -> None:
             "utc_datetime": now_utc.isoformat(),
             "utc_offset": now_local.strftime("%z"),
             "timezone_name": now_local.tzname(),
+            # null, not [], when the list was not requested: nothing was looked up.
+            "calendars": list(calendars) if include_calendars else None,
         }
 
-    @server.tool(name="check_time_availability")
-    async def check_time_availability(
-        time_min: Annotated[str, "Start of the period to check, RFC3339 with offset, e.g. '2026-03-02T15:00:00+01:00'."],
-        time_max: Annotated[str, "End of the period to check, RFC3339 with offset; must be after time_min."],
-        items: Annotated[
-            list[CalendarIdInput],
-            "Calendars/attendees to check, 1 to 50, as a list of {id: calendar ID or attendee email address}.",
-        ],
-        time_zone: Annotated[
-            str | None,
-            "IANA time zone name, e.g. 'Europe/Berlin', in which busy periods are returned; defaults to the account's calendar time zone.",
-        ] = None,
-    ) -> dict[str, Any]:
-        """Check whether one known time period is free on up to 50 calendars or people. To find open times instead of testing one, use calendar_find_common_free_slots. Returns all_free, time_min, time_max, account_timezone (the zone of every time returned) and calendars in request order, each with id, free (null when it could not be read), busy (start/end periods; empty means free) and errors (Google's reasons, e.g. notFound)."""
-        request = FreeBusyRequest(
-            timeMin=time_min,
-            timeMax=time_max,
-            items=items,
-            timeZone=time_zone,
-        )
-        effective_time_zone = request.timeZone or await resolve_user_timezone()
-        service = build_calendar_service()
-        response = await execute_google_request(
-            service.freebusy().query(
-                body=request.model_copy(update={"timeZone": effective_time_zone}).model_dump()
-            )
-        )
-        return free_busy(
-            response,
-            requested_ids=[item.id for item in request.items],
-            account_timezone=effective_time_zone,
-        )
-
-    @server.tool(name="find_common_free_slots")
-    async def find_common_free_slots(
+    @server.tool(name="find_free_time")
+    async def find_free_time(
         participants: Annotated[
             list[str],
-            "Calendar IDs or attendee email addresses (at least one) whose busy times must all be avoided, as a JSON array.",
+            (
+                "Calendar IDs ('primary', or an id from calendar_get_calendar_context) or attendee "
+                "email addresses whose busy times are checked, 1 to 50, as a JSON array."
+            ),
         ],
         time_min: Annotated[
             str,
             (
-                "Start of the search window: RFC3339 with offset, a naive 'YYYY-MM-DDTHH:MM:SS' or a "
-                "'YYYY-MM-DD' (midnight), the last two read in time_zone. Working hours are applied at "
-                "this value's UTC offset, so prefer naive local times."
+                "Start of the window: RFC3339 with offset, a naive 'YYYY-MM-DDTHH:MM:SS' or a "
+                "'YYYY-MM-DD' (midnight), the last two read in time_zone. To test one chosen slot, "
+                "pass its start here."
             ),
         ],
         time_max: Annotated[
-            str, "End of the search window, in the same formats as time_min; must be after time_min."
+            str,
+            (
+                "End of the window, in the same formats as time_min; must be after it. To test one "
+                "chosen slot, pass its end here."
+            ),
         ],
+        time_zone: Annotated[
+            str | None,
+            (
+                "IANA time zone name, e.g. 'Europe/Berlin', used to read naive time_min/time_max, to "
+                "apply working hours and for every time returned; defaults to the account's calendar "
+                "time zone."
+            ),
+        ] = None,
         slot_duration_minutes: Annotated[
             int, "Length of each suggested slot in minutes, 5 to 480."
         ] = 30,
@@ -615,69 +622,68 @@ def register_tools(server: FastMCP) -> None:
             int, "Minutes between candidate start times inside a free period, 5 to 240."
         ] = 15,
         max_results: Annotated[int, "Maximum slots to suggest, 1 to 100, earliest first."] = 10,
-        time_zone: Annotated[
-            str | None,
-            "IANA time zone name, e.g. 'Europe/Berlin', used to read naive time_min/time_max; defaults to the account's calendar time zone.",
-        ] = None,
         working_hours_start: Annotated[
-            str, "Earliest time of day a slot may start, HH:MM in 24-hour format."
+            str, "Earliest time of day a suggested slot may start, HH:MM in 24-hour format."
         ] = "08:00",
         working_hours_end: Annotated[
-            str, "Latest time of day a slot may end, HH:MM in 24-hour format; must be after working_hours_start."
+            str,
+            "Latest time of day a suggested slot may end, HH:MM in 24-hour format; must be after working_hours_start.",
         ] = "17:00",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Find meeting times when every participant is free, within working hours on each day of a window. To test one already-chosen time use calendar_check_time_availability, then book with calendar_create_event. Returns suggested_slots (start/end pairs, earliest first), total_suggestions, the timezone used, and calendar_errors for participants whose availability could not be read; those participants are treated as free."""
-        request = FindCommonFreeSlotsRequest(
+        """Check the free/busy times of up to 50 calendars or people over one window. To test a chosen time, pass it as the window and read all_free; to find meeting times, read suggested_slots, then book with calendar_create_event. Returns all_free (true only when every calendar was read and is free for the whole window), calendars in request order (id, free, null when unreadable, busy periods, errors such as notFound), suggested_slots (start/end within working hours when every readable calendar is free; unreadable ones count as free), total_suggestions, timezone (the zone of every time) and the window and slot settings used."""
+        request = FindFreeTimeRequest(
             participants=participants,
             time_min=time_min,
             time_max=time_max,
+            time_zone=time_zone,
             slot_duration_minutes=slot_duration_minutes,
             granularity_minutes=granularity_minutes,
             max_results=max_results,
-            time_zone=time_zone,
             working_hours_start=working_hours_start,
             working_hours_end=working_hours_end,
         )
-        service = build_calendar_service()
-        if not request.participants:
-            raise ValueError("participants list cannot be empty.")
-
         query_timezone = request.time_zone or await resolve_user_timezone()
+        zone = pytz.timezone(query_timezone)
         fixed_min = _validate_and_fix_datetime(request.time_min, query_timezone)
         fixed_max = _validate_and_fix_datetime(request.time_max, query_timezone)
         if not fixed_min or not fixed_max:
             raise ValueError("time_min and time_max are required.")
-
-        window_start = _parse_rfc3339_datetime(fixed_min)
-        window_end = _parse_rfc3339_datetime(fixed_max)
+        # Slots and working hours are computed in the result zone, whatever
+        # offset the caller wrote the window in.
+        window_start = _parse_rfc3339_datetime(fixed_min).astimezone(zone)
+        window_end = _parse_rfc3339_datetime(fixed_max).astimezone(zone)
         if window_end <= window_start:
             raise ValueError("time_max must be greater than time_min.")
 
-        LOGGER.debug(f"Checking common availability for {len(request.participants)} participant(s).")
-        body: dict[str, Any] = {
-            "timeMin": fixed_min,
-            "timeMax": fixed_max,
-            "items": [{"id": participant} for participant in request.participants],
-        }
-        body["timeZone"] = query_timezone
-        freebusy_result = await execute_google_request(service.freebusy().query(body=body))
+        service = build_calendar_service()
+        LOGGER.debug(f"Checking free/busy for {len(request.participants)} participant(s).")
+        response = await execute_google_request(
+            service.freebusy().query(
+                body={
+                    "timeMin": fixed_min,
+                    "timeMax": fixed_max,
+                    "timeZone": query_timezone,
+                    "items": [{"id": participant} for participant in request.participants],
+                }
+            )
+        )
+        availability = free_busy(
+            response,
+            requested_ids=request.participants,
+            account_timezone=query_timezone,
+        )
 
-        calendars = freebusy_result.get("calendars", {})
         all_busy_ranges: list[tuple[datetime, datetime]] = []
-        calendar_errors: dict[str, Any] = {}
-
+        raw_calendars = response.get("calendars", {})
         for participant in request.participants:
-            details = calendars.get(participant, {})
-            if details.get("errors"):
-                calendar_errors[participant] = details["errors"]
-            for busy in details.get("busy", []):
+            for busy in raw_calendars.get(participant, {}).get("busy", []):
                 start_raw = busy.get("start")
                 end_raw = busy.get("end")
                 if not start_raw or not end_raw:
                     continue
-                busy_start = _parse_rfc3339_datetime(start_raw)
-                busy_end = _parse_rfc3339_datetime(end_raw)
+                busy_start = _parse_rfc3339_datetime(start_raw).astimezone(zone)
+                busy_end = _parse_rfc3339_datetime(end_raw).astimezone(zone)
                 if busy_end <= busy_start:
                     continue
                 all_busy_ranges.append(
@@ -698,31 +704,29 @@ def register_tools(server: FastMCP) -> None:
         if cursor < window_end:
             free_ranges.append((cursor, window_end))
 
-        free_ranges_with_working_hours = _apply_working_hours(
-            free_ranges,
-            request.working_hours_start,
-            request.working_hours_end,
-        )
-
         suggestions = _build_slot_candidates(
-            free_ranges_with_working_hours,
+            _apply_working_hours(
+                free_ranges,
+                request.working_hours_start,
+                request.working_hours_end,
+            ),
             request.slot_duration_minutes,
             request.granularity_minutes,
             request.max_results,
         )
 
         return {
-            "participants": request.participants,
-            "time_min": fixed_min,
-            "time_max": fixed_max,
+            "all_free": bool(availability["all_free"]),
+            "calendars": list(availability["calendars"]),
+            "suggested_slots": suggestions,
+            "total_suggestions": len(suggestions),
+            "timezone": query_timezone,
+            "time_min": window_start.isoformat(),
+            "time_max": window_end.isoformat(),
             "slot_duration_minutes": request.slot_duration_minutes,
             "granularity_minutes": request.granularity_minutes,
             "working_hours_start": request.working_hours_start,
             "working_hours_end": request.working_hours_end,
-            "timezone": query_timezone,
-            "total_suggestions": len(suggestions),
-            "suggested_slots": suggestions,
-            "calendar_errors": calendar_errors,
         }
 
     @server.tool(name="create_event")
@@ -767,14 +771,10 @@ def register_tools(server: FastMCP) -> None:
             Literal["opaque", "transparent"],
             "'opaque' shows the time as busy; 'transparent' leaves it free in availability checks.",
         ] = "opaque",
-        conference_data: Annotated[
-            dict[str, Any] | None,
-            (
-                "Raw Google conferenceData object. For a new Google Meet link pass {'createRequest': "
-                "{'requestId': '<unique string>', 'conferenceSolutionKey': {'type': 'hangoutsMeet'}}}; "
-                "the link is returned in the event's hangoutLink and conferenceData.entryPoints."
-            ),
-        ] = None,
+        add_meet_link: Annotated[
+            bool,
+            "True creates a new Google Meet link for the event, returned as the event's meeting_url.",
+        ] = False,
         attendees: Annotated[
             list[EventAttendeeInput] | None,
             "Guests to invite, each {email, displayName, optional, comment, additionalGuests}; whether they are emailed depends on send_updates.",
@@ -795,12 +795,12 @@ def register_tools(server: FastMCP) -> None:
                 "notification applies."
             ),
         ] = None,
-        reminders: Annotated[
-            dict[str, Any] | None,
+        reminder_minutes: Annotated[
+            list[int] | None,
             (
-                "Raw Google reminders object, e.g. {'useDefault': false, 'overrides': [{'method': "
-                "'popup', 'minutes': 10}, {'method': 'email', 'minutes': 60}]}; omit to keep the "
-                "calendar's default reminders."
+                "Popup reminders, in minutes before the start (each 0 to 40320, at most 5), e.g. "
+                "[10, 60]. An empty list sets no reminders; omit it to use the calendar's default "
+                "reminders."
             ),
         ] = None,
         recurrence: Annotated[
@@ -818,7 +818,7 @@ def register_tools(server: FastMCP) -> None:
         ] = "fail",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_common_free_slots first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees, attachments, recurrence and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. Guests receive invitations only as send_updates says."""
+        """Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_free_time first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees, attachments, recurrence and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. Guests receive invitations only as send_updates says."""
         request = CreateEventRequest(
             calendar_id=calendar_id,
             idempotency_key=idempotency_key,
@@ -831,12 +831,12 @@ def register_tools(server: FastMCP) -> None:
             color_id=color_id,
             visibility=visibility,
             transparency=transparency,
-            conference_data=conference_data,
+            add_meet_link=add_meet_link,
             attendees=attendees,
             attachments=attachments,
             supports_attachments=supports_attachments,
             send_updates=send_updates,
-            reminders=reminders,
+            reminder_minutes=reminder_minutes,
             recurrence=recurrence,
             on_conflict=on_conflict,
         )
@@ -891,14 +891,14 @@ def register_tools(server: FastMCP) -> None:
             body["visibility"] = request.visibility
         if request.transparency is not None:
             body["transparency"] = request.transparency
-        if request.conference_data is not None:
-            body["conferenceData"] = request.conference_data
+        if request.add_meet_link:
+            body["conferenceData"] = _meet_conference_request(request.idempotency_key)
         if request.attendees:
             body["attendees"] = [item.model_dump(by_alias=True, exclude_none=True) for item in request.attendees]
         if request.attachments is not None:
             body["attachments"] = [a.to_api() for a in request.attachments]
-        if request.reminders:
-            body["reminders"] = request.reminders
+        if request.reminder_minutes is not None:
+            body["reminders"] = _popup_reminders(request.reminder_minutes)
         if request.recurrence:
             body["recurrence"] = request.recurrence
         conflict_check = await run_blocking(
@@ -997,13 +997,13 @@ def register_tools(server: FastMCP) -> None:
             Literal["opaque", "transparent"] | None,
             "'opaque' shows the time as busy; 'transparent' leaves it free in availability checks.",
         ] = None,
-        conference_data: Annotated[
-            dict[str, Any] | None,
+        add_meet_link: Annotated[
+            bool,
             (
-                "Raw Google conferenceData object. To add a Google Meet link pass {'createRequest': "
-                "{'requestId': '<unique string>', 'conferenceSolutionKey': {'type': 'hangoutsMeet'}}}."
+                "True creates a new Google Meet link for the event, replacing any conference it has; "
+                "false leaves its conferencing unchanged."
             ),
-        ] = None,
+        ] = False,
         attendees: Annotated[
             list[EventAttendeeInput] | None,
             (
@@ -1016,19 +1016,20 @@ def register_tools(server: FastMCP) -> None:
             list[EventAttachmentInput] | None,
             (
                 "The complete new attachment list, up to 25, each {file_url, title, mime_type, "
-                "icon_link, file_id}; it replaces the old list. To add or remove one file use "
-                "calendar_add_event_attachment or calendar_remove_event_attachment."
+                "icon_link, file_id}; it replaces the old list. To add or remove single files use "
+                "calendar_set_event_attachments."
             ),
         ] = None,
         supports_attachments: Annotated[
             bool,
             "Tells Google this call handles event attachments (its supportsAttachments flag); leave true, attachments are only changed when it is true.",
         ] = True,
-        reminders: Annotated[
-            dict[str, Any] | None,
+        reminder_minutes: Annotated[
+            list[int] | None,
             (
-                "Raw Google reminders object, e.g. {'useDefault': false, 'overrides': [{'method': "
-                "'popup', 'minutes': 10}, {'method': 'email', 'minutes': 60}]}."
+                "New popup reminders, in minutes before the start (each 0 to 40320, at most 5), "
+                "replacing the event's reminders, e.g. [10, 60]. An empty list removes all "
+                "reminders; omit it to leave them unchanged."
             ),
         ] = None,
         recurrence: Annotated[
@@ -1071,11 +1072,11 @@ def register_tools(server: FastMCP) -> None:
             color_id=color_id,
             visibility=visibility,
             transparency=transparency,
-            conference_data=conference_data,
+            add_meet_link=add_meet_link,
             attendees=attendees,
             attachments=attachments,
             supports_attachments=supports_attachments,
-            reminders=reminders,
+            reminder_minutes=reminder_minutes,
             recurrence=recurrence,
             send_updates=send_updates,
             on_conflict=on_conflict,
@@ -1088,7 +1089,6 @@ def register_tools(server: FastMCP) -> None:
             "description",
             "location",
             "attendees",
-            "reminders",
             "recurrence",
             "visibility",
             "transparency",
@@ -1102,8 +1102,10 @@ def register_tools(server: FastMCP) -> None:
                 )
         if request.color_id is not None:
             patch_data["colorId"] = request.color_id
-        if request.conference_data is not None:
-            patch_data["conferenceData"] = request.conference_data
+        if request.reminder_minutes is not None:
+            patch_data["reminders"] = _popup_reminders(request.reminder_minutes)
+        if request.add_meet_link:
+            patch_data["conferenceData"] = _meet_conference_request(None)
         if request.attachments is not None:
             patch_data["attachments"] = [a.to_api() for a in request.attachments]
         if request.start_datetime:
@@ -1170,7 +1172,7 @@ def register_tools(server: FastMCP) -> None:
             "The user's answer: 'accepted' (yes), 'tentative' (maybe) or 'declined' (no).",
         ],
         calendar_id: str = "primary",
-        send_updates: Literal["all", "externalOnly", "none"] | None = "all",
+        send_updates: SendUpdates | None = "all",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Answer an event invitation as the signed-in user: accept, decline or mark tentative. Find unanswered invitations in the requires_response list of calendar_get_calendar_digest; the call fails if the user is not on the event's guest list. Returns status 'ok', event_id, response_status and event (the updated event in the calendar_read_events shape). With the default send_updates 'all', Google notifies the event's guests of the answer."""
@@ -1213,34 +1215,69 @@ def register_tools(server: FastMCP) -> None:
             "event": event_detail(updated, account_timezone=await resolve_user_timezone()),
         }
 
-    @server.tool(name="add_event_attachment")
-    async def add_event_attachment(
+    @server.tool(name="set_event_attachments")
+    async def set_event_attachments(
         event_id: str,
-        attachment: Annotated[
-            EventAttachmentInput,
-            "Attachment to add: file_url plus optional title, mime_type, icon_link and Drive file_id.",
-        ],
         calendar_id: str = "primary",
+        add: Annotated[
+            list[EventAttachmentInput] | None,
+            (
+                "Files to attach, each {file_url, title, mime_type, icon_link, file_id}; a file whose "
+                "file_url is already attached is skipped. Google allows at most 25 attachments per event."
+            ),
+        ] = None,
+        remove: Annotated[
+            list[EventAttachmentSelector] | None,
+            (
+                "Attachments to detach, each {file_url, file_id} with at least one of the two, as listed "
+                "by calendar_read_events; an attachment matching either is removed. Removals apply "
+                "before additions, and the files stay in Drive."
+            ),
+        ] = None,
         send_updates: SendUpdates | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Attach one file to an existing event, keeping its current attachments. If an attachment with the same file_url is already there nothing is added; to replace the whole list use calendar_update_event. Returns status 'ok' and event, the updated event in the calendar_read_events shape with its attachments (Google allows at most 25 per event)."""
-        request = AddEventAttachmentRequest(
+        """Add files to and remove files from an existing event's attachments in one change, keeping the others; give add, remove or both. To replace the whole list use calendar_update_event, and to save an attached file use drive_download_file with its file_id. Returns status 'ok', event (the updated event in the calendar_read_events shape), added_count and removed_count (0 when nothing matched). When remove is given the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed."""
+        request = SetEventAttachmentsRequest(
             calendar_id=calendar_id,
             event_id=event_id,
-            attachment=attachment,
+            add=add,
+            remove=remove,
             send_updates=send_updates,
         )
         service = build_calendar_service()
-        LOGGER.debug(f"Adding attachment to event {request.event_id}.")
+        if request.remove and not await confirm_destructive_action(
+            ctx,
+            "remove_event_attachment",
+            f"Remove the selected attachment from event {request.event_id}?",
+        ):
+            return {"status": "cancelled", "event_id": request.event_id}
+        LOGGER.debug(f"Setting attachments on event {request.event_id}.")
         event = await execute_google_request(
             service.events()
             .get(calendarId=request.calendar_id, eventId=request.event_id)
         )
-        attachments = list(event.get("attachments", []))
-        candidate = request.attachment.to_api()
-        if not any(isinstance(a, dict) and a.get("fileUrl") == candidate.get("fileUrl") for a in attachments):
+        existing = list(event.get("attachments", []))
+        remove_urls = {item.file_url for item in request.remove or [] if item.file_url}
+        remove_ids = {item.file_id for item in request.remove or [] if item.file_id}
+        attachments: list[dict[str, Any]] = []
+        for item in existing:
+            if not isinstance(item, dict):
+                continue
+            # Match the file_id calendar_read_events shows, which falls back
+            # to the ID in a Drive URL when the attachment has no fileId.
+            item_file_id = item.get("fileId") or drive_file_id_from_url(item.get("fileUrl"))
+            if item.get("fileUrl") in remove_urls or item_file_id in remove_ids:
+                continue
+            attachments.append(item)
+        removed_count = len(existing) - len(attachments)
+        added_count = 0
+        for attachment in request.add or []:
+            candidate = attachment.to_api()
+            if any(item.get("fileUrl") == candidate["fileUrl"] for item in attachments):
+                continue
             attachments.append(candidate)
+            added_count += 1
         updated = await execute_google_request(
             service.events()
             .patch(
@@ -1254,182 +1291,8 @@ def register_tools(server: FastMCP) -> None:
         return {
             "status": "ok",
             "event": event_detail(updated, account_timezone=await resolve_user_timezone()),
-        }
-
-    @server.tool(name="remove_event_attachment")
-    async def remove_event_attachment(
-        event_id: str,
-        calendar_id: str = "primary",
-        file_url: Annotated[
-            str | None,
-            "Remove attachments whose fileUrl equals this, as listed by calendar_read_events; give file_url, file_id or both.",
-        ] = None,
-        file_id: Annotated[
-            str | None, "Remove attachments whose Drive fileId equals this; give file_url, file_id or both."
-        ] = None,
-        send_updates: SendUpdates | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Detach files from an event, matching by file_url or Drive file_id; the files themselves are not deleted. The user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed. Returns status 'ok', event (the updated event in the calendar_read_events shape) and removed_count, which is 0 when nothing matched."""
-        request = RemoveEventAttachmentRequest(
-            calendar_id=calendar_id,
-            event_id=event_id,
-            file_url=file_url,
-            file_id=file_id,
-            send_updates=send_updates,
-        )
-        service = build_calendar_service()
-        if not request.file_url and not request.file_id:
-            raise ValueError("Provide at least one of file_url or file_id.")
-        if not await confirm_destructive_action(
-            ctx,
-            "remove_event_attachment",
-            f"Remove the selected attachment from event {request.event_id}?",
-        ):
-            return {"status": "cancelled", "event_id": request.event_id}
-        LOGGER.debug(f"Removing attachment from event {request.event_id}.")
-        event = await execute_google_request(
-            service.events()
-            .get(calendarId=request.calendar_id, eventId=request.event_id)
-        )
-        attachments = list(event.get("attachments", []))
-        filtered = []
-        for item in attachments:
-            if not isinstance(item, dict):
-                continue
-            same_url = request.file_url and item.get("fileUrl") == request.file_url
-            same_id = request.file_id and item.get("fileId") == request.file_id
-            if same_url or same_id:
-                continue
-            filtered.append(item)
-        updated = await execute_google_request(
-            service.events()
-            .patch(
-                calendarId=request.calendar_id,
-                eventId=request.event_id,
-                body={"attachments": filtered},
-                sendUpdates=request.send_updates,
-                supportsAttachments=True,
-            )
-        )
-        return {
-            "status": "ok",
-            "event": event_detail(updated, account_timezone=await resolve_user_timezone()),
-            "removed_count": len(attachments) - len(filtered),
-        }
-
-    @server.tool(name="download_event_attachment", task=True)
-    async def download_event_attachment(
-        event_id: str,
-        output_path: Annotated[
-            str, "Destination file path on the server's machine, including the file name; missing folders are created."
-        ],
-        calendar_id: str = "primary",
-        file_url: Annotated[
-            str | None,
-            "fileUrl of the attachment to save, as listed by calendar_read_events; omit both selectors when the event has exactly one attachment.",
-        ] = None,
-        file_id: Annotated[
-            str | None,
-            "Drive file ID of the attachment to save; omit both selectors when the event has exactly one attachment.",
-        ] = None,
-        export_mime_type: Annotated[
-            str | None,
-            (
-                "Export format for a Google Docs, Sheets, Slides or Drawings attachment, e.g. "
-                "'application/pdf' or 'text/csv'; defaults to PDF (PNG for Drawings) and is ignored for other files."
-            ),
-        ] = None,
-        overwrite: Annotated[
-            bool, "Replace an existing file at output_path; when false an existing file makes the call fail."
-        ] = False,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Save one of an event's attachments to a file on the machine running this server, fetching it from Drive and exporting Google Docs, Sheets, Slides and Drawings. Choose the attachment with file_url or file_id; with neither, the event must have exactly one attachment. It only works when the server runs locally; over a remote connection it fails with picker_required. Returns saved_to, bytes_written, file_name, file_mime_type, mode ('download' or 'export') and export_mime_type."""
-        request = DownloadEventAttachmentRequest(
-            calendar_id=calendar_id,
-            event_id=event_id,
-            output_path=output_path,
-            file_url=file_url,
-            file_id=file_id,
-            export_mime_type=export_mime_type,
-            overwrite=overwrite,
-        )
-        from ..file_uploads import require_local_filesystem
-
-        require_local_filesystem("Calendar attachment download")
-        service = build_calendar_service()
-        drive = build_drive_service()
-        LOGGER.debug(f"Resolving attachment for event {request.event_id}.")
-        event = await execute_google_request(
-            service.events()
-            .get(calendarId=request.calendar_id, eventId=request.event_id)
-        )
-        attachments = event.get("attachments", [])
-
-        selected: dict[str, Any] | None = None
-        if request.file_url or request.file_id:
-            for item in attachments:
-                if not isinstance(item, dict):
-                    continue
-                same_url = request.file_url and item.get("fileUrl") == request.file_url
-                same_id = request.file_id and item.get("fileId") == request.file_id
-                if same_url or same_id:
-                    selected = item
-                    break
-        elif len(attachments) == 1 and isinstance(attachments[0], dict):
-            selected = attachments[0]
-        else:
-            raise ValueError(
-                "Ambiguous attachment selection. Provide file_url or file_id, "
-                "or ensure event has exactly one attachment."
-            )
-
-        file_url_resolved = request.file_url or (selected.get("fileUrl") if selected else None)
-        file_id_resolved = request.file_id or (selected.get("fileId") if selected else None) or _extract_drive_file_id(file_url_resolved)
-        if not file_id_resolved:
-            raise ValueError("Could not resolve Drive file_id from attachment metadata.")
-
-        meta = await execute_google_request(
-            drive.files().get(fileId=file_id_resolved, fields="id,name,mimeType")
-        )
-        mime_type = meta.get("mimeType", "")
-        name = meta.get("name", file_id_resolved)
-        out_path = Path(request.output_path)
-        if mime_type.startswith("application/vnd.google-apps"):
-            export_mime = request.export_mime_type or GOOGLE_EXPORT_MIME_DEFAULTS.get(mime_type)
-            if not export_mime:
-                raise ValueError(
-                    "Google-native file requires export_mime_type for this mimeType: "
-                    f"{mime_type}"
-                )
-            req = drive.files().export_media(fileId=file_id_resolved, mimeType=export_mime)
-            mode = "export"
-        else:
-            req = drive.files().get_media(fileId=file_id_resolved)
-            export_mime = None
-            mode = "download"
-
-        size = await stream_google_download(
-            req,
-            out_path,
-            overwrite=request.overwrite,
-            progress_label="Downloading attachment bytes",
-            ctx=ctx,
-        )
-        if ctx is not None:
-            await ctx.report_progress(100, 100, "Attachment saved")
-        return {
-            "status": "ok",
-            "calendar_id": request.calendar_id,
-            "event_id": request.event_id,
-            "file_id": file_id_resolved,
-            "file_name": name,
-            "file_mime_type": mime_type,
-            "mode": mode,
-            "export_mime_type": export_mime,
-            "saved_to": str(out_path),
-            "bytes_written": size,
+            "added_count": added_count,
+            "removed_count": removed_count,
         }
 
     @server.tool(name="delete_event")

@@ -58,6 +58,11 @@ def local_tools(owner: FastMCP | FastMCPApp) -> list[Tool]:
     return [component for component in components.values() if isinstance(component, Tool)]
 
 
+def remove_local_tool(owner: FastMCP | FastMCPApp, name: str) -> None:
+    """Unregister a tool *owner* registered locally (e.g. one a base class added)."""
+    _local_provider(owner).remove_tool(name)
+
+
 def registered_extensions(server: FastMCP) -> Mapping[str, Any]:
     """Return a read-only view of the server extensions registered on *server*."""
     extensions = getattr(server, "_extensions", None)

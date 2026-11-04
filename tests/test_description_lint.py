@@ -78,12 +78,9 @@ OPEN_VALUE_SETS = {
     # A comma-separated list of sort keys, each optionally followed by " desc".
     "drive_list_files.order_by",
     # Any MIME type is a valid upload or metadata type.
-    "drive_create_file_metadata.mime_type",
-    "drive_update_file_content.mime_type",
     "drive_upload_file.mime_type",
     # Export targets depend on the source file's type (Drive about.exportFormats).
-    "drive_export_google_file.mime_type",
-    "calendar_download_event_attachment.export_mime_type",
+    "drive_download_file.export_mime_type",
 }
 
 # Tools that expose a raw Google batchUpdate and the simpler tools to try first.
@@ -180,7 +177,10 @@ def test_every_parameter_has_a_real_description(catalogs: dict[str, list[dict[st
 
 
 def test_every_tool_description_follows_the_pattern(catalogs: dict[str, list[dict[str, Any]]]) -> None:
-    default_names = {tool["name"] for tool in catalogs["default"]}
+    # The full pattern applies to every core-service tool, extended tier included;
+    # the optional integrations only get the contract checks.
+    optional = ("apps_", "chat_", "gemini_", "keep_", "meet_")
+    default_names = {tool["name"] for tool in catalogs["all_optional"] if not tool["name"].startswith(optional)}
     problems: list[str] = []
     for tool in catalogs["all_optional"]:
         problems.extend(tool_problems(tool, default_catalog=tool["name"] in default_names))
@@ -194,7 +194,7 @@ def test_open_value_set_exemptions_name_real_parameters(catalogs: dict[str, list
         for name in (tool["inputSchema"].get("properties") or {})
     }
     assert OPEN_VALUE_SETS <= published
-    assert set(BATCH_UPDATE_SIMPLER) <= {tool["name"] for tool in catalogs["default"]}
+    assert set(BATCH_UPDATE_SIMPLER) <= {tool["name"] for tool in catalogs["all_optional"]}
 
 
 @pytest.mark.parametrize(

@@ -23,7 +23,7 @@ from mcp_google_workspace.server import workspace_mcp
 async def _list_and_read_twice() -> tuple[list, list]:
     async with Client(workspace_mcp) as client:
         tools = await client.list_tools()
-        picker = next(tool for tool in tools if tool.name == "files_file_manager")
+        picker = next(tool for tool in tools if tool.name == "uploads_file_manager")
         uri = picker.meta["ui"]["resourceUri"]
 
         await client.list_resources()
@@ -46,7 +46,7 @@ def test_repeated_list_and_read_hit_the_cache_instead_of_rebuilding() -> None:
     prefab_render_cache.reset_cache()
     first, more = anyio.run(_list_and_read_twice)
 
-    # Exactly one real build for the one prefab tool (files_file_manager),
+    # Exactly one real build for the one prefab tool (uploads_file_manager),
     # produced by the first resources/list call.
     assert first["builds"] == 1
     assert first["hits"] == 0

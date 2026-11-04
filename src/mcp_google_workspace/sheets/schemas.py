@@ -19,10 +19,10 @@ _A1_RANGE_RE = re.compile(
 )
 
 
-def _validate_a1_range(value: str) -> str:
+def _validate_a1_range(value: str, field: str = "range_a1") -> str:
     if not _A1_RANGE_RE.match(value):
         raise ValueError(
-            "range_a1 must use basic A1 notation, for example Sheet1!A1:B10, A:C, or 1:5"
+            f"{field} must use basic A1 notation, for example Sheet1!A1:B10, A:C, or 1:5"
         )
     return value
 
@@ -35,7 +35,7 @@ class GetSpreadsheetRequest(ToolRequestModel):
     @field_validator("ranges")
     @classmethod
     def _validate_ranges(cls, value: list[str]) -> list[str]:
-        return [_validate_a1_range(item) for item in value]
+        return [_validate_a1_range(item, "ranges") for item in value]
 
 
 class CreateSpreadsheetRequest(ToolRequestModel):
@@ -47,32 +47,19 @@ ValueRenderOption = Literal["FORMATTED_VALUE", "UNFORMATTED_VALUE", "FORMULA"]
 DateTimeRenderOption = Literal["SERIAL_NUMBER", "FORMATTED_STRING"]
 
 
-class GetSheetValuesRequest(ToolRequestModel):
-    spreadsheet_id: str = Field(description="Spreadsheet file ID.")
-    range_a1: str = Field(description="A1 notation range, for example Sheet1!A1:C10.")
-    major_dimension: Literal["ROWS", "COLUMNS"] = Field(default="ROWS")
-    value_render_option: ValueRenderOption | None = Field(default=None)
-    date_time_render_option: DateTimeRenderOption | None = Field(default=None)
-
-    @field_validator("range_a1")
-    @classmethod
-    def _validate_range(cls, value: str) -> str:
-        return _validate_a1_range(value)
-
-
-class BatchGetSheetValuesRequest(ToolRequestModel):
+class ReadSheetValuesRequest(ToolRequestModel):
     spreadsheet_id: str = Field(description="Spreadsheet file ID.")
     ranges: list[str] = Field(description="A1 notation ranges to fetch.")
-    major_dimension: Literal["ROWS", "COLUMNS"] = Field(default="ROWS")
     value_render_option: ValueRenderOption | None = Field(default=None)
     date_time_render_option: DateTimeRenderOption | None = Field(default=None)
+    major_dimension: Literal["ROWS", "COLUMNS"] = Field(default="ROWS")
 
     @field_validator("ranges")
     @classmethod
     def _validate_ranges(cls, value: list[str]) -> list[str]:
         if not value:
-            raise ValueError("ranges cannot be empty")
-        return [_validate_a1_range(item) for item in value]
+            raise ValueError("ranges cannot be empty: give at least one A1 range")
+        return [_validate_a1_range(item, "ranges") for item in value]
 
 
 class AppendSheetValuesRequest(ToolRequestModel):

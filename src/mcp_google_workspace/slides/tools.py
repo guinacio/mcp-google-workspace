@@ -13,7 +13,6 @@ from .client import slides_service
 from .presentation import (
     batch_update_presentation_envelope,
     created_presentation_envelope,
-    page_envelope,
     presentation_envelope,
     replace_text_envelope,
     thumbnail_envelope,
@@ -21,9 +20,8 @@ from .presentation import (
 from .schemas import (
     BatchUpdatePresentationRequest,
     CreatePresentationRequest,
-    GetPresentationRequest,
-    GetSlidePageRequest,
     GetSlideThumbnailRequest,
+    ReadPresentationRequest,
     ReplaceTextInPresentationRequest,
 )
 
@@ -37,7 +35,7 @@ def build_replace_all_text_request(contains_text: str, replace_text: str, *, mat
     }
 
 
-def get_presentation_payload(request: GetPresentationRequest) -> dict[str, Any]:
+def read_presentation_payload(request: ReadPresentationRequest) -> dict[str, Any]:
     service = slides_service()
     return service.presentations().get(presentationId=request.presentation_id).execute()
 
@@ -63,14 +61,6 @@ def replace_text_in_presentation_payload(request: ReplaceTextInPresentationReque
     ).execute()
 
 
-def get_slide_page_payload(request: GetSlidePageRequest) -> dict[str, Any]:
-    service = slides_service()
-    return service.presentations().pages().get(
-        presentationId=request.presentation_id,
-        pageObjectId=request.page_object_id,
-    ).execute()
-
-
 def get_slide_thumbnail_payload(request: GetSlideThumbnailRequest) -> dict[str, Any]:
     service = slides_service()
     return service.presentations().pages().getThumbnail(
@@ -92,21 +82,33 @@ def batch_update_presentation_payload(request: BatchUpdatePresentationRequest) -
 
 
 def register_tools(server: FastMCP) -> None:
-    @server.tool(name="get_presentation")
-    def get_presentation(presentation_id: str) -> dict[str, Any]:
-        """Read a Google Slides presentation as an outline: every slide with its title, text, speaker notes and page elements. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for one slide's element sizes and positions use slides_get_slide_page. Returns presentation_id, title, revision_id, url, page_size (width_pt, height_pt), count and slides, each with object_id (the page_object_id other slides_ tools take), index, layout, title, text (one shape per line, in reading order), notes and elements (object_id, type, placeholder, text)."""
+    @server.tool(name="read_presentation")
+    def read_presentation(
+        presentation_id: str,
+        slide_ids: Annotated[
+            list[str] | None,
+            (
+                "Object IDs of slides to read in detail, from the object_id of a slide in an earlier "
+                "result: only those slides come back, in the order given, each element with its size "
+                "(width_pt, height_pt) and position (x_pt, y_pt of the top-left corner). Omitted, every "
+                "slide is outlined without geometry."
+            ),
+        ] = None,
+    ) -> dict[str, Any]:
+        """Read a Google Slides presentation as an outline: every slide with its title, text, speaker notes and page elements, or with slide_ids only those slides, their elements adding size and position for layout edits. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for a picture of a slide use slides_get_slide_thumbnail. Returns presentation_id, title, revision_id, url, page_size (width_pt, height_pt), count and slides, each with object_id (the page_object_id other slides_ tools take), index, layout, title, text (one shape per line, in reading order), notes and elements (object_id, type, placeholder, text; with slide_ids size and position too)."""
         try:
-            return presentation_envelope(
-                get_presentation_payload(GetPresentationRequest(presentation_id=presentation_id))
+            payload = read_presentation_payload(
+                ReadPresentationRequest(presentation_id=presentation_id, slide_ids=slide_ids)
             )
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id) from exc
+        return presentation_envelope(payload, slide_ids=slide_ids)
 
     @server.tool(name="create_presentation")
     def create_presentation(
         title: Annotated[str, "Title of the new presentation, also used as its Drive file name."],
     ) -> dict[str, Any]:
-        """Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index."""
+        """Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation (extended tool tier), or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index."""
         try:
             return created_presentation_envelope(
                 create_presentation_payload(CreatePresentationRequest(title=title))
@@ -123,7 +125,7 @@ def register_tools(server: FastMCP) -> None:
             bool, "Match letter case exactly when true; by default matching ignores case."
         ] = False,
     ) -> dict[str, Any]:
-        """Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched)."""
+        """Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation (extended tool tier). Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched)."""
         try:
             return replace_text_envelope(
                 replace_text_in_presentation_payload(
@@ -139,18 +141,6 @@ def register_tools(server: FastMCP) -> None:
         except HttpError as exc:
             raise provider_tool_error(exc, presentation_id=presentation_id) from exc
 
-    @server.tool(name="get_slide_page")
-    def get_slide_page(presentation_id: str, page_object_id: str) -> dict[str, Any]:
-        """Read one slide of a Google Slides presentation with every page element's text, size and position, for layout-aware edits. For the whole deck use slides_get_presentation (which also supplies the presentation and slide IDs), and for a picture of the slide use slides_get_slide_thumbnail. Returns object_id, page_type, title, text, notes and elements in reading order, each with object_id, type (shape, image, table, video, line, group, sheets_chart, word_art), placeholder, text (table cells row by row), size (width_pt, height_pt) and position (x_pt, y_pt of the top-left corner)."""
-        try:
-            return page_envelope(
-                get_slide_page_payload(
-                    GetSlidePageRequest(presentation_id=presentation_id, page_object_id=page_object_id)
-                )
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, presentation_id=presentation_id, page_object_id=page_object_id) from exc
-
     @server.tool(name="get_slide_thumbnail")
     def get_slide_thumbnail(
         presentation_id: str,
@@ -164,7 +154,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = "LARGE",
     ) -> dict[str, Any]:
-        """Render one slide of a Google Slides presentation as an image and return a link to it. Use slides_get_slide_page instead to read the slide's text and elements; the presentation and slide IDs come from slides_get_presentation. Returns content_url, a temporary image URL (valid for about 30 minutes), width and height in pixels, and mime_type."""
+        """Render one slide of a Google Slides presentation as an image and return a link to it. Use slides_read_presentation instead to read the slide's text and elements; it also supplies the presentation and slide IDs. Returns content_url, a temporary image URL (valid for about 30 minutes), width and height in pixels, and mime_type."""
         try:
             return thumbnail_envelope(
                 get_slide_thumbnail_payload(

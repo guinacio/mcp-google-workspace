@@ -2,7 +2,7 @@
 
 Two views of a Document resource:
 
-* the editing outline (``docs_get_document``): every structural element with
+* the editing outline (``docs_read_document`` format 'outline'): every structural element with
   the ``start_index``/``end_index`` a batchUpdate request needs, its plain
   text, and only the structure an edit depends on (named style, list
   membership, table cells, inline objects); styles and object geometry are
@@ -332,7 +332,7 @@ def _outline_tab(tab: _Tab) -> dict[str, Any]:
 
 
 def document_outline(payload: dict[str, Any]) -> dict[str, Any]:
-    """The editing outline of a Document resource (docs_get_document)."""
+    """docs_read_document (outline): the editing outline of a Document resource."""
     document_id = payload.get("documentId")
     return {
         "document_id": document_id,

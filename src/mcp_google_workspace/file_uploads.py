@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .auth.identity import current_principal
 from .common.crypto import FernetKeyring
 from .common.errors import RecoverableToolError
-from .common.fastmcp_compat import local_tools
+from .common.fastmcp_compat import local_tools, remove_local_tool
 from .common.component_annotations import flow_description, simplify_optional_properties
 from .common.prefab_render_cache import install_prefab_resource_cache
 from .runtime import get_token_storage_settings
@@ -268,7 +268,7 @@ class EncryptedUploadStore:
                 raise RecoverableToolError(
                     "upload_quota_exhausted",
                     f"Upload quota exceeded ({self.quota_bytes} bytes per principal).",
-                    required_action={"tool": "files_list_files", "arguments": {}},
+                    required_action={"tool": "uploads_list_files", "arguments": {}},
                 )
             uploaded_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
             for name, mime_type, data, checksum in decoded:
@@ -362,7 +362,7 @@ class EncryptedUploadStore:
             raise RecoverableToolError(
                 "upload_expired_or_missing",
                 "The uploaded file handle was not found or has expired.",
-                required_action={"tool": "files_file_manager", "arguments": {}},
+                required_action={"tool": "uploads_file_manager", "arguments": {}},
             )
         stored_name, mime_type, checksum, expires_at = row
         blob_path = self._blob_path(scope, name)
@@ -445,7 +445,7 @@ def _missing_upload() -> RecoverableToolError:
     return RecoverableToolError(
         "upload_expired_or_missing",
         "The uploaded file handle was not found or has expired.",
-        required_action={"tool": "files_file_manager", "arguments": {}},
+        required_action={"tool": "uploads_file_manager", "arguments": {}},
     )
 
 
@@ -508,7 +508,7 @@ class LocalUploadStore:
                 raise RecoverableToolError(
                     "upload_quota_exhausted",
                     f"Upload quota exceeded ({self.quota_bytes} bytes per principal).",
-                    required_action={"tool": "files_list_files", "arguments": {}},
+                    required_action={"tool": "uploads_list_files", "arguments": {}},
                 )
             now = int(self._clock())
             uploaded_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -680,29 +680,34 @@ class WorkspaceFileUpload(FileUpload):
         self._encrypted_store: UploadStore | None = remote_store
         self._local_store: UploadStore | None = local_store
 
-        @self.tool(model=True)
+        @self.tool()
         def delete_file(name: str, ctx: Context) -> dict[str, Any]:
-            """Permanently delete one of the user's Workspace Files uploads from the MCP server's temporary upload
-            area, freeing quota before it expires; Google Drive is not touched (for Drive files use
-            drive_delete_file). Returns status 'deleted', or 'not_found' when the ID is unknown or already expired,
-            with the name. The user must upload the file again to use it afterwards."""
+            """App-only callback that permanently deletes one of the user's Workspace Files uploads from the MCP
+            server's temporary upload area, freeing quota before the upload expires; Google Drive is not touched (for
+            Drive files use drive_delete_file). Models cannot call it: uploads expire on their own, and
+            the extended tier's get_mcp_apps_diagnostics uses it for its self-test. Returns status 'deleted', or 'not_found' when the ID
+            is unknown or already expired, with the name."""
             store, scope = self._scoped_store()
             deleted = store.delete(scope, name)
             return {"status": "deleted" if deleted else "not_found", "name": name}
 
-        @self.tool(model=True)
-        def list_files_page(
+        # One paged listing replaces FastMCP's unpaged list_files.
+        remove_local_tool(self, "list_files")
+
+        @self.tool(model=True, name="list_files")
+        def list_files(
             ctx: Context,
-            limit: Annotated[int, "Uploads per page, 1 to 100."] = 50,
+            limit: Annotated[int, "Uploads per page, 1 to 100 (default 50)."] = 50,
             cursor: Annotated[
                 str | None,
-                "The next_cursor from the previous files_list_files_page response; omit for the first page.",
+                "The next_cursor from the previous uploads_list_files response; omit for the first page.",
             ] = None,
         ) -> UploadedFilePage:
-            """Page through the user's Workspace Files uploads (staged on the MCP server, not Google Drive), newest
-            first. Use it instead of files_list_files when more than 100 uploads may exist or a smaller page is enough.
-            Returns files (upload_id, display_name, type, size, expires_at, ...), count and next_cursor, which is null
-            once a page comes back short."""
+            """List the user's Workspace Files uploads from uploads_file_manager, newest first, a page at a time; they
+            are staged on the MCP server, not in Google Drive (for Drive use drive_list_files). Pass an upload_id as
+            uploaded_file to drive_upload_file, the attachments of gmail_send_email, gmail_reply and gmail_save_draft,
+            or the Gemini media tools. Returns files (upload_id, display_name, type, size, uploaded_at, expires_at,
+            remaining_quota_bytes, ...), count and next_cursor, which is null once a page comes back short."""
             if not 1 <= limit <= 100:
                 raise ValueError("limit must be between 1 and 100")
             try:
@@ -714,16 +719,22 @@ class WorkspaceFileUpload(FileUpload):
             store, scope = self._scoped_store()
             files = store.list(scope, limit=limit, offset=offset)
             next_cursor = str(offset + len(files)) if len(files) == limit else None
+            # Store records can carry bookkeeping (the S3 store's status); only
+            # the published summary fields are returned.
+            fields = UploadedFileSummary.model_fields
             return UploadedFilePage(
-                files=[UploadedFileSummary.model_validate(item) for item in files],
+                files=[
+                    UploadedFileSummary.model_validate({key: value for key, value in item.items() if key in fields})
+                    for item in files
+                ],
                 count=len(files),
                 next_cursor=next_cursor,
             )
 
         for raw_component in local_tools(self):
             component = cast(Any, raw_component)
-            component.title = f"Files {component.name.replace('_', ' ').title()}"
-            component.tags.update({"files", "upload", "mcp-app"})
+            component.title = f"Uploads {component.name.replace('_', ' ').title()}"
+            component.tags.update({"uploads", "files", "upload", "mcp-app"})
             if component.name in _INHERITED_FILE_TOOL_DESCRIPTIONS:
                 # These tools come from FastMCP's FileUpload; their generic
                 # docstrings do not say what this server's uploads are for.
@@ -753,10 +764,10 @@ class WorkspaceFileUpload(FileUpload):
             if "name" in properties:
                 properties["name"].setdefault(
                     "description",
-                    "Upload ID (upl_...): the upload_id (also name) of a file listed by files_list_files.",
+                    "Upload ID (upl_...): the upload_id (also name) of a file listed by uploads_list_files.",
                 )
             simplify_optional_properties(component.parameters)
-            if component.name in {"list_files", "store_files"}:
+            if component.name == "store_files":
                 component.output_schema = {
                     "type": "object",
                     "x-fastmcp-wrap-result": True,
@@ -966,19 +977,9 @@ _INHERITED_FILE_TOOL_DESCRIPTIONS: dict[str, str] = {
     "file_manager": (
         "Open the Workspace Files picker so the user can upload files from their device to this MCP server's "
         "temporary upload area (not Google Drive), at most 25 MiB per file, kept for one hour by default. Use it when a tool needs a file the user has and the "
-        "server cannot read local paths; after the user uploads, get the upl_... IDs from files_list_files and pass "
-        "one as uploaded_file to a tool such as gmail_send_email (attachments), drive_upload_file or "
-        "drive_update_file_content. Returns the picker UI for an MCP Apps host, whose state.stored lists uploads "
+        "server cannot read local paths; after the user uploads, get the upl_... IDs from uploads_list_files and pass "
+        "one as uploaded_file to a tool such as gmail_send_email (attachments) or drive_upload_file. Returns the picker UI for an MCP Apps host, whose state.stored lists uploads "
         "already staged."
-    ),
-    "list_files": (
-        "List the user's Workspace Files uploads from files_file_manager, staged on the MCP server rather than in "
-        "Google Drive (for Drive use drive_list_files), newest first and at most 100 (for more use "
-        "files_list_files_page). Returns each file's upload_id (also in name), display_name, type, size, "
-        "uploaded_at, expires_at and remaining_quota_bytes. Pass upload_id as uploaded_file to drive_upload_file, "
-        "drive_update_file_content, the attachments of gmail_send_email, gmail_reply_email, gmail_reply_all_email, "
-        "gmail_create_draft and gmail_update_draft, or gemini_edit_image, gemini_describe_video and "
-        "gemini_analyze_audio."
     ),
     "read_file": (
         "Read the content of one Workspace Files upload by its upload ID, to check what the user uploaded. Files "
@@ -989,7 +990,7 @@ _INHERITED_FILE_TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "store_files": (
         "Upload callback that the Workspace Files picker UI calls with the files the user selected; it is app-only "
-        "(hidden from the model), and models should open files_file_manager instead. Each file is base64-decoded, "
+        "(hidden from the model), and models should open uploads_file_manager instead. Each file is base64-decoded, "
         "limited to 25 MiB, checked against its declared type and stored for one hour by default within the "
         "user's upload quota. Returns the user's stored uploads, newest first, with upload_id, display_name, type, "
         "size and expires_at."
@@ -999,9 +1000,9 @@ _INHERITED_FILE_TOOL_DESCRIPTIONS: dict[str, str] = {
 
 # Exposure of the Workspace Files tools (docs/RICH_OUTPUTS.md, "Tool visibility").
 # file_manager (launch) is model-only and store_files (upload callback) is
-# app-only by FastMCP's FileUpload defaults; delete_file stays model + app because
-# get_mcp_apps_diagnostics exercises its hashed app callback address.
-_MODEL_ONLY_FILE_TOOLS = frozenset({"list_files", "list_files_page", "read_file"})
+# app-only by FastMCP's FileUpload defaults; delete_file is app-only too, kept
+# as the hashed callback get_mcp_apps_diagnostics exercises.
+_MODEL_ONLY_FILE_TOOLS = frozenset({"list_files", "read_file"})
 
 
 def _store_files_input_schema(max_file_size: int) -> dict[str, Any]:
@@ -1082,5 +1083,5 @@ def require_local_filesystem(operation: str) -> None:
             "picker_required",
             f"{operation} cannot use a server-local path over remote MCP. "
             "Use the Workspace Files picker and pass its upload handle instead.",
-            required_action={"tool": "files_file_manager", "arguments": {}},
+            required_action={"tool": "uploads_file_manager", "arguments": {}},
         )

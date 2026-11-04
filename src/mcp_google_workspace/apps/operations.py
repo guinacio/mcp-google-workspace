@@ -54,7 +54,7 @@ DASHBOARD_OPERATIONS: Final[dict[str, OperationSpec]] = {
     "getEventDetail": OperationSpec("apps", "get_event_detail", "calendar"),
     "getEmailDetail": OperationSpec("apps", "get_email_detail", "gmail"),
     "getEmailAttachment": OperationSpec("apps", "get_email_attachment", "gmail"),
-    "listCalendars": OperationSpec("calendar", "list_calendars", "calendar"),
+    "listCalendars": OperationSpec("calendar", "get_calendar_context", "calendar"),
     # Dashboard view-state writes (no Google scope; the view handle authorizes them).
     "patchState": OperationSpec("apps", "patch_state", None),
     "nextRange": OperationSpec("apps", "next_range", None),
@@ -65,13 +65,15 @@ DASHBOARD_OPERATIONS: Final[dict[str, OperationSpec]] = {
     "createEvent": OperationSpec("calendar", "create_event", "calendar"),
     "updateEvent": OperationSpec("calendar", "update_event", "calendar"),
     "deleteEvent": OperationSpec("calendar", "delete_event", "calendar"),
-    "markEmailRead": OperationSpec("gmail", "mark_as_read", "gmail"),
-    "markEmailUnread": OperationSpec("gmail", "mark_as_unread", "gmail"),
-    "moveEmail": OperationSpec("gmail", "move_email", "gmail"),
-    "deleteEmail": OperationSpec("gmail", "delete_email", "gmail"),
-    "untrashEmail": OperationSpec("gmail", "untrash_email", "gmail"),
-    "markEmailSpam": OperationSpec("gmail", "mark_as_spam", "gmail"),
-    "markEmailNotSpam": OperationSpec("gmail", "mark_as_not_spam", "gmail"),
+    # Every email state change is one gmail_modify_messages call (see the
+    # view's arguments in apps/ui/src/mcp-app.ts); deletion is gmail_delete.
+    "markEmailRead": OperationSpec("gmail", "modify_messages", "gmail"),
+    "markEmailUnread": OperationSpec("gmail", "modify_messages", "gmail"),
+    "moveEmail": OperationSpec("gmail", "modify_messages", "gmail"),
+    "deleteEmail": OperationSpec("gmail", "delete", "gmail"),
+    "untrashEmail": OperationSpec("gmail", "modify_messages", "gmail"),
+    "markEmailSpam": OperationSpec("gmail", "modify_messages", "gmail"),
+    "markEmailNotSpam": OperationSpec("gmail", "modify_messages", "gmail"),
 }
 
 
