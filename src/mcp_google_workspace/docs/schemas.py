@@ -9,16 +9,20 @@ from pydantic import Field
 from ..common.request_model import ToolRequestModel
 
 
-class GetDocumentRequest(ToolRequestModel):
-    document_id: str = Field(description="Google Docs document file ID.")
-    include_tabs_content: bool = Field(default=False)
-    suggestions_view_mode: str | None = Field(default=None)
+SuggestionsViewMode = Literal[
+    "DEFAULT_FOR_CURRENT_ACCESS",
+    "SUGGESTIONS_INLINE",
+    "PREVIEW_SUGGESTIONS_ACCEPTED",
+    "PREVIEW_WITHOUT_SUGGESTIONS",
+]
 
 
 class ReadDocumentRequest(ToolRequestModel):
     document_id: str = Field(description="Google Docs document file ID.")
     format: Literal["text", "markdown", "raw"] = Field(default="text")
     offset: int = Field(default=0, ge=0)
+    include_tabs_content: bool = Field(default=True)
+    suggestions_view_mode: SuggestionsViewMode | None = Field(default=None)
 
 
 class CreateDocumentRequest(ToolRequestModel):

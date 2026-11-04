@@ -2,7 +2,7 @@
 
 Two views of a Document resource:
 
-* the editing outline (``docs_get_document``): every structural element with
+* the editing outline (``docs_read_document`` format 'raw'): every structural element with
   the ``start_index``/``end_index`` a batchUpdate request needs, its plain
   text, and only the structure an edit depends on (named style, list
   membership, table cells, inline objects); styles and object geometry are
@@ -332,7 +332,7 @@ def _outline_tab(tab: _Tab) -> dict[str, Any]:
 
 
 def document_outline(payload: dict[str, Any]) -> dict[str, Any]:
-    """The editing outline of a Document resource (docs_get_document)."""
+    """The editing outline of a Document resource."""
     document_id = payload.get("documentId")
     return {
         "document_id": document_id,
@@ -710,7 +710,7 @@ def document_text_view(payload: dict[str, Any], *, format: ReadFormat, offset: i
 
 
 def raw_document_view(payload: dict[str, Any]) -> dict[str, Any]:
-    """docs_read_document (raw): Google's Document resource unchanged under ``document``."""
+    """docs_read_document (raw): the editing outline, unpaged."""
     document_id = payload.get("documentId")
     return {
         "document_id": document_id,
@@ -718,5 +718,6 @@ def raw_document_view(payload: dict[str, Any]) -> dict[str, Any]:
         "revision_id": payload.get("revisionId"),
         "url": document_url(document_id),
         "format": "raw",
-        "document": payload,
+        "suggestions_view_mode": payload.get("suggestionsViewMode"),
+        "tabs": [_outline_tab(tab) for tab in _tabs(payload)],
     }

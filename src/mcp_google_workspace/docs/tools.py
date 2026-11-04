@@ -13,7 +13,6 @@ from .client import docs_service
 from .presentation import (
     batch_update_result,
     created_document,
-    document_outline,
     document_text_view,
     raw_document_view,
     replace_text_result,
@@ -23,9 +22,9 @@ from .schemas import (
     AppendDocumentTextRequest,
     BatchUpdateDocumentRequest,
     CreateDocumentRequest,
-    GetDocumentRequest,
     ReadDocumentRequest,
     ReplaceDocumentTextRequest,
+    SuggestionsViewMode,
 )
 
 
@@ -44,18 +43,13 @@ def build_replace_text_requests(contains_text: str, replace_text: str, *, match_
     ]
 
 
-def get_document_payload(request: GetDocumentRequest) -> dict[str, Any]:
+def read_document_payload(request: ReadDocumentRequest) -> dict[str, Any]:
     service = docs_service()
     return service.documents().get(
         documentId=request.document_id,
         includeTabsContent=request.include_tabs_content,
         suggestionsViewMode=request.suggestions_view_mode,
     ).execute()
-
-
-def read_document_payload(request: ReadDocumentRequest) -> dict[str, Any]:
-    service = docs_service()
-    return service.documents().get(documentId=request.document_id, includeTabsContent=True).execute()
 
 
 def create_document_payload(request: CreateDocumentRequest) -> dict[str, Any]:
@@ -94,46 +88,6 @@ def batch_update_document_payload(request: BatchUpdateDocumentRequest) -> dict[s
 
 
 def register_tools(server: FastMCP) -> None:
-    @server.tool(name="get_document")
-    def get_document(
-        document_id: str,
-        include_tabs_content: Annotated[
-            bool,
-            (
-                "Return every tab, child tabs included, each with its own content. By default Google "
-                "returns only the first tab, so tabs then holds one entry whose tab_id and title are null; "
-                "set it for documents with several tabs."
-            ),
-        ] = False,
-        suggestions_view_mode: Annotated[
-            Literal[
-                "DEFAULT_FOR_CURRENT_ACCESS",
-                "SUGGESTIONS_INLINE",
-                "PREVIEW_SUGGESTIONS_ACCEPTED",
-                "PREVIEW_WITHOUT_SUGGESTIONS",
-            ]
-            | None,
-            (
-                "How pending suggested edits appear: SUGGESTIONS_INLINE marks them inline, "
-                "PREVIEW_SUGGESTIONS_ACCEPTED shows the text as if all were accepted, "
-                "PREVIEW_WITHOUT_SUGGESTIONS as if all were rejected. Omitted or "
-                "DEFAULT_FOR_CURRENT_ACCESS: inline for editors, without suggestions for viewers."
-            ),
-        ] = None,
-    ) -> dict[str, Any]:
-        """Outline a Google Docs document's structure with the indices docs_batch_update_document requests need; to read or summarize the text use docs_read_document. Returns document_id, title, revision_id (for writeControl.requiredRevisionId), url and tabs (tab_id, title, index, nesting_level, parent_tab_id, headers, footers, footnotes, named_ranges, content). Each content element has kind (paragraph, table, section_break, table_of_contents), start_index, end_index and text, where each image, chip or break is one U+FFFC; paragraphs add style (null for normal text), list (list_id, nesting_level, ordered) and inline links and objects, tables rows, columns and cells. Styles are left out."""
-        try:
-            payload = get_document_payload(
-                GetDocumentRequest(
-                    document_id=document_id,
-                    include_tabs_content=include_tabs_content,
-                    suggestions_view_mode=suggestions_view_mode,
-                )
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, document_id=document_id) from exc
-        return document_outline(payload)
-
     @server.tool(name="read_document")
     def read_document(
         document_id: Annotated[
@@ -148,8 +102,8 @@ def register_tools(server: FastMCP) -> None:
             (
                 "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown "
                 "(headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 "
-                "characters. 'raw' returns Google's Document resource unchanged and unpaged, every "
-                "style and index included."
+                "characters. 'raw' returns the editing outline, unpaged: every structural element with "
+                "the start_index and end_index docs_batch_update_document requests need, styles left out."
             ),
         ] = "text",
         offset: Annotated[
@@ -160,9 +114,32 @@ def register_tools(server: FastMCP) -> None:
                 "ignores it."
             ),
         ] = 0,
+        include_tabs_content: Annotated[
+            bool,
+            (
+                "Read every tab, child tabs included, in every format (the default). When false Google "
+                "returns only the first tab, so tabs then holds one entry whose tab_id and title are null."
+            ),
+        ] = True,
+        suggestions_view_mode: Annotated[
+            SuggestionsViewMode | None,
+            (
+                "How pending suggested edits appear, in every format: SUGGESTIONS_INLINE marks them "
+                "inline (text and markdown leave suggested insertions out), PREVIEW_SUGGESTIONS_ACCEPTED "
+                "shows the text as if all were accepted, PREVIEW_WITHOUT_SUGGESTIONS as if all were "
+                "rejected. Omitted or DEFAULT_FOR_CURRENT_ACCESS: inline for editors, without "
+                "suggestions for viewers."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
-        """Read a whole Google Docs document, every tab in order, as clean text or Markdown, to read, quote or summarize it; for the indices an edit needs use docs_get_document. Lists, tables, links, people chips, footnotes and images are rendered inline and the table of contents is skipped. Returns document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; continue with offset=next_offset until next_offset is null. With format 'raw' it returns Google's Document resource unchanged in document instead of body."""
-        request = ReadDocumentRequest(document_id=document_id, format=format, offset=offset)
+        """Read a Google Docs document, every tab in order, as clean text or Markdown to read or summarize it, or with format 'raw' as the editing outline whose indices docs_batch_update_document needs (docs_append_document_text and docs_replace_document_text need none). Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; continue with offset=next_offset until it is null. Raw returns the same identity, suggestions_view_mode and tabs with content (kind, start_index, end_index, text with one U+FFFC per image or chip, style, list, inline), headers, footers, footnotes and named_ranges."""
+        request = ReadDocumentRequest(
+            document_id=document_id,
+            format=format,
+            offset=offset,
+            include_tabs_content=include_tabs_content,
+            suggestions_view_mode=suggestions_view_mode,
+        )
         try:
             payload = read_document_payload(request)
         except HttpError as exc:
@@ -238,7 +215,7 @@ def register_tools(server: FastMCP) -> None:
             dict[str, Any] | None,
             (
                 "Docs writeControl object that guards against concurrent edits, e.g. "
-                '{"requiredRevisionId": "<revision_id from docs_get_document>"}: the update fails if '
+                '{"requiredRevisionId": "<revision_id from docs_read_document>"}: the update fails if '
                 "the document changed since that revision."
             ),
         ] = None,
