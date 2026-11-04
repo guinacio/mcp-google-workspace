@@ -18,6 +18,8 @@ dist/
 tmp/
 .test-tmp-*/
 tests/
+# Development tool that reads the test corpus.
+scripts/measure_tokens.py
 __pycache__/
 *.pyc
 *.pyo

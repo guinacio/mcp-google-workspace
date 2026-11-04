@@ -25,7 +25,13 @@ from ..mime_utils import (
     stamp_message_id,
 )
 from ..helpers import recipient_set
-from ..presentation import clean_message_content, envelope, header_map, message_attachments
+from ..presentation import (
+    PREVIEW_LIMIT_CHARS,
+    clean_message_content,
+    envelope,
+    header_map,
+    message_attachments,
+)
 from ..schemas import (
     AttachmentInput,
     DeleteMessageRequest,
@@ -405,7 +411,15 @@ def register(server: FastMCP) -> None:
     @server.tool(name="read_emails")
     async def read_emails(
         message_ids: list[str],
-        format: Literal["metadata", "preview", "clean", "full"] = "clean",
+        format: Annotated[
+            Literal["metadata", "preview", "clean", "full"],
+            (
+                "Body detail: 'metadata' omits the body; 'preview' returns the first 1,000 characters "
+                "of the cleaned body text; 'clean' returns the cleaned body text in pages of about "
+                "8,000 characters; 'full' returns the whole cleaned body unpaged plus the original "
+                "text/plain part (text_body) and, with include_html, the HTML part."
+            ),
+        ] = "clean",
         offset: Annotated[
             int,
             (
@@ -413,10 +427,21 @@ def register(server: FastMCP) -> None:
                 "'preview'/'clean' format bodies via the response's next_offset; not a message index."
             ),
         ] = 0,
+        include_html: Annotated[
+            bool,
+            (
+                "With format='full' only: also return the original HTML part as html_body. Set it "
+                "only when the markup itself is needed (layout, images, exact link targets with "
+                "their query strings); newsletter HTML is often tens of kilobytes. When false, "
+                "html_body is null and the readable text is in body."
+            ),
+        ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Read one to 100 Gmail messages with a consistent, model-friendly detail level."""
-        request = ReadEmailsRequest(message_ids=message_ids, format=format, offset=offset)
+        request = ReadEmailsRequest(
+            message_ids=message_ids, format=format, offset=offset, include_html=include_html
+        )
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         outputs: list[dict[str, Any]] = []
@@ -445,15 +470,17 @@ def register(server: FastMCP) -> None:
             if request.format == "metadata":
                 output["bodies_omitted"] = True
             elif request.format == "preview":
-                output.update(clean_message_content(message, offset=request.offset, limit=1_000))
+                output.update(
+                    clean_message_content(message, offset=request.offset, limit=PREVIEW_LIMIT_CHARS)
+                )
             elif request.format == "clean":
                 output.update(clean_message_content(message, offset=request.offset))
             elif request.format == "full":
                 bodies = extract_message_bodies(payload)
+                output.update(clean_message_content(message, limit=None))
                 output.update({
                     "text_body": bodies.get("text"),
-                    "html_body": bodies.get("html"),
-                    "truncated": False,
+                    "html_body": bodies.get("html") if request.include_html else None,
                 })
             outputs.append(output)
             if ctx is not None:

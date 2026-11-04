@@ -14,6 +14,7 @@ from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
 from ..mime_utils import build_email_message, email_to_gmail_raw
 from ..helpers import recipient_set
+from ..presentation import clean_message_content, clean_snippet
 from ..schemas import (
     AttachmentInput,
     CreateDraftRequest,
@@ -135,14 +136,19 @@ def register(server: FastMCP) -> None:
             )
         )
         message = draft.get("message", {})
-        return {
+        snippet = message.get("snippet")
+        result: dict[str, Any] = {
             "id": draft.get("id"),
             "message_id": message.get("id"),
             "thread_id": message.get("threadId"),
             "label_ids": message.get("labelIds", []),
-            "snippet": message.get("snippet"),
+            "snippet": clean_snippet(snippet) if isinstance(snippet, str) else snippet,
             "draft": draft,
         }
+        if request.format == "full":
+            # The same cleaned text as gmail_read_emails, whole and unpaged.
+            result.update(clean_message_content(message, limit=None))
+        return result
 
     @server.tool(name="create_draft")
     async def create_draft(

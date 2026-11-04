@@ -318,8 +318,27 @@ def test_clean_message_content_collapses_quote_and_truncates():
 
     result = clean_message_content(message, limit=10)
 
-    assert result["body"] == text[:10]
+    # A 10-character page backs off to the word break instead of "Current re".
+    cleaned = "Current reply\n\n[quoted: 2 earlier messages in thread]"
+    assert text.startswith("Current reply")
+    assert result["body"] == "Current "
     assert result["truncated"] is True
+    assert result["next_offset"] == 8
+    assert result["quoted_messages_collapsed"] == 2
+
+    second = clean_message_content(message, offset=result["next_offset"], limit=10)
+    assert second["body"] == "reply\n\n"
+    assert second["next_offset"] == 15
+    assert second["body_sha256"] == result["body_sha256"]
+    assert second["body_chars"] == result["body_chars"] == len(cleaned)
+
+    pages, offset = [], 0
+    while offset is not None:
+        page = clean_message_content(message, offset=offset, limit=10)
+        pages.append(page["body"])
+        offset = page["next_offset"]
+    assert "".join(pages) == cleaned
+    assert all(len(page) <= 10 for page in pages)
 
 
 def test_invalid_grant_from_unknown_request_preserves_token_and_has_actionable_error():

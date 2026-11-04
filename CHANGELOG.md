@@ -5,6 +5,43 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
+## 1.1.0 — Unreleased
+
+Cleaner Gmail text. No tool or parameter is removed or renamed; one optional
+parameter and two result fields are added. One default changes:
+`gmail_read_emails` with `format=full` returns `html_body` as `null` unless
+the new `include_html` is true.
+
+### Changed
+
+- **Gmail bodies read as the message does.** The HTML-to-text step skips
+  `<head>`, `<style>`, `<script>`, `<title>`, `<template>` and `<noscript>`
+  content and inline-hidden elements (pre-headers, hidden layout variants),
+  separates blocks and table cells, keeps a link's URL once after its text,
+  and drops zero-width and other invisible characters used as padding. On
+  the synthetic newsletter corpus in `tests/fixtures/gmail_corpus` the first
+  `clean` page shrinks by 85 to 94% and no longer starts with CSS.
+- **Pages end between words.** `clean` and `preview` pages end at the last
+  paragraph, line, sentence or word break in the final 40% of the window
+  instead of at a fixed character. `next_offset` is still a character
+  offset into the cleaned text, and consecutive pages join back into it.
+- **`preview` is a 1,000-character window of the cleaned text**, and
+  `gmail_get_thread`, `gmail_get_draft` (`format=full`) and the digest use
+  the same cleaner.
+- **Snippets are decoded and de-padded** (`&#39;` and pre-header padding no
+  longer appear). Every Gmail tool takes the snippet from Gmail's own
+  `snippet`, so search, digest, thread and read results agree on it.
+
+### Added
+
+- `gmail_read_emails` `include_html` (default `false`): with `format=full`,
+  returns the original HTML part as `html_body`. `html_body` is now `null`
+  unless it is set; `format=full` returns the whole cleaned text as `body`
+  and the original text part as `text_body`.
+- `body_chars` and `body_sha256` on message results that carry a body,
+  describing the whole cleaned body, so a client paging with `next_offset`
+  can tell whether the message changed between pages.
+
 ## 1.0.1 — 2026-11-04
 
 Correctness fixes to the published output schemas and the error envelope. No
