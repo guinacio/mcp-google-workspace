@@ -621,6 +621,9 @@ area:
 - `drive_hide_drive` and `drive_unhide_drive` failed on every call: they
   passed `useDomainAdminAccess`, which `drives.hide`/`drives.unhide` do not
   accept, and the Google client raised before sending the request.
+- Background-task runs of `tasks_tasks_digest` were authorized, admitted and
+  recorded under `tasks_digest`: the execution guard skipped the namespace
+  prefix for a local name that already starts with it.
 
 ### Added
 
