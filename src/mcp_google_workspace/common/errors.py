@@ -226,7 +226,7 @@ _HOST_CAPABILITIES: Final[dict[str, str]] = {
 _PATH_CAPABILITIES: Final[dict[str, str]] = {
     "/calendar/": "calendar",
     "/drive/": "drive",
-    # Media uploads (drive_upload_file, drive_update_file_content).
+    # Media uploads (drive_upload_file, including content replacement).
     "/upload/drive/": "drive",
     "/gmail/": "gmail",
     "/tasks/": "tasks",

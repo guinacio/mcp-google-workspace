@@ -1156,49 +1156,49 @@ async function initMcpMode() {
   }>> = {
     email_mark_read: {
       operation: "markEmailRead",
-      args: (id) => ({ message_id: id }),
+      args: (id) => ({ message_ids: [id], mark_read: true }),
       successNotice: "Email marked as read.",
       failureLabel: "Failed to mark as read",
       patch: { removeLabels: ["UNREAD"], isUnread: false },
     },
     email_mark_unread: {
       operation: "markEmailUnread",
-      args: (id) => ({ message_id: id }),
+      args: (id) => ({ message_ids: [id], mark_read: false }),
       successNotice: "Email marked as unread.",
       failureLabel: "Failed to mark as unread",
       patch: { addLabels: ["UNREAD"], isUnread: true },
     },
     email_archive: {
       operation: "moveEmail",
-      args: (id) => ({ message_id: id, remove_label_ids: ["INBOX"] }),
+      args: (id) => ({ message_ids: [id], archive: true }),
       successNotice: "Email archived.",
       failureLabel: "Failed to archive email",
       patch: { removeLabels: ["INBOX"] },
     },
     email_trash: {
       operation: "deleteEmail",
-      args: (id) => ({ message_id: id, permanent: false }),
+      args: (id) => ({ message_ids: [id], mode: "trash" }),
       successNotice: "Email moved to trash.",
       failureLabel: "Failed to move email to trash",
       patch: { addLabels: ["TRASH"], removeLabels: ["INBOX"] },
     },
     email_untrash: {
       operation: "untrashEmail",
-      args: (id) => ({ message_id: id }),
+      args: (id) => ({ message_ids: [id], untrash: true }),
       successNotice: "Email restored from trash.",
       failureLabel: "Failed to restore email",
       patch: { removeLabels: ["TRASH"], addLabels: ["INBOX"] },
     },
     email_mark_spam: {
       operation: "markEmailSpam",
-      args: (id) => ({ message_id: id }),
+      args: (id) => ({ message_ids: [id], spam: true }),
       successNotice: "Email marked as spam.",
       failureLabel: "Failed to mark email as spam",
       patch: { addLabels: ["SPAM"], removeLabels: ["INBOX"] },
     },
     email_mark_not_spam: {
       operation: "markEmailNotSpam",
-      args: (id) => ({ message_id: id, add_to_inbox: true }),
+      args: (id) => ({ message_ids: [id], spam: false }),
       successNotice: "Email marked as not spam.",
       failureLabel: "Failed to mark email as not spam",
       patch: { removeLabels: ["SPAM"], addLabels: ["INBOX"] },
@@ -1947,7 +1947,8 @@ function extractCalendarCatalog(result: unknown): CalendarCatalogItem[] {
   if (!payload) {
     return [];
   }
-  const itemsRaw = payload.items;
+  // calendar_get_calendar_context: calendars [{id, name, primary, access_role, ...}].
+  const itemsRaw = payload.calendars;
   if (!Array.isArray(itemsRaw)) {
     return [];
   }
@@ -1957,16 +1958,14 @@ function extractCalendarCatalog(result: unknown): CalendarCatalogItem[] {
       continue;
     }
     const item = entry as Record<string, unknown>;
-    if (typeof item.id !== "string" || typeof item.summary !== "string") {
+    if (typeof item.id !== "string" || typeof item.name !== "string") {
       continue;
     }
     normalized.push({
       id: item.id,
-      summary: item.summary,
+      summary: item.name,
       primary: item.primary === true,
-      access_role: typeof item.accessRole === "string" ? item.accessRole : undefined,
-      background_color: typeof item.backgroundColor === "string" ? item.backgroundColor : undefined,
-      foreground_color: typeof item.foregroundColor === "string" ? item.foregroundColor : undefined,
+      access_role: typeof item.access_role === "string" ? item.access_role : undefined,
     });
   }
   return normalized;

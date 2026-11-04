@@ -39,10 +39,9 @@ def register(server: FastMCP) -> None:
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """List, create or delete Gmail filters, the rules that label, archive, mark read or forward incoming mail as it arrives. A filter acts only on mail that arrives afterwards; to change existing messages use gmail_modify_messages. Returns action with filters and count for list, status 'ok' and filter (including its id) for create, or status 'ok' and filter_id for delete; status 'cancelled' if the user declines a delete. Deleting asks the user to confirm; mail a filter already labeled or moved stays as it is."""
-        service = gmail_service()
         if action == "list":
             LOGGER.debug("Listing Gmail filters.")
-            result = await execute_google_request(service.users().settings().filters().list(userId="me"))
+            result = await execute_google_request(gmail_service().users().settings().filters().list(userId="me"))
             filters = result.get("filter", [])
             return {"action": action, "filters": filters, "count": len(filters)}
         if action == "create":
@@ -52,6 +51,7 @@ def register(server: FastMCP) -> None:
             criteria_api = request.criteria.to_api()
             if not criteria_api:
                 raise ValueError("criteria must include at least one match field.")
+            service = gmail_service()
             resolver = LabelResolver(service, execute_google_request)
             action_api = request.action.to_api(
                 add_label_ids=await resolver.resolve_all(request.action.add_labels),
@@ -76,6 +76,6 @@ def register(server: FastMCP) -> None:
             return {"status": "cancelled", "action": action, "filter_id": delete_request.filter_id}
         LOGGER.debug(f"Deleting Gmail filter {delete_request.filter_id}.")
         await execute_google_request(
-            service.users().settings().filters().delete(userId="me", id=delete_request.filter_id)
+            gmail_service().users().settings().filters().delete(userId="me", id=delete_request.filter_id)
         )
         return {"status": "ok", "action": action, "filter_id": delete_request.filter_id}

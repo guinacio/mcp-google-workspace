@@ -158,7 +158,7 @@ test.describe("operation manifest", () => {
     await expect(app.getByRole("button", { name: "Next week" })).toBeDisabled();
     await expect(app.getByRole("button", { name: "Create" })).toHaveCount(0);
     const names = (await callLog(page)).map((call) => call.name);
-    expect(names.every((name) => /get_dashboard|get_weekly_calendar_view|get_event_detail|get_email_detail|list_calendars/.test(name))).toBe(true);
+    expect(names.every((name) => /get_dashboard|get_weekly_calendar_view|get_event_detail|get_email_detail|get_calendar_context/.test(name))).toBe(true);
   });
 
   test("a principal without the Gmail grant gets no mail actions", async ({ page }) => {
@@ -183,26 +183,26 @@ test.describe("errors", () => {
   }
 
   test("an isError result is a failure: no success notice, optimistic state restored", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "fail=move_email:iserror:provider_error");
-    await expect(app.getByText("Failed to archive email: The server could not run gmail_move_email.")).toBeVisible();
+    const { app, panel } = await openAndArchive(page, "fail=modify_messages:iserror:provider_error");
+    await expect(app.getByText("Failed to archive email: The server could not run gmail_modify_messages.")).toBeVisible();
     await expect(app.getByText("Email archived.")).toHaveCount(0);
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
   });
 
   test("a rejected call is a failure with the server's typed error message", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "fail=move_email:reject:quota_exceeded");
-    await expect(app.getByText("Failed to archive email: Server rejected gmail_move_email [quota_exceeded]")).toBeVisible();
+    const { app, panel } = await openAndArchive(page, "fail=modify_messages:reject:quota_exceeded");
+    await expect(app.getByText("Failed to archive email: Server rejected gmail_modify_messages [quota_exceeded]")).toBeVisible();
     await expect(app.getByText("Email archived.")).toHaveCount(0);
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
   });
 
   test("a typed confirmation error asks the user to use the chat", async ({ page }) => {
-    const { app } = await openAndArchive(page, "fail=move_email:iserror:confirmation_required");
+    const { app } = await openAndArchive(page, "fail=modify_messages:iserror:confirmation_required");
     await expect(app.getByText(/Failed to archive email: The server needs your confirmation/)).toBeVisible();
   });
 
   test("success is reported only after the server confirmed the action", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "delay=move_email:1000");
+    const { app, panel } = await openAndArchive(page, "delay=modify_messages:1000");
     await expect(app.getByText("Email archived.")).toHaveCount(0);
     await expect(app.getByText("Email archived.")).toBeVisible();
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toHaveCount(0);
@@ -217,9 +217,9 @@ test.describe("errors", () => {
   });
 
   test("the host's visibility rejection is shown and the optimistic change undone", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "modelOnly=move_email");
+    const { app, panel } = await openAndArchive(page, "modelOnly=modify_messages");
     await expect(app.getByText(/Failed to archive email: .*not available to apps/)).toBeVisible();
-    expect(await hostValue<string[]>(page, "rejectedCalls")).toEqual(["gmail_move_email"]);
+    expect(await hostValue<string[]>(page, "rejectedCalls")).toEqual(["gmail_modify_messages"]);
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
   });
 });

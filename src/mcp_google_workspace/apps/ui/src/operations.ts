@@ -50,7 +50,7 @@ const READ_FALLBACKS: Record<ReadOperation, readonly string[]> = {
   getEventDetail: ["apps_get_event_detail", "get_event_detail"],
   getEmailDetail: ["apps_get_email_detail", "get_email_detail"],
   getEmailAttachment: ["apps_get_email_attachment", "get_email_attachment"],
-  listCalendars: ["calendar_list_calendars"],
+  listCalendars: ["calendar_get_calendar_context"],
 };
 
 export function isReadOperation(operation: Operation): operation is ReadOperation {

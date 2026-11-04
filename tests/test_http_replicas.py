@@ -315,7 +315,7 @@ def test_stale_catalog_cannot_execute_after_grant_revocation(fleet: Fleet) -> No
     )
 
     # A client still holding the old catalog calls the tool on another replica.
-    _, rejected = fleet.tool("alice", "people_list_contacts", {}, replica=1)
+    _, rejected = fleet.tool("alice", "people_search_contacts", {}, replica=1)
     result = rejected["result"]
     assert result["isError"] is True
     assert result["structuredContent"]["code"] == "missing_capability"

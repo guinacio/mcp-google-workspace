@@ -2,7 +2,7 @@
 
 Whether a lost response may be retried is a property of the **Google method
 that ran**, not of the MCP tool that called it: ``gmail_send_email`` and
-``gmail_reply_email`` both end in ``users.messages.send``; ``drive_delete_file``
+``gmail_reply`` both end in ``users.messages.send``; ``drive_delete_file``
 is a harmless-to-repeat ``files.update`` (trash) or ``files.delete``;
 ``calendar_create_event`` is safe to repeat only when the caller supplied an
 ``idempotency_key`` (the event is then inserted under a deterministic id).

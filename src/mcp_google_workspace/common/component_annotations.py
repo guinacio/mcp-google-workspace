@@ -47,7 +47,6 @@ _NAMESPACES = {
 }
 
 _LOCAL_ONLY_TOOLS = {
-    "get_calendar_context",
     "get_state",
     "next_range",
     "patch_state",
@@ -104,9 +103,7 @@ _MUTATING_PREFIXES = (
 
 _MUTATING_TOOLS = {
     "download_attachment",
-    "download_event_attachment",
     "download_file",
-    "export_google_file",
     "next_range",
     "prev_range",
     "today",
@@ -120,44 +117,41 @@ _DESTRUCTIVE_PREFIXES = (
 
 _DESTRUCTIVE_TOOLS = {
     "archive_note",
-    "batch_delete",
+    # gmail_delete: trash or permanent deletion of messages or a thread.
+    "delete",
     "end_active_conference",
+    # Action tools whose delete action removes the label, filter or address.
+    "manage_filters",
+    "manage_forwarding",
+    "manage_labels",
+    # Removing attachments from an event (calendar_set_event_attachments).
+    "set_event_attachments",
+    "unshare_file",
 }
 
 _IDEMPOTENT_TOOLS = {
-    "apply_labels",
     "archive_note",
-    "complete_task",
-    "hide_drive",
-    "mark_as_not_spam",
-    "mark_as_read",
-    "mark_as_spam",
-    "mark_as_unread",
+    "manage_vacation",
+    "modify_messages",
     "patch_note_checklist",
     "patch_state",
     "replace_document_text",
     "replace_text_in_presentation",
     "respond_to_event",
+    "set_event_attachments",
     "set_form_publish_settings",
     "set_state",
     "today",
     "unarchive_note",
-    "unhide_drive",
-    "untrash_email",
-    "untrash_thread",
     "update_contact",
-    "update_draft",
+    "update_drive",
     "update_event",
-    "update_file_content",
     "update_file_metadata",
-    "update_label",
     "update_message",
     "update_note",
-    "update_permission",
     "update_sheet_values",
     "update_space",
     "update_task",
-    "update_vacation_settings",
 }
 
 _NAMESPACE_TITLES = {
@@ -196,6 +190,8 @@ _NAMESPACE_TAGS = {
 
 _READ_ONLY_TOOLS = {
     "get_mail_digest",
+    # resolve_workspace_resource re-reads metadata; it changes nothing.
+    "resolve_workspace_resource",
     # tasks_digest: its local name starts with its namespace, so it splits to "digest".
     "digest",
     "get_calendar_digest",

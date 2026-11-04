@@ -36,7 +36,7 @@ from mcp_google_workspace.server import workspace_mcp
 NAMESPACES: dict[str, tuple[str, dict[str, Any], str]] = {
     "gmail": ("gmail_list_labels", {}, "https://gmail.googleapis.com/gmail/v1/users/me/labels?alt=json"),
     "drive": ("drive_get_file", {"file_id": "file-1"}, "https://www.googleapis.com/drive/v3/files/file-1?fields=id%2Cname&alt=json"),
-    "calendar": ("calendar_list_calendars", {}, "https://www.googleapis.com/calendar/v3/users/me/calendarList?alt=json"),
+    "calendar": ("calendar_get_calendar_context", {}, "https://www.googleapis.com/calendar/v3/users/me/calendarList?alt=json"),
 }
 
 

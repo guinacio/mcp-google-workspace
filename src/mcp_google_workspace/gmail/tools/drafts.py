@@ -142,7 +142,7 @@ def register(server: FastMCP) -> None:
             if request.format == "full":
                 # The same cleaned text as gmail_read_emails, whole and unpaged.
                 item.update(clean_message_content(message, limit=None))
-            return {"drafts": [item], "count": 1, "next_page_token": None, "result_size_estimate": 1}
+            return {"drafts": [item], "count": 1, "next_page_token": None, "result_size_estimate": 1}  # nosec B105 -- no next page, not a credential
         list_request = ListDraftsRequest(
             max_results=max_results,
             page_token=page_token,

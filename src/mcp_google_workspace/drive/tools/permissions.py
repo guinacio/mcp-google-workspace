@@ -183,7 +183,7 @@ def register(server: FastMCP) -> None:
                     fields=_PERMISSION_FIELDS,
                 )
             )
-            return {"permissions": [permission], "next_page_token": None, "count": 1}
+            return {"permissions": [permission], "next_page_token": None, "count": 1}  # nosec B105 -- no next page, not a credential
         LOGGER.debug(f"Listing permissions for file {request.file_id}.")
         result = await execute_google_request(
             service.permissions()

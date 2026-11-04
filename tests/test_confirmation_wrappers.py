@@ -415,7 +415,7 @@ def test_commit_failure_is_settled_from_what_reached_google(
         raise McpError(code=-32000, message="failed", data={"code": code})
 
     async def exercise() -> tuple[str, str | None]:
-        prepared = await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10})
+        prepared = await prepare_action("gmail_modify_messages", {"message_ids": ["m"] * 10})
         token = str(prepared["commit_token"])
         tool = await server_module.workspace_mcp.get_tool("commit_workspace_action")
         assert getattr(tool.fn, "_workspace_confirmation_guard", False) is True
@@ -442,7 +442,7 @@ def test_operation_claims_are_exclusive_releasable_and_never_consumed(fresh_conf
     store = fresh_confirmation_state
 
     async def exercise() -> list[str]:
-        token = str((await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10}))["commit_token"])
+        token = str((await prepare_action("gmail_modify_messages", {"message_ids": ["m"] * 10}))["commit_token"])
         key = operation_key(current_principal().storage_key, token)
         first = await store.claim(key, kind="commit", ref="r")
         second = await store.claim(key, kind="commit", ref="r")

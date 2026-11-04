@@ -58,7 +58,7 @@ def register(server: FastMCP) -> None:
                     fields=_DRIVE_FIELDS,
                 )
             )
-            return {"drives": [drive], "next_page_token": None, "count": 1}
+            return {"drives": [drive], "next_page_token": None, "count": 1}  # nosec B105 -- no next page, not a credential
         LOGGER.debug("Listing Shared Drives.")
         result = await execute_google_request(
             service.drives()

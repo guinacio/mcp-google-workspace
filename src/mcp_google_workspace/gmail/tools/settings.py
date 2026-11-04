@@ -33,17 +33,19 @@ def register(server: FastMCP) -> None:
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """List, look up, register or remove the addresses this Gmail account may forward mail to, with their verification status. Actual forwarding is set up with a gmail_manage_filters filter whose forward address is 'accepted'; create and delete work only for service accounts with domain-wide delegation, so an ordinary user sign-in gets a permission error. Returns action with forwarding_addresses and count (list), or forwarding_address with forwardingEmail and verificationStatus ('accepted' or 'pending'); delete returns status 'ok' or 'cancelled'. Creating may email the address a verification link; deleting asks the user to confirm."""
-        service = gmail_service()
-        addresses = service.users().settings().forwardingAddresses()
         if action == "list":
             LOGGER.debug("Listing Gmail forwarding addresses.")
-            result = await execute_google_request(addresses.list(userId="me"))
+            result = await execute_google_request(
+                gmail_service().users().settings().forwardingAddresses().list(userId="me")
+            )
             listed = result.get("forwardingAddresses", [])
             return {"action": action, "forwarding_addresses": listed, "count": len(listed)}
         if not forwarding_email:
             raise ValueError(f"action '{action}' requires forwarding_email.")
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         email = str(request.forwarding_email)
+        if action != "delete":
+            addresses = gmail_service().users().settings().forwardingAddresses()
         if action == "get":
             LOGGER.debug(f"Fetching forwarding address {email}.")
             address = await execute_google_request(addresses.get(userId="me", forwardingEmail=email))
@@ -61,7 +63,9 @@ def register(server: FastMCP) -> None:
         ):
             return {"status": "cancelled", "action": action, "forwarding_email": email}
         LOGGER.debug(f"Deleting forwarding address {email}.")
-        await execute_google_request(addresses.delete(userId="me", forwardingEmail=email))
+        await execute_google_request(
+            gmail_service().users().settings().forwardingAddresses().delete(userId="me", forwardingEmail=email)
+        )
         return {"status": "ok", "action": action, "forwarding_email": email}
 
     @server.tool(name="manage_vacation")

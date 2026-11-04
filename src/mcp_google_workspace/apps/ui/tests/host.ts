@@ -163,7 +163,7 @@ if (discovery !== "unsupported") {
     }
     if (discovery === "partial") throw new Error("Second page unavailable");
     return {
-      tools: [toolName("get_weekly_calendar_view"), "calendar_list_calendars", toolName("next_range")].map((name) => ({
+      tools: [toolName("get_weekly_calendar_view"), "calendar_get_calendar_context", toolName("next_range")].map((name) => ({
         name,
         inputSchema: { type: "object" as const },
       })),
@@ -189,7 +189,7 @@ const OPERATIONS: Record<string, { namespace: string; tool: string; mutates: boo
   getEventDetail: { namespace: "apps", tool: "get_event_detail", mutates: false, capability: "calendar" },
   getEmailDetail: { namespace: "apps", tool: "get_email_detail", mutates: false, capability: "gmail" },
   getEmailAttachment: { namespace: "apps", tool: "get_email_attachment", mutates: false, capability: "gmail" },
-  listCalendars: { namespace: "calendar", tool: "list_calendars", mutates: false, capability: "calendar" },
+  listCalendars: { namespace: "calendar", tool: "get_calendar_context", mutates: false, capability: "calendar" },
   patchState: { namespace: "apps", tool: "patch_state", mutates: true },
   nextRange: { namespace: "apps", tool: "next_range", mutates: true },
   prevRange: { namespace: "apps", tool: "prev_range", mutates: true },
@@ -198,13 +198,13 @@ const OPERATIONS: Record<string, { namespace: string; tool: string; mutates: boo
   createEvent: { namespace: "calendar", tool: "create_event", mutates: true, capability: "calendar" },
   updateEvent: { namespace: "calendar", tool: "update_event", mutates: true, capability: "calendar" },
   deleteEvent: { namespace: "calendar", tool: "delete_event", mutates: true, capability: "calendar" },
-  markEmailRead: { namespace: "gmail", tool: "mark_as_read", mutates: true, capability: "gmail" },
-  markEmailUnread: { namespace: "gmail", tool: "mark_as_unread", mutates: true, capability: "gmail" },
-  moveEmail: { namespace: "gmail", tool: "move_email", mutates: true, capability: "gmail" },
-  deleteEmail: { namespace: "gmail", tool: "delete_email", mutates: true, capability: "gmail" },
-  untrashEmail: { namespace: "gmail", tool: "untrash_email", mutates: true, capability: "gmail" },
-  markEmailSpam: { namespace: "gmail", tool: "mark_as_spam", mutates: true, capability: "gmail" },
-  markEmailNotSpam: { namespace: "gmail", tool: "mark_as_not_spam", mutates: true, capability: "gmail" },
+  markEmailRead: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  markEmailUnread: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  moveEmail: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  deleteEmail: { namespace: "gmail", tool: "delete", mutates: true, capability: "gmail" },
+  untrashEmail: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  markEmailSpam: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  markEmailNotSpam: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
 };
 
 /** Operation manifest as the server would issue it for this composition and grant. */
@@ -363,7 +363,7 @@ function stateCall(name: string, args: Record<string, unknown>): CallToolResult 
 
 function adversarialResult(name: string): Record<string, unknown> {
   if (name.endsWith("get_dashboard")) return { dashboard: adversarial.dashboard, weekly_calendar: weekly };
-  if (name.endsWith("list_calendars")) return adversarial.calendarCatalog;
+  if (name.endsWith("get_calendar_context")) return adversarial.calendarCatalog;
   if (name.endsWith("get_event_detail")) {
     return params.has("safeConference") ? adversarial.safeConferenceEventDetail : adversarial.eventDetail;
   }
@@ -428,8 +428,8 @@ bridge.oncalltool = async ({ name, arguments: rawArgs }) => {
       ...(launch && operations ? { _meta: { [OPERATIONS_META_KEY]: operations } } : {}),
     };
   }
-  if (name.endsWith("list_calendars")) {
-    return { content: [], structuredContent: { items: [{ id: "primary", summary: "Test calendar", primary: true }] } };
+  if (name.endsWith("get_calendar_context")) {
+    return { content: [], structuredContent: { calendars: [{ id: "primary", name: "Test calendar", primary: true }] } };
   }
   if (name.endsWith("get_dashboard") || name.endsWith("get_weekly_calendar_view")) {
     const handle = openView(args);
