@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import threading
 from collections.abc import Callable
 from email import policy
 from email.parser import BytesParser
@@ -14,6 +15,7 @@ from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 from mcp_google_workspace.common.async_ops import execute_google_request
+from mcp_google_workspace.common.errors import classify_error
 from mcp_google_workspace.gmail.helpers import gather_in_order
 from mcp_google_workspace.gmail.mime_utils import (
     build_email_message,
@@ -649,6 +651,58 @@ class _SearchService:
         return _SearchUsers()
 
 
+class _ConcurrentSearchMessages:
+    def list(self, **kwargs) -> _SearchRequest:
+        return _SearchRequest("list", query=kwargs.get("q"))
+
+    def get(self, *, id: str, **kwargs) -> _SearchRequest:
+        assert "fields" in kwargs  # search asks for the envelope mask, not bodies
+        return _SearchRequest("message", id)
+
+
+class _ConcurrentSearchService:
+    def users(self) -> Any:
+        return SimpleNamespace(messages=_ConcurrentSearchMessages)
+
+
+def test_search_emails_fetches_details_concurrently_and_keeps_result_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ids = [f"m-{index}" for index in range(6)]
+    in_flight = 0
+    peak = 0
+
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _SearchRequest) -> dict:
+        nonlocal in_flight, peak
+        if request.kind == "list":
+            return {"messages": [{"id": message_id} for message_id in ids], "resultSizeEstimate": len(ids)}
+        assert request.message_id is not None
+        in_flight += 1
+        peak = max(peak, in_flight)
+        # Later hits finish first; the response must still follow Gmail's order.
+        await anyio.sleep(0.02 if request.message_id == "m-0" else 0.001)
+        in_flight -= 1
+        return _labelled_message(request.message_id, ["INBOX"], "Alice <alice@example.com>", request.message_id)
+
+    monkeypatch.setattr(gmail_search, "gmail_service", _ConcurrentSearchService)
+    monkeypatch.setattr(gmail_search, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(gmail_search, "execute_google_request", fake_execute)
+
+    async def scenario() -> dict:
+        async with Client(gmail_mcp) as client:
+            result = await client.call_tool("search_emails", {"query": "from:alice"})
+            return result.structured_content or result.data
+
+    result = anyio.run(scenario)
+
+    assert [message["id"] for message in result["messages"]] == ids
+    assert result["count"] == len(ids)
+    assert peak > 1, "message details were fetched one at a time"
+
+
 def test_get_mail_digest_returns_received_and_sent_without_triage_or_thread_deduplication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -754,6 +808,31 @@ def test_gather_in_order_surfaces_the_original_worker_error() -> None:
     # error middleware would lose the exception type it maps to envelopes.
     with pytest.raises(ValueError, match="boom"):
         asyncio.run(scenario())
+
+
+def test_gather_in_order_surfaces_one_error_when_several_workers_fail() -> None:
+    """Parallel fetches hit by the same 429 still classify as ``rate_limited``."""
+
+    # Google requests run in worker threads that a cancelled task group still
+    # waits for, so every in-flight fetch reports its own failure. The barrier
+    # makes all three in flight before any fails.
+    barrier = threading.Barrier(3, timeout=5)
+
+    def fetch() -> int:
+        barrier.wait()
+        raise HttpError(Response({"status": "429"}), b'{"error": {"code": 429, "message": "Too many requests"}}')
+
+    async def worker(n: int) -> int:
+        return await anyio.to_thread.run_sync(fetch)
+
+    async def scenario() -> list[int]:
+        return await gather_in_order([1, 2, 3], worker)
+
+    with pytest.raises(HttpError) as raised:
+        asyncio.run(scenario())
+    rpc_code, envelope = classify_error(raised.value)
+    assert rpc_code is None
+    assert envelope["code"] == "rate_limited"
 
 
 @pytest.mark.parametrize(

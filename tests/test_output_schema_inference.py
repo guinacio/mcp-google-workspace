@@ -202,6 +202,42 @@ def test_get_google_connection_status_validates_when_connected(monkeypatch) -> N
     assert result.structured_content["action"] is None
 
 
+def test_inferred_schemas_are_open_at_every_level() -> None:
+    """A closed schema fails validation on any field the inference did not see
+    (a ``**spread``, a helper it cannot read, a provider field)."""
+
+    def tool(base: dict[str, Any]) -> dict[str, Any]:
+        return {**base, "nested": {"seen": 1}, "ok": True}
+
+    schema = infer_tool_output_schema(tool)
+    assert schema is not None
+    assert schema["additionalProperties"] is True
+    assert schema["properties"]["nested"]["additionalProperties"] is True
+
+
+def test_unlisted_plural_names_carry_no_type_claim() -> None:
+    def tool(payload: Any) -> dict[str, Any]:
+        return {"namedStyles": payload.styles, "notes": payload.notes, "items": payload.items}
+
+    properties = _properties(tool)
+    assert "type" not in properties["namedStyles"]
+    assert "type" not in properties["notes"]
+    assert properties["items"]["type"] == "array"
+
+
+def test_catalog_publishes_open_schemas_for_every_google_passthrough_tool() -> None:
+    from mcp_google_workspace.common.output_schemas import _OUTPUT_FIELDS
+
+    async def catalog() -> list[Any]:
+        return await workspace_mcp.list_tools(run_middleware=False)
+
+    tools = anyio.run(catalog)
+    registered = {tool.name: tool for tool in tools if tool.name.split("_", 1)[-1] in _OUTPUT_FIELDS or tool.name in _OUTPUT_FIELDS}
+    assert len(registered) >= 35  # 39 in the default composition, 41 with the Apps dashboard
+    closed = [name for name, tool in registered.items() if (tool.output_schema or {}).get("additionalProperties") is not True]
+    assert closed == []
+
+
 def test_catalog_has_no_unit_suffix_fields_typed_as_arrays() -> None:
     """No live tool schema may declare a scalar quantity field as an array."""
     suffixes = (

@@ -47,3 +47,32 @@ def test_file_envelope_surfaces_owner_state_and_capabilities():
     assert result["kind"] == "document"
     assert result["owners"][0]["email"] == "ada@example.com"
     assert result["can_edit"] is True
+
+
+def test_file_envelope_reports_unfetched_fields_as_null():
+    """A field absent from the Drive payload (not requested, or not applicable)
+    must be null, never a made-up ``false`` or ``[]``."""
+    result = file_envelope({"id": "file-1", "name": "Plan"}, account_timezone="UTC")
+
+    for field in ("shared", "starred", "trashed", "owned_by_me", "owners", "parent_ids", "last_modified_by", "can_edit", "can_download", "mime_type"):
+        assert result[field] is None, field
+    assert result["kind"] == "file"
+
+
+def test_file_envelope_keeps_fetched_false_and_empty_values():
+    result = file_envelope(
+        {
+            "id": "file-1", "name": "Plan", "shared": False, "starred": False, "trashed": False, "ownedByMe": True,
+            "owners": [], "parents": ["folder-1"],
+            "lastModifyingUser": {"displayName": "Ada", "emailAddress": "ada@example.com"},
+        },
+        account_timezone="UTC",
+    )
+
+    assert result["shared"] is False
+    assert result["starred"] is False
+    assert result["trashed"] is False
+    assert result["owned_by_me"] is True
+    assert result["owners"] == []
+    assert result["parent_ids"] == ["folder-1"]
+    assert result["last_modified_by"] == {"name": "Ada", "email": "ada@example.com"}

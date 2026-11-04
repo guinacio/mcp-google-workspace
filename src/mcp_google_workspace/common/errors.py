@@ -175,6 +175,160 @@ def _provider_retry_after(exc: Exception) -> float | None:
         return None
 
 
+def _provider_status(exc: Exception) -> int | None:
+    status_raw = getattr(getattr(exc, "resp", None), "status", None)
+    try:
+        return int(status_raw) if status_raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def is_provider_http_error(exc: Exception) -> bool:
+    """Whether *exc* is an HTTP error response from a Google API client.
+
+    Duck-typed on the ``googleapiclient.errors.HttpError`` shape (``resp``
+    with a status plus ``content``), so this module needs no provider import.
+    """
+    return _provider_status(exc) is not None and hasattr(exc, "content")
+
+
+# Machine-readable reasons Google attaches to a 403 (``error.errors[].reason``
+# or ``error.details[].reason``), grouped by what the caller can do about them.
+_SCOPE_REASONS: Final[frozenset[str]] = frozenset(
+    {"insufficientpermissions", "access_token_scope_insufficient", "insufficientscopes"}
+)
+_QUOTA_REASONS: Final[frozenset[str]] = frozenset(
+    {
+        "ratelimitexceeded", "userratelimitexceeded", "quotaexceeded",
+        "dailylimitexceeded", "rate_limit_exceeded", "resource_exhausted",
+    }
+)
+_API_DISABLED_REASONS: Final[frozenset[str]] = frozenset(
+    {"accessnotconfigured", "service_disabled"}
+)
+# A full Drive is a quota that waiting does not restore: never ``rate_limited``,
+# although its message ("storage quota has been exceeded") names a quota.
+_EXHAUSTED_STORAGE_REASONS: Final[frozenset[str]] = frozenset({"storagequotaexceeded"})
+
+# Google API host (or ``www.googleapis.com`` path prefix) -> capability name.
+_HOST_CAPABILITIES: Final[dict[str, str]] = {
+    "gmail.googleapis.com": "gmail",
+    "sheets.googleapis.com": "sheets",
+    "docs.googleapis.com": "docs",
+    "tasks.googleapis.com": "tasks",
+    "people.googleapis.com": "people",
+    "forms.googleapis.com": "forms",
+    "slides.googleapis.com": "slides",
+    "keep.googleapis.com": "keep",
+    "chat.googleapis.com": "chat",
+    "meet.googleapis.com": "meet",
+}
+_PATH_CAPABILITIES: Final[dict[str, str]] = {
+    "/calendar/": "calendar",
+    "/drive/": "drive",
+    # Media uploads (drive_upload_file, drive_update_file_content).
+    "/upload/drive/": "drive",
+    "/gmail/": "gmail",
+    "/tasks/": "tasks",
+}
+
+
+def provider_error_reason(exc: Exception) -> str | None:
+    """The first machine-readable ``reason`` Google attached to *exc*, if any.
+
+    ``googleapiclient`` stores ``error.errors`` / ``error.details`` in
+    ``error_details``; each entry may carry ``reason`` (legacy shape) or
+    ``metadata`` / ``@type`` (``google.rpc`` shape).
+    """
+    details = getattr(exc, "error_details", None)
+    if isinstance(details, dict):
+        details = [details]
+    if not isinstance(details, list):
+        return None
+    for entry in details:
+        if not isinstance(entry, dict):
+            continue
+        reason = entry.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            return reason.strip()[:100]
+    return None
+
+
+def _rejects_page_token(exc: Exception, reason: str) -> bool:
+    """Whether Google rejected the page token itself, not merely a paged request.
+
+    Reads the provider message and ``errors[].location`` only, never the
+    request URL (which carries ``pageToken=`` on every paged call).
+    """
+    lowered = reason.lower()
+    if "page token" in lowered or "pagetoken" in lowered:
+        return True
+    details = getattr(exc, "error_details", None)
+    entries = details if isinstance(details, list) else [details]
+    return any(
+        isinstance(entry, dict) and str(entry.get("location", "")).lower() == "pagetoken"
+        for entry in entries
+    )
+
+
+def provider_capability(exc: Exception) -> str | None:
+    """The Workspace capability behind the request URL of *exc*, if recognisable."""
+    uri = getattr(exc, "uri", None)
+    if not isinstance(uri, str) or not uri:
+        return None
+    lowered = uri.lower()
+    for host, capability in _HOST_CAPABILITIES.items():
+        if f"//{host}/" in lowered:
+            return capability
+    if "//www.googleapis.com/" in lowered:
+        for prefix, capability in _PATH_CAPABILITIES.items():
+            if f"//www.googleapis.com{prefix}" in lowered:
+                return capability
+    return None
+
+
+def classify_provider_status(
+    status: int | None,
+    *,
+    reason: str,
+    provider_reason: str | None,
+    retry_after: float | None,
+    capability: str | None,
+) -> tuple[str, bool, dict[str, Any]]:
+    """Map a Google HTTP failure to ``(code, retryable, required_action)``.
+
+    Shared by :func:`provider_tool_error` (tools that classify explicitly)
+    and :func:`classify_error` (raw errors escaping a tool body), so both
+    paths agree on what a 403 with ``insufficientPermissions`` means.
+    """
+    lowered = reason.lower()
+    reason_key = (provider_reason or "").lower()
+    if status == 429 or (
+        status == 403
+        and reason_key not in _EXHAUSTED_STORAGE_REASONS
+        and (reason_key in _QUOTA_REASONS or "rate limit" in lowered or "quota" in lowered)
+    ):
+        return "rate_limited", True, {"action": "retry", "after_seconds": retry_after or 5}
+    if status is not None and status >= 500:
+        return "provider_unavailable", True, {"action": "retry", "after_seconds": retry_after or 5}
+    if status == 401:
+        return "reauth_required", False, {"tool": "connect_google_workspace", "arguments": {}}
+    if status == 403:
+        if reason_key in _SCOPE_REASONS or "insufficient authentication scopes" in lowered:
+            arguments: dict[str, Any] = {"capabilities": [capability]} if capability else {}
+            return "missing_capability", False, {"tool": "connect_google_workspace", "arguments": arguments}
+        if reason_key in _API_DISABLED_REASONS:
+            return "permission_denied", False, {"action": "enable_api_in_google_cloud_project"}
+        return "permission_denied", False, {"action": "request_access_or_choose_another_resource"}
+    if status in {404, 410}:
+        return "not_found", False, {"action": "verify_resource_id_or_search_again"}
+    if status in {409, 412}:
+        return "conflict", False, {"action": "refresh_resource_and_retry"}
+    if status == 400:
+        return "invalid_input", False, {"action": "correct_arguments", "field_errors": []}
+    return "provider_error", False, {"action": "check_arguments_or_retry_later"}
+
+
 def provider_tool_error(exc: Exception, **context: Any) -> ProviderToolError:
     """Classify a Google API failure as a tool execution error.
 
@@ -183,48 +337,30 @@ def provider_tool_error(exc: Exception, **context: Any) -> ProviderToolError:
     result. ``context`` identifies the request (IDs, names); it must never
     contain message bodies, recipients, or credentials.
     """
-    status_raw = getattr(getattr(exc, "resp", None), "status", None)
-    try:
-        status = int(status_raw) if status_raw is not None else None
-    except (TypeError, ValueError):
-        status = None
+    status = _provider_status(exc)
     reason = _provider_reason(exc)
-    lowered = reason.lower()
+    provider_reason = provider_error_reason(exc)
     retry_after = _provider_retry_after(exc)
-    action: dict[str, Any] | None
-    retryable = False
-    if status == 429 or (status == 403 and "rate limit" in lowered):
-        code, retryable = "rate_limited", True
-        action = {"action": "retry", "after_seconds": retry_after or 5}
-    elif status is not None and status >= 500:
-        code, retryable = "provider_unavailable", True
-        action = {"action": "retry", "after_seconds": retry_after or 5}
-    elif status == 401:
-        code = "reauth_required"
-        action = {"tool": "connect_google_workspace", "arguments": {}}
-    elif status == 403:
-        code = "permission_denied"
-        action = {"action": "request_access_or_choose_another_resource"}
-    elif status in {404, 410}:
-        code = "not_found"
-        action = {"action": "verify_resource_id_or_search_again"}
-    elif status in {409, 412}:
-        code = "conflict"
-        action = {"action": "refresh_resource_and_retry"}
-    elif status == 400:
-        code = "invalid_input"
-        action = {"action": "correct_arguments", "field_errors": []}
-    else:
-        code = "provider_error"
-        action = {"action": "check_arguments_or_retry_later"}
+    code, retryable, action = classify_provider_status(
+        status,
+        reason=reason,
+        provider_reason=provider_reason,
+        retry_after=retry_after,
+        capability=provider_capability(exc),
+    )
     prefix = f"Google API request failed (HTTP {status})" if status else "Google API request failed"
+    details: dict[str, Any] = {}
+    if context:
+        details["context"] = dict(context)
+    if provider_reason:
+        details["provider_reason"] = provider_reason
     return ProviderToolError(
         code,
         f"{prefix}: {reason}",
         required_action=action,
         retryable=retryable,
         retry_after=retry_after,
-        details={"context": dict(context)} if context else None,
+        details=details or None,
         provider_status=status,
     )
 
@@ -333,13 +469,15 @@ def classify_error(error: Exception) -> tuple[int | None, dict[str, Any]]:
     """
     provider_status = getattr(error, "provider_status", None)
     if provider_status is None:
-        provider_status = getattr(getattr(error, "resp", None), "status", None)
+        provider_status = _provider_status(error)
     message = str(error)
     lowered = message.lower()
     error_type = error.__class__.__name__
     explicit_code = getattr(error, "error_code", None)
     field_errors: list[dict[str, str]] = []
     rpc_code: int | None = None
+    action: dict[str, Any] | None = getattr(error, "required_action", None)
+    details: dict[str, Any] | None = getattr(error, "details", None)
     if isinstance(error, ProtocolRejection):
         code, retryable, rpc_code = error.error_code, error.retryable, error.rpc_code
     elif isinstance(explicit_code, str):
@@ -356,6 +494,27 @@ def classify_error(error: Exception) -> tuple[int | None, dict[str, Any]]:
         code, retryable = "missing_capability", False
     elif error_type in {"GoogleAccountConnectionRequired", "GoogleAccountReauthenticationRequired"}:
         code, retryable = "reauth_required", False
+    elif is_provider_http_error(error):
+        # A Google HTTP error that escaped a tool body unclassified (issue
+        # #51): the same mapping as provider_tool_error, so a 403 for missing
+        # scopes names the reconnect step and 404 is distinguishable from 403.
+        # Checked before the page-token text match below: ``str(HttpError)``
+        # embeds the request URL, so any failure of a paged request would
+        # otherwise read as a bad page token and echo that URL.
+        reason = _provider_reason(error)
+        provider_reason = provider_error_reason(error)
+        code, retryable, action = classify_provider_status(
+            provider_status,
+            reason=reason,
+            provider_reason=provider_reason,
+            retry_after=_provider_retry_after(error),
+            capability=provider_capability(error),
+        )
+        if provider_status == 400 and _rejects_page_token(error, reason):
+            code, action = "invalid_page_token", {"action": "retry_without_page_token"}
+        message = f"Google API request failed (HTTP {provider_status}): {reason}"
+        if provider_reason:
+            details = {"provider_reason": provider_reason}
     elif "page token" in lowered or "pagetoken" in lowered:
         code, retryable = "invalid_page_token", False
     elif "confirmation" in lowered or "elicitation" in lowered:
@@ -379,7 +538,6 @@ def classify_error(error: Exception) -> tuple[int | None, dict[str, Any]]:
         code, retryable = "internal_error", False
         rpc_code = JSONRPC_INTERNAL_ERROR
         message = "The Workspace tool failed unexpectedly. Check server logs for details."
-    action: dict[str, Any] | None = getattr(error, "required_action", None)
     if code == "reauth_required":
         action = action or {"tool": "connect_google_workspace", "arguments": {}}
     elif code == "missing_capability":
@@ -413,7 +571,6 @@ def classify_error(error: Exception) -> tuple[int | None, dict[str, Any]]:
         "provider_status": provider_status,
         "field_errors": field_errors,
     }
-    details = getattr(error, "details", None)
     if isinstance(details, dict) and details:
         envelope["details"] = details
     return rpc_code, envelope
@@ -466,15 +623,15 @@ def unwrap_tool_error(error: Exception) -> Exception:
     FastMCP 4 re-raises a failing tool body as ``ToolError("Error calling tool
     ...") from exc``. This package never raises ``ToolError`` itself, so the
     wrapped cause is what carries the machine-readable ``error_code`` and
-    ``required_action``; classify that rather than the generic wrapper.
+    ``required_action``; classify that rather than the generic wrapper. A
+    wrapped :class:`McpError` is returned as-is: the execution guard already
+    classified it and its ``data`` is the finished envelope.
     """
     current = error
-    while (
-        isinstance(current, ToolError)
-        and isinstance(current.__cause__, Exception)
-        and not isinstance(current.__cause__, McpError)
-    ):
+    while isinstance(current, ToolError) and isinstance(current.__cause__, Exception):
         cause = current.__cause__
+        if isinstance(cause, McpError):
+            return cause
         if isinstance(cause, FastMCPError) and not isinstance(cause, ToolError):
             break
         current = cause
@@ -516,6 +673,12 @@ class StructuredToolErrorMiddleware(Middleware):
             raise protocol_error(JSONRPC_INVALID_PARAMS, envelope) from raised
         except Exception as raised:
             error = unwrap_tool_error(raised)
+            if isinstance(error, McpError):
+                # Already classified by the execution guard (common.execution)
+                # and wrapped by FastMCP on the way out: forward the finished
+                # JSON-RPC error instead of classifying the wrapper a second
+                # time, which reduced every protocol error to internal_error.
+                raise error from raised
             rpc_code, envelope = classify_error(error)
             if rpc_code is None:
                 # Confirmation outcomes (W4a), operation outcomes (W4b:
@@ -549,8 +712,12 @@ __all__ = [
     "RecoverableToolError",
     "StructuredToolErrorMiddleware",
     "classify_error",
+    "classify_provider_status",
     "error_tool_result",
+    "is_provider_http_error",
     "protocol_error",
+    "provider_capability",
+    "provider_error_reason",
     "provider_tool_error",
     "render_error_message",
     "tool_error_result",

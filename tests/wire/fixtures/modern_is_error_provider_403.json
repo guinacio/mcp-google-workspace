@@ -1,0 +1,38 @@
+{
+  "result": {
+    "_meta": {
+      "io.modelcontextprotocol/serverInfo": {
+        "name": "google-workspace-mcp",
+        "version": "<SERVER_VERSION>"
+      }
+    },
+    "content": [
+      {
+        "text": "Google API request failed (HTTP 403): Request had insufficient authentication scopes. [code: missing_capability] Next step: {\"arguments\":{\"capabilities\":[\"gmail\"]},\"tool\":\"connect_google_workspace\"}",
+        "type": "text"
+      }
+    ],
+    "isError": true,
+    "resultType": "complete",
+    "structuredContent": {
+      "code": "missing_capability",
+      "details": {
+        "provider_reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
+      },
+      "field_errors": [],
+      "message": "Google API request failed (HTTP 403): Request had insufficient authentication scopes.",
+      "provider_status": 403,
+      "required_action": {
+        "arguments": {
+          "capabilities": [
+            "gmail"
+          ]
+        },
+        "tool": "connect_google_workspace"
+      },
+      "retry_after": null,
+      "retryable": false
+    }
+  },
+  "status_code": 200
+}

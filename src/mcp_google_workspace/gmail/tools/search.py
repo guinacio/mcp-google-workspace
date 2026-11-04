@@ -143,26 +143,26 @@ def register(server: FastMCP) -> None:
             )
         )
         messages = result.get("messages", [])
-        envelopes = [
-            envelope(
-                await execute_google_request(
-                    service.users().messages().get(
-                        userId="me",
-                        id=item["id"],
-                        format="full",
-                        fields=(
-                            "id,threadId,labelIds,snippet,internalDate,"
-                            "payload(mimeType,filename,headers,"
-                            "body(attachmentId,size),"
-                            "parts(mimeType,filename,headers,body(attachmentId,size),"
-                            "parts(mimeType,filename,body(attachmentId,size))))"
-                        ),
-                    )
-                ),
-                account_timezone=account_timezone,
-            )
-            for item in messages
-        ]
+        # One bounded-concurrency fetch per hit (the same helper the digest
+        # uses) instead of a sequential round trip per message.
+        details = await gather_in_order(
+            [item["id"] for item in messages],
+            lambda message_id: execute_google_request(
+                service.users().messages().get(
+                    userId="me",
+                    id=message_id,
+                    format="full",
+                    fields=(
+                        "id,threadId,labelIds,snippet,internalDate,"
+                        "payload(mimeType,filename,headers,"
+                        "body(attachmentId,size),"
+                        "parts(mimeType,filename,headers,body(attachmentId,size),"
+                        "parts(mimeType,filename,body(attachmentId,size))))"
+                    ),
+                )
+            ),
+        )
+        envelopes = [envelope(message, account_timezone=account_timezone) for message in details]
         if ctx is not None:
             await ctx.report_progress(len(messages), request.max_results, "Search results loaded")
         return {

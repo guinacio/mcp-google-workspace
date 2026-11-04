@@ -8,7 +8,7 @@ import re
 from hashlib import sha256
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NoReturn
 
 import pytz
 from fastmcp import Context, FastMCP
@@ -21,6 +21,7 @@ from ..common.async_ops import (
 )
 from ..common.confirmation import confirm_destructive_action
 from ..common.downloads import stream_google_download
+from ..common.errors import RecoverableToolError
 from .presentation import event_envelope
 from ..common.timezone import resolve_user_timezone, user_now
 from .schemas import (
@@ -129,12 +130,62 @@ def _check_time_slot_conflicts(
         ).execute()
         busy_slots = result.get("calendars", {}).get(calendar_id, {}).get("busy", [])
         return {"has_conflicts": len(busy_slots) > 0, "conflicts": busy_slots, "error": None}
-    except Exception as exc:  # pragma: no cover - defensive API error handling
+    except Exception as exc:  # noqa: BLE001 - reported to the caller, never fatal
+        # The event is still written; the caller learns the slot was not
+        # verified through ``warnings`` on the result instead of silently.
+        LOGGER.warning("Calendar conflict check failed for %s: %s", calendar_id, exc)
         return {
             "has_conflicts": False,
             "conflicts": [],
             "error": f"Could not check for conflicts: {exc}",
         }
+
+
+def _conflict_warnings(conflict_check: dict[str, Any]) -> list[str]:
+    error = conflict_check.get("error")
+    return [str(error)] if error else []
+
+
+async def _raise_time_slot_conflict(
+    service: Any,
+    *,
+    calendar_id: str,
+    start: str,
+    end: str,
+    conflict_check: dict[str, Any],
+    suggest_next_slot: bool,
+    message: str,
+) -> NoReturn:
+    """Raise the ``conflict`` tool error for an occupied time slot.
+
+    Carries the overlapping events (and, when asked for, free alternatives)
+    in ``details`` so the caller can pick another time. Raised before any
+    write, so nothing has changed on the calendar.
+    """
+    details: dict[str, Any] = {
+        "calendar_id": calendar_id,
+        "requested_start": start,
+        "requested_end": end,
+        "conflicting_events": conflict_check["conflicts"],
+    }
+    action: dict[str, Any] = {"action": "choose_a_free_time_slot"}
+    if suggest_next_slot:
+        details["suggested_slots"] = await run_blocking(
+            _suggest_next_available_slots,
+            service=service,
+            calendar_id=calendar_id,
+            requested_start=start,
+            requested_end=end,
+        )
+        action = {"action": "retry_with_one_of_suggested_slots"}
+    else:
+        action["hint"] = "Call again with on_conflict='suggest_next_slot' to receive free alternatives."
+    raise RecoverableToolError(
+        "conflict",
+        message,
+        required_action=action,
+        details=details,
+    )
 
 
 def _resolve_relative_range(
@@ -747,21 +798,16 @@ def register_tools(server: FastMCP) -> None:
             end,
         )
         if conflict_check["has_conflicts"]:
-            response: dict[str, Any] = {
-                "error": "Time slot is not available - there are overlapping events",
-                "status": "CONFLICT",
-                "conflicting_events": conflict_check["conflicts"],
-                "conflict_check_error": conflict_check["error"],
-            }
-            if request.on_conflict == "suggest_next_slot":
-                response["suggested_slots"] = await run_blocking(
-                    _suggest_next_available_slots,
-                    service=service,
-                    calendar_id=request.calendar_id,
-                    requested_start=start,
-                    requested_end=end,
-                )
-            return response
+            await _raise_time_slot_conflict(
+                service,
+                calendar_id=request.calendar_id,
+                start=start,
+                end=end,
+                conflict_check=conflict_check,
+                suggest_next_slot=request.on_conflict == "suggest_next_slot",
+                message="Time slot is not available: it overlaps existing events. No event was created.",
+            )
+        warnings = _conflict_warnings(conflict_check)
         LOGGER.debug(f"Creating event '{request.summary}'.")
         try:
             event = await execute_google_request(
@@ -774,7 +820,10 @@ def register_tools(server: FastMCP) -> None:
                     conferenceDataVersion=1 if body.get("conferenceData") else 0,
                 )
             )
-            return {"success": True, "event": event, "deduplicated": False}
+            created: dict[str, Any] = {"success": True, "event": event, "deduplicated": False}
+            if warnings:
+                created["warnings"] = warnings
+            return created
         except HttpError as exc:
             if deterministic_event_id is None or getattr(exc.resp, "status", None) != 409:
                 raise
@@ -894,21 +943,18 @@ def register_tools(server: FastMCP) -> None:
                 exclude_event_id=request.event_id,
             )
             if conflict_check["has_conflicts"]:
-                response: dict[str, Any] = {
-                    "error": "New time slot is not available - there are overlapping events",
-                    "status": "CONFLICT",
-                    "conflicting_events": conflict_check["conflicts"],
-                    "conflict_check_error": conflict_check["error"],
-                }
-                if request.on_conflict == "suggest_next_slot":
-                    response["suggested_slots"] = await run_blocking(
-                        _suggest_next_available_slots,
-                        service=service,
-                        calendar_id=request.calendar_id,
-                        requested_start=patch_data["start"]["dateTime"],
-                        requested_end=patch_data["end"]["dateTime"],
-                    )
-                return response
+                await _raise_time_slot_conflict(
+                    service,
+                    calendar_id=request.calendar_id,
+                    start=patch_data["start"]["dateTime"],
+                    end=patch_data["end"]["dateTime"],
+                    conflict_check=conflict_check,
+                    suggest_next_slot=request.on_conflict == "suggest_next_slot",
+                    message="New time slot is not available: it overlaps existing events. The event was not changed.",
+                )
+            warnings = _conflict_warnings(conflict_check)
+        else:
+            warnings = []
         LOGGER.debug(f"Updating event {request.event_id}.")
         event = await execute_google_request(
             service.events()
@@ -921,7 +967,10 @@ def register_tools(server: FastMCP) -> None:
                 conferenceDataVersion=1 if patch_data.get("conferenceData") else 0,
             )
         )
-        return {"success": True, "event": event}
+        updated: dict[str, Any] = {"success": True, "event": event}
+        if warnings:
+            updated["warnings"] = warnings
+        return updated
 
     @server.tool(name="respond_to_event")
     async def respond_to_event(

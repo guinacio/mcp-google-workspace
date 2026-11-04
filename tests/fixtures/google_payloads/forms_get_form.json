@@ -1,0 +1,65 @@
+{
+  "formId": "1FAIpQLSdExampleFormIdentifier0123456789abcdefghijklmnop",
+  "info": {
+    "title": "Customer feedback",
+    "description": "Two minutes, five questions.",
+    "documentTitle": "Customer feedback (June 2026)"
+  },
+  "settings": {
+    "quizSettings": {"isQuiz": false},
+    "emailCollectionType": "DO_NOT_COLLECT"
+  },
+  "revisionId": "00000014",
+  "responderUri": "https://docs.google.com/forms/d/e/1FAIpQLSdExampleFormIdentifier0123456789abcdefghijklmnop/viewform",
+  "items": [
+    {
+      "itemId": "2f1a8c3e",
+      "title": "How satisfied are you with the product?",
+      "questionItem": {
+        "question": {
+          "questionId": "7b2d9e10",
+          "required": true,
+          "scaleQuestion": {"low": 1, "high": 5, "lowLabel": "Not at all", "highLabel": "Very"}
+        }
+      }
+    },
+    {
+      "itemId": "5c0e2b4a",
+      "title": "Would you recommend it to a colleague?",
+      "questionItem": {
+        "question": {
+          "questionId": "1e4f6a8c",
+          "required": true,
+          "choiceQuestion": {"type": "RADIO", "options": [{"value": "Yes"}, {"value": "No"}, {"value": "Not sure"}], "shuffle": false}
+        }
+      }
+    },
+    {
+      "itemId": "9d3b7f1e",
+      "title": "Which features do you use?",
+      "questionItem": {
+        "question": {
+          "questionId": "3a5c7e9b",
+          "choiceQuestion": {"type": "CHECKBOX", "options": [{"value": "Reports"}, {"value": "Alerts"}, {"value": "Exports"}, {"isOther": true}]}
+        }
+      }
+    },
+    {
+      "itemId": "4e8a2c6d",
+      "title": "Anything else?",
+      "description": "Optional.",
+      "questionItem": {
+        "question": {"questionId": "8c1e3a5f", "textQuestion": {"paragraph": true}}
+      }
+    },
+    {
+      "itemId": "6b0d4f2a",
+      "title": "Thank you",
+      "textItem": {}
+    }
+  ],
+  "linkedSheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "publishSettings": {
+    "publishState": {"isPublished": true, "isAcceptingResponses": true}
+  }
+}

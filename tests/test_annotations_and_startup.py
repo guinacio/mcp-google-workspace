@@ -96,7 +96,18 @@ def test_workspace_tools_include_safety_annotations() -> None:
     assert tools["docs_batch_update_document"].task_config.mode == "optional"
 
 
-def test_workspace_tools_have_closed_documented_output_schemas() -> None:
+# Hand-written schemas for server-owned shapes (the upload picker's staging
+# area, the Apps dashboard state, diagnostics) stay closed: nothing in them
+# comes from Google. Every inferred or registered schema is open, so a field
+# the provider adds or reshapes never fails client-side validation (1.0.1).
+_CLOSED_OUTPUT_SCHEMAS = {
+    "files_delete_file", "files_file_manager", "files_list_files", "files_list_files_page",
+    "files_read_file", "files_store_files", "get_mcp_apps_diagnostics",
+    "apps_get_state", "apps_next_range", "apps_patch_state", "apps_prev_range", "apps_set_state", "apps_today",
+}
+
+
+def test_workspace_tools_have_documented_open_output_schemas() -> None:
     tools = anyio.run(_list_server_tools, workspace_mcp)
     failures: list[str] = []
     for tool in tools.values():
@@ -107,8 +118,9 @@ def test_workspace_tools_have_closed_documented_output_schemas() -> None:
         Draft202012Validator.check_schema(schema)
         if schema.get("type") != "object":
             failures.append(f"{tool.name}:not-object")
-        if schema.get("additionalProperties") is not False:
-            failures.append(f"{tool.name}:open-object")
+        expected_open = tool.name not in _CLOSED_OUTPUT_SCHEMAS
+        if schema.get("additionalProperties") is not expected_open:
+            failures.append(f"{tool.name}:{'closed' if expected_open else 'open'}-object")
         properties = schema.get("properties")
         if not isinstance(properties, dict) or not properties:
             failures.append(f"{tool.name}:no-properties")

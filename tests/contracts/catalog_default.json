@@ -337,7 +337,7 @@
       },
       "name": "calendar_add_event_attachment",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "event": {
@@ -493,7 +493,7 @@
       },
       "name": "calendar_check_time_availability",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "calendars": {
@@ -950,24 +950,12 @@
       },
       "name": "calendar_create_event",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
-          "conflict_check_error": {
-            "description": "Response field: conflict check error."
-          },
-          "conflicting_events": {
-            "description": "Response field: conflicting events.",
-            "items": {},
-            "type": "array"
-          },
           "deduplicated": {
             "description": "Response field: deduplicated.",
             "type": "boolean"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
           },
           "event": {
             "description": "Response field: event.",
@@ -1032,16 +1020,12 @@
             ],
             "type": "object"
           },
-          "status": {
-            "description": "Machine-readable operation status.",
-            "type": "string"
-          },
           "success": {
             "description": "Response field: success.",
             "type": "boolean"
           },
-          "suggested_slots": {
-            "description": "Response field: suggested slots."
+          "warnings": {
+            "description": "Response field: warnings."
           }
         },
         "required": [],
@@ -1114,7 +1098,7 @@
       },
       "name": "calendar_delete_event",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "event_id": {
@@ -1295,7 +1279,7 @@
       },
       "name": "calendar_download_event_attachment",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "bytes_written": {
@@ -1508,7 +1492,7 @@
       },
       "name": "calendar_find_common_free_slots",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "calendar_errors": {
@@ -1520,9 +1504,7 @@
             "type": "integer"
           },
           "participants": {
-            "description": "Response field: participants.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: participants."
           },
           "resource": {
             "additionalProperties": false,
@@ -1650,7 +1632,7 @@
       },
       "name": "calendar_get_calendar_context",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "current_date": {
@@ -1810,7 +1792,7 @@
       },
       "name": "calendar_get_calendar_digest",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -1933,7 +1915,7 @@
       },
       "name": "calendar_list_calendars",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -2129,7 +2111,7 @@
       },
       "name": "calendar_read_events",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -2308,7 +2290,7 @@
       },
       "name": "calendar_remove_event_attachment",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "event": {
@@ -2471,7 +2453,7 @@
       },
       "name": "calendar_respond_to_event",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "event": {
@@ -2661,7 +2643,7 @@
       },
       "name": "calendar_search_events",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -3159,21 +3141,9 @@
       },
       "name": "calendar_update_event",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
-          "conflict_check_error": {
-            "description": "Response field: conflict check error."
-          },
-          "conflicting_events": {
-            "description": "Response field: conflicting events.",
-            "items": {},
-            "type": "array"
-          },
-          "error": {
-            "description": "Response field: error.",
-            "type": "string"
-          },
           "event": {
             "description": "Response field: event.",
             "type": "object"
@@ -3237,16 +3207,12 @@
             ],
             "type": "object"
           },
-          "status": {
-            "description": "Machine-readable operation status.",
-            "type": "string"
-          },
           "success": {
             "description": "Response field: success.",
             "type": "boolean"
           },
-          "suggested_slots": {
-            "description": "Response field: suggested slots."
+          "warnings": {
+            "description": "Response field: warnings."
           }
         },
         "required": [],
@@ -3291,7 +3257,7 @@
       },
       "name": "commit_workspace_action",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -3420,7 +3386,7 @@
       },
       "name": "connect_google_workspace",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "action": {
@@ -3431,7 +3397,7 @@
             ]
           },
           "after_consent": {
-            "additionalProperties": false,
+            "additionalProperties": true,
             "description": "Response field: after consent.",
             "properties": {
               "arguments": {
@@ -3454,9 +3420,7 @@
             ]
           },
           "capabilities": {
-            "description": "Response field: capabilities.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: capabilities."
           },
           "connected": {
             "description": "Response field: connected.",
@@ -3466,14 +3430,10 @@
             "description": "Response field: expires at."
           },
           "granted_capabilities": {
-            "description": "Response field: granted capabilities.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: granted capabilities."
           },
           "granted_scopes": {
-            "description": "Response field: granted scopes.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: granted scopes."
           },
           "mode": {
             "description": "Response field: mode.",
@@ -3485,9 +3445,7 @@
             "type": "array"
           },
           "requested_capabilities": {
-            "description": "Response field: requested capabilities.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: requested capabilities."
           },
           "requested_scopes": {
             "description": "Response field: requested scopes.",
@@ -3598,7 +3556,7 @@
       },
       "name": "disconnect_google_workspace",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "action": {
@@ -3727,7 +3685,7 @@
       },
       "name": "docs_append_document_text",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "documentId": {
@@ -3877,7 +3835,7 @@
       },
       "name": "docs_batch_update_document",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "documentId": {
@@ -4001,7 +3959,7 @@
       },
       "name": "docs_create_document",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "body": {
@@ -4035,13 +3993,10 @@
             "type": "object"
           },
           "namedRanges": {
-            "description": "Response field: namedRanges.",
-            "type": "object"
+            "description": "Response field: namedRanges."
           },
           "namedStyles": {
-            "description": "Response field: namedStyles.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: namedStyles."
           },
           "resource": {
             "additionalProperties": false,
@@ -4113,9 +4068,7 @@
             "description": "Response field: suggestionsViewMode."
           },
           "tabs": {
-            "description": "Response field: tabs.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: tabs."
           },
           "title": {
             "description": "Response field: title.",
@@ -4194,7 +4147,7 @@
       },
       "name": "docs_get_document",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "body": {
@@ -4228,13 +4181,10 @@
             "type": "object"
           },
           "namedRanges": {
-            "description": "Response field: namedRanges.",
-            "type": "object"
+            "description": "Response field: namedRanges."
           },
           "namedStyles": {
-            "description": "Response field: namedStyles.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: namedStyles."
           },
           "resource": {
             "additionalProperties": false,
@@ -4306,9 +4256,7 @@
             "description": "Response field: suggestionsViewMode."
           },
           "tabs": {
-            "description": "Response field: tabs.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: tabs."
           },
           "title": {
             "description": "Response field: title.",
@@ -4381,7 +4329,7 @@
       },
       "name": "docs_replace_document_text",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "documentId": {
@@ -4561,7 +4509,7 @@
       },
       "name": "drive_copy_file",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file": {
@@ -4762,7 +4710,7 @@
       },
       "name": "drive_create_file_metadata",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file": {
@@ -4908,7 +4856,7 @@
       },
       "name": "drive_create_folder",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file": {
@@ -5156,7 +5104,7 @@
       },
       "name": "drive_create_permission",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file_id": {
@@ -5306,7 +5254,7 @@
       },
       "name": "drive_delete_file",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file": {
@@ -5451,7 +5399,7 @@
       },
       "name": "drive_delete_permission",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file_id": {
@@ -5600,7 +5548,7 @@
       },
       "name": "drive_download_file",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "bytes_written": {
@@ -5747,7 +5695,7 @@
       },
       "name": "drive_export_google_file",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "bytes_written": {
@@ -5889,7 +5837,7 @@
       },
       "name": "drive_get_drive",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "drive": {
@@ -6013,7 +5961,7 @@
       },
       "name": "drive_get_file",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -6138,16 +6086,14 @@
       },
       "name": "drive_get_file_content_capabilities",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "can_download": {
             "description": "Response field: can download."
           },
           "export_links": {
-            "description": "Response field: export links.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: export links."
           },
           "file_id": {
             "description": "Response field: file id.",
@@ -6298,7 +6244,7 @@
       },
       "name": "drive_get_permission",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "permission": {
@@ -6415,7 +6361,7 @@
       },
       "name": "drive_hide_drive",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "drive": {
@@ -6567,7 +6513,7 @@
       },
       "name": "drive_list_drives",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -6575,9 +6521,7 @@
             "type": "integer"
           },
           "drives": {
-            "description": "Response field: drives.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: drives."
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -6794,7 +6738,7 @@
       },
       "name": "drive_list_files",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -6967,7 +6911,7 @@
       },
       "name": "drive_list_permissions",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -6991,9 +6935,7 @@
             ]
           },
           "permissions": {
-            "description": "Response field: permissions.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: permissions."
           },
           "resource": {
             "additionalProperties": false,
@@ -7147,7 +7089,7 @@
       },
       "name": "drive_move_file",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file": {
@@ -7269,7 +7211,7 @@
       },
       "name": "drive_unhide_drive",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "drive": {
@@ -7454,7 +7396,7 @@
       },
       "name": "drive_update_file_content",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file": {
@@ -7672,7 +7614,7 @@
       },
       "name": "drive_update_file_metadata",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file": {
@@ -7867,7 +7809,7 @@
       },
       "name": "drive_update_permission",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "file_id": {
@@ -8087,7 +8029,7 @@
       },
       "name": "drive_upload_file",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "existing_file": {
@@ -8867,7 +8809,7 @@
       },
       "name": "forms_batch_update_form",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "form": {
@@ -9005,7 +8947,7 @@
       },
       "name": "forms_create_form",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "formId": {
@@ -9152,7 +9094,7 @@
       },
       "name": "forms_get_form",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "formId": {
@@ -9311,7 +9253,7 @@
       },
       "name": "forms_get_form_response",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "answers": {
@@ -9488,7 +9430,7 @@
       },
       "name": "forms_list_form_responses",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -9643,7 +9585,7 @@
       },
       "name": "forms_set_form_publish_settings",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "formId": {
@@ -9766,7 +9708,7 @@
       },
       "name": "get_google_connection_status",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "action": {
@@ -10046,7 +9988,7 @@
       },
       "name": "get_workspace_capabilities",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "discovery": {
@@ -10059,7 +10001,7 @@
             "type": "array"
           },
           "file_inputs": {
-            "additionalProperties": false,
+            "additionalProperties": true,
             "description": "Response field: file inputs.",
             "properties": {
               "drive": {
@@ -10084,7 +10026,7 @@
             "type": "array"
           },
           "optional_namespaces": {
-            "additionalProperties": false,
+            "additionalProperties": true,
             "description": "Response field: optional namespaces.",
             "properties": {
               "apps": {
@@ -10256,7 +10198,7 @@
       },
       "name": "gmail_apply_labels",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message": {
@@ -10382,7 +10324,7 @@
       },
       "name": "gmail_batch_delete",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "mode": {
@@ -10542,7 +10484,7 @@
       },
       "name": "gmail_batch_modify",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "processed": {
@@ -10697,7 +10639,7 @@
       },
       "name": "gmail_check_mail_updates",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -11042,7 +10984,7 @@
       },
       "name": "gmail_create_draft",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "draft": {
@@ -11317,7 +11259,7 @@
       },
       "name": "gmail_create_filter",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "filter": {
@@ -11431,13 +11373,11 @@
       },
       "name": "gmail_create_forwarding_address",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "forwarding_address": {
-            "description": "Response field: forwarding address.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: forwarding address."
           },
           "resource": {
             "additionalProperties": false,
@@ -11607,7 +11547,7 @@
       },
       "name": "gmail_create_label",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "label": {
@@ -11720,7 +11660,7 @@
       },
       "name": "gmail_delete_draft",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "draft_id": {
@@ -11845,7 +11785,7 @@
       },
       "name": "gmail_delete_email",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message_id": {
@@ -11970,7 +11910,7 @@
       },
       "name": "gmail_delete_filter",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "filter_id": {
@@ -12092,7 +12032,7 @@
       },
       "name": "gmail_delete_forwarding_address",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "forwarding_email": {
@@ -12210,7 +12150,7 @@
       },
       "name": "gmail_delete_label",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "label_id": {
@@ -12331,7 +12271,7 @@
       },
       "name": "gmail_delete_thread",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -12464,7 +12404,7 @@
       },
       "name": "gmail_download_attachment",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "bytes_written": {
@@ -12615,7 +12555,7 @@
       },
       "name": "gmail_get_draft",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "draft": {
@@ -12629,9 +12569,7 @@
             ]
           },
           "label_ids": {
-            "description": "Response field: label ids.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: label ids."
           },
           "message_id": {
             "description": "Response field: message id.",
@@ -12758,13 +12696,11 @@
       },
       "name": "gmail_get_forwarding_address",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "forwarding_address": {
-            "description": "Response field: forwarding address.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: forwarding address."
           },
           "resource": {
             "additionalProperties": false,
@@ -12882,7 +12818,7 @@
       },
       "name": "gmail_get_mail_digest",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -13041,7 +12977,7 @@
       },
       "name": "gmail_get_thread",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -13182,7 +13118,7 @@
       },
       "name": "gmail_get_vacation_settings",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -13295,7 +13231,7 @@
       },
       "name": "gmail_list_attachments",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "attachments": {
@@ -13453,7 +13389,7 @@
       },
       "name": "gmail_list_drafts",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -13461,9 +13397,7 @@
             "type": "integer"
           },
           "drafts": {
-            "description": "Response field: drafts.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: drafts."
           },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
@@ -13583,7 +13517,7 @@
       },
       "name": "gmail_list_filters",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -13596,9 +13530,7 @@
             "type": "string"
           },
           "filters": {
-            "description": "Response field: filters.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: filters."
           },
           "has_more": {
             "description": "Whether another page is available.",
@@ -13711,7 +13643,7 @@
       },
       "name": "gmail_list_forwarding_addresses",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -13724,9 +13656,7 @@
             "type": "string"
           },
           "forwarding_addresses": {
-            "description": "Response field: forwarding addresses.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: forwarding addresses."
           },
           "has_more": {
             "description": "Whether another page is available.",
@@ -13838,7 +13768,7 @@
       },
       "name": "gmail_list_labels",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -13855,9 +13785,7 @@
             "type": "boolean"
           },
           "labels": {
-            "description": "Response field: labels.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: labels."
           },
           "next_page_token": {
             "description": "Opaque token for the next page, or null.",
@@ -14019,7 +13947,7 @@
       },
       "name": "gmail_list_threads",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -14163,7 +14091,7 @@
       },
       "name": "gmail_mark_as_not_spam",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message": {
@@ -14284,7 +14212,7 @@
       },
       "name": "gmail_mark_as_read",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message_id": {
@@ -14406,7 +14334,7 @@
       },
       "name": "gmail_mark_as_spam",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message": {
@@ -14527,7 +14455,7 @@
       },
       "name": "gmail_mark_as_unread",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message_id": {
@@ -14683,7 +14611,7 @@
       },
       "name": "gmail_modify_thread",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -14834,7 +14762,7 @@
       },
       "name": "gmail_move_email",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message": {
@@ -14976,7 +14904,7 @@
       },
       "name": "gmail_read_emails",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -15233,16 +15161,14 @@
       },
       "name": "gmail_reply_all_email",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "cc": {
             "description": "Response field: cc."
           },
           "label_ids": {
-            "description": "Response field: label ids.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: label ids."
           },
           "message": {
             "description": "Response field: message.",
@@ -15524,16 +15450,14 @@
       },
       "name": "gmail_reply_email",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "cc": {
             "description": "Response field: cc."
           },
           "label_ids": {
-            "description": "Response field: label ids.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: label ids."
           },
           "message": {
             "description": "Response field: message.",
@@ -15790,7 +15714,7 @@
       },
       "name": "gmail_search_emails",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -15935,13 +15859,11 @@
       },
       "name": "gmail_send_draft",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "label_ids": {
-            "description": "Response field: label ids.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: label ids."
           },
           "message_id": {
             "description": "Response field: message id.",
@@ -16237,13 +16159,11 @@
       },
       "name": "gmail_send_email",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "label_ids": {
-            "description": "Response field: label ids.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: label ids."
           },
           "message": {
             "description": "Response field: message.",
@@ -16374,7 +16294,7 @@
       },
       "name": "gmail_trash_thread",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -16491,7 +16411,7 @@
       },
       "name": "gmail_untrash_email",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "message": {
@@ -16612,7 +16532,7 @@
       },
       "name": "gmail_untrash_thread",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -16921,7 +16841,7 @@
       },
       "name": "gmail_update_draft",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "draft": {
@@ -17108,7 +17028,7 @@
       },
       "name": "gmail_update_label",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "label": {
@@ -17293,7 +17213,7 @@
       },
       "name": "gmail_update_vacation_settings",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -17502,7 +17422,7 @@
       },
       "name": "people_create_contact",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "addresses": {
@@ -17680,7 +17600,7 @@
       },
       "name": "people_create_contact_group",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "clientData": {
@@ -17703,9 +17623,7 @@
             "description": "Response field: memberCount."
           },
           "memberResourceNames": {
-            "description": "Response field: memberResourceNames.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: memberResourceNames."
           },
           "metadata": {
             "description": "Response field: metadata.",
@@ -17822,7 +17740,7 @@
       },
       "name": "people_delete_contact",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "person_name": {
@@ -17965,7 +17883,7 @@
       },
       "name": "people_get_contact",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "addresses": {
@@ -18160,7 +18078,7 @@
       },
       "name": "people_list_contact_groups",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "contactGroups": {
@@ -18361,7 +18279,7 @@
       },
       "name": "people_list_contacts",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "connections": {
@@ -18548,18 +18466,14 @@
       },
       "name": "people_modify_contact_group_members",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "canNotRemoveLastContactGroupResourceNames": {
-            "description": "Response field: canNotRemoveLastContactGroupResourceNames.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: canNotRemoveLastContactGroupResourceNames."
           },
           "notFoundResourceNames": {
-            "description": "Response field: notFoundResourceNames.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: notFoundResourceNames."
           },
           "resource": {
             "additionalProperties": false,
@@ -18698,7 +18612,7 @@
       },
       "name": "people_search_contacts",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -18971,7 +18885,7 @@
       },
       "name": "people_update_contact",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "addresses": {
@@ -19152,7 +19066,7 @@
       },
       "name": "prepare_workspace_action",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "commit_token": {
@@ -19274,7 +19188,7 @@
       },
       "name": "refresh_workspace_catalog",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "connected": {
@@ -19403,7 +19317,7 @@
       },
       "name": "resolve_workspace_resource",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "next_actions": {
@@ -19483,7 +19397,7 @@
       },
       "name": "search_workspace",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -19579,9 +19493,7 @@
             "type": "object"
           },
           "services": {
-            "description": "Response field: services.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: services."
           },
           "status": {
             "description": "Machine-readable operation status.",
@@ -19676,7 +19588,7 @@
       },
       "name": "sheets_append_sheet_values",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -19855,7 +19767,7 @@
       },
       "name": "sheets_batch_get_sheet_values",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -19992,7 +19904,7 @@
       },
       "name": "sheets_batch_update_spreadsheet",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "replies": {
@@ -20132,25 +20044,20 @@
       },
       "name": "sheets_create_spreadsheet",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "dataSourceSchedules": {
-            "description": "Response field: dataSourceSchedules.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: dataSourceSchedules."
           },
           "dataSources": {
-            "description": "Response field: dataSources.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: dataSources."
           },
           "developerMetadata": {
             "description": "Response field: developerMetadata."
           },
           "namedRanges": {
-            "description": "Response field: namedRanges.",
-            "type": "object"
+            "description": "Response field: namedRanges."
           },
           "properties": {
             "description": "Response field: properties.",
@@ -20332,7 +20239,7 @@
       },
       "name": "sheets_get_sheet_values",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "majorDimension": {
@@ -20481,25 +20388,20 @@
       },
       "name": "sheets_get_spreadsheet",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "dataSourceSchedules": {
-            "description": "Response field: dataSourceSchedules.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: dataSourceSchedules."
           },
           "dataSources": {
-            "description": "Response field: dataSources.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: dataSources."
           },
           "developerMetadata": {
             "description": "Response field: developerMetadata."
           },
           "namedRanges": {
-            "description": "Response field: namedRanges.",
-            "type": "object"
+            "description": "Response field: namedRanges."
           },
           "properties": {
             "description": "Response field: properties.",
@@ -20662,7 +20564,7 @@
       },
       "name": "sheets_update_sheet_values",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -20807,7 +20709,7 @@
       },
       "name": "slides_batch_update_presentation",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "presentationId": {
@@ -20931,7 +20833,7 @@
       },
       "name": "slides_create_presentation",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "layouts": {
@@ -21084,7 +20986,7 @@
       },
       "name": "slides_get_presentation",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "layouts": {
@@ -21244,23 +21146,17 @@
       },
       "name": "slides_get_slide_page",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "layoutProperties": {
-            "description": "Response field: layoutProperties.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: layoutProperties."
           },
           "masterProperties": {
-            "description": "Response field: masterProperties.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: masterProperties."
           },
           "notesProperties": {
-            "description": "Response field: notesProperties.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: notesProperties."
           },
           "objectId": {
             "description": "Response field: objectId.",
@@ -21270,14 +21166,10 @@
             ]
           },
           "pageElements": {
-            "description": "Response field: pageElements.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: pageElements."
           },
           "pageProperties": {
-            "description": "Response field: pageProperties.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: pageProperties."
           },
           "pageType": {
             "description": "Response field: pageType."
@@ -21349,9 +21241,7 @@
             ]
           },
           "slideProperties": {
-            "description": "Response field: slideProperties.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: slideProperties."
           }
         },
         "required": [],
@@ -21428,7 +21318,7 @@
       },
       "name": "slides_get_slide_thumbnail",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "contentUrl": {
@@ -21569,7 +21459,7 @@
       },
       "name": "slides_replace_text_in_presentation",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "presentationId": {
@@ -21712,7 +21602,7 @@
       },
       "name": "tasks_complete_task",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "assignmentInfo": {
@@ -21757,9 +21647,7 @@
             "type": "array"
           },
           "notes": {
-            "description": "Response field: notes.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: notes."
           },
           "parent": {
             "description": "Response field: parent."
@@ -21963,7 +21851,7 @@
       },
       "name": "tasks_create_task",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "assignmentInfo": {
@@ -22008,9 +21896,7 @@
             "type": "array"
           },
           "notes": {
-            "description": "Response field: notes.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: notes."
           },
           "parent": {
             "description": "Response field: parent."
@@ -22146,7 +22032,7 @@
       },
       "name": "tasks_create_tasklist",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "etag": {
@@ -22294,7 +22180,7 @@
       },
       "name": "tasks_delete_task",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "resource": {
@@ -22426,7 +22312,7 @@
       },
       "name": "tasks_get_task",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "completed_at": {
@@ -22600,7 +22486,7 @@
       },
       "name": "tasks_get_tasklist",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "id": {
@@ -22736,7 +22622,7 @@
       },
       "name": "tasks_list_tasklists",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "count": {
@@ -22971,7 +22857,7 @@
       },
       "name": "tasks_list_tasks",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "account_timezone": {
@@ -23157,7 +23043,7 @@
       },
       "name": "tasks_move_task",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "assignmentInfo": {
@@ -23202,9 +23088,7 @@
             "type": "array"
           },
           "notes": {
-            "description": "Response field: notes.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: notes."
           },
           "parent": {
             "description": "Response field: parent."
@@ -23348,7 +23232,7 @@
       },
       "name": "tasks_tasks_digest",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "overdue": {
@@ -23570,7 +23454,7 @@
       },
       "name": "tasks_update_task",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Documented structured response returned by this MCP tool.",
         "properties": {
           "assignmentInfo": {
@@ -23615,9 +23499,7 @@
             "type": "array"
           },
           "notes": {
-            "description": "Response field: notes.",
-            "items": {},
-            "type": "array"
+            "description": "Response field: notes."
           },
           "parent": {
             "description": "Response field: parent."

@@ -44,10 +44,13 @@ async def gather_in_order(
             for index, item in enumerate(items):
                 task_group.start_soon(run, index, item)
     except BaseExceptionGroup as group:
-        # Surface a lone worker failure as itself so the error middleware can
-        # keep mapping exception types (reauth, recoverable) to envelopes.
-        if len(group.exceptions) == 1 and not isinstance(
-            group.exceptions[0], BaseExceptionGroup
+        # Surface a worker failure as itself so the error middleware can keep
+        # mapping exception types (reauth, rate limit, recoverable) to
+        # envelopes. Concurrent fetches tend to fail together (several 429s
+        # at once); a group of them would be classified as an internal error.
+        if all(
+            isinstance(exc, Exception) and not isinstance(exc, BaseExceptionGroup)
+            for exc in group.exceptions
         ):
             raise group.exceptions[0]
         raise

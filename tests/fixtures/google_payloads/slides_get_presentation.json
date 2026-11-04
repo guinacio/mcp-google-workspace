@@ -1,0 +1,85 @@
+{
+  "presentationId": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq",
+  "pageSize": {"width": {"magnitude": 9144000, "unit": "EMU"}, "height": {"magnitude": 5143500, "unit": "EMU"}},
+  "slides": [
+    {
+      "objectId": "p",
+      "pageElements": [
+        {
+          "objectId": "i0",
+          "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}},
+          "transform": {"scaleX": 2.8402, "scaleY": 0.5833, "translateX": 311700, "translateY": 744575, "unit": "EMU"},
+          "shape": {
+            "shapeType": "TEXT_BOX",
+            "text": {
+              "textElements": [
+                {"endIndex": 16, "paragraphMarker": {"style": {"direction": "LEFT_TO_RIGHT"}}},
+                {"endIndex": 16, "textRun": {"content": "Quarterly review\n", "style": {"fontSize": {"magnitude": 48, "unit": "PT"}, "bold": true}}}
+              ]
+            },
+            "shapeProperties": {"shapeBackgroundFill": {"propertyState": "NOT_RENDERED"}, "outline": {"propertyState": "NOT_RENDERED"}, "shadow": {"propertyState": "NOT_RENDERED"}, "autofit": {"autofitType": "NONE"}},
+            "placeholder": {"type": "CENTERED_TITLE", "parentObjectId": "p1_i0"}
+          }
+        },
+        {
+          "objectId": "i1",
+          "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}},
+          "transform": {"scaleX": 2.8402, "scaleY": 0.3333, "translateX": 311700, "translateY": 2300000, "unit": "EMU"},
+          "shape": {
+            "shapeType": "TEXT_BOX",
+            "text": {
+              "textElements": [
+                {"endIndex": 10, "paragraphMarker": {"style": {"direction": "LEFT_TO_RIGHT"}}},
+                {"endIndex": 10, "textRun": {"content": "June 2026\n", "style": {}}}
+              ]
+            },
+            "shapeProperties": {"shapeBackgroundFill": {"propertyState": "NOT_RENDERED"}, "outline": {"propertyState": "NOT_RENDERED"}, "shadow": {"propertyState": "NOT_RENDERED"}},
+            "placeholder": {"type": "SUBTITLE", "parentObjectId": "p1_i1"}
+          }
+        }
+      ],
+      "slideProperties": {
+        "layoutObjectId": "p1",
+        "masterObjectId": "simple-light-2",
+        "notesPage": {
+          "objectId": "p:notes",
+          "pageType": "NOTES",
+          "pageElements": [
+            {"objectId": "p:notes:slide", "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}}, "transform": {"scaleX": 1.1, "scaleY": 0.6, "translateX": 380000, "translateY": 680000, "unit": "EMU"}, "shape": {"shapeType": "TEXT_BOX", "placeholder": {"type": "SLIDE_IMAGE", "parentObjectId": "n:slide"}}},
+            {"objectId": "p:notes:text", "size": {"width": {"magnitude": 3000000, "unit": "EMU"}, "height": {"magnitude": 3000000, "unit": "EMU"}}, "transform": {"scaleX": 1.8, "scaleY": 1.3, "translateX": 680000, "translateY": 4650000, "unit": "EMU"}, "shape": {"shapeType": "TEXT_BOX", "text": {"textElements": [{"endIndex": 20, "paragraphMarker": {"style": {}}}, {"endIndex": 20, "textRun": {"content": "Open with the win.\n", "style": {}}}]}, "placeholder": {"type": "BODY", "parentObjectId": "n:text"}}}
+          ],
+          "pageProperties": {"pageBackgroundFill": {"propertyState": "INHERIT"}},
+          "notesProperties": {"speakerNotesObjectId": "p:notes:text"}
+        }
+      },
+      "pageProperties": {"pageBackgroundFill": {"propertyState": "INHERIT"}}
+    }
+  ],
+  "title": "Quarterly review",
+  "masters": [
+    {
+      "objectId": "simple-light-2",
+      "pageType": "MASTER",
+      "pageElements": [],
+      "pageProperties": {"pageBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 1, "green": 1, "blue": 1}}, "alpha": 1}}, "colorScheme": {"colors": [{"type": "DARK1", "color": {}}, {"type": "LIGHT1", "color": {"red": 1, "green": 1, "blue": 1}}]}},
+      "masterProperties": {"displayName": "Simple Light"}
+    }
+  ],
+  "layouts": [
+    {
+      "objectId": "p1",
+      "pageType": "LAYOUT",
+      "pageElements": [],
+      "pageProperties": {"pageBackgroundFill": {"propertyState": "INHERIT"}},
+      "layoutProperties": {"masterObjectId": "simple-light-2", "name": "TITLE", "displayName": "Title slide"}
+    }
+  ],
+  "locale": "en",
+  "revisionId": "_8hYOO4nrhdhV2A",
+  "notesMaster": {
+    "objectId": "n",
+    "pageType": "NOTES_MASTER",
+    "pageElements": [],
+    "pageProperties": {"pageBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 1, "green": 1, "blue": 1}}, "alpha": 1}}}
+  }
+}

@@ -16,6 +16,7 @@ from starlette.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import __version__
 from .apps import apps_mcp, mount_apps_dashboard
 from .common.component_annotations import apply_default_tool_annotations
 from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
@@ -78,6 +79,8 @@ from .tasks import tasks_mcp
 
 workspace_mcp = FastMCP(
     name="google-workspace-mcp",
+    # serverInfo.version on the wire is this package's release, not FastMCP's.
+    version=__version__,
     instructions=(
         "Unified Google Workspace MCP server with Gmail, Calendar, Drive, Docs, Sheets, "
         "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations."

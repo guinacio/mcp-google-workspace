@@ -22,7 +22,7 @@
       "protocolVersion": "2025-11-25",
       "serverInfo": {
         "name": "google-workspace-mcp",
-        "version": "4.1.6"
+        "version": "<SERVER_VERSION>"
       }
     },
     "status_code": 200
@@ -111,7 +111,7 @@
         },
         "name": "get_workspace_capabilities",
         "outputSchema": {
-          "additionalProperties": false,
+          "additionalProperties": true,
           "description": "Structured response returned by this MCP tool.",
           "properties": {
             "discovery": {
@@ -124,7 +124,7 @@
               "type": "array"
             },
             "file_inputs": {
-              "additionalProperties": false,
+              "additionalProperties": true,
               "description": "Response field: file inputs.",
               "properties": {
                 "drive": {
@@ -149,7 +149,7 @@
               "type": "array"
             },
             "optional_namespaces": {
-              "additionalProperties": false,
+              "additionalProperties": true,
               "description": "Response field: optional namespaces.",
               "properties": {
                 "apps": {

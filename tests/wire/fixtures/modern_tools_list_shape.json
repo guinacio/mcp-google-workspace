@@ -109,7 +109,7 @@
       },
       "name": "get_workspace_capabilities",
       "outputSchema": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "description": "Structured response returned by this MCP tool.",
         "properties": {
           "discovery": {
@@ -122,7 +122,7 @@
             "type": "array"
           },
           "file_inputs": {
-            "additionalProperties": false,
+            "additionalProperties": true,
             "description": "Response field: file inputs.",
             "properties": {
               "drive": {
@@ -147,7 +147,7 @@
             "type": "array"
           },
           "optional_namespaces": {
-            "additionalProperties": false,
+            "additionalProperties": true,
             "description": "Response field: optional namespaces.",
             "properties": {
               "apps": {
