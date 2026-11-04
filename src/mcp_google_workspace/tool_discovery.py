@@ -11,20 +11,26 @@ from .auth import is_apps_dashboard_enabled
 
 _CONFIGURED_SERVERS: set[int] = set()
 
+# The front page a client sees before its first search: connection and consent
+# tools, the cross-service search, and the main read entry point of each core
+# service. The upload picker and the diagnostics tool stay reachable through
+# search_tools/call_tool; they are plumbing, not a first step.
 _ALWAYS_VISIBLE = [
     "connect_google_workspace",
     "get_google_connection_status",
     "disconnect_google_workspace",
     "refresh_workspace_catalog",
     "get_workspace_capabilities",
-    "get_mcp_apps_diagnostics",
     "search_workspace",
     "resolve_workspace_resource",
     "prepare_workspace_action",
     "commit_workspace_action",
-    "files_file_manager",
-    "files_list_files",
-    "files_list_files_page",
+    "gmail_search_emails",
+    "gmail_get_mail_digest",
+    "calendar_search_events",
+    "calendar_get_calendar_digest",
+    "drive_list_files",
+    "tasks_tasks_digest",
 ]
 
 

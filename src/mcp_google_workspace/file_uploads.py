@@ -31,7 +31,7 @@ from .auth.identity import current_principal
 from .common.crypto import FernetKeyring
 from .common.errors import RecoverableToolError
 from .common.fastmcp_compat import local_tools
-from .common.component_annotations import apply_structural_input_limits
+from .common.component_annotations import flow_description, simplify_optional_properties
 from .common.prefab_render_cache import install_prefab_resource_cache
 from .runtime import get_token_storage_settings
 
@@ -682,7 +682,10 @@ class WorkspaceFileUpload(FileUpload):
 
         @self.tool(model=True)
         def delete_file(name: str, ctx: Context) -> dict[str, Any]:
-            """Delete one uploaded file of the current user by its upload ID."""
+            """Permanently delete one of the user's Workspace Files uploads from the MCP server's temporary upload
+            area, freeing quota before it expires; Google Drive is not touched (for Drive files use
+            drive_delete_file). Returns status 'deleted', or 'not_found' when the ID is unknown or already expired,
+            with the name. The user must upload the file again to use it afterwards."""
             store, scope = self._scoped_store()
             deleted = store.delete(scope, name)
             return {"status": "deleted" if deleted else "not_found", "name": name}
@@ -690,13 +693,16 @@ class WorkspaceFileUpload(FileUpload):
         @self.tool(model=True)
         def list_files_page(
             ctx: Context,
-            limit: Annotated[int, "Maximum number of uploaded files to return (1-100)."] = 50,
+            limit: Annotated[int, "Uploads per page, 1 to 100."] = 50,
             cursor: Annotated[
                 str | None,
-                "Opaque continuation cursor returned by the previous page.",
+                "The next_cursor from the previous files_list_files_page response; omit for the first page.",
             ] = None,
         ) -> UploadedFilePage:
-            """Page through uploaded files without returning an unbounded catalog."""
+            """Page through the user's Workspace Files uploads (staged on the MCP server, not Google Drive), newest
+            first. Use it instead of files_list_files when more than 100 uploads may exist or a smaller page is enough.
+            Returns files (upload_id, display_name, type, size, expires_at, ...), count and next_cursor, which is null
+            once a page comes back short."""
             if not 1 <= limit <= 100:
                 raise ValueError("limit must be between 1 and 100")
             try:
@@ -718,6 +724,11 @@ class WorkspaceFileUpload(FileUpload):
             component = cast(Any, raw_component)
             component.title = f"Files {component.name.replace('_', ' ').title()}"
             component.tags.update({"files", "upload", "mcp-app"})
+            if component.name in _INHERITED_FILE_TOOL_DESCRIPTIONS:
+                # These tools come from FastMCP's FileUpload; their generic
+                # docstrings do not say what this server's uploads are for.
+                component.description = _INHERITED_FILE_TOOL_DESCRIPTIONS[component.name]
+            component.description = flow_description(component.description)
             read_only = component.name not in {"store_files", "delete_file"}
             component.annotations = ToolAnnotations(
                 read_only_hint=read_only,
@@ -742,9 +753,9 @@ class WorkspaceFileUpload(FileUpload):
             if "name" in properties:
                 properties["name"].setdefault(
                     "description",
-                    "Opaque upload ID (upl_...) returned by the picker or files_list_files.",
+                    "Upload ID (upl_...): the upload_id (also name) of a file listed by files_list_files.",
                 )
-            apply_structural_input_limits(component.parameters)
+            simplify_optional_properties(component.parameters)
             if component.name in {"list_files", "store_files"}:
                 component.output_schema = {
                     "type": "object",
@@ -947,6 +958,42 @@ _PICKER_OUTPUT_SCHEMA: dict[str, Any] = {
     },
     "required": ["$prefab", "view", "state"],
     "additionalProperties": False,
+}
+
+
+# Published descriptions of the tools inherited from FastMCP's FileUpload.
+_INHERITED_FILE_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "file_manager": (
+        "Open the Workspace Files picker so the user can upload files from their device to this MCP server's "
+        "temporary upload area (not Google Drive), at most 25 MiB per file, kept for one hour by default. Use it when a tool needs a file the user has and the "
+        "server cannot read local paths; after the user uploads, get the upl_... IDs from files_list_files and pass "
+        "one as uploaded_file to a tool such as gmail_send_email (attachments), drive_upload_file or "
+        "drive_update_file_content. Returns the picker UI for an MCP Apps host, whose state.stored lists uploads "
+        "already staged."
+    ),
+    "list_files": (
+        "List the user's Workspace Files uploads from files_file_manager, staged on the MCP server rather than in "
+        "Google Drive (for Drive use drive_list_files), newest first and at most 100 (for more use "
+        "files_list_files_page). Returns each file's upload_id (also in name), display_name, type, size, "
+        "uploaded_at, expires_at and remaining_quota_bytes. Pass upload_id as uploaded_file to drive_upload_file, "
+        "drive_update_file_content, the attachments of gmail_send_email, gmail_reply_email, gmail_reply_all_email, "
+        "gmail_create_draft and gmail_update_draft, or gemini_edit_image, gemini_describe_video and "
+        "gemini_analyze_audio."
+    ),
+    "read_file": (
+        "Read the content of one Workspace Files upload by its upload ID, to check what the user uploaded. Files "
+        "stored with a text/ MIME type come back whole as UTF-8 text; any other file returns only a base64 preview "
+        "of its first 150 bytes, so pass binary files to the consuming tool (e.g. drive_upload_file) instead. "
+        "Returns name (the original filename), type, size, and content or content_base64 with encoding and "
+        "truncated."
+    ),
+    "store_files": (
+        "Upload callback that the Workspace Files picker UI calls with the files the user selected; it is app-only "
+        "(hidden from the model), and models should open files_file_manager instead. Each file is base64-decoded, "
+        "limited to 25 MiB, checked against its declared type and stored for one hour by default within the "
+        "user's upload quota. Returns the user's stored uploads, newest first, with upload_id, display_name, type, "
+        "size and expires_at."
+    ),
 }
 
 

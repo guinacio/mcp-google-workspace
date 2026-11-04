@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from functools import wraps
 import inspect
+import re
 from typing import Any, Protocol, cast
 
 from fastmcp import FastMCP
@@ -14,7 +15,8 @@ from mcp.types import ToolAnnotations
 from .fastmcp_compat import local_tools
 from .confirmation import install_confirmation_guard
 from .execution import install_execution_guard
-from .output_schemas import infer_tool_output_schema
+from .output_schemas import RAW_PASSTHROUGH_TOOLS, infer_tool_output_schema
+from .parameter_descriptions import shared_parameter_description
 
 
 class _ToolComponent(Protocol):
@@ -205,30 +207,6 @@ _EXTRA_TOOL_TAGS = {
 
 _TAG_STOPWORDS = {"a", "an", "as", "by", "for", "from", "in", "of", "the", "to"}
 
-_ACTION_OBJECT_FALLBACKS = {
-    "calendar": "event",
-    "chat": "message",
-    "drive": "file",
-    "gmail": "email",
-    "keep": "note",
-    "tasks": "task",
-}
-
-_SPECIAL_TOOL_DESCRIPTIONS = {
-    "get_calendar_context": "Get the user's calendar timezone and current local/UTC date-time context.",
-    "mark_as_not_spam": "Mark the Gmail message as not spam and optionally return it to the inbox.",
-    "mark_as_read": "Mark the Gmail message as read.",
-    "mark_as_spam": "Mark the Gmail message as spam.",
-    "mark_as_unread": "Mark the Gmail message as unread.",
-    "next_range": "Move the workspace dashboard or calendar view to the next date range.",
-    "patch_state": "Update the workspace dashboard session state with a partial patch.",
-    "prev_range": "Move the workspace dashboard or calendar view to the previous date range.",
-    "today": "Move the workspace dashboard or calendar view back to today.",
-    "untrash_email": "Restore the Gmail message from trash.",
-    "untrash_thread": "Restore the Gmail thread from trash.",
-}
-
-
 def _server_namespace(server: FastMCP) -> str | None:
     prefix, _, _ = server.name.partition("-")
     if prefix in _NAMESPACES:
@@ -352,264 +330,6 @@ def _merge_annotations(existing: ToolAnnotations | Mapping[str, Any] | None, *, 
     )
 
 
-def _namespace_display(namespace: str | None) -> str:
-    if namespace is None:
-        return "Google Workspace"
-    return _NAMESPACE_TITLES.get(namespace, f"Google {namespace.capitalize()}")
-
-
-def _tool_subject(base_name: str) -> str:
-    words = base_name.split("_")
-    if not words:
-        return "resource"
-    verb = words[0]
-    remainder = " ".join(words[1:]).strip()
-    if verb in {"get", "list", "search", "read", "download", "export", "summarize", "check", "find"} and remainder:
-        return remainder
-    if verb in {"create", "update", "delete", "move", "copy", "share", "unshare", "mark", "set", "patch", "respond", "reschedule", "cancel", "upload", "send", "add", "remove", "replace", "modify", "complete", "archive", "unarchive", "trash", "untrash", "reply", "hide", "unhide", "post", "append", "generate"} and remainder:
-        return remainder
-    return base_name.replace("_", " ")
-
-
-_COMMON_PARAMETER_DESCRIPTIONS = {
-    "query": "Search or filter expression used to narrow the results.",
-    "page_size": "Maximum number of items to return in this page of results.",
-    "page_token": "Pagination token from a previous response used to fetch the next page.",  # nosec B105 -- schema documentation, not a credential
-    "max_results": "Maximum number of results to return.",
-    "fields": "Partial-response field selector controlling which fields are returned.",
-    "order_by": "Sort order to apply to the returned results.",
-    "format": "Response format to request from the Google API.",
-    "metadata_headers": "Header names to include when using a metadata response format.",
-    "include_spam_trash": "Whether to include spam and trash items in the result set.",
-    "include_items_from_all_drives": "Whether to include items from shared drives as well as My Drive.",
-    "supports_all_drives": "Whether the request should support shared drives.",
-    "drive_id": "Shared Drive ID to scope the request to.",
-    "corpora": "Google Drive corpora scope for the search, such as user or drive.",
-    "spaces": "Google Drive space to search, such as drive or appDataFolder.",
-    "subject": "Email subject line.",
-    "text_body": "Plain-text message body.",
-    "html_body": "HTML message body.",
-    "attachments": "Attachment payloads to include with the request.",
-    "confirm_send": "Whether the user must confirm before the email is sent.",
-    "summary_mode": "Whether to omit full message bodies and return a compact summary instead.",
-    "calendar_id": "Google Calendar identifier for the target calendar.",
-    "event_id": "Google Calendar event identifier.",
-    "message_id": "Gmail message identifier.",
-    "thread_id": "Gmail thread identifier.",
-    "label_id": "Gmail label identifier.",
-    "label_ids": "List of Gmail label identifiers.",
-    "add_label_ids": "Label identifiers to add.",
-    "remove_label_ids": "Label identifiers to remove.",
-    "person_fields": "Person fields to request from the People API.",
-    "sort_order": "Sort order for the returned results.",
-    "sources": "People API sources to include.",
-    "include_grid_data": "Whether to include full grid cell data in the spreadsheet response.",
-    "ranges": "A1 notation ranges to limit the response to.",
-    "range_preset": "Convenience preset for the requested time range.",
-    "time_min": "Inclusive RFC3339 start time for the requested window.",
-    "time_max": "Exclusive RFC3339 end time for the requested window.",
-    "single_events": "Whether recurring events should be expanded into individual instances.",
-    "response_status": "Response status to apply, such as accepted or declined.",
-    "send_updates": "Guest notification mode to use for this calendar mutation.",
-    "idempotency_key": "Stable key used to make retries safe without duplicating work.",
-    "file_id": "Google Drive file ID.",
-    "task_id": "Google Tasks task ID.",
-    "tasklist_id": "Google Tasks task list ID.",
-    "spreadsheet_id": "Google Sheets spreadsheet file ID.",
-    "presentation_id": "Google Slides presentation file ID.",
-    "page_object_id": "Object ID of the slide/page within the presentation.",
-    "form_id": "Google Forms form file ID.",
-    "document_id": "Google Docs document file ID.",
-    "permission_id": "Google Drive permission ID scoped to the file.",
-    "draft_id": "Gmail draft ID.",
-    "filter_id": "Gmail filter ID.",
-    "attachment_id": "Gmail attachment ID, as returned alongside the message's attachment metadata.",
-    "response_id": "Google Forms form response ID.",
-    "parent_ids": "Google Drive parent folder IDs.",
-    "message_ids": "Gmail message IDs.",
-    "event_ids": "Google Calendar event IDs, all from the same calendar.",
-    "color_id": "Google Calendar color ID (1-11); omit to use the calendar's default color.",
-    "time_zone": "IANA timezone name to use for this request; defaults to the account's resolved timezone when omitted.",
-    "title": "Display title for the resource being created or updated.",
-    "requests": "Ordered list of raw batchUpdate request objects to apply atomically.",
-    "contains_text": "Literal text to search for and replace.",
-    "replace_text": "Replacement text.",
-    "range_a1": "A1 notation range, for example 'Sheet1!A1:C10'.",
-    "value_input_option": "How input values are parsed: RAW for literal values, or USER_ENTERED to parse as if typed (applying formulas and formatting).",
-    "value_render_option": "How cell values are rendered in the response, such as FORMATTED_VALUE, UNFORMATTED_VALUE, or FORMULA.",
-    "major_dimension": "Whether ranges and values are interpreted as ROWS or COLUMNS.",
-    "date_time_render_option": "How date/time cell values are rendered in the response: SERIAL_NUMBER or FORMATTED_STRING.",
-    "background_color": "Hex color (e.g. '#ffffff') for the label's background.",
-    "text_color": "Hex color (e.g. '#000000') for the label's text.",
-    "label_list_visibility": "Visibility of the label in the label list: labelShow, labelShowIfUnread, or labelHide.",
-    "message_list_visibility": "Visibility of labeled messages in the message list: show or hide.",
-    "role": "Drive permission role, such as reader, commenter, writer, fileOrganizer, organizer, or owner.",
-    "allow_file_discovery": "Whether an 'anyone'/'domain' link permission is discoverable via search.",
-    "expiration_time": "RFC3339 timestamp when the permission expires.",
-    "transfer_ownership": "Must be true when the role assigns or transfers file ownership.",
-    "person_name": "Contact resource name, e.g. 'people/c123'.",
-    "given_name": "Contact's given (first) name.",
-    "family_name": "Contact's family (last) name.",
-    "display_name": "Contact's display name.",
-    "email_addresses": "Contact email addresses.",
-    "phone_numbers": "Contact phone numbers.",
-    "organization": "Contact's organization/company name.",
-    "biography": "Contact biography/about text.",
-    "group_name": "Contact group resource name, e.g. 'contactGroups/myContacts'.",
-    "group_fields": "Comma-separated People API contact group fields to include in the response.",
-    "read_mask": "Comma-separated People API person fields to include in search results.",
-    "resource_names_to_add": "Contact resource names to add as group members.",
-    "resource_names_to_remove": "Contact resource names to remove as group members.",
-    "etag": "Entity tag for optimistic concurrency; required when the API detects a conflicting update.",
-}
-
-
-def _infer_tool_description(name: str, namespace_hint: str | None = None) -> str:
-    namespace, base_name = _split_tool_name(name, namespace_hint=namespace_hint)
-    if base_name in _SPECIAL_TOOL_DESCRIPTIONS:
-        return _SPECIAL_TOOL_DESCRIPTIONS[base_name]
-
-    namespace_display = _namespace_display(namespace)
-    subject = _tool_subject(base_name)
-    default_object = _ACTION_OBJECT_FALLBACKS.get(namespace, "resource") if namespace is not None else "resource"
-
-    if base_name.startswith("list_"):
-        return f"List {subject} from {namespace_display}."
-    if base_name.startswith("get_"):
-        return f"Get {subject} from {namespace_display}."
-    if base_name.startswith("search_"):
-        return f"Search {namespace_display} for {subject}."
-    if base_name.startswith("read_"):
-        return f"Read {subject} from {namespace_display}."
-    if base_name.startswith("find_"):
-        return f"Find available {subject} in {namespace_display}."
-    if base_name.startswith("create_"):
-        return f"Create {subject} in {namespace_display}."
-    if base_name.startswith("update_"):
-        return f"Update {subject} in {namespace_display}."
-    if base_name.startswith("patch_"):
-        return f"Apply a partial update to {subject} in {namespace_display}."
-    if base_name.startswith("delete_"):
-        return f"Delete {subject} from {namespace_display}."  # nosec B608 -- prose, not SQL
-    if base_name.startswith("batch_delete"):
-        return f"Delete multiple {default_object}s in {namespace_display}."
-    if base_name.startswith("batch_modify"):
-        return f"Apply bulk updates to multiple {default_object}s in {namespace_display}."
-    if base_name.startswith("add_"):
-        return f"Add {subject} in {namespace_display}."
-    if base_name.startswith("append_"):
-        return f"Append {subject} in {namespace_display}."
-    if base_name.startswith("apply_"):
-        return f"Apply {subject} in {namespace_display}."
-    if base_name.startswith("move_"):
-        return f"Move {subject} in {namespace_display}."
-    if base_name.startswith("copy_"):
-        return f"Copy {subject} in {namespace_display}."
-    if base_name.startswith("upload_"):
-        return f"Upload {subject} to {namespace_display}."
-    if base_name.startswith("download_"):
-        return f"Download {subject} from {namespace_display}."
-    if base_name.startswith("export_"):
-        return f"Export {subject} from {namespace_display}."
-    if base_name.startswith("generate_"):
-        return f"Generate {subject} with {namespace_display}."
-    if base_name.startswith("send_"):
-        return f"Send {subject} with {namespace_display}."
-    if base_name.startswith("mark_as_"):
-        state = base_name.removeprefix("mark_as_").replace("_", " ")
-        return f"Mark the {default_object} as {state} in {namespace_display}."
-    if base_name.startswith("mark_"):
-        return f"Update the status of {subject} in {namespace_display}."
-    if base_name.startswith("respond_"):
-        return f"Respond to {subject} in {namespace_display}."
-    if base_name.startswith("reply_"):
-        return f"Reply to {subject} in {namespace_display}."
-    if base_name.startswith("remove_"):
-        return f"Remove {subject} from {namespace_display}."
-    if base_name.startswith("reschedule_"):
-        return f"Reschedule {subject} in {namespace_display}."
-    if base_name.startswith("share_"):
-        return f"Share {subject} from {namespace_display}."
-    if base_name.startswith("unshare_"):
-        return f"Remove sharing from {subject} in {namespace_display}."
-    if base_name.startswith("hide_"):
-        return f"Hide {subject} in {namespace_display}."
-    if base_name.startswith("unhide_"):
-        return f"Unhide {subject} in {namespace_display}."
-    if base_name.startswith("trash_"):
-        return f"Move the {subject} to trash in {namespace_display}."
-    if base_name.startswith("untrash_"):
-        return f"Restore the {subject} from trash in {namespace_display}."
-    if base_name.startswith("summarize_"):
-        return f"Summarize {subject} from {namespace_display}."
-    return f"Run the {base_name.replace('_', ' ')} operation in {namespace_display}."
-
-
-def _infer_param_description(
-    tool_name: str,
-    parameter_name: str,
-    schema: Mapping[str, Any],
-    *,
-    namespace_hint: str | None = None,
-) -> str:
-    if parameter_name in _COMMON_PARAMETER_DESCRIPTIONS:
-        return _COMMON_PARAMETER_DESCRIPTIONS[parameter_name]
-    namespace, base_name = _split_tool_name(tool_name, namespace_hint=namespace_hint)
-    if parameter_name.endswith("_id"):
-        target = parameter_name[:-3].replace("_", " ")
-        return f"Identifier for the target {target}."
-    if parameter_name.endswith("_ids"):
-        target = parameter_name[:-4].replace("_", " ")
-        return f"Identifiers for the target {target}."
-    if parameter_name.endswith("_email"):
-        target = parameter_name[:-6].replace("_", " ")
-        return f"Email address for the {target}."
-    if parameter_name.endswith("_emails"):
-        target = parameter_name[:-7].replace("_", " ")
-        return f"Email addresses for the {target}."
-    if parameter_name.endswith("_path"):
-        target = parameter_name[:-5].replace("_", " ")
-        return f"Local filesystem path for the {target}."
-    if parameter_name.endswith("_url"):
-        target = parameter_name[:-4].replace("_", " ")
-        return f"URL for the {target}."
-    if parameter_name.startswith("include_"):
-        target = parameter_name[len("include_"):].replace("_", " ")
-        return f"Whether to include {target} in the response."
-    if parameter_name.startswith("supports_"):
-        target = parameter_name[len("supports_"):].replace("_", " ")
-        return f"Whether the request should support {target}."
-    if parameter_name.startswith("is_"):
-        target = parameter_name[len("is_"):].replace("_", " ")
-        return f"Whether the {base_name.replace('_', ' ')} request should be treated as {target}."
-    if parameter_name.startswith("has_"):
-        target = parameter_name[len("has_"):].replace("_", " ")
-        return f"Whether to require {target}."
-    if parameter_name.startswith("max_"):
-        target = parameter_name[len("max_"):].replace("_", " ")
-        return f"Maximum {target} to include in the result."
-    if parameter_name.startswith("min_"):
-        target = parameter_name[len("min_"):].replace("_", " ")
-        return f"Minimum {target} value to allow."
-    if parameter_name in {"to", "cc", "bcc"}:
-        return f"{parameter_name.upper()} recipient addresses."
-    if parameter_name in {"start", "end"}:
-        return f"RFC3339 {parameter_name} datetime for this operation."
-    if parameter_name == "timezone":
-        return "IANA timezone name to use for the operation."
-    if parameter_name == "mime_type":
-        return "MIME type for the file or content payload."
-    if parameter_name == "name":
-        return f"Display name to use for the target {namespace or 'workspace'} resource."
-    if parameter_name == "description":
-        return "Human-readable description for the target resource."
-    humanized = parameter_name.replace("_", " ")
-    schema_type = schema.get("type")
-    if schema_type == "boolean":
-        return f"Whether to enable {humanized}."
-    if schema_type in {"integer", "number"}:
-        return f"Numeric value for {humanized}."
-    return f"Value for {humanized} used by the {base_name.replace('_', ' ')} operation."
 
 
 def _enrich_parameters_schema(component: Any, *, namespace_hint: str | None) -> None:
@@ -628,12 +348,9 @@ def _enrich_parameters_schema(component: Any, *, namespace_hint: str | None) -> 
         if not isinstance(schema, dict):
             continue
         if not (schema.get("description") or "").strip():
-            schema["description"] = _infer_param_description(
-                component.name,
-                name,
-                schema,
-                namespace_hint=namespace_hint,
-            )
+            shared = shared_parameter_description(name)
+            if shared is not None:
+                schema["description"] = shared
         if signature is None:
             continue
         parameter = signature.parameters.get(name)
@@ -643,29 +360,80 @@ def _enrich_parameters_schema(component: Any, *, namespace_hint: str | None) -> 
             required.add(name)
 
     component.parameters["required"] = sorted(required)
-    apply_structural_input_limits(component.parameters)
+    simplify_optional_properties(component.parameters)
 
 
-def apply_structural_input_limits(schema: Any) -> None:
-    """Publish the same broad anti-abuse limits enforced by middleware."""
+def flow_description(text: str | None) -> str | None:
+    """Publish a docstring's paragraphs as flowing text.
+
+    Docstrings are wrapped for the source file; a client renders the
+    description itself, so line breaks inside a paragraph only cost tokens and
+    break sentences mid-way. Blank-line paragraph breaks and list items stay.
+    """
+    if not text:
+        return text
+    paragraphs = []
+    for paragraph in re.split(r"\n\s*\n", text.strip()):
+        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        flowed: list[str] = []
+        for line in lines:
+            if flowed and not line.startswith(("- ", "* ")):
+                flowed[-1] = f"{flowed[-1]} {line}"
+            else:
+                flowed.append(line)
+        paragraphs.append("\n".join(flowed))
+    return "\n\n".join(paragraphs)
+
+
+def _non_null_branches(schema: Mapping[str, Any]) -> list[Any] | None:
+    branches = schema.get("anyOf")
+    if not isinstance(branches, list):
+        return None
+    nulls = [branch for branch in branches if branch == {"type": "null"}]
+    if len(nulls) != 1:
+        return None
+    return [branch for branch in branches if branch != {"type": "null"}]
+
+
+def simplify_optional_properties(schema: Any) -> None:
+    """Publish optional parameters as their plain type instead of ``T | null``.
+
+    A parameter that is absent from ``required`` and defaults to null is
+    optional already; the generated ``anyOf: [T, {type: null}]`` plus
+    ``default: null`` restates that at the cost of a schema level per
+    parameter. Omitting the parameter keeps meaning "not set". The server
+    still validates arguments against the Python signature, so an explicit
+    null from a client that sends one is accepted as before.
+    """
     if not isinstance(schema, dict):
         return
-    schema_type = schema.get("type")
-    if schema_type == "string":
-        schema.setdefault("maxLength", 1_000_000)
-    elif schema_type == "array":
-        schema.setdefault("maxItems", 10_000)
-    elif schema_type == "object":
-        schema.setdefault("maxProperties", 10_000)
-    for value in schema.get("properties", {}).values():
-        apply_structural_input_limits(value)
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        required = set(schema.get("required", []))
+        for name, child in properties.items():
+            if not isinstance(child, dict) or name in required:
+                continue
+            if "default" in child and child["default"] is not None:
+                continue
+            remaining = _non_null_branches(child)
+            if remaining is None:
+                continue
+            del child["anyOf"]
+            child.pop("default", None)
+            if len(remaining) == 1 and isinstance(remaining[0], dict):
+                for key, value in remaining[0].items():
+                    child.setdefault(key, value)
+            else:
+                child["anyOf"] = remaining
+        for child in properties.values():
+            simplify_optional_properties(child)
     if "items" in schema:
-        apply_structural_input_limits(schema["items"])
+        simplify_optional_properties(schema["items"])
     for keyword in ("anyOf", "oneOf", "allOf"):
         for branch in schema.get(keyword, []):
-            apply_structural_input_limits(branch)
+            simplify_optional_properties(branch)
     for definition in schema.get("$defs", {}).values():
-        apply_structural_input_limits(definition)
+        simplify_optional_properties(definition)
 
 
 def _paginated_result(result: Any) -> Any:
@@ -716,37 +484,21 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
         base_title = _humanize_tool_title(_base_tool_name(tool_component.name), namespace_hint=None)
         if tool_component.title in {None, "", base_title}:
             tool_component.title = derived_title
-        if not (tool_component.description or "").strip():
-            tool_component.description = _infer_tool_description(tool_component.name, namespace_hint=namespace_hint)
+        tool_component.description = flow_description(tool_component.description)
         tool_component.tags.update(_tool_tags(tool_component.name, namespace_hint=namespace_hint))
         _enrich_parameters_schema(tool_component, namespace_hint=namespace_hint)
-        inferred_output_schema = infer_tool_output_schema(
-            tool_component.fn,
-            tool_name=_base_tool_name(tool_component.name, namespace_hint=namespace_hint),
+        namespace, base_name = _split_tool_name(
+            tool_component.name, namespace_hint=namespace_hint
         )
+        canonical_name = f"{namespace}_{base_name}" if namespace is not None else base_name
+        inferred_output_schema = (
+            None
+            if canonical_name in RAW_PASSTHROUGH_TOOLS
+            else infer_tool_output_schema(tool_component.fn, tool_name=base_name)
+        )
+        if canonical_name in RAW_PASSTHROUGH_TOOLS:
+            tool_component.output_schema = None
         if inferred_output_schema is not None:
-            inferred_output_schema["properties"].setdefault(
-                "resource",
-                {
-                    "type": "object",
-                    "description": "Stable cross-tool Workspace resource handle when applicable.",
-                    "additionalProperties": False,
-                    "properties": {
-                        "kind": {"type": "string", "description": "Workspace resource kind."},
-                        "id": {"type": "string", "description": "Provider resource identifier."},
-                        "name": {"type": ["string", "null"], "description": "Human-readable name."},
-                        "mime_type": {"type": ["string", "null"], "description": "MIME type when applicable."},
-                        "uri": {"type": "string", "description": "Stable Workspace resource URI."},
-                        "etag": {"type": ["string", "null"], "description": "Provider entity tag."},
-                        "modified_at": {"type": ["string", "null"], "description": "Last modification time."},
-                        "web_url": {"type": ["string", "null"], "description": "Provider web URL."},
-                    },
-                    "required": ["kind", "id", "uri"],
-                },
-            )
-            _, base_name = _split_tool_name(
-                tool_component.name, namespace_hint=namespace_hint
-            )
             if base_name.startswith(("list_", "search_")):
                 inferred_output_schema["properties"].update(
                     {

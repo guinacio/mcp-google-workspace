@@ -228,6 +228,42 @@ def test_structural_admission_limits_are_enforced() -> None:
         raise AssertionError("Oversized input was accepted")
 
 
+def test_unpublished_structural_limits_still_reject_oversized_calls(monkeypatch) -> None:
+    """2.0.0 stopped publishing maxLength/maxItems/maxProperties; the middleware
+    still rejects an over-limit argument before the tool (or Google) runs."""
+    from fastmcp import Client
+
+    import mcp_google_workspace.auth.google_auth as google_auth
+
+    def no_google(*_args, **_kwargs):
+        raise AssertionError("an over-limit call must not reach Google")
+
+    monkeypatch.setattr(google_auth, "_build_service_now", no_google)
+
+    async def exercise():
+        async with Client(workspace_mcp) as client:
+            listed = {tool.name: tool for tool in await client.list_tools()}
+            query_schema = listed["gmail_search_emails"].input_schema["properties"]["query"]
+            assert "maxLength" not in query_schema
+            outcomes = []
+            for arguments in (
+                {"query": "a" * 1_000_001},
+                {"label_ids": ["INBOX"] * 10_001},
+            ):
+                try:
+                    result = await client.call_tool("gmail_search_emails", arguments, raise_on_error=False)
+                except McpError as exc:
+                    outcomes.append(str(exc))
+                else:
+                    assert result.is_error
+                    outcomes.append(" ".join(getattr(block, "text", "") for block in result.content))
+            return outcomes
+
+    string_outcome, array_outcome = anyio.run(exercise)
+    assert "1,000,000 character limit" in string_outcome
+    assert "10,000 item limit" in array_outcome
+
+
 def test_string_limit_is_raised_only_where_the_tool_declares_it() -> None:
     upload_schema = {
         "type": "object",
@@ -429,7 +465,7 @@ def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:
     assert "gmail_send_email" in names
     assert "drive_list_files" not in names
     assert "gmail_download_attachment" not in names
-    attachment_items = parameters["properties"]["attachments"]["anyOf"][0]["items"]
+    attachment_items = parameters["properties"]["attachments"]["items"]
     assert "file_path" not in attachment_items["properties"]
 
 

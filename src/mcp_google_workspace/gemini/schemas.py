@@ -19,15 +19,24 @@ GeminiCapability = Literal[
 class _OneInputSourceModel(ToolRequestModel):
     input_path: str | None = Field(
         default=None,
-        description="Local filesystem path to the input media file.",
+        description=(
+            "Path of the input file on the machine running the server; rejected over remote HTTP. "
+            "Give exactly one of input_path, drive_file_id or uploaded_file."
+        ),
     )
     drive_file_id: str | None = Field(
         default=None,
-        description="Google Drive file ID for the input media file.",
+        description=(
+            "Drive file ID of the input file; Google Docs, Sheets and Slides files are not supported. "
+            "Give exactly one of input_path, drive_file_id or uploaded_file."
+        ),
     )
     uploaded_file: str | None = Field(
         default=None,
-        description="Filename returned by the Workspace Files MCP App picker.",
+        description=(
+            "Upload handle (upl_...) returned by files_file_manager after the user picks a file. "
+            "Give exactly one of input_path, drive_file_id or uploaded_file."
+        ),
     )
 
     @model_validator(mode="after")
@@ -39,58 +48,64 @@ class _OneInputSourceModel(ToolRequestModel):
 
 
 class GenerateImageRequest(ToolRequestModel):
-    prompt: str = Field(description="Prompt describing the image to generate.")
+    prompt: str = Field(description="Text description of the image to generate: subject, style, composition.")
     aspect_ratio: str | None = Field(
         default=None,
-        description="Optional image aspect ratio such as 1:1, 4:3, 3:4, 16:9, or 9:16.",
+        description="Width-to-height ratio, e.g. 1:1, 4:3, 3:4, 16:9 or 9:16, passed to Gemini unchanged; omit to let the model choose.",
     )
     model: str | None = Field(
         default=None,
-        description="Optional image-generation model override.",
+        description="Gemini image model ID, e.g. gemini-2.5-flash-image; must be an allowed model, omit for the configured default.",
     )
     output_filename: str | None = Field(
         default=None,
-        description="Optional output filename. If no extension is provided, one is inferred from the output MIME type.",
+        description=(
+            "File name to save the image as; a missing extension is added from the image type and an "
+            "existing file is never overwritten. Omit for a generated name."
+        ),
     )
     output_dir: str | None = Field(
         default=None,
-        description="Optional output directory override. Defaults to GEMINI_OUTPUT_DIR.",
+        description="Directory to save the image in, created if missing; omit to use the configured GEMINI_OUTPUT_DIR. Rejected over remote HTTP.",
     )
 
 
 class EditImageRequest(_OneInputSourceModel):
-    prompt: str = Field(description="Prompt describing the requested image edit.")
+    prompt: str = Field(description="Instruction describing the edit to make to the input image.")
     model: str | None = Field(
         default=None,
-        description="Optional image-edit model override.",
+        description="Gemini image model ID, e.g. gemini-2.5-flash-image; must be an allowed model, omit for the configured default.",
     )
     output_filename: str | None = Field(
         default=None,
-        description="Optional output filename. If no extension is provided, one is inferred from the output MIME type.",
+        description=(
+            "File name to save the image as; a missing extension is added from the image type and an "
+            "existing file is never overwritten. Omit for a generated name."
+        ),
     )
     output_dir: str | None = Field(
         default=None,
-        description="Optional output directory override. Defaults to GEMINI_OUTPUT_DIR.",
+        description="Directory to save the image in, created if missing; omit to use the configured GEMINI_OUTPUT_DIR. Rejected over remote HTTP.",
     )
 
 
 class DescribeVideoRequest(_OneInputSourceModel):
     prompt: str | None = Field(
         default=None,
-        description="Optional prompt steering the video description or analysis.",
+        description="Question or instruction about the video; omit for a general description of its events and scenes.",
     )
     model: str | None = Field(
         default=None,
-        description="Optional video-understanding model override.",
+        description="Gemini model ID, e.g. gemini-3-flash-preview; must be an allowed model, omit for the configured default.",
     )
 
 
 class AnalyzeAudioRequest(_OneInputSourceModel):
     prompt: str | None = Field(
         default=None,
-        description="Optional prompt steering the audio analysis.",
+        description="Question or instruction about the audio; omit for a summary of its main content, speakers and notable moments.",
     )
     model: str | None = Field(
         default=None,
-        description="Optional audio-understanding model override.",
+        description="Gemini model ID, e.g. gemini-3-flash-preview; must be an allowed model, omit for the configured default.",
     )

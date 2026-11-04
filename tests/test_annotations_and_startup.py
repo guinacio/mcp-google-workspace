@@ -8,6 +8,7 @@ from jsonschema import Draft202012Validator
 
 import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.apps.server import apps_mcp
+from mcp_google_workspace.common.output_schemas import RAW_PASSTHROUGH_TOOLS
 from mcp_google_workspace.server import workspace_mcp
 
 _PLACEHOLDER_PATTERNS = [
@@ -112,6 +113,11 @@ def test_workspace_tools_have_documented_open_output_schemas() -> None:
     failures: list[str] = []
     for tool in tools.values():
         schema = tool.output_schema
+        if tool.name in RAW_PASSTHROUGH_TOOLS:
+            # Google payloads returned unchanged publish no schema (2.0.0).
+            if schema is not None:
+                failures.append(f"{tool.name}:raw-passthrough-publishes-schema")
+            continue
         if not isinstance(schema, dict):
             failures.append(f"{tool.name}:missing")
             continue
@@ -126,9 +132,15 @@ def test_workspace_tools_have_documented_open_output_schemas() -> None:
             failures.append(f"{tool.name}:no-properties")
             continue
         for field_name, field_schema in properties.items():
-            if not isinstance(field_schema, dict) or not field_schema.get("description"):
-                failures.append(f"{tool.name}:{field_name}:no-description")
+            description = field_schema.get("description", "") if isinstance(field_schema, dict) else ""
+            if description.startswith("Response field:"):
+                failures.append(f"{tool.name}:{field_name}:filler-description")
     assert failures == []
+
+
+def test_raw_passthrough_list_names_real_tools() -> None:
+    tools = anyio.run(_list_server_tools, workspace_mcp)
+    assert RAW_PASSTHROUGH_TOOLS <= set(tools)
 
 
 def test_gmail_attachment_inputs_publish_the_complete_closed_schema() -> None:
@@ -143,10 +155,9 @@ def test_gmail_attachment_inputs_publish_the_complete_closed_schema() -> None:
     ):
         parameters = tools[tool_name].parameters
         Draft202012Validator.check_schema(parameters)
-        attachment_schema = parameters["properties"]["attachments"]
-        array_schema = next(
-            branch for branch in attachment_schema["anyOf"] if branch.get("type") == "array"
-        )
+        array_schema = parameters["properties"]["attachments"]
+        assert array_schema["type"] == "array"
+        assert "attachments" not in parameters["required"]
         item_schema = array_schema["items"]
 
         assert item_schema["additionalProperties"] is False
@@ -191,23 +202,26 @@ def test_gmail_attachment_inputs_publish_the_complete_closed_schema() -> None:
     )
 
 
-def test_workspace_input_schemas_are_recursively_bounded_documented_and_reviewed() -> None:
+def test_workspace_input_schemas_are_closed_documented_and_unbounded_by_default() -> None:
+    """Objects are closed unless reviewed, nested fields are documented, and the
+    generic anti-abuse limits are enforced by middleware without being published
+    (tests/test_production_features.py pins the enforcement)."""
     tools = anyio.run(_list_server_tools, workspace_mcp)
     # These are intentional Google-defined polymorphic request maps or the generic
     # encrypted prepare/commit argument envelope. Every other object must be closed.
     reviewed_open_objects = {
         "prepare_workspace_action.arguments",
-        "calendar_create_event.conference_data.anyOf[0]",
-        "calendar_create_event.reminders.anyOf[0]",
-        "calendar_update_event.conference_data.anyOf[0]",
-        "calendar_update_event.reminders.anyOf[0]",
-        "drive_create_file_metadata.app_properties.anyOf[0]",
-        "drive_create_file_metadata.properties.anyOf[0]",
-        "drive_update_file_metadata.app_properties.anyOf[0]",
-        "drive_update_file_metadata.properties.anyOf[0]",
+        "calendar_create_event.conference_data",
+        "calendar_create_event.reminders",
+        "calendar_update_event.conference_data",
+        "calendar_update_event.reminders",
+        "drive_create_file_metadata.app_properties",
+        "drive_create_file_metadata.properties",
+        "drive_update_file_metadata.app_properties",
+        "drive_update_file_metadata.properties",
         "sheets_batch_update_spreadsheet.requests[]",
         "docs_batch_update_document.requests[]",
-        "docs_batch_update_document.write_control.anyOf[0]",
+        "docs_batch_update_document.write_control",
         "forms_batch_update_form.requests[]",
         "forms_set_form_publish_settings.publish_settings",
         "slides_batch_update_presentation.requests[]",
@@ -219,20 +233,19 @@ def test_workspace_input_schemas_are_recursively_bounded_documented_and_reviewed
         if not isinstance(schema, dict):
             return
         schema_type = schema.get("type")
+        if schema.get("maxLength") == 1_000_000:
+            failures.append(f"{path}:published-default-maxLength")
+        if schema.get("maxItems") == 10_000:
+            failures.append(f"{path}:published-default-maxItems")
+        if schema.get("maxProperties") == 10_000:
+            failures.append(f"{path}:published-default-maxProperties")
         if schema_type == "object" or "additionalProperties" in schema:
             if schema.get("additionalProperties") is not False:
                 found_open.add(path)
-            if schema.get("additionalProperties") is not False:
-                assert schema.get("maxProperties") == 10_000
             for name, child in schema.get("properties", {}).items():
                 if not isinstance(child, dict) or not child.get("description"):
                     failures.append(f"{path}.{name}:missing-description")
                 walk(child, f"{path}.{name}")
-        if schema_type == "array":
-            if "maxItems" not in schema:
-                failures.append(f"{path}:unbounded-array")
-        if schema_type == "string" and "maxLength" not in schema:
-            failures.append(f"{path}:unbounded-string")
         if "items" in schema:
             walk(schema["items"], f"{path}[]")
         for keyword in ("anyOf", "oneOf", "allOf"):
@@ -245,6 +258,27 @@ def test_workspace_input_schemas_are_recursively_bounded_documented_and_reviewed
 
     assert found_open == reviewed_open_objects
     assert failures == []
+
+
+def test_optional_parameters_publish_their_plain_type() -> None:
+    """``T | None = None`` is published as ``T`` and left out of ``required``."""
+    tools = anyio.run(_list_server_tools, workspace_mcp)
+    nullable_optional: list[str] = []
+    for tool in tools.values():
+        parameters = tool.parameters or {}
+        required = set(parameters.get("required", []))
+        for name, schema in parameters.get("properties", {}).items():
+            branches = schema.get("anyOf", [])
+            if name not in required and {"type": "null"} in branches and schema.get("default") is None:
+                nullable_optional.append(f"{tool.name}.{name}")
+    assert nullable_optional == []
+
+    cc = tools["gmail_send_email"].parameters["properties"]["cc"]
+    assert cc["type"] == "array" and cc["items"]["type"] == "string"
+    assert "default" not in cc
+    # Non-null defaults stay published.
+    search = tools["gmail_search_emails"].parameters["properties"]
+    assert search["max_results"]["default"] == 25
 
 
 def test_no_tool_parameter_descriptions_match_auto_generated_placeholders() -> None:

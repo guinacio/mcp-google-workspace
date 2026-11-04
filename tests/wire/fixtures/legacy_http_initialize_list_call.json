@@ -101,10 +101,9 @@
           "openWorldHint": true,
           "readOnlyHint": true
         },
-        "description": "Describe available namespaces, consent capabilities, and file-transfer choices.",
+        "description": "Describe what this server offers without calling Google: enabled tool namespaces, which optional integrations are on, the capability names connect_google_workspace accepts, and how to pass files to tools. For the user's actual grants use get_google_connection_status instead. Returns enabled_namespaces, optional_namespaces, oauth_capabilities, file_inputs and discovery.",
         "inputSchema": {
           "additionalProperties": false,
-          "maxProperties": 10000,
           "properties": {},
           "required": [],
           "type": "object"
@@ -112,31 +111,24 @@
         "name": "get_workspace_capabilities",
         "outputSchema": {
           "additionalProperties": true,
-          "description": "Structured response returned by this MCP tool.",
           "properties": {
             "discovery": {
-              "description": "Response field: discovery.",
               "type": "string"
             },
             "enabled_namespaces": {
-              "description": "Response field: enabled namespaces.",
               "items": {},
               "type": "array"
             },
             "file_inputs": {
               "additionalProperties": true,
-              "description": "Response field: file inputs.",
               "properties": {
                 "drive": {
-                  "description": "Response field: drive.",
                   "type": "string"
                 },
                 "local": {
-                  "description": "Response field: local.",
                   "type": "string"
                 },
                 "remote": {
-                  "description": "Response field: remote.",
                   "type": "string"
                 }
               },
@@ -144,95 +136,29 @@
               "type": "object"
             },
             "oauth_capabilities": {
-              "description": "Response field: oauth capabilities.",
               "items": {},
               "type": "array"
             },
             "optional_namespaces": {
               "additionalProperties": true,
-              "description": "Response field: optional namespaces.",
               "properties": {
                 "apps": {
-                  "description": "Response field: apps.",
                   "type": "boolean"
                 },
                 "chat": {
-                  "description": "Response field: chat.",
                   "type": "boolean"
                 },
                 "gemini": {
-                  "description": "Response field: gemini.",
                   "type": "boolean"
                 },
                 "keep": {
-                  "description": "Response field: keep.",
                   "type": "boolean"
                 },
                 "meet": {
-                  "description": "Response field: meet.",
                   "type": "boolean"
                 }
               },
               "required": [],
-              "type": "object"
-            },
-            "resource": {
-              "additionalProperties": false,
-              "description": "Stable cross-tool Workspace resource handle when applicable.",
-              "properties": {
-                "etag": {
-                  "description": "Provider entity tag.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "id": {
-                  "description": "Provider resource identifier.",
-                  "type": "string"
-                },
-                "kind": {
-                  "description": "Workspace resource kind.",
-                  "type": "string"
-                },
-                "mime_type": {
-                  "description": "MIME type when applicable.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "modified_at": {
-                  "description": "Last modification time.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "name": {
-                  "description": "Human-readable name.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "uri": {
-                  "description": "Stable Workspace resource URI.",
-                  "type": "string"
-                },
-                "web_url": {
-                  "description": "Provider web URL.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "kind",
-                "id",
-                "uri"
-              ],
               "type": "object"
             },
             "status": {
@@ -241,7 +167,6 @@
             }
           },
           "required": [],
-          "title": "Get Workspace Capabilities response",
           "type": "object"
         },
         "title": "Get Workspace Capabilities"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
 
@@ -42,7 +42,7 @@ def _label_payload(
 def register(server: FastMCP) -> None:
     @server.tool(name="list_labels")
     async def list_labels(ctx: Context) -> dict[str, Any]:
-        """List all Gmail labels available in the mailbox."""
+        """List every label in the mailbox: system labels (INBOX, SENT, DRAFT, SPAM, TRASH, UNREAD, STARRED, IMPORTANT, CATEGORY_*) and the user's own. Use it to turn a label name into the ID that the label parameters of the other Gmail tools require. Returns labels (Gmail label resources with id, name and type 'system' or 'user') and count."""
         service = gmail_service()
         LOGGER.debug("Listing Gmail labels.")
         result = await execute_google_request(service.users().labels().list(userId="me"))
@@ -51,14 +51,17 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="create_label")
     async def create_label(
-        name: str,
+        name: Annotated[
+            str,
+            "Label name as shown in Gmail, different from every existing label; a '/' nests it under a parent, e.g. 'Clients/Acme'.",
+        ],
         message_list_visibility: Literal["show", "hide"] | None = None,
         label_list_visibility: Literal["labelShow", "labelShowIfUnread", "labelHide"] | None = None,
         background_color: str | None = None,
         text_color: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a user label with optional visibility/color settings."""
+        """Create a user label in Gmail, optionally with its visibility and color. Apply it afterwards with gmail_apply_labels, gmail_batch_modify or gmail_modify_thread using the returned ID, and change it with gmail_update_label. Returns the created Gmail label resource under label, including its id (Label_...)."""
         request = LabelCreateRequest(
             name=name,
             message_list_visibility=message_list_visibility,
@@ -83,14 +86,14 @@ def register(server: FastMCP) -> None:
     @server.tool(name="update_label")
     async def update_label(
         label_id: str,
-        name: str | None = None,
+        name: Annotated[str | None, "New label name; a '/' nests it under a parent label. Omit to keep the current name."] = None,
         message_list_visibility: Literal["show", "hide"] | None = None,
         label_list_visibility: Literal["labelShow", "labelShowIfUnread", "labelHide"] | None = None,
         background_color: str | None = None,
         text_color: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Patch an existing Gmail label's properties."""
+        """Rename a Gmail label or change its visibility or color; fields you omit keep their current values. Use gmail_create_label for a new label and gmail_delete_label to remove one. Returns the updated Gmail label resource under label."""
         request = LabelUpdateRequest(
             label_id=label_id,
             name=name,
@@ -115,10 +118,12 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="delete_label")
     async def delete_label(
-        label_id: str,
+        label_id: Annotated[
+            str, "User label ID (Label_...) from gmail_list_labels; system labels such as INBOX cannot be deleted."
+        ],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a user-created Gmail label."""
+        """Delete a user label after asking the user to confirm; Gmail removes it from every message and thread, but the messages themselves are kept. To take a label off some messages only, use gmail_apply_labels or gmail_batch_modify. Returns status 'ok' with the label_id, or status 'cancelled' if the user declines. Cannot be undone."""
         request = LabelDeleteRequest(label_id=label_id)
         if not await confirm_destructive_action(
             ctx, "delete_label", f"Permanently delete Gmail label {request.label_id}?"
@@ -136,7 +141,7 @@ def register(server: FastMCP) -> None:
         remove_label_ids: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply/remove labels on a single message."""
+        """Add or remove labels on one Gmail message, e.g. star it (add STARRED), mark it important (add IMPORTANT) or tag it with a user label; at least one label list is required. It makes the same Gmail call as gmail_move_email, which reads better for archiving and filing; for many messages use gmail_batch_modify and for a whole conversation gmail_modify_thread. Returns the updated Gmail message (id, threadId, labelIds) under message, with no status field."""
         request = ModifyMessageRequest(
             message_id=message_id,
             add_label_ids=add_label_ids or [],

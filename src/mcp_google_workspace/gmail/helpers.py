@@ -12,6 +12,23 @@ from .schemas import RecipientSet
 _S = TypeVar("_S")
 _T = TypeVar("_T")
 
+# Parameter descriptions shared by the Gmail compose tools.
+TEXT_BODY_DESCRIPTION = "Plain-text body. Pass it together with html_body to send both versions; with neither, the body is empty."
+HTML_BODY_DESCRIPTION = (
+    "HTML body, sent as an alternative to text_body; without text_body the plain-text part is the "
+    "placeholder 'This message contains HTML content.'"
+)
+ATTACHMENTS_DESCRIPTION = (
+    "Files to attach, each with exactly one source: uploaded_file (an upload handle from "
+    "files_file_manager) or file_path (local stdio servers only)."
+)
+REPLY_CONFIRM_SEND_DESCRIPTION = (
+    "When true, the user is asked to approve the reply (shown To, Cc, Subject and the attachment "
+    "count) before anything is sent: declining returns status 'cancelled', and a client that cannot "
+    "ask makes the call fail unsent. Default false sends immediately."
+)
+
+
 # Cap concurrent per-message fetches so a large heartbeat/digest cannot open a
 # burst of connections against the Gmail API.
 DEFAULT_FETCH_CONCURRENCY = 8

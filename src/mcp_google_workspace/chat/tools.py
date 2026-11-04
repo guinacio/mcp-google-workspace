@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -32,6 +32,18 @@ from .schemas import (
 
 LOGGER = logging.getLogger(__name__)
 
+ListSpacesArg = Annotated[ListSpacesRequest, "Paging, filter and direct-message enrichment options for listing the Chat spaces the user belongs to."]
+GetSpaceArg = Annotated[GetSpaceRequest, "Identifies the Chat space to fetch."]
+FindDirectMessageArg = Annotated[FindDirectMessageRequest, "Identifies the other user whose one-to-one direct-message space with the caller to look up."]
+ListMessagesArg = Annotated[ListMessagesRequest, "Space, paging, filter, ordering and author-enrichment options for listing messages in one Chat space."]
+GetMessageArg = Annotated[GetMessageRequest, "Identifies the Chat message to fetch."]
+ListSpaceMembersArg = Annotated[ListSpaceMembersRequest, "Space and paging options for listing the people in one Chat space."]
+CreateMessageArg = Annotated[CreateMessageRequest, "Target space, text and delivery options for a new Chat message."]
+DeleteMessageArg = Annotated[DeleteMessageRequest, "Identifies the Chat message to delete and whether to skip the confirmation prompt."]
+UpdateMessageArg = Annotated[UpdateMessageRequest, "Identifies the Chat message to edit, its new text and the fields to update."]
+PostSimpleMessageArg = Annotated[PostSimpleMessageRequest, "Target space and text for a plain-text Chat message."]
+ReplyToMessageArg = Annotated[ReplyToMessageRequest, "The message to reply to and the reply text."]
+
 
 
 async def _execute_message_request(request: Any) -> dict[str, Any]:
@@ -46,7 +58,7 @@ async def _execute_message_request(request: Any) -> dict[str, Any]:
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_spaces")
-    async def list_spaces(request: ListSpacesRequest, ctx: Context) -> dict[str, Any]:
+    async def list_spaces(request: ListSpacesArg, ctx: Context) -> dict[str, Any]:
         """List Chat spaces, optionally enriching DMs with peer user details."""
         service = chat_service()
         LOGGER.debug("Listing Google Chat spaces.")
@@ -96,7 +108,8 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="get_space")
-    async def get_space(request: GetSpaceRequest, ctx: Context) -> dict[str, Any]:
+    async def get_space(request: GetSpaceArg, ctx: Context) -> dict[str, Any]:
+        """Get one Chat space by resource name, including the other person for a direct message. To find the direct-message space with a specific person use chat_find_direct_message, and to browse spaces use chat_list_spaces. Returns id, display_name, space_type, is_direct_message and peer (name, email and user_id, or null when the space is not a direct message)."""
         service = chat_service()
         name = normalize_space_name(request.space_name)
         LOGGER.debug(f"Getting Chat space {name}.")
@@ -110,7 +123,7 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="find_direct_message")
     async def find_direct_message(
-        request: FindDirectMessageRequest, ctx: Context
+        request: FindDirectMessageArg, ctx: Context
     ) -> dict[str, Any]:
         """Find the direct-message space between you and another user."""
         service = chat_service()
@@ -135,7 +148,8 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="list_messages")
-    async def list_messages(request: ListMessagesRequest, ctx: Context) -> dict[str, Any]:
+    async def list_messages(request: ListMessagesArg, ctx: Context) -> dict[str, Any]:
+        """List messages in one Chat space, oldest first unless order_by says otherwise. To read a single message with its full text use chat_get_message, and to find the space use chat_list_spaces. Returns messages (id, space_id, author, text cut to 500 characters with text_truncated, created_at, thread_id and attachment flags), count, next_page_token and account_timezone."""
         service = chat_service()
         parent = normalize_space_name(request.space_name)
         LOGGER.debug(f"Listing messages for {parent}.")
@@ -164,7 +178,8 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="get_message")
-    async def get_message(request: GetMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def get_message(request: GetMessageArg, ctx: Context) -> dict[str, Any]:
+        """Get one Chat message with its full, untruncated text. Find the message name with chat_list_messages first. Returns id, space_id, author, text, created_at, updated_at, thread_id and has_attachments, attachment_count and has_cards flags."""
         service = chat_service()
         name = normalize_message_name(request.message_name)
         LOGGER.debug(f"Getting Chat message {name}.")
@@ -174,7 +189,7 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="list_space_members")
     async def list_space_members(
-        request: ListSpaceMembersRequest, ctx: Context
+        request: ListSpaceMembersArg, ctx: Context
     ) -> dict[str, Any]:
         """List people in a space with display names and email addresses when available."""
         space_name = normalize_space_name(request.space_name)
@@ -198,7 +213,8 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="create_message")
-    async def create_message(request: CreateMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def create_message(request: CreateMessageArg, ctx: Context) -> dict[str, Any]:
+        """Post a text message to a Chat space, optionally into a thread through thread_key. For a plain post use chat_post_message_simple, and to answer an existing message use chat_reply_to_message. Returns status 'ok' and the created Chat message (name, thread, createTime). The message is visible to the whole space; with notify true the user is asked to confirm first and the call returns status 'cancelled' if declined."""
         service = chat_service()
         parent = normalize_space_name(request.space_name)
         body: dict[str, Any] = {"text": request.text}
@@ -227,7 +243,8 @@ def register_tools(server: FastMCP) -> None:
         return {"status": "ok", "message": created}
 
     @server.tool(name="delete_message")
-    async def delete_message(request: DeleteMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def delete_message(request: DeleteMessageArg, ctx: Context) -> dict[str, Any]:
+        """Delete one Chat message by resource name. Unless force is true the user is asked to confirm first, and the call returns status 'cancelled' if declined. Returns status 'ok' with the message_name. Deleting a message cannot be undone."""
         service = chat_service()
         name = normalize_message_name(request.message_name)
         if not request.force:
@@ -241,7 +258,8 @@ def register_tools(server: FastMCP) -> None:
         return {"status": "ok", "message_name": name}
 
     @server.tool(name="update_message")
-    async def update_message(request: UpdateMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def update_message(request: UpdateMessageArg, ctx: Context) -> dict[str, Any]:
+        """Replace the text of an existing Chat message. Read the current text with chat_get_message first; only the text is sent, so formatting beyond plain text is not edited. Returns status 'ok' and the updated Chat message (name, text, lastUpdateTime). The change is visible to everyone in the space immediately."""
         service = chat_service()
         name = normalize_message_name(request.message_name)
         LOGGER.debug(f"Updating Chat message {name}.")
@@ -255,7 +273,7 @@ def register_tools(server: FastMCP) -> None:
         return {"status": "ok", "message": updated}
 
     @server.tool(name="post_message_simple")
-    async def post_message_simple(request: PostSimpleMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def post_message_simple(request: PostSimpleMessageArg, ctx: Context) -> dict[str, Any]:
         """Post a simple text message to a Chat space."""
         service = chat_service()
         parent = normalize_space_name(request.space_name)
@@ -276,7 +294,7 @@ def register_tools(server: FastMCP) -> None:
         return {"status": "ok", "message": created}
 
     @server.tool(name="reply_to_message")
-    async def reply_to_message(request: ReplyToMessageRequest, ctx: Context) -> dict[str, Any]:
+    async def reply_to_message(request: ReplyToMessageArg, ctx: Context) -> dict[str, Any]:
         """Reply to an existing message, preserving its thread context."""
         service = chat_service()
         message_name = normalize_message_name(request.message_name)

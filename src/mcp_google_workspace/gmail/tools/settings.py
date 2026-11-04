@@ -19,7 +19,7 @@ LOGGER = logging.getLogger(__name__)
 def register(server: FastMCP) -> None:
     @server.tool(name="list_forwarding_addresses")
     async def list_forwarding_addresses(ctx: Context) -> dict[str, Any]:
-        """List forwarding addresses configured in Gmail settings."""
+        """List the addresses this Gmail account may forward mail to, with their verification status. A filter's forward action (gmail_create_filter) needs an address whose status is 'accepted'. Returns forwarding_addresses (forwardingEmail and verificationStatus, 'accepted' or 'pending') and count."""
         service = gmail_service()
         LOGGER.debug("Listing Gmail forwarding addresses.")
         result = await execute_google_request(
@@ -30,10 +30,10 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="get_forwarding_address")
     async def get_forwarding_address(
-        forwarding_email: str,
+        forwarding_email: Annotated[str, "Forwarding address to look up, e.g. 'archive@example.com'; must be a valid email address."],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Get forwarding address status/details for a specific email."""
+        """Look up one forwarding address of this Gmail account and its verification status. Use gmail_list_forwarding_addresses to see all of them at once. Returns forwarding_address with forwardingEmail and verificationStatus ('accepted' or 'pending')."""
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         service = gmail_service()
         LOGGER.debug(f"Fetching forwarding address {request.forwarding_email}.")
@@ -47,10 +47,10 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="create_forwarding_address")
     async def create_forwarding_address(
-        forwarding_email: str,
+        forwarding_email: Annotated[str, "Address to allow forwarding to, e.g. 'archive@example.com'; must be a valid email address."],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a forwarding address entry in Gmail settings."""
+        """Register an address this Gmail account may forward mail to; when Gmail requires ownership verification it emails that address, and the status stays 'pending' until the link is confirmed. Gmail allows this only for service accounts with domain-wide delegation, so an ordinary user sign-in gets a permission error. Returns forwarding_address with forwardingEmail and verificationStatus. Actual forwarding is set up with a gmail_create_filter forward action."""
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         service = gmail_service()
         LOGGER.debug(f"Creating forwarding address {request.forwarding_email}.")
@@ -64,10 +64,10 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="delete_forwarding_address")
     async def delete_forwarding_address(
-        forwarding_email: str,
+        forwarding_email: Annotated[str, "Forwarding address to remove, as listed by gmail_list_forwarding_addresses."],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a forwarding address from Gmail settings."""
+        """Remove one forwarding address from this Gmail account after asking the user to confirm. Like gmail_create_forwarding_address, Gmail allows it only for service accounts with domain-wide delegation. Returns status 'ok' with the forwarding_email, or status 'cancelled' if the user declines."""
         request = ForwardingAddressRequest(forwarding_email=forwarding_email)
         if not await confirm_destructive_action(
             ctx,
@@ -87,7 +87,7 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="get_vacation_settings")
     async def get_vacation_settings(ctx: Context) -> dict[str, Any]:
-        """Read current vacation responder (auto-reply) settings."""
+        """Read the Gmail vacation auto-reply settings. Check them before gmail_update_vacation_settings, which resets the on/off and restriction flags on every call. Returns vacation with enableAutoReply, responseSubject, responseBodyPlainText, responseBodyHtml, restrictToContacts, restrictToDomain, and startTime/endTime in epoch milliseconds."""
         service = gmail_service()
         LOGGER.debug("Getting Gmail vacation settings.")
         settings = await execute_google_request(service.users().settings().getVacation(userId="me"))
@@ -95,14 +95,22 @@ def register(server: FastMCP) -> None:
 
     @server.tool(name="update_vacation_settings")
     async def update_vacation_settings(
-        enable_auto_reply: bool = False,
+        enable_auto_reply: Annotated[
+            bool,
+            "When true, the auto-reply is on (between start_time and end_time when set); false, the default, turns it off.",
+        ] = False,
         response_subject: Annotated[str | None, "Subject line used on the vacation auto-reply."] = None,
         response_body_plain_text: Annotated[
             str | None, "Plain-text body of the vacation auto-reply."
         ] = None,
         response_body_html: Annotated[str | None, "HTML body of the vacation auto-reply."] = None,
-        restrict_to_contacts: bool = False,
-        restrict_to_domain: bool = False,
+        restrict_to_contacts: Annotated[
+            bool, "When true, only senders in the user's contacts get the auto-reply; default false (every sender)."
+        ] = False,
+        restrict_to_domain: Annotated[
+            bool,
+            "When true, only senders in the account's own Google Workspace domain get the auto-reply (Workspace accounts only); default false.",
+        ] = False,
         start_time: Annotated[
             int | None, "Auto-reply start time as epoch milliseconds; omit for immediate/no start bound."
         ] = None,
@@ -111,7 +119,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Update vacation responder settings and scheduling options."""
+        """Turn the Gmail vacation auto-reply on or off and set its subject, body, audience and schedule. enable_auto_reply, restrict_to_contacts and restrict_to_domain are sent on every call and default to false, so a call without enable_auto_reply=true turns the auto-reply off; read the current values with gmail_get_vacation_settings first. Returns the saved settings under vacation. While on, Gmail answers incoming mail automatically."""
         request = UpdateVacationSettingsRequest(
             enable_auto_reply=enable_auto_reply,
             response_subject=response_subject,

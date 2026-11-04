@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -24,7 +24,7 @@ def register(server: FastMCP) -> None:
         remove_label_ids: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply label modifications to multiple messages in a single API call."""
+        """Change labels on many Gmail messages in one call, e.g. archive them (remove INBOX), mark them read (remove UNREAD) or unread, star them or file them under a user label. Use gmail_apply_labels or gmail_move_email for one message and gmail_modify_thread for every message of one conversation; at least one label list is required. Returns status 'ok' and processed, the number of IDs sent, with no per-message result. A call with 10 or more message IDs must first go through prepare_workspace_action and commit_workspace_action."""
         request = BatchModifyRequest(
             message_ids=message_ids,
             add_label_ids=add_label_ids or [],
@@ -56,10 +56,17 @@ def register(server: FastMCP) -> None:
     @server.tool(name="batch_delete")
     async def batch_delete(
         message_ids: list[str],
-        permanent: bool = False,
+        permanent: Annotated[
+            bool,
+            (
+                "When true, delete all the messages for good in one batch instead of moving them to Trash; "
+                "the user is asked to confirm first, and a client that cannot ask makes the call fail without "
+                "deleting. Default false moves each one to Trash, reversible with gmail_untrash_email."
+            ),
+        ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Trash or permanently delete multiple messages."""
+        """Move many Gmail messages to Trash, or with permanent=true delete them all for good. For one message use gmail_delete_email and for a whole conversation gmail_trash_thread or gmail_delete_thread. Returns status 'ok', mode ('trash' or 'permanent') and processed (the number of IDs), or status 'cancelled' if the user declines. Trashing goes one message at a time, so a failure part-way leaves the earlier ones in Trash; permanent deletion asks the user to confirm and cannot be undone."""
         request = BatchDeleteRequest(message_ids=message_ids, permanent=permanent)
         service = gmail_service()
         if request.permanent:

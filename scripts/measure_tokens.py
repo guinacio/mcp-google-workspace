@@ -4,7 +4,9 @@
 Prints, for every message in ``tests/fixtures/gmail_corpus``, the size of the
 first ``gmail_read_emails format=clean`` page under the 1.0.1 cleaner (a
 frozen copy kept in the corpus package) and under the current one, whether
-each was truncated, and the totals.
+each was truncated, and the totals. Then prints the size of the committed tool
+catalogs (``tests/contracts/catalog_*.json``) as a client receives them; their
+ceilings live in ``tests/test_catalog_budget.py``.
 
     uv run python scripts/measure_tokens.py           # print the table
     uv run python scripts/measure_tokens.py --write   # also rewrite metrics.json
@@ -24,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT / "tests") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "tests"))
 
+from contracts.catalog_budget import measure as measure_catalog  # noqa: E402
 from fixtures.gmail_corpus.metrics import METRICS_PATH, compute_metrics, render  # noqa: E402
 
 
@@ -61,6 +64,14 @@ def main() -> int:
         f"{totals['after']['truncated_messages']:>5} {change:>+7.0%}"
     )
     print(f"\ntokens: {metrics['token_estimate']}; trunc columns in the total row count truncated messages")
+
+    print(f"\n{'catalog':<28} {'tools':>5} {'with schema':>11} {'tokens':>8} {'tokens w/o output schemas':>26}")
+    for snapshot in ("catalog_default.json", "catalog_all_optional.json"):
+        size = measure_catalog(snapshot)
+        print(
+            f"{snapshot:<28} {size['tools']:>5} {size['tools_with_output_schema']:>11} "
+            f"{size['tokens']:>8} {size['tokens_without_output_schemas']:>26}"
+        )
 
     rendered = render(metrics)
     if args.write:

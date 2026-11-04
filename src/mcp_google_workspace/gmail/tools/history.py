@@ -24,22 +24,28 @@ def register(server: FastMCP) -> None:
         since_history_id: Annotated[
             str | None,
             (
-                "Gmail historyId to resume from, taken from a prior response's "
-                "next_history_id/continue_from_history_id; omit for a cold start. "
-                "On paginated responses, next_history_id is null until the final page; "
-                "do not overwrite a saved checkpoint with null. Continue with "
-                "next_page_token as page_token and preserve the response's "
-                "continue_from_history_id or continue_from_timestamp."
+                "Gmail historyId to resume from: the next_history_id saved from the previous call, or the "
+                "continue_from_history_id while paging; omit for a cold start. On paginated responses, "
+                "next_history_id is null until the final page; do not overwrite a saved checkpoint with null. "
+                "Continue with next_page_token as page_token and preserve the response's "
+                "continue_from_history_id or continue_from_timestamp. Takes precedence over timestamp."
             ),
         ] = None,
         timestamp: Annotated[
             str | None,
             (
-                "ISO-8601 datetime or epoch-seconds string used as a cold-start alternative to "
-                "since_history_id, returning mail newer than this time when no history cursor is available."
+                "Cold-start alternative to since_history_id: an ISO-8601 datetime with offset, e.g. "
+                "'2026-11-01T08:00:00Z', or epoch seconds; returns mail added after that time. Ignored when "
+                "since_history_id is set; with neither, the last day of mail is returned."
             ),
         ] = None,
-        max_results: int = 100,
+        max_results: Annotated[
+            int,
+            (
+                "Page size (default 100): history records when resuming from since_history_id, messages on "
+                "a cold start. Continue with next_page_token."
+            ),
+        ] = 100,
         page_token: Annotated[
             str | None,
             (
@@ -51,7 +57,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Return every new received or sent message without triage or prioritization."""
+        """Fetch the mail added to the mailbox since a saved checkpoint (since_history_id), or on a cold start since timestamp (the last day without one), received and sent alike with drafts left out, for incremental polling. Use gmail_get_mail_digest for a one-off look at a recent window and gmail_search_emails to search. Returns messages (the digest's fields), new_count, skipped_deleted_message_ids for mail deleted before it could be read, next_page_token, and next_history_id: the checkpoint to save for the next call, null until the last page. Read bodies with gmail_read_emails."""
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         if since_history_id:
