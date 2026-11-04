@@ -219,7 +219,7 @@ Every GitHub release publishes a signed multi-architecture image for
 
 ```bash
 docker pull ghcr.io/guinacio/mcp-google-workspace:latest
-docker pull ghcr.io/guinacio/mcp-google-workspace:1.0.0
+docker pull ghcr.io/guinacio/mcp-google-workspace:1.0.1
 ```
 
 The image runs the authenticated Streamable HTTP entrypoint on port 8000. It
@@ -243,7 +243,7 @@ Release images include signed GitHub build provenance. Verify a tag with:
 
 ```bash
 gh attestation verify \
-  oci://ghcr.io/guinacio/mcp-google-workspace:1.0.0 \
+  oci://ghcr.io/guinacio/mcp-google-workspace:1.0.1 \
   -R guinacio/mcp-google-workspace
 ```
 

@@ -5,7 +5,7 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
-## 1.0.1 — Unreleased
+## 1.0.1 — 2026-11-04
 
 Correctness fixes to the published output schemas and the error envelope. No
 tool or parameter is removed or renamed. One result changes shape: a calendar
