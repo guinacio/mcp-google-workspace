@@ -1,0 +1,445 @@
+{
+  "token_estimate": "ceil(characters / 4) of compact JSON",
+  "cases": [
+    {
+      "name": "calendar_list_calendars",
+      "fixture": "calendar_list_calendars.json",
+      "payload_tokens": 410,
+      "response_tokens": 153,
+      "items": 3,
+      "tokens_per_item": 47
+    },
+    {
+      "name": "calendar_check_time_availability",
+      "fixture": "calendar_freebusy.json",
+      "payload_tokens": 101,
+      "response_tokens": 126,
+      "items": 3,
+      "tokens_per_item": 30
+    },
+    {
+      "name": "calendar_search_events",
+      "fixture": "calendar_events_list.json",
+      "payload_tokens": 853,
+      "response_tokens": 431,
+      "items": 3,
+      "tokens_per_item": 137
+    },
+    {
+      "name": "calendar_read_events",
+      "fixture": "calendar_events_list.json",
+      "payload_tokens": 853,
+      "response_tokens": 799,
+      "items": 3,
+      "tokens_per_item": 257
+    },
+    {
+      "name": "calendar_create_event",
+      "fixture": "calendar_events_list.json",
+      "payload_tokens": 853,
+      "response_tokens": 331
+    },
+    {
+      "name": "docs_get_document",
+      "fixture": "docs_get_document.json",
+      "payload_tokens": 1629,
+      "response_tokens": 414
+    },
+    {
+      "name": "docs_get_document_tabs",
+      "fixture": "docs_get_document_tabs.json",
+      "payload_tokens": 26098,
+      "response_tokens": 8356,
+      "items": 5,
+      "tokens_per_item": 1654
+    },
+    {
+      "name": "docs_create_document",
+      "fixture": "docs_create_document.json",
+      "payload_tokens": 356,
+      "response_tokens": 76
+    },
+    {
+      "name": "docs_append_document_text",
+      "fixture": "docs_batch_update_append.json",
+      "payload_tokens": 53,
+      "response_tokens": 47
+    },
+    {
+      "name": "docs_replace_document_text",
+      "fixture": "docs_batch_update_replace.json",
+      "payload_tokens": 63,
+      "response_tokens": 53
+    },
+    {
+      "name": "docs_batch_update_document",
+      "fixture": "docs_batch_update_document.json",
+      "payload_tokens": 98,
+      "response_tokens": 98,
+      "items": 6,
+      "tokens_per_item": 9
+    },
+    {
+      "name": "docs_read_document_text",
+      "fixture": "docs_get_document_tabs.json",
+      "payload_tokens": 26098,
+      "response_tokens": 2162
+    },
+    {
+      "name": "docs_read_document_markdown",
+      "fixture": "docs_get_document_tabs.json",
+      "payload_tokens": 26098,
+      "response_tokens": 2170
+    },
+    {
+      "name": "docs_read_document_markdown_page_2",
+      "fixture": "docs_get_document_tabs.json",
+      "payload_tokens": 26098,
+      "response_tokens": 2131
+    },
+    {
+      "name": "docs_read_document_raw",
+      "fixture": "docs_get_document.json",
+      "payload_tokens": 1629,
+      "response_tokens": 1707
+    },
+    {
+      "name": "drive_list_files",
+      "fixture": "drive_list_files.json",
+      "payload_tokens": 483,
+      "response_tokens": 590,
+      "items": 3,
+      "tokens_per_item": 187
+    },
+    {
+      "name": "drive_get_file",
+      "fixture": "drive_list_files.json",
+      "payload_tokens": 483,
+      "response_tokens": 191
+    },
+    {
+      "name": "forms_get_form",
+      "fixture": "forms_get_form.json",
+      "payload_tokens": 831,
+      "response_tokens": 802,
+      "items": 14,
+      "tokens_per_item": 49
+    },
+    {
+      "name": "forms_get_form_legacy",
+      "fixture": "forms_get_form_legacy.json",
+      "payload_tokens": 109,
+      "response_tokens": 143,
+      "items": 1,
+      "tokens_per_item": 40
+    },
+    {
+      "name": "forms_create_form",
+      "fixture": "forms_create_form.json",
+      "payload_tokens": 105,
+      "response_tokens": 70
+    },
+    {
+      "name": "forms_batch_update_form",
+      "fixture": "forms_batch_update_form.json",
+      "payload_tokens": 192,
+      "response_tokens": 200
+    },
+    {
+      "name": "forms_batch_update_form_without_form",
+      "fixture": "forms_batch_update_form_without_form.json",
+      "payload_tokens": 32,
+      "response_tokens": 52
+    },
+    {
+      "name": "forms_set_form_publish_settings",
+      "fixture": "forms_set_form_publish_settings.json",
+      "payload_tokens": 32,
+      "response_tokens": 33
+    },
+    {
+      "name": "forms_list_form_responses",
+      "fixture": "forms_list_form_responses.json",
+      "payload_tokens": 260,
+      "response_tokens": 250,
+      "items": 2,
+      "tokens_per_item": 103
+    },
+    {
+      "name": "forms_get_form_response",
+      "fixture": "forms_list_form_responses.json",
+      "payload_tokens": 260,
+      "response_tokens": 139
+    },
+    {
+      "name": "gmail_search_emails",
+      "fixture": "gmail_message_metadata.json",
+      "payload_tokens": 154,
+      "response_tokens": 180,
+      "items": 1,
+      "tokens_per_item": 143
+    },
+    {
+      "name": "gmail_get_mail_digest",
+      "fixture": "gmail_message_metadata.json",
+      "payload_tokens": 154,
+      "response_tokens": 142,
+      "items": 1,
+      "tokens_per_item": 123
+    },
+    {
+      "name": "people_list_contacts",
+      "fixture": "people_list_contacts.json",
+      "payload_tokens": 780,
+      "response_tokens": 337,
+      "items": 3,
+      "tokens_per_item": 106
+    },
+    {
+      "name": "people_search_contacts",
+      "fixture": "people_search_contacts.json",
+      "payload_tokens": 627,
+      "response_tokens": 268,
+      "items": 2,
+      "tokens_per_item": 131
+    },
+    {
+      "name": "people_search_contacts_no_match",
+      "fixture": "people_empty_response.json",
+      "payload_tokens": 1,
+      "response_tokens": 7
+    },
+    {
+      "name": "people_get_contact",
+      "fixture": "people_get_contact.json",
+      "payload_tokens": 442,
+      "response_tokens": 167
+    },
+    {
+      "name": "people_create_contact",
+      "fixture": "people_create_contact.json",
+      "payload_tokens": 251,
+      "response_tokens": 122
+    },
+    {
+      "name": "people_update_contact",
+      "fixture": "people_update_contact.json",
+      "payload_tokens": 376,
+      "response_tokens": 161
+    },
+    {
+      "name": "people_list_contact_groups",
+      "fixture": "people_list_contact_groups.json",
+      "payload_tokens": 292,
+      "response_tokens": 149,
+      "items": 5,
+      "tokens_per_item": 27
+    },
+    {
+      "name": "people_create_contact_group",
+      "fixture": "people_create_contact_group.json",
+      "payload_tokens": 49,
+      "response_tokens": 33
+    },
+    {
+      "name": "people_modify_contact_group_members",
+      "fixture": "people_modify_contact_group_members.json",
+      "payload_tokens": 34,
+      "response_tokens": 41
+    },
+    {
+      "name": "people_modify_contact_group_members_all_applied",
+      "fixture": "people_empty_response.json",
+      "payload_tokens": 1,
+      "response_tokens": 27
+    },
+    {
+      "name": "sheets_get_spreadsheet",
+      "fixture": "sheets_get_spreadsheet.json",
+      "payload_tokens": 1005,
+      "response_tokens": 343,
+      "items": 4,
+      "tokens_per_item": 49
+    },
+    {
+      "name": "sheets_get_spreadsheet_grid_data",
+      "fixture": "sheets_get_spreadsheet_grid_data.json",
+      "payload_tokens": 2332,
+      "response_tokens": 152,
+      "items": 1,
+      "tokens_per_item": 82
+    },
+    {
+      "name": "sheets_get_spreadsheet_minimal",
+      "fixture": "sheets_get_spreadsheet_minimal.json",
+      "payload_tokens": 33,
+      "response_tokens": 85
+    },
+    {
+      "name": "sheets_create_spreadsheet",
+      "fixture": "sheets_create_spreadsheet.json",
+      "payload_tokens": 302,
+      "response_tokens": 75,
+      "items": 2,
+      "tokens_per_item": 11
+    },
+    {
+      "name": "sheets_get_sheet_values",
+      "fixture": "sheets_get_sheet_values.json",
+      "payload_tokens": 51,
+      "response_tokens": 72,
+      "items": 5,
+      "tokens_per_item": 8
+    },
+    {
+      "name": "sheets_get_sheet_values_empty",
+      "fixture": "sheets_get_sheet_values_empty.json",
+      "payload_tokens": 13,
+      "response_tokens": 36
+    },
+    {
+      "name": "sheets_batch_get_sheet_values",
+      "fixture": "sheets_batch_get_sheet_values.json",
+      "payload_tokens": 97,
+      "response_tokens": 114,
+      "items": 3,
+      "tokens_per_item": 30
+    },
+    {
+      "name": "sheets_append_sheet_values",
+      "fixture": "sheets_append_sheet_values.json",
+      "payload_tokens": 92,
+      "response_tokens": 64
+    },
+    {
+      "name": "sheets_update_sheet_values",
+      "fixture": "sheets_update_sheet_values.json",
+      "payload_tokens": 38,
+      "response_tokens": 48
+    },
+    {
+      "name": "sheets_batch_update_spreadsheet",
+      "fixture": "sheets_batch_update_spreadsheet.json",
+      "payload_tokens": 396,
+      "response_tokens": 279
+    },
+    {
+      "name": "sheets_batch_update_spreadsheet_minimal",
+      "fixture": "sheets_batch_update_spreadsheet_minimal.json",
+      "payload_tokens": 12,
+      "response_tokens": 23
+    },
+    {
+      "name": "slides_get_presentation",
+      "fixture": "slides_get_presentation.json",
+      "payload_tokens": 4386,
+      "response_tokens": 517,
+      "items": 3,
+      "tokens_per_item": 148
+    },
+    {
+      "name": "slides_get_slide_page",
+      "fixture": "slides_get_slide_page.json",
+      "payload_tokens": 2730,
+      "response_tokens": 380,
+      "items": 7,
+      "tokens_per_item": 45
+    },
+    {
+      "name": "slides_get_slide_thumbnail",
+      "fixture": "slides_get_slide_thumbnail.json",
+      "payload_tokens": 35,
+      "response_tokens": 39
+    },
+    {
+      "name": "slides_create_presentation",
+      "fixture": "slides_create_presentation.json",
+      "payload_tokens": 773,
+      "response_tokens": 63,
+      "items": 1,
+      "tokens_per_item": 7
+    },
+    {
+      "name": "slides_replace_text_in_presentation",
+      "fixture": "slides_replace_text_in_presentation.json",
+      "payload_tokens": 50,
+      "response_tokens": 27
+    },
+    {
+      "name": "slides_replace_text_in_presentation_no_match",
+      "fixture": "slides_replace_text_in_presentation_no_match.json",
+      "payload_tokens": 45,
+      "response_tokens": 27
+    },
+    {
+      "name": "slides_batch_update_presentation",
+      "fixture": "slides_batch_update_presentation.json",
+      "payload_tokens": 67,
+      "response_tokens": 67
+    },
+    {
+      "name": "tasks_list_tasks",
+      "fixture": "tasks_list_tasks.json",
+      "payload_tokens": 831,
+      "response_tokens": 777,
+      "items": 6,
+      "tokens_per_item": 123
+    },
+    {
+      "name": "tasks_tasks_digest",
+      "fixture": "tasks_list_tasks.json",
+      "payload_tokens": 831,
+      "response_tokens": 562
+    },
+    {
+      "name": "tasks_get_task",
+      "fixture": "tasks_get_task.json",
+      "payload_tokens": 148,
+      "response_tokens": 113
+    },
+    {
+      "name": "tasks_create_task",
+      "fixture": "tasks_insert_task.json",
+      "payload_tokens": 116,
+      "response_tokens": 119
+    },
+    {
+      "name": "tasks_update_task",
+      "fixture": "tasks_patch_task.json",
+      "payload_tokens": 130,
+      "response_tokens": 134
+    },
+    {
+      "name": "tasks_complete_task",
+      "fixture": "tasks_complete_task.json",
+      "payload_tokens": 126,
+      "response_tokens": 126
+    },
+    {
+      "name": "tasks_move_task",
+      "fixture": "tasks_move_task.json",
+      "payload_tokens": 106,
+      "response_tokens": 110
+    },
+    {
+      "name": "tasks_list_tasklists",
+      "fixture": "tasks_list_tasklists.json",
+      "payload_tokens": 154,
+      "response_tokens": 83,
+      "items": 2,
+      "tokens_per_item": 27
+    },
+    {
+      "name": "tasks_get_tasklist",
+      "fixture": "tasks_insert_tasklist.json",
+      "payload_tokens": 56,
+      "response_tokens": 25
+    },
+    {
+      "name": "tasks_create_tasklist",
+      "fixture": "tasks_insert_tasklist.json",
+      "payload_tokens": 56,
+      "response_tokens": 31
+    }
+  ]
+}

@@ -521,7 +521,7 @@ Configuration:
 
 The official MCPB manifest declares `MCP_CLIENT_MODEL=claude`, so Claude Desktop receives the complete catalog. For a manual Claude Desktop stdio configuration, add the same environment variable explicitly.
 
-`get_workspace_capabilities` reports enabled namespaces, OAuth capability names, and supported file-input strategies. `search_workspace` searches Drive files, contacts, and Gmail message IDs concurrently and returns normalized references.
+`get_workspace_capabilities` reports enabled namespaces, OAuth capability names, and supported file-input strategies. `search_workspace` searches Drive (names and content), contacts, and Gmail concurrently and returns normalized hits: Gmail hits carry subject, sender, date and snippet. `docs_read_document` and `drive_read_file` return a document or file as text (Docs also as Markdown) in pages, with the same `next_offset`, `body_chars` and `body_sha256` paging fields as email bodies, so a remote client can read content without the server's filesystem.
 
 ### Incremental Google Consent
 
@@ -529,7 +529,7 @@ The official MCPB manifest declares `MCP_CLIENT_MODEL=claude`, so Claude Desktop
 
 ### Response and Error Contracts
 
-All model-visible tools publish documented input schemas with closed objects; open input objects are limited to an audited set of genuine Google polymorphic batch maps. Argument size limits (1,000,000 characters per string, 10,000 items per array or properties per object) are enforced on every call but not repeated in the schemas. Tools whose responses the server builds publish open output schemas; tools that return a Google API resource unchanged (Docs, Sheets, Slides, most Forms and People tools, calendar list and availability, raw Tasks mutations) publish none and still return the resource as structured content. List/search responses expose their documented pagination and result-count fields without relying on undeclared conventions. Uncaught tool failures use a machine-readable envelope with `code`, `message`, `retryable`, `retry_after`, executable `required_action`, `provider_status`, and `field_errors`.
+All model-visible tools publish documented input schemas with closed objects; open input objects are limited to an audited set of genuine Google polymorphic batch maps. Argument size limits (1,000,000 characters per string, 10,000 items per array or properties per object) are enforced on every call but not repeated in the schemas. Every response is normalized by the server (snake_case keys, dates in the account's time zone, people as `{name, email}`, a `resource` handle per Workspace item carrying only what the item does not already say) and publishes an open output schema; batch-update tools keep Google's per-request `replies` inside that envelope. Every list-shaped response (list and search tools, digests, thread reads) carries the same `count`, `has_more`, `next_page_token` and `fetched_at` fields next to its resource-named list, plus `account_timezone` when its items carry dates; `status` appears only on results of changes. Uncaught tool failures use a machine-readable envelope with `code`, `message`, `retryable`, `retry_after`, executable `required_action`, `provider_status`, and `field_errors`.
 
 Drive, Calendar, and Gemini Drive-media downloads stream through bounded temporary files instead of buffering complete files in memory. `MCP_MAX_DOWNLOAD_BYTES` controls the per-download ceiling (default 250 MiB, maximum 10 GiB). Setting `MCP_REDIS_URL` makes prepare/commit records cross-replica and atomic.
 

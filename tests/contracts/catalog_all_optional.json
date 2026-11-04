@@ -3,7 +3,7 @@
     "prompts": 7,
     "resource_templates": 9,
     "resources": 12,
-    "tools": 192
+    "tools": 194
   },
   "discovery_view": [
     "apps_get_dashboard",
@@ -1866,7 +1866,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Attach one file to an existing event, keeping its current attachments. If an attachment with the same file_url is already there nothing is added; to replace the whole list use calendar_update_event. Returns event, the updated Google Event with its attachments list (Google allows at most 25 per event).",
+      "description": "Attach one file to an existing event, keeping its current attachments. If an attachment with the same file_url is already there nothing is added; to replace the whole list use calendar_update_event. Returns status 'ok' and event, the updated event in the calendar_read_events shape with its attachments (Google allows at most 25 per event).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1947,6 +1947,10 @@
         "properties": {
           "event": {
             "type": "object"
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
           }
         },
         "required": [],
@@ -1961,7 +1965,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Check whether one known time period is free on up to 50 calendars or people. To find open times instead of testing one, use calendar_find_common_free_slots. Returns Google's free/busy response: calendars, keyed by each requested id, with busy (a list of start/end periods; empty means free) and errors when that calendar's availability could not be read.",
+      "description": "Check whether one known time period is free on up to 50 calendars or people. To find open times instead of testing one, use calendar_find_common_free_slots. Returns all_free, time_min, time_max, account_timezone (the zone of every time returned) and calendars in request order, each with id, free (null when it could not be read), busy (start/end periods; empty means free) and errors (Google's reasons, e.g. notFound).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2021,7 +2025,33 @@
         }
       },
       "name": "calendar_check_time_availability",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "account_timezone": {
+            "type": "string"
+          },
+          "all_free": {},
+          "calendars": {
+            "items": {},
+            "type": "array"
+          },
+          "time_max": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_min": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Calendar Check Time Availability"
     },
     {
@@ -2031,7 +2061,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_common_free_slots first. Returns success, event (the Google Event: id, htmlLink, start, end, hangoutLink, attendees), deduplicated (true when idempotency_key matched an existing event) and warnings when the conflict check could not run. Guests receive invitations only as send_updates says.",
+      "description": "Create an event on one calendar, optionally with guests, a Meet link, reminders, attachments or a recurrence rule. The time is first checked against that calendar's busy times only, and an overlap fails with a conflict error that creates nothing; to plan around other people's calendars use calendar_find_common_free_slots first. Returns status 'ok', event (id, title, start and end in the event's timezone, url, meeting_url, attendees, attachments, recurrence and the other calendar_read_events fields), deduplicated (true when idempotency_key matched an existing event) and warnings, non-empty when the conflict check could not run. Guests receive invitations only as send_updates says.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2238,10 +2268,14 @@
           "event": {
             "type": "object"
           },
-          "success": {
-            "type": "boolean"
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
           },
-          "warnings": {}
+          "warnings": {
+            "items": {},
+            "type": "array"
+          }
         },
         "required": [],
         "type": "object"
@@ -2255,7 +2289,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Delete an event from a calendar. Unless force is true the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted. Returns success and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says.",
+      "description": "Delete an event from a calendar. Unless force is true the user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing deleted. Returns status 'ok' and event_id once the event is deleted. Guests are notified of the cancellation as send_updates says.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2316,9 +2350,6 @@
           "status": {
             "description": "Machine-readable operation status.",
             "type": "string"
-          },
-          "success": {
-            "type": "boolean"
           }
         },
         "required": [],
@@ -2676,6 +2707,22 @@
             "items": {},
             "type": "array"
           },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "requires_response": {
             "items": {},
             "type": "array"
@@ -2696,7 +2743,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the calendars in the user's calendar list: their own, shared and subscribed calendars. Use it to find a calendar_id other than 'primary' for the other calendar tools. Returns Google's CalendarList resource: items, each with id, summary, primary (true for the main calendar), accessRole (owner, writer, reader, freeBusyReader) and timeZone.",
+      "description": "List the calendars in the user's calendar list: their own, shared and subscribed calendars. Use it to find a calendar_id other than 'primary' for the other calendar tools. Returns calendars, each with id (the calendar_id), name (the user's own name for it when set), description, primary (true for the main calendar), access_role (owner, writer, reader or freeBusyReader), time_zone and hidden, plus count and next_page_token.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -2719,7 +2766,37 @@
         }
       },
       "name": "calendar_list_calendars",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "calendars": {
+            "items": {},
+            "type": "array"
+          },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Calendar List Calendars"
     },
     {
@@ -2729,7 +2806,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the full details of one to 100 events from one calendar by ID. Use it after calendar_search_events or calendar_get_calendar_digest when you need the description, guest list or attachments, which those compact results leave out. Returns events with the compact fields plus description, attendees (email, responseStatus, optional), attachments, recurrence, visibility and transparency; IDs that do not exist are listed in missing_event_ids instead of failing the call.",
+      "description": "Read the full details of one to 100 events from one calendar by ID. Use it after calendar_search_events or calendar_get_calendar_digest when you need the description, guest list or attachments, which those compact results leave out. Returns events with the compact fields plus url, description, attendees (name, email, response_status, optional, organizer, is_self, is_resource), attachments (title, file_url, file_id, mime_type), recurrence, recurring_event_id, visibility and transparency, and account_timezone (the zone of start and end); IDs that do not exist are listed in missing_event_ids instead of failing the call.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2808,7 +2885,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Detach files from an event, matching by file_url or Drive file_id; the files themselves are not deleted. The user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed. Returns event (the updated Google Event) and removed_count, which is 0 when nothing matched.",
+      "description": "Detach files from an event, matching by file_url or Drive file_id; the files themselves are not deleted. The user is asked to confirm first: declining returns status 'cancelled', and a client that cannot ask gets a confirmation_required error, both with nothing changed. Returns status 'ok', event (the updated event in the calendar_read_events shape) and removed_count, which is 0 when nothing matched.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2893,7 +2970,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Answer an event invitation as the signed-in user: accept, decline or mark tentative. Find unanswered invitations in the requires_response list of calendar_get_calendar_digest; the call fails if the user is not on the event's guest list. Returns success, event_id, response_status and event (the updated Google Event). With the default send_updates 'all', Google notifies the event's guests of the answer.",
+      "description": "Answer an event invitation as the signed-in user: accept, decline or mark tentative. Find unanswered invitations in the requires_response list of calendar_get_calendar_digest; the call fails if the user is not on the event's guest list. Returns status 'ok', event_id, response_status and event (the updated event in the calendar_read_events shape). With the default send_updates 'all', Google notifies the event's guests of the answer.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -2973,8 +3050,9 @@
               "null"
             ]
           },
-          "success": {
-            "type": "boolean"
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
           }
         },
         "required": [],
@@ -2989,7 +3067,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Find events on one calendar in a time window, given as a range_preset or explicit time_min/time_max. For the user's upcoming week plus pending invitations use calendar_get_calendar_digest, and for full details of known events use calendar_read_events. Returns compact events (id, title, start and end in the account time zone, all_day, my_response, requires_response, meeting_url, is_recurring), count, and the effective_time_min/effective_time_max that were applied.",
+      "description": "Find events on one calendar in a time window, given as a range_preset or explicit time_min/time_max. For the user's upcoming week plus pending invitations use calendar_get_calendar_digest, and for full details of known events use calendar_read_events. Returns compact events (id, title, start and end in the account time zone, all_day, status, organizer, my_response, requires_response, meeting_url, location, is_recurring, updated_at), count, next_page_token, account_timezone and the effective_time_min/effective_time_max that were applied.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3057,6 +3135,9 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
+          "account_timezone": {
+            "type": "string"
+          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
@@ -3097,7 +3178,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Passing recurrence fails with prepare_required until the call goes through prepare_workspace_action and commit_workspace_action. Returns success and event (the updated Google Event), plus warnings when the conflict check could not run; guests are notified as send_updates says.",
+      "description": "Change an existing event: only the fields you pass change, but attendees, attachments and recurrence each replace the whole existing list. When both start_datetime and end_datetime are given, the new time is checked against the calendar's other events and an overlap fails with a conflict error that changes nothing. Passing recurrence fails with prepare_required until the call goes through prepare_workspace_action and commit_workspace_action. Returns status 'ok', event (the updated event in the calendar_read_events shape, times in timezone or else the account's zone) and warnings, non-empty when the conflict check could not run; guests are notified as send_updates says.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3297,10 +3378,14 @@
           "event": {
             "type": "object"
           },
-          "success": {
-            "type": "boolean"
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
           },
-          "warnings": {}
+          "warnings": {
+            "items": {},
+            "type": "array"
+          }
         },
         "required": [],
         "type": "object"
@@ -4394,7 +4479,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Append plain, unformatted text to the end of a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to change existing text use docs_replace_document_text, and for formatting or inserts at a position use docs_batch_update_document. Returns the Docs batchUpdate response: documentId, writeControl.requiredRevisionId and one empty entry in replies.",
+      "description": "Append plain, unformatted text to the end of a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to change existing text use docs_replace_document_text, and for formatting or inserts at a position use docs_batch_update_document. Returns status 'ok', document_id and revision_id, the document's revision after the append.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4429,7 +4514,29 @@
         }
       },
       "name": "docs_append_document_text",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Docs Append Document Text"
     },
     {
@@ -4439,7 +4546,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Apply raw Google Docs API batchUpdate requests for edits the simpler tools cannot make: formatting, tables, images, inserts at an index and deletions. For plain appends use docs_append_document_text, and for find-and-replace docs_replace_document_text. The requests are applied atomically: if one is invalid, none is applied. Returns the batchUpdate response: documentId, replies (one per request, in order) and writeControl.requiredRevisionId.",
+      "description": "Apply raw Google Docs API batchUpdate requests for edits the simpler tools cannot make: formatting, tables, images, inserts at an index and deletions. For plain appends use docs_append_document_text, and for find-and-replace docs_replace_document_text. The requests are applied atomically: if one is invalid, none is applied. Returns status 'ok', document_id, revision_id (the revision after the update), replies (Google's reply objects, one per request, in order) and count.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4457,7 +4564,7 @@
           },
           "write_control": {
             "additionalProperties": true,
-            "description": "Docs writeControl object that guards against concurrent edits, e.g. {\"requiredRevisionId\": \"<revisionId from docs_get_document>\"}: the update fails if the document changed since that revision.",
+            "description": "Docs writeControl object that guards against concurrent edits, e.g. {\"requiredRevisionId\": \"<revision_id from docs_get_document>\"}: the update fails if the document changed since that revision.",
             "type": "object"
           }
         },
@@ -4483,7 +4590,37 @@
         }
       },
       "name": "docs_batch_update_document",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replies": {
+            "items": {},
+            "type": "array"
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Docs Batch Update Document"
     },
     {
@@ -4493,7 +4630,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new, empty Google Docs document in the root of the user's My Drive. Add text afterwards with docs_append_document_text, or copy an existing document with drive_copy_file instead. Returns the created Google Document resource; its documentId is the ID every other docs_ tool takes.",
+      "description": "Create a new, empty Google Docs document in the root of the user's My Drive. Add text afterwards with docs_append_document_text, or copy an existing document with drive_copy_file instead. Returns status 'ok', document_id (the ID every other docs_ tool takes), title, revision_id and url.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4522,7 +4659,41 @@
         }
       },
       "name": "docs_create_document",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Docs Create Document"
     },
     {
@@ -4532,7 +4703,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Docs document's full structured content: paragraphs, tables, lists and styles. The document_id comes from drive_list_files, search_workspace or docs_create_document; to change the text use docs_append_document_text or docs_replace_document_text. Returns the Google Document resource: documentId, title, revisionId and body.content (with include_tabs_content, the content is under tabs instead).",
+      "description": "Outline a Google Docs document's structure with the indices docs_batch_update_document requests need; to read or summarize the text use docs_read_document. Returns document_id, title, revision_id (for writeControl.requiredRevisionId), url and tabs (tab_id, title, index, nesting_level, parent_tab_id, headers, footers, footnotes, named_ranges, content). Each content element has kind (paragraph, table, section_break, table_of_contents), start_index, end_index and text, where each image, chip or break is one U+FFFC; paragraphs add style (null for normal text), list (list_id, nesting_level, ordered) and inline links and objects, tables rows, columns and cells. Styles are left out.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4542,7 +4713,7 @@
           },
           "include_tabs_content": {
             "default": false,
-            "description": "Return every tab's content in the tabs list instead of filling body with the first tab only; set it for documents with several tabs.",
+            "description": "Return every tab, child tabs included, each with its own content. By default Google returns only the first tab, so tabs then holds one entry whose tab_id and title are null; set it for documents with several tabs.",
             "type": "boolean"
           },
           "suggestions_view_mode": {
@@ -4576,8 +4747,148 @@
         }
       },
       "name": "docs_get_document",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suggestions_view_mode": {},
+          "tabs": {
+            "items": {},
+            "type": "array"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Docs Get Document"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read a whole Google Docs document, every tab in order, as clean text or Markdown, to read, quote or summarize it; for the indices an edit needs use docs_get_document. Lists, tables, links, people chips, footnotes and images are rendered inline and the table of contents is skipped. Returns document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; continue with offset=next_offset until next_offset is null. With format 'raw' it returns Google's Document resource unchanged in document instead of body.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "document_id": {
+            "description": "Google Docs document ID: the Drive file ID, also the long ID in the document's URL, from drive_list_files, search_workspace or docs_create_document.",
+            "type": "string"
+          },
+          "format": {
+            "default": "text",
+            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
+            "enum": [
+              "text",
+              "markdown",
+              "raw"
+            ],
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Character offset into the rendered text to resume from: the next_offset of a truncated 'text' or 'markdown' result, with the same format; 0 starts at the beginning and 'raw' ignores it.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "type": "object"
+      },
+      "meta": {
+        "fastmcp": {
+          "tags": [
+            "docs",
+            "document",
+            "documents",
+            "google-docs",
+            "google-workspace",
+            "read",
+            "read-document",
+            "writing"
+          ]
+        }
+      },
+      "name": "docs_read_document",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "body_chars": {
+            "type": "integer"
+          },
+          "body_sha256": {
+            "type": "string"
+          },
+          "document": {
+            "type": "object"
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "format": {},
+          "next_offset": {},
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tabs": {
+            "items": {},
+            "type": "array"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "title": "Docs Read Document"
     },
     {
       "annotations": {
@@ -4586,7 +4897,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Replace every occurrence of a piece of text in a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to add text use docs_append_document_text, and for formatting or targeted edits use docs_batch_update_document. Returns the Docs batchUpdate response: documentId and replies[0].replaceAllText.occurrencesChanged, which is 0 or missing when nothing matched.",
+      "description": "Replace every occurrence of a piece of text in a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to add text use docs_append_document_text, and for formatting or targeted edits use docs_batch_update_document. Returns status 'ok', document_id, revision_id and occurrences_changed, which is 0 when nothing matched.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4631,7 +4942,32 @@
         }
       },
       "name": "docs_replace_document_text",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurrences_changed": {
+            "type": "integer"
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Docs Replace Document Text"
     },
     {
@@ -4641,7 +4977,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, mimeType, parents, driveId, webViewLink) of the new copy; the source file is unchanged.",
+      "description": "Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it) of the new copy; the source file is unchanged.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4710,7 +5046,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create an empty Drive file from metadata alone, with no uploaded content. Use it for a blank native Google file placed in a chosen folder, or a placeholder; to store bytes use drive_upload_file, for folders drive_create_folder, and docs_create_document, sheets_create_spreadsheet or slides_create_presentation when no folder is needed. Returns status 'ok' and file (id, name, mimeType, parents, driveId, webViewLink).",
+      "description": "Create an empty Drive file from metadata alone, with no uploaded content. Use it for a blank native Google file placed in a chosen folder, or a placeholder; to store bytes use drive_upload_file, for folders drive_create_folder, and docs_create_document, sheets_create_spreadsheet or slides_create_presentation when no folder is needed. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4790,7 +5126,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_create_file_metadata; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, mimeType, parents, driveId, webViewLink); use file.id as a parent ID in later calls.",
+      "description": "Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_create_file_metadata; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it); use file.id as a parent ID in later calls.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4963,7 +5299,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_delete_permission instead. Returns status 'ok' with mode 'trash' and file (id, name, trashed, driveId, webViewLink), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline.",
+      "description": "Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_delete_permission instead. Returns status 'ok' with mode 'trash' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5186,7 +5522,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Export a Google Doc, Sheet, Slides deck or Drawing to a file format on the server's disk. For stored files such as PDFs or images use drive_download_file; to read a Doc or Sheet without saving a file use docs_get_document or sheets_get_sheet_values. Returns status 'ok', file_id, mime_type, saved_to and bytes_written. It writes to the server's filesystem, so it works only when the server runs locally and is rejected with picker_required over remote MCP; Google limits exports to 10 MB.",
+      "description": "Export a Google Doc, Sheet, Slides deck or Drawing to a file format on the server's disk. For stored files such as PDFs or images use drive_download_file; to read a Doc, Sheet or text file without saving a file use drive_read_file, docs_read_document or sheets_get_sheet_values. Returns status 'ok', file_id, mime_type, saved_to and bytes_written. It writes to the server's filesystem, so it works only when the server runs locally and is rejected with picker_required over remote MCP; Google limits exports to 10 MB.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5313,7 +5649,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get the metadata of one Drive file or folder by ID. To find files by name or filter use drive_list_files; to read a file's content use drive_download_file, drive_export_google_file or the Docs, Sheets and Slides tools. Returns file (id, name, kind, mime_type, size, created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download).",
+      "description": "Get the metadata of one Drive file or folder by ID. To find files by name or filter use drive_list_files; to read a file's text use drive_read_file, and to save it drive_download_file or drive_export_google_file. Returns file (id, name, kind, mime_type, size, created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5792,7 +6128,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, parents, driveId, webViewLink).",
+      "description": "Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5858,6 +6194,91 @@
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": true,
+        "readOnlyHint": true
+      },
+      "description": "Read the text of one Drive file without saving it, a page of about 8,000 characters at a time: Google Docs and Slides export as text (Docs also as Markdown), Sheets as CSV of the first sheet, and stored text files up to 5 MB (text, Markdown, CSV, JSON, XML, HTML) are downloaded. Binary files, folders, forms and drawings fail with invalid_input; use docs_read_document for a Doc's tabs, chips and footnotes. Returns file_id, name, mime_type, format, exported_as, modified_at, web_url and the page as body, truncated, next_offset (pass it back as offset), body_chars and body_sha256 (length and hash of the whole text).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file_id": {
+            "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
+            "type": "string"
+          },
+          "format": {
+            "default": "text",
+            "description": "'text' (default) returns plain text; 'markdown' returns a Google Doc as Markdown (headings, lists, tables, links). Other files read the same in both formats.",
+            "enum": [
+              "text",
+              "markdown"
+            ],
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Character offset into the file's text to resume from: the next_offset of a truncated result. Omit (0) for the first page.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      },
+      "meta": {
+        "fastmcp": {
+          "tags": [
+            "drive",
+            "file",
+            "files",
+            "folders",
+            "google-drive",
+            "google-workspace",
+            "read",
+            "read-file",
+            "shared-drive",
+            "storage"
+          ]
+        }
+      },
+      "name": "drive_read_file",
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "exported_as": {},
+          "file_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "format": {},
+          "mime_type": {
+            "type": "string"
+          },
+          "modified_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {},
+          "web_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "title": "Drive Read File"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
         "readOnlyHint": false
       },
       "description": "Show a previously hidden shared drive in the user's default Drive view again. It reverses drive_hide_drive and affects only this user. Returns status 'ok' and drive, the shared drive resource Google returns.",
@@ -5911,7 +6332,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Replace the content of an existing Drive file, keeping its ID, name, folder and sharing. Use it to publish a new version of a file; to add a separate file use drive_upload_file, and to rename it use drive_update_file_metadata. Returns status 'ok' and file (id, name, mimeType, size, parents, driveId, webViewLink, modifiedTime). Drive stores the new content as a new revision of the file.",
+      "description": "Replace the content of an existing Drive file, keeping its ID, name, folder and sharing. Use it to publish a new version of a file; to add a separate file use drive_upload_file, and to rename it use drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it). Drive stores the new content as a new revision of the file.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5987,7 +6408,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_update_file_content. Returns status 'ok' and file (id, name, mimeType, parents, modifiedTime, size, driveId, webViewLink).",
+      "description": "Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_update_file_content. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6172,7 +6593,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Upload a file to Drive as a new file, from the Workspace Files picker or a local path. To replace the content of a file you already have the ID of use drive_update_file_content, and for an empty file or native Google file use drive_create_file_metadata. Returns status 'ok' with mode 'create' or 'overwrite' and file (id, name, mimeType, size, parents, driveId, webViewLink), or status 'skipped' with existing_file.",
+      "description": "Upload a file to Drive as a new file, from the Workspace Files picker or a local path. To replace the content of a file you already have the ID of use drive_update_file_content, and for an empty file or native Google file use drive_create_file_metadata. Returns status 'ok' with mode 'create' or 'overwrite' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or status 'skipped' with existing_file.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6883,7 +7304,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. The form_id comes from drive_list_files, search_workspace or forms_create_form. Returns the batchUpdate response: replies, one per request in order (createItem gives itemId and questionId), writeControl.requiredRevisionId, and form when include_form_in_response is true.",
+      "description": "Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. The form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, revision_id (the revision after the update), replies (Google's, one per request in order; createItem gives itemId and questionId), count and form (the forms_get_form shape with include_form_in_response, else null).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6893,7 +7314,7 @@
           },
           "include_form_in_response": {
             "default": false,
-            "description": "Also return the whole updated Form resource in the form field of the response.",
+            "description": "Also return the updated form, in the forms_get_form shape, in the form field of the result.",
             "type": "boolean"
           },
           "requests": {
@@ -6926,7 +7347,40 @@
         }
       },
       "name": "forms_batch_update_form",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "form": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "form_id": {
+            "type": "string"
+          },
+          "replies": {
+            "items": {},
+            "type": "array"
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Forms Batch Update Form"
     },
     {
@@ -6936,7 +7390,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form. Returns the created Google Form resource: formId (the ID every other forms_ tool takes), responderUri (the link to share with respondents), info and revisionId. Unless unpublished is true, the form is published and accepting responses as soon as it exists.",
+      "description": "Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form. Returns status ok, form_id (the ID every other forms_ tool takes), title, document_title, responder_url (the link to share with respondents) and revision_id. Unless unpublished is true, the form is published and accepting responses as soon as it exists.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6973,7 +7427,42 @@
         }
       },
       "name": "forms_create_form",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "document_title": {},
+          "form_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responder_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Forms Create Form"
     },
     {
@@ -6983,7 +7472,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Form's structure: title, description, settings and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns the Google Form resource: formId, info (title, documentTitle, description), items (each with itemId, title and questionItem.question.questionId), responderUri, revisionId and publishSettings.",
+      "description": "Read a Google Form's structure: title, description, publish state and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns form_id, title, document_title, description, responder_url, revision_id, linked_spreadsheet_id, is_quiz, published and accepting_responses (both null for legacy forms), count and items, each with item_id, title, description, kind, question_id (for a grid, a list of question_id and row_title), required, question_type and options (choices, or scale bounds and labels).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7011,7 +7500,58 @@
         }
       },
       "name": "forms_get_form",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "accepting_responses": {},
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "description": {},
+          "document_title": {},
+          "form_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "is_quiz": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {},
+            "type": "array"
+          },
+          "linked_spreadsheet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "published": {},
+          "responder_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Forms Get Form"
     },
     {
@@ -7021,7 +7561,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read one submitted response of a Google Form. To list or page through responses use forms_list_form_responses, which also supplies the response_id. Returns id, created_at and submitted_at in the account time zone, timezone, respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads).",
+      "description": "Read one submitted response of a Google Form. To list or page through responses use forms_list_form_responses, which also supplies the response_id. Returns id, created_at and submitted_at in the account time zone (ISO 8601 with offset), respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7085,9 +7625,6 @@
               "string",
               "null"
             ]
-          },
-          "timezone": {
-            "type": "string"
           }
         },
         "required": [],
@@ -7195,7 +7732,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form; the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns the Google response: formId and publishSettings.publishState (isPublished, isAcceptingResponses). Legacy forms, whose forms_get_form result has no publishSettings, do not support this.",
+      "description": "Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form; the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, published and accepting_responses as they stand after the call. Legacy forms, whose forms_get_form result has null published, do not support this.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7236,7 +7773,25 @@
         }
       },
       "name": "forms_set_form_publish_settings",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "accepting_responses": {},
+          "form_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "published": {},
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Forms Set Form Publish Settings"
     },
     {
@@ -7905,10 +8460,6 @@
             },
             "required": [],
             "type": "object"
-          },
-          "status": {
-            "description": "Machine-readable operation status.",
-            "type": "string"
           }
         },
         "required": [],
@@ -8126,7 +8677,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Fetch the mail added to the mailbox since a saved checkpoint (since_history_id), or on a cold start since timestamp (the last day without one), received and sent alike with drafts left out, for incremental polling. Use gmail_get_mail_digest for a one-off look at a recent window and gmail_search_emails to search. Returns messages (the digest's fields), new_count, skipped_deleted_message_ids for mail deleted before it could be read, next_page_token, and next_history_id: the checkpoint to save for the next call, null until the last page. Read bodies with gmail_read_emails.",
+      "description": "Fetch the mail added to the mailbox since a saved checkpoint (since_history_id), or on a cold start since timestamp (the last day without one), received and sent alike with drafts left out, for incremental polling. Use gmail_get_mail_digest for a one-off look at a recent window and gmail_search_emails to search. Returns messages (the digest's fields), count, skipped_deleted_message_ids for mail deleted before it could be read, next_page_token, and next_history_id: the checkpoint to save for the next call, null until the last page. Read bodies with gmail_read_emails.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -8186,12 +8737,22 @@
               "null"
             ]
           },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
           "messages": {
             "items": {},
             "type": "array"
-          },
-          "new_count": {
-            "type": "integer"
           },
           "next_history_id": {
             "type": [
@@ -8200,7 +8761,7 @@
             ]
           },
           "next_page_token": {
-            "description": "Opaque token for retrieving the next page, or null when complete.",
+            "description": "Opaque token for the next page, or null.",
             "type": [
               "string",
               "null"
@@ -9138,7 +9699,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the mail received and sent in a recent time window (default the last 3 days) as one feed with snippets, with no category or importance filtering; drafts, Spam and Trash are left out. Use it to catch up on recent mail; use gmail_search_emails to find mail by sender, subject or any Gmail query, and gmail_check_mail_updates to poll for new mail since a saved checkpoint. Returns messages (id, thread_id, from, subject, date, snippet, unread, has_attachments, direction 'received' or 'sent'), message_count, window and account_timezone; next_history_id is always null here. Read bodies with gmail_read_emails.",
+      "description": "List the mail received and sent in a recent time window (default the last 3 days) as one feed with snippets, with no category or importance filtering; drafts, Spam and Trash are left out. Use it to catch up on recent mail; use gmail_search_emails to find mail by sender, subject or any Gmail query, and gmail_check_mail_updates to poll for new mail since a saved checkpoint. Returns messages (id, thread_id, from, subject, date, snippet, unread, has_attachments, direction 'received' or 'sent'), count, window and account_timezone; there is no next page. Read bodies with gmail_read_emails.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -9184,15 +9745,29 @@
           "account_timezone": {
             "type": "string"
           },
-          "message_count": {
+          "count": {
+            "description": "Number of items in this response.",
             "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
           },
           "messages": {
             "items": {},
             "type": "array"
           },
-          "next_history_id": {
-            "type": "null"
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "window": {}
         },
@@ -9208,7 +9783,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read one Gmail conversation by thread ID. The default format 'clean' gives the newest message with its cleaned body plus a one-line summary of each earlier message; 'full', 'metadata' and 'minimal' return Gmail's raw thread resource instead. Use gmail_read_emails to read particular messages in full or continue a truncated body, and gmail_list_threads or gmail_search_emails to find threads. Returns thread_id, history_id, message_count and either latest and prior_messages ('clean') or thread (the other formats).",
+      "description": "Read one Gmail conversation by thread ID. The default format 'clean' gives the newest message with its cleaned body plus a one-line summary of each earlier message; 'full', 'metadata' and 'minimal' return Gmail's raw thread resource instead. Use gmail_read_emails to read particular messages in full or continue a truncated body, and gmail_list_threads or gmail_search_emails to find threads. Returns thread_id, count (messages in the thread) and either latest, prior_messages and account_timezone ('clean') or thread (the other formats, whose historyId is Gmail's).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -9256,11 +9831,18 @@
           "account_timezone": {
             "type": "string"
           },
-          "history_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
           },
           "latest": {
             "type": [
@@ -9268,8 +9850,12 @@
               "null"
             ]
           },
-          "message_count": {
-            "type": "integer"
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "prior_messages": {
             "items": {},
@@ -10146,7 +10732,7 @@
         "properties": {
           "format": {
             "default": "clean",
-            "description": "Body detail: 'metadata' omits the body; 'preview' returns the first 1,000 characters of the cleaned body text; 'clean' returns the cleaned body text in pages of about 8,000 characters; 'full' returns the whole cleaned body unpaged plus the original text/plain part (text_body) and, with include_html, the HTML part.",
+            "description": "Body detail: 'metadata' omits the body; 'preview' returns the first 1,000 characters of the cleaned body text; 'clean' returns the cleaned body text in pages of about 8,000 characters; 'full' returns the whole cleaned body unpaged plus the original text/plain part (text_body), the raw date header, internal_date and history_id under details and, with include_html, the HTML part.",
             "enum": [
               "metadata",
               "preview",
@@ -13045,7 +13631,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the transcripts of one conference record.\n\nFind the record with meet_list_conference_records. Returns transcripts (id, started_at, ended_at, document_id, export_uri), count, next_page_token and account_timezone; read the text with docs_get_document using document_id.",
+      "description": "List the transcripts of one conference record.\n\nFind the record with meet_list_conference_records. Returns transcripts (id, started_at, ended_at, document_id, export_uri), count, next_page_token and account_timezone; read the text with docs_read_document using document_id.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13178,7 +13764,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new contact in the user's Google Contacts; at least one field must be set. To change an existing contact use people_update_contact. Returns the created Google Person resource: resourceName (the person_name other people_ tools take), etag, and the stored names, emailAddresses, phoneNumbers, organizations and biographies.",
+      "description": "Create a new contact in the user's Google Contacts; at least one field must be set. To change an existing contact use people_update_contact. Returns status 'ok' and contact, the stored contact: resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails, phones, organizations and biography.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13235,7 +13821,20 @@
         }
       },
       "name": "people_create_contact",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "contact": {
+            "type": "object"
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People Create Contact"
     },
     {
@@ -13245,7 +13844,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new, empty contact group (label) in the user's Google Contacts. Add contacts to it afterwards with people_modify_contact_group_members. Returns the created Google ContactGroup resource: resourceName (contactGroups/..., the group_name other people_ tools take), etag, name and groupType.",
+      "description": "Create a new, empty contact group (label) in the user's Google Contacts. Add contacts to it afterwards with people_modify_contact_group_members. Returns status 'ok' and contact_group: resource_name (contactGroups/..., the group_name other people_ tools take), name, group_type ('user') and member_count (0).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13275,7 +13874,20 @@
         }
       },
       "name": "people_create_contact_group",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "contact_group": {
+            "type": "object"
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People Create Contact Group"
     },
     {
@@ -13335,7 +13947,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read one Google contact by its resource name, found with people_search_contacts or people_list_contacts. Use it to fetch the current etag before people_update_contact. Returns the Google Person resource: resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies.",
+      "description": "Read one Google contact by its resource name, found with people_search_contacts or people_list_contacts. Use it to fetch the current etag before people_update_contact. Returns contact: resource_name, etag, name, given_name, family_name, emails and phones (each {value, type}), organizations ({name, title}) and biography.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13376,7 +13988,16 @@
         }
       },
       "name": "people_get_contact",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "contact": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People Get Contact"
     },
     {
@@ -13386,7 +14007,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the user's contact groups (labels), including system groups such as myContacts and starred. To change a group's members use people_modify_contact_group_members, and to add a group use people_create_contact_group. Returns the Google contactGroups.list response: contactGroups (each with resourceName, etag, name, groupType and memberCount), nextPageToken and totalItems.",
+      "description": "List the user's contact groups (labels), including system groups such as myContacts and starred. To change a group's members use people_modify_contact_group_members, and to add a group use people_create_contact_group. Returns contact_groups, each with resource_name (contactGroups/..., the group_name other people_ tools take), name (Google's display name, localized for system groups), group_type ('user' or 'system') and member_count; plus count, total and next_page_token.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13419,7 +14040,43 @@
         }
       },
       "name": "people_list_contact_groups",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "contact_groups": {
+            "items": {},
+            "type": "array"
+          },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People List Contact Groups"
     },
     {
@@ -13429,7 +14086,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the user's saved Google contacts, one page at a time. To find a contact by name, email or phone use people_search_contacts instead. Returns the Google connections.list response: connections (Person resources with resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies), nextPageToken and totalItems.",
+      "description": "List the user's saved Google contacts, one page at a time. To find a contact by name, email or phone use people_search_contacts instead. Returns contacts, each with resource_name (the person_name other people_ tools take), etag, name, given_name, family_name, emails and phones (each {value, type}, type being Google's label such as 'work' or 'mobile', or null), organizations ({name, title}) and biography; plus count, total (all saved contacts) and next_page_token.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13482,7 +14139,43 @@
         }
       },
       "name": "people_list_contacts",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "contacts": {
+            "items": {},
+            "type": "array"
+          },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People List Contacts"
     },
     {
@@ -13492,7 +14185,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Add contacts to and remove contacts from one contact group in a single call; at least one of the two lists must be non-empty. Contact resource names come from people_search_contacts or people_list_contacts, group names from people_list_contact_groups. Returns the Google members.modify response: notFoundResourceNames and canNotRemoveLastContactGroupResourceNames list the contacts that were not changed, and both are missing when every change applied.",
+      "description": "Add contacts to and remove contacts from one contact group in a single call; at least one of the two lists must be non-empty. Contact resource names come from people_search_contacts or people_list_contacts, group names from people_list_contact_groups. Returns status 'ok', group_name (contactGroups/...), not_found (contacts that do not exist) and cannot_remove_last_group (contacts not removed because this is their only group); both lists are empty when every change applied.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13537,7 +14230,28 @@
         }
       },
       "name": "people_modify_contact_group_members",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "cannot_remove_last_group": {
+            "items": {},
+            "type": "array"
+          },
+          "group_name": {
+            "type": "string"
+          },
+          "not_found": {
+            "items": {},
+            "type": "array"
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People Modify Contact Group Members"
     },
     {
@@ -13547,7 +14261,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Find the user's saved Google contacts whose name, email, phone or organization starts with the query text. To page through every contact use people_list_contacts; there is no paging here. Returns the Google searchContacts response: results, each with a person (resourceName, etag, names, emailAddresses, phoneNumbers, organizations and biographies); results is missing when nothing matches.",
+      "description": "Find the user's saved Google contacts whose name, email, phone or organization starts with the query text. To page through every contact use people_list_contacts; there is no paging here. Returns contacts (each with resource_name, etag, name, given_name, family_name, emails and phones as {value, type}, organizations and biography, as in people_list_contacts) and count; contacts is empty when nothing matches.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13592,7 +14306,37 @@
         }
       },
       "name": "people_search_contacts",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "contacts": {
+            "items": {},
+            "type": "array"
+          },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People Search Contacts"
     },
     {
@@ -13602,7 +14346,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns the updated Google Person resource, with its new etag, names, emailAddresses, phoneNumbers, organizations and biographies.",
+      "description": "Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13681,7 +14425,20 @@
         }
       },
       "name": "people_update_contact",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "contact": {
+            "type": "object"
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "People Update Contact"
     },
     {
@@ -13819,7 +14576,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Turn a resource URI from an earlier result's resource handle back into a handle with current metadata. Drive files are re-read for a fresh name, mime_type, modified_at, web_url and etag, and Gmail messages are checked to still exist; threads, events, contacts and tasks are only parsed, without a Google call. Returns status 'ok' (or 'resolved' for parsed-only kinds) with resource; pass resource.id to the matching service tool for content.",
+      "description": "Turn a resource URI from an earlier result's resource handle back into a handle with current metadata. Drive files are re-read for a fresh name, mime_type, modified_at (account time zone), web_url and etag, and Gmail messages are checked to still exist; threads, events, contacts and tasks are only parsed, without a Google call. Returns resource and verified (true when Google confirmed the resource exists); pass resource.id to the matching service tool for content.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13848,16 +14605,11 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "next_actions": {
-            "items": {},
-            "type": "array"
-          },
           "resource": {
             "type": "object"
           },
-          "status": {
-            "description": "Machine-readable operation status.",
-            "type": "string"
+          "verified": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -13872,7 +14624,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Run one query across Drive file names, the user's saved contacts and Gmail at once, for a first look when the right service is unclear. Drive matches names only (not content, not shared drives) and Gmail hits carry only the message ID (thread ID in name), so follow up with drive_list_files, people_search_contacts or gmail_search_emails for full queries and details, or gmail_read_emails to open a hit. Returns matches (service, id, name, kind, resource, plus url or email), count, and errors per failed service with status 'partial'; the call fails only when every service fails.",
+      "description": "Search Drive, the user's saved contacts and Gmail with one query, for a first look when the right service is unclear. Drive matches names and content (name matches first, no shared drives); Gmail takes Gmail query syntax and each hit is read in one metadata request. For full queries and paging use drive_list_files, people_search_contacts or gmail_search_emails. Returns matches (service, id, kind, resource; Drive name, mime_type, modified_at, web_url; contact name, email; Gmail thread_id, subject, from, date, snippet, unread), count, account_timezone and errors per failed service; the call fails only when every service fails.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -13882,7 +14634,7 @@
             "type": "integer"
           },
           "query": {
-            "description": "Search text, must not be blank. Drive matches it against file names (Drive's name contains, which matches word prefixes), contacts by prefix of names, emails, phone numbers or organizations, and Gmail treats it as a Gmail search query, e.g. 'from:alice invoice'.",
+            "description": "Search text, must not be blank. Drive matches it against file names and content (fullText contains, plus name contains for name prefixes), contacts by prefix of names, emails, phone numbers or organizations, and Gmail treats it as a Gmail search query, e.g. 'from:alice invoice'.",
             "type": "string"
           },
           "services": {
@@ -13917,6 +14669,7 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
+          "account_timezone": {},
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
@@ -13947,11 +14700,7 @@
           "query": {
             "type": "string"
           },
-          "services": {},
-          "status": {
-            "description": "Machine-readable operation status.",
-            "type": "string"
-          }
+          "services": {}
         },
         "required": [],
         "type": "object"
@@ -13965,13 +14714,13 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Append rows below the existing data of a table in a Google Sheets spreadsheet, leaving the current rows in place. To overwrite a known range use sheets_update_sheet_values; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns the Google append response: spreadsheetId, tableRange (the table that was found) and updates with updatedRange, updatedRows and updatedCells.",
+      "description": "Append rows below the existing data of a table in a Google Sheets spreadsheet, leaving the current rows in place. To overwrite a known range use sheets_update_sheet_values; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, table_range (the table that was found, null on an empty sheet), updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "include_values_in_response": {
             "default": false,
-            "description": "Also return the written cells, as stored after parsing, in updates.updatedData.",
+            "description": "Also return the written cells, as stored after parsing, in updated_values.",
             "type": "boolean"
           },
           "insert_data_option": {
@@ -14032,7 +14781,41 @@
         }
       },
       "name": "sheets_append_sheet_values",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "spreadsheet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "table_range": {},
+          "updated_cells": {
+            "type": "integer"
+          },
+          "updated_columns": {
+            "type": "integer"
+          },
+          "updated_range": {},
+          "updated_rows": {
+            "type": "integer"
+          },
+          "updated_values": {
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Sheets Append Sheet Values"
     },
     {
@@ -14042,7 +14825,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Read the cell values of several A1 ranges of one Google Sheets spreadsheet in a single call. For a single range use sheets_get_sheet_values; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns spreadsheetId and valueRanges, one Google ValueRange per requested range in request order, each with range and values (a list of rows; missing when the range is empty).",
+      "description": "Read the cell values of several A1 ranges of one Google Sheets spreadsheet in a single call. For a single range use sheets_get_sheet_values; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns spreadsheet_id, count and value_ranges, one per requested range in request order, each with range, major_dimension, values (a list of rows; [] when the range is empty) and row_count.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14107,7 +14890,27 @@
         }
       },
       "name": "sheets_batch_get_sheet_values",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "spreadsheet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value_ranges": {
+            "items": {},
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Sheets Batch Get Sheet Values"
     },
     {
@@ -14117,13 +14920,13 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Apply raw Google Sheets API batchUpdate requests for structure and formatting: adding, renaming or deleting sheets, formatting, merges, charts. To write cell values use sheets_update_sheet_values or sheets_append_sheet_values instead. With ten or more requests the call fails with prepare_required, and it must go through prepare_workspace_action and commit_workspace_action. Requests apply atomically: if one is invalid, none is applied. Returns the batchUpdate response: spreadsheetId and replies, one per request in order (e.g. addSheet.properties.sheetId).",
+      "description": "Apply raw Google Sheets API batchUpdate requests for structure and formatting: adding, renaming or deleting sheets, formatting, merges, charts. To write cell values use sheets_update_sheet_values or sheets_append_sheet_values instead. With ten or more requests the call fails with prepare_required, and it must go through prepare_workspace_action and commit_workspace_action. Requests apply atomically: if one is invalid, none is applied. Returns status 'ok', spreadsheet_id, replies (Google's, one per request in order, e.g. addSheet.properties.sheetId), count and spreadsheet (the sheets_get_spreadsheet shape when requested, else null).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "include_spreadsheet_in_response": {
             "default": false,
-            "description": "Also return the whole spreadsheet after the update, without cell data, in updatedSpreadsheet.",
+            "description": "Also return the spreadsheet after the update, without cell values, in spreadsheet.",
             "type": "boolean"
           },
           "requests": {
@@ -14161,7 +14964,37 @@
         }
       },
       "name": "sheets_batch_update_spreadsheet",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "replies": {
+            "items": {},
+            "type": "array"
+          },
+          "spreadsheet": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "spreadsheet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Sheets Batch Update Spreadsheet"
     },
     {
@@ -14171,7 +15004,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new Google Sheets spreadsheet in the root of the user's My Drive, optionally with named sheets (tabs). Fill it afterwards with sheets_update_sheet_values or sheets_append_sheet_values. Returns the created Google Spreadsheet resource: spreadsheetId (the ID every other sheets_ tool takes), spreadsheetUrl and sheets[].properties with each sheet's sheetId and title.",
+      "description": "Create a new Google Sheets spreadsheet in the root of the user's My Drive, optionally with named sheets (tabs). Fill it afterwards with sheets_update_sheet_values or sheets_append_sheet_values. Returns status ok, spreadsheet_id (the ID every other sheets_ tool takes), title, url and sheets, each with sheet_id, title and index.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14207,7 +15040,39 @@
         }
       },
       "name": "sheets_create_spreadsheet",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "sheets": {
+            "items": {},
+            "type": "array"
+          },
+          "spreadsheet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Sheets Create Spreadsheet"
     },
     {
@@ -14217,7 +15082,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read the cell values of one A1 range of a Google Sheets spreadsheet. For several ranges in one call use sheets_batch_get_sheet_values; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns the Google ValueRange: range (the A1 range actually read), majorDimension and values, a list of rows in which trailing empty rows and cells are omitted (values is missing when the range is empty).",
+      "description": "Read the cell values of one A1 range of a Google Sheets spreadsheet. For several ranges in one call use sheets_batch_get_sheet_values; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns spreadsheet_id, range (the A1 range actually read), major_dimension, values (a list of rows, or of columns with major_dimension COLUMNS, without trailing empty rows and cells; [] when the range is empty) and row_count, the number of entries in values.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14278,7 +15143,30 @@
         }
       },
       "name": "sheets_get_sheet_values",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "major_dimension": {},
+          "range": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "row_count": {
+            "type": "integer"
+          },
+          "spreadsheet_id": {
+            "type": "string"
+          },
+          "values": {
+            "items": {},
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Sheets Get Sheet Values"
     },
     {
@@ -14288,13 +15176,13 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Sheets spreadsheet's structure: its title and every sheet (tab) with its title, sheetId and grid size. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for cell values use sheets_get_sheet_values or sheets_batch_get_sheet_values. Returns the Google Spreadsheet resource: spreadsheetId, properties.title, spreadsheetUrl and sheets[].properties (sheetId, title, gridProperties), plus sheets[].data with include_grid_data.",
+      "description": "Read a Google Sheets spreadsheet's structure: its title, locale and every sheet (tab) with its ID and grid size. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for cell values use sheets_get_sheet_values or sheets_batch_get_sheet_values. Returns spreadsheet_id, title, locale, spreadsheet_time_zone (the file's own setting), url, named_ranges (name, named_range_id, A1 range) and sheets, each with sheet_id, title, index, type, row_count, column_count, frozen_row_count, frozen_column_count and hidden. With include_grid_data each sheet also has values (rows of displayed cell text) and values_start (the cell of values[0][0]), else both are null.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "include_grid_data": {
             "default": false,
-            "description": "Also return cell values and formatting in sheets[].data; this can be very large, so limit it with ranges. For values alone use sheets_get_sheet_values.",
+            "description": "Also return each sheet's cell values, as displayed, in sheets[].values; this can be very large, so limit it with ranges. For values alone use sheets_get_sheet_values.",
             "type": "boolean"
           },
           "ranges": {
@@ -14329,7 +15217,41 @@
         }
       },
       "name": "sheets_get_spreadsheet",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "locale": {},
+          "named_ranges": {
+            "items": {},
+            "type": "array"
+          },
+          "sheets": {
+            "items": {},
+            "type": "array"
+          },
+          "spreadsheet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spreadsheet_time_zone": {},
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Sheets Get Spreadsheet"
     },
     {
@@ -14339,13 +15261,13 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Write values into one A1 range of a Google Sheets spreadsheet, overwriting the cells it covers. To add rows below existing data use sheets_append_sheet_values, and for formatting or tab changes use sheets_batch_update_spreadsheet; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns the Google UpdateValuesResponse: spreadsheetId, updatedRange, updatedRows, updatedColumns and updatedCells.",
+      "description": "Write values into one A1 range of a Google Sheets spreadsheet, overwriting the cells it covers. To add rows below existing data use sheets_append_sheet_values, and for formatting or tab changes use sheets_batch_update_spreadsheet; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "include_values_in_response": {
             "default": false,
-            "description": "Also return the written cells, as stored after parsing, in updatedData.",
+            "description": "Also return the written cells, as stored after parsing, in updated_values.",
             "type": "boolean"
           },
           "range_a1": {
@@ -14397,7 +15319,40 @@
         }
       },
       "name": "sheets_update_sheet_values",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "spreadsheet_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "updated_cells": {
+            "type": "integer"
+          },
+          "updated_columns": {
+            "type": "integer"
+          },
+          "updated_range": {},
+          "updated_rows": {
+            "type": "integer"
+          },
+          "updated_values": {
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Sheets Update Sheet Values"
     },
     {
@@ -14407,7 +15362,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Apply raw Google Slides API batchUpdate requests for edits beyond text replacement: creating or deleting slides, adding shapes, images and tables, inserting or styling text. To replace existing or placeholder text across the deck use slides_replace_text_in_presentation instead. Requests apply atomically: if one is invalid, none is applied. Returns the batchUpdate response: presentationId and replies, one per request in order (e.g. createSlide.objectId for a new slide).",
+      "description": "Apply raw Google Slides API batchUpdate requests for edits beyond text replacement: creating or deleting slides, adding shapes, images and tables, inserting or styling text. To replace existing or placeholder text across the deck use slides_replace_text_in_presentation instead. Requests apply atomically: if one is invalid, none is applied. Returns status ok, presentation_id, revision_id (the revision after the update), replies (Google's, one per request in order, e.g. createSlide.objectId for a new slide) and count.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14446,7 +15401,37 @@
         }
       },
       "name": "slides_batch_update_presentation",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "presentation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replies": {
+            "items": {},
+            "type": "array"
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Slides Batch Update Presentation"
     },
     {
@@ -14456,7 +15441,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns the created Google Presentation resource: presentationId (the ID every other slides_ tool takes) and slides with each slide's objectId.",
+      "description": "Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14485,7 +15470,39 @@
         }
       },
       "name": "slides_create_presentation",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "presentation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slides": {
+            "items": {},
+            "type": "array"
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Slides Create Presentation"
     },
     {
@@ -14495,7 +15512,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Slides presentation's full structure: slides with their page elements and text, layouts and masters. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for one slide use slides_get_slide_page. Returns the Google Presentation resource: presentationId, title, pageSize and slides, where each slide's objectId is the page_object_id for slides_get_slide_page and slides_get_slide_thumbnail.",
+      "description": "Read a Google Slides presentation as an outline: every slide with its title, text, speaker notes and page elements. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for one slide's element sizes and positions use slides_get_slide_page. Returns presentation_id, title, revision_id, url, page_size (width_pt, height_pt), count and slides, each with object_id (the page_object_id other slides_ tools take), index, layout, title, text (one shape per line, in reading order), notes and elements (object_id, type, placeholder, text).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14524,7 +15541,51 @@
         }
       },
       "name": "slides_get_presentation",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "page_size": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "presentation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slides": {
+            "items": {},
+            "type": "array"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Slides Get Presentation"
     },
     {
@@ -14534,7 +15595,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read one slide of a Google Slides presentation with all its page elements: shapes, text, images and tables. For the whole deck use slides_get_presentation (which also supplies the presentation and slide IDs), and for a picture of the slide use slides_get_slide_thumbnail. Returns the Google Page resource: objectId, pageType, pageElements (each with its objectId, size, transform and content) and slideProperties.",
+      "description": "Read one slide of a Google Slides presentation with every page element's text, size and position, for layout-aware edits. For the whole deck use slides_get_presentation (which also supplies the presentation and slide IDs), and for a picture of the slide use slides_get_slide_thumbnail. Returns object_id, page_type, title, text, notes and elements in reading order, each with object_id, type (shape, image, table, video, line, group, sheets_chart, word_art), placeholder, text (table cells row by row), size (width_pt, height_pt) and position (x_pt, y_pt of the top-left corner).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14569,7 +15630,42 @@
         }
       },
       "name": "slides_get_slide_page",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "elements": {
+            "items": {},
+            "type": "array"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "object_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page_type": {},
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Slides Get Slide Page"
     },
     {
@@ -14579,7 +15675,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Render one slide of a Google Slides presentation as an image and return a link to it. Use slides_get_slide_page instead to read the slide's text and elements; the presentation and slide IDs come from slides_get_presentation. Returns the Google Thumbnail: contentUrl, a temporary image URL (valid for about 30 minutes), plus width and height in pixels.",
+      "description": "Render one slide of a Google Slides presentation as an image and return a link to it. Use slides_get_slide_page instead to read the slide's text and elements; the presentation and slide IDs come from slides_get_presentation. Returns content_url, a temporary image URL (valid for about 30 minutes), width and height in pixels, and mime_type.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14634,7 +15730,28 @@
         }
       },
       "name": "slides_get_slide_thumbnail",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "content_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "height": {
+            "type": "integer"
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Slides Get Slide Thumbnail"
     },
     {
@@ -14644,7 +15761,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns the Slides batchUpdate response: presentationId and replies[0].replaceAllText.occurrencesChanged, which is 0 or missing when nothing matched.",
+      "description": "Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14689,7 +15806,26 @@
         }
       },
       "name": "slides_replace_text_in_presentation",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "occurrences_changed": {
+            "type": "integer"
+          },
+          "presentation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Slides Replace Text In Presentation"
     },
     {
@@ -14699,7 +15835,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Mark one task as done, recording when it was completed. To reopen it use tasks_update_task with status 'needsAction'. Returns Google's updated Task resource: id, title, status ('completed'), completed (the recorded time), due and updated.",
+      "description": "Mark one task as done, recording when it was completed. To reopen it use tasks_update_task with status 'needsAction'. Returns status 'ok' and task, shaped as in tasks_get_task: id, title, status ('completed'), completed_at (the recorded time, in local time), due_date, is_overdue, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14737,7 +15873,20 @@
         }
       },
       "name": "tasks_complete_task",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "task": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Tasks Complete Task"
     },
     {
@@ -14747,7 +15896,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Add a task to a task list, optionally as a subtask (parent) or right after a sibling (previous). To change an existing task use tasks_update_task, and to reposition it use tasks_move_task. Returns Google's Task resource: id (the task_id for the other tasks tools), title, status ('needsAction' or 'completed'), due, notes, parent, position and webViewLink.",
+      "description": "Add a task to a task list, optionally as a subtask (parent) or right after a sibling (previous). To change an existing task use tasks_update_task, and to reposition it use tasks_move_task. Returns status 'ok' and task: id (the task_id for the other tasks tools), title, status ('needsAction' or 'completed'), due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14806,7 +15955,20 @@
         }
       },
       "name": "tasks_create_task",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "task": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Tasks Create Task"
     },
     {
@@ -14816,7 +15978,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new, empty Google Tasks task list. To add tasks to an existing list use tasks_create_task with its ID from tasks_list_tasklists. Returns Google's TaskList resource: id (the tasklist_id for the other tasks tools), title and updated.",
+      "description": "Create a new, empty Google Tasks task list. To add tasks to an existing list use tasks_create_task with its ID from tasks_list_tasklists. Returns status 'ok' and tasklist: id (the tasklist_id for the other tasks tools), title and updated_at (local time).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14845,7 +16007,20 @@
         }
       },
       "name": "tasks_create_tasklist",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "tasklist": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Tasks Create Tasklist"
     },
     {
@@ -14921,7 +16096,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get one task by its task list and task ID. To list a task list's tasks use tasks_list_tasks. Returns id, title, status, due_date, is_overdue, completed_at, parent_id, updated_at, deleted, hidden and the notes as notes_snippet (first 300 characters, with notes_truncated).",
+      "description": "Get one task by its task list and task ID. To list a task list's tasks use tasks_list_tasks. Returns id, title, status, due_date, is_overdue, completed_at and updated_at (local time in the account time zone), parent_id, deleted, hidden, url and the notes as notes_snippet (first 300 characters, with notes_truncated).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -14958,7 +16133,12 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "completed_at": {},
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "deleted": {
             "type": "boolean"
           },
@@ -14967,9 +16147,6 @@
               "string",
               "null"
             ]
-          },
-          "due_is_date_only": {
-            "type": "boolean"
           },
           "hidden": {
             "type": "boolean"
@@ -14991,7 +16168,6 @@
               "null"
             ]
           },
-          "source_due": {},
           "status": {
             "description": "Machine-readable operation status.",
             "type": [
@@ -15005,7 +16181,18 @@
               "null"
             ]
           },
-          "updated_at": {}
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
         "required": [],
         "type": "object"
@@ -15019,7 +16206,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Get one task list's title and last update time by ID. To find list IDs use tasks_list_tasklists, and for the tasks in a list use tasks_list_tasks. Returns id, title and updated_at.",
+      "description": "Get one task list's title and last update time by ID. To find list IDs use tasks_list_tasklists, and for the tasks in a list use tasks_list_tasks. Returns id, title and updated_at (local time in the account time zone).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -15063,7 +16250,12 @@
               "null"
             ]
           },
-          "updated_at": {}
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
         "required": [],
         "type": "object"
@@ -15077,7 +16269,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the user's Google Tasks task lists. Call it first to get the tasklist_id every other tasks tool needs ('@default' also selects the default list). Returns tasklists (id, title, updated_at), count and next_page_token when more lists remain.",
+      "description": "List the user's Google Tasks task lists. Call it to get the tasklist_id the other tasks tools take ('@default' also selects the default list). Returns tasklists (id, title, updated_at in local time), count, next_page_token when more lists remain, and account_timezone.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -15112,6 +16304,9 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
+          "account_timezone": {
+            "type": "string"
+          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
@@ -15149,7 +16344,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the tasks in one task list, filtered by due date, completion or update time. For a triage view of open work grouped by overdue, upcoming and unscheduled use tasks_tasks_digest. Returns tasks (id, title, status, due_date, is_overdue, completed_at, notes_snippet, parent_id), count, account_timezone and next_page_token when more tasks remain.",
+      "description": "List the tasks in one task list (the default list when tasklist_id is omitted), filtered by due date, completion or update time. For a triage view of open work grouped by overdue, upcoming and unscheduled use tasks_tasks_digest. Returns tasklist_id (the list's real ID when Google reports it), tasks (id, title, status, due_date, is_overdue, completed_at and updated_at in local time, notes_snippet, notes_truncated, parent_id, deleted, hidden, url), count, next_page_token when more tasks remain, and account_timezone.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -15199,7 +16394,7 @@
             "type": "boolean"
           },
           "tasklist_id": {
-            "description": "Task list ID from tasks_list_tasklists; '@default' selects the account's default list.",
+            "description": "Task list ID from tasks_list_tasklists; omit for the account's default list.",
             "type": "string"
           },
           "updated_min": {
@@ -15207,9 +16402,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "tasklist_id"
-        ],
+        "required": [],
         "type": "object"
       },
       "meta": {
@@ -15272,7 +16465,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Reposition a task within its list (nest it under a parent or place it after a sibling), or move it to another list. A cross-list move cannot also set parent or previous: move first, then call again on the destination list to place it. Returns Google's Task resource after the move: id, title, parent and position.",
+      "description": "Reposition a task within its list (nest it under a parent or place it after a sibling), or move it to another list. A cross-list move cannot also set parent or previous: move first, then call again on the destination list to place it. Returns status 'ok' and task, the task after the move shaped as in tasks_get_task: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id (null at the top level), deleted, hidden and url.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -15318,17 +16511,30 @@
         }
       },
       "name": "tasks_move_task",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "task": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Tasks Move Task"
     },
     {
       "annotations": {
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true,
-        "readOnlyHint": false
+        "readOnlyHint": true
       },
-      "description": "Triage one task list's open tasks into overdue, upcoming and unscheduled work. It needs a tasklist_id: get one from tasks_list_tasklists or pass '@default'; for completed tasks or custom filters use tasks_list_tasks. Returns overdue (due before today in the account time zone), upcoming (due from today through the window, soonest first) and unscheduled (no due date), plus tasklist_id, window_days and account_timezone.",
+      "description": "Triage one task list's open tasks into overdue, upcoming and unscheduled work; it reads the default list unless tasklist_id names another one from tasks_list_tasklists. For completed tasks or custom filters use tasks_list_tasks. Returns overdue (due before today in the account time zone), upcoming (due from today through the window, soonest first) and unscheduled (no due date), each a list of tasks shaped as in tasks_list_tasks, plus count (tasks in the three groups), tasklist_id (the list's real ID when Google reports it), window_days and account_timezone.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -15343,13 +16549,11 @@
             "type": "integer"
           },
           "tasklist_id": {
-            "description": "Task list ID from tasks_list_tasklists; '@default' selects the account's default list.",
+            "description": "Task list ID from tasks_list_tasklists; omit for the account's default list.",
             "type": "string"
           }
         },
-        "required": [
-          "tasklist_id"
-        ],
+        "required": [],
         "type": "object"
       },
       "meta": {
@@ -15368,9 +16572,35 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
+          "account_timezone": {
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of items in this response.",
+            "type": "integer"
+          },
+          "fetched_at": {
+            "description": "RFC3339 time when this response was fetched.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_more": {
+            "description": "Whether another page is available.",
+            "type": "boolean"
+          },
+          "next_page_token": {
+            "description": "Opaque token for the next page, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "overdue": {
             "items": {},
             "type": "array"
+          },
+          "tasklist_id": {
+            "type": "string"
           },
           "unscheduled": {
             "items": {},
@@ -15379,6 +16609,9 @@
           "upcoming": {
             "items": {},
             "type": "array"
+          },
+          "window_days": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -15393,7 +16626,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change fields of an existing task; only the fields you pass change, and at least one is required. To just mark a task done use tasks_complete_task, and to reorder or move it use tasks_move_task. Returns Google's updated Task resource: id, title, status, due, notes, completed, parent and updated.",
+      "description": "Change fields of an existing task; only the fields you pass change, and at least one is required. To just mark a task done use tasks_complete_task, and to reorder or move it use tasks_move_task. Returns status 'ok' and task, the task as stored now, shaped as in tasks_get_task: id, title, status, due_date, is_overdue, completed_at, updated_at, notes_snippet, notes_truncated, parent_id, deleted, hidden and url.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -15459,7 +16692,20 @@
         }
       },
       "name": "tasks_update_task",
-      "outputSchema": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "description": "Machine-readable operation status.",
+            "type": "string"
+          },
+          "task": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "title": "Tasks Update Task"
     }
   ]

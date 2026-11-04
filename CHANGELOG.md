@@ -10,10 +10,12 @@ noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 Smaller, truthful tool catalog. Every tool and parameter description is
 written for the tool (no generated text), schemas stop repeating limits and
 `null` alternatives, raw Google payloads stop publishing an inferred output
-schema, and API plumbing parameters are gone. The default catalog shrinks from
-about 89,000 to about 62,000 estimated tokens (characters / 4; 75,444 to
-53,907 with the cl100k tokenizer). Tool names, results and behaviour are
-unchanged except where listed under Breaking changes.
+schema, and API plumbing parameters are gone. Every response is normalized
+into one envelope (snake_case, local times, compact resource handles, one list
+shape), and Docs and Drive files can be read as text. The default catalog
+shrinks from about 89,000 to about 67,000 estimated tokens (characters / 4;
+75,444 to 58,746 with the cl100k tokenizer). Tool names, results and behaviour
+are unchanged except where listed under Breaking changes.
 
 ### Breaking changes
 
@@ -64,20 +66,212 @@ still sends a removed parameter gets the normal input-validation error.
     rejected).
   - `drive_update_permission` `role`: only `owner`, `organizer`,
     `fileOrganizer`, `writer`, `commenter`, `reader`.
-- **No output schema for tools that return a Google resource unchanged**
-  (37 tools): every Docs, Sheets and Slides tool; `forms_get_form`,
+- **No tool returns a Google resource unchanged any more.** The 37 tools
+  that did (every Docs, Sheets and Slides tool; `forms_get_form`,
   `forms_create_form`, `forms_batch_update_form`,
   `forms_set_form_publish_settings`; every People tool except
   `people_delete_contact`; `calendar_list_calendars`,
   `calendar_check_time_availability`; `tasks_create_task`,
   `tasks_update_task`, `tasks_complete_task`, `tasks_move_task`,
-  `tasks_create_tasklist`. Results still arrive as `structuredContent`;
-  the descriptions name the fields a caller needs.
+  `tasks_create_tasklist`) return a normalized response and publish an open
+  output schema for it; see Response shapes below.
 - **Optional parameters are published as their plain type.** `T | None`
   parameters no longer appear as `anyOf: [T, {type: null}]` with
   `default: null`; they are simply not in `required`. A client that validates
   arguments against the schema before sending should omit an unset parameter
   rather than send `null` (the server itself still accepts `null`).
+
+#### Response shapes
+
+Every tool now returns a response the server builds: snake_case keys at
+every depth, dates in the account's time zone, people as `{name, email}`, and
+a `resource` handle per Workspace item. Google's own objects appear only in
+the `replies` of the four `*_batch_update_*` tools and in
+`docs_read_document` with `format=raw`. Each tool publishes an open output
+schema (`additionalProperties: true`) for its shape. Breaking changes, by
+area:
+
+- **One list envelope.** Every list-shaped result (the `list_*` and
+  `search_*` tools, `gmail_get_mail_digest`, `gmail_check_mail_updates`,
+  `gmail_get_thread`, `calendar_get_calendar_digest`, `tasks_tasks_digest`)
+  carries its resource-named list (`messages`, `files`, `events`, `tasks`,
+  `contacts`, `calendars`, ...) with `count`, `has_more`,
+  `next_page_token` and `fetched_at`, plus `account_timezone` when the
+  items carry dates. Renamed: `message_count` → `count`
+  (`gmail_get_mail_digest`, `gmail_get_thread`), `new_count` → `count`
+  (`gmail_check_mail_updates`). Removed: `next_history_id` from
+  `gmail_get_mail_digest` (always null there; `gmail_check_mail_updates`
+  keeps its cursor fields unchanged).
+- **`status` only on changes.** Removed from `search_workspace` (`status:
+  "partial"` is now a non-empty `errors`), `resolve_workspace_resource`
+  (`status: "ok"`/`"resolved"` is now `verified: true`/`false`; its
+  `next_actions` is gone) and `get_workspace_capabilities`. Calendar changes
+  report `status: "ok"` instead of `success: true`
+  (`calendar_create_event`, `calendar_update_event`,
+  `calendar_respond_to_event`, `calendar_delete_event`), and
+  `calendar_add_event_attachment` / `calendar_remove_event_attachment`
+  gain `status: "ok"`.
+- **Resource handles** (`resource`) omit fields they do not know instead of
+  sending `null`, and a handle attached to an item carries only `kind`, `id`
+  and `uri` plus what the item does not already say (no repeated `name`,
+  `mime_type`, `modified_at`, `web_url`). Gmail handles no longer put the
+  thread ID in `name`. Handles now also attach to `contacts`, `file`,
+  `event`, `contact`, `task` and to the digest groups (`overdue`,
+  `upcoming`, `unscheduled`, `requires_response`); a task list no longer
+  gets a handle of kind `task`.
+- **Web links** (`web_url`, `url`) drop Google's tracking parameters (`usp`,
+  `ouid`, `rtpof`, `sd`, `utm_*`, ...); parameters a link needs, such as a
+  Calendar link's `eid`, stay.
+- **Gmail.** Message envelopes drop `date_timezone` (the response's
+  `account_timezone` says it once) and `source_date`; `gmail_read_emails`
+  drops `history_id` and `internal_date`, and with `format=full` returns the
+  raw values under `details` (`date_header`, `internal_date`,
+  `history_id`). `gmail_get_thread` drops `history_id` (the raw formats
+  keep Gmail's own `thread.historyId`).
+- **Drive.** File envelopes drop `timezone`, `source_created_at` and
+  `source_modified_at`. The `file` returned by `drive_create_folder`,
+  `drive_create_file_metadata`, `drive_upload_file`,
+  `drive_update_file_metadata`, `drive_update_file_content`,
+  `drive_move_file`, `drive_copy_file` and `drive_delete_file` is
+  normalized: `id, name, kind, mime_type, size, parent_ids, drive_id,
+  web_url, trashed` instead of Google's `mimeType`, `parents`, `driveId`,
+  `webViewLink`.
+- **Calendar.** Event envelopes drop `timezone` and `source_start` /
+  `source_end`; `event_timezone` names the zone the event was scheduled in
+  when it differs from the account's, and `updated_at` is in the account's
+  time zone. `calendar_read_events` attendees are `{name, email,
+  response_status, optional, organizer, is_self, is_resource}` and
+  attachments `{title, file_url, file_id, mime_type}`; it also returns
+  `url` and `recurring_event_id`. `calendar_create_event`,
+  `calendar_update_event`, `calendar_respond_to_event` and the two
+  attachment tools return `event` in that same shape instead of Google's
+  Event resource (dropped: `kind`, `etag`, `iCalUID`, `sequence`,
+  `colorId`, `creator`, `reminders`, `conferenceData` beyond the meeting
+  link, `eventType`, `created`). `calendar_create_event` and
+  `calendar_update_event` always return `warnings` (empty when the conflict
+  check ran). `calendar_list_calendars` returns `calendars` (`id`, `name`
+  — the user's own name for the calendar when set — `description`,
+  `primary`, `access_role`, `time_zone`, `hidden`), `count` and
+  `next_page_token` instead of Google's CalendarList (dropped: `kind`,
+  `etag`, `nextSyncToken`, `colorId`, `backgroundColor`,
+  `foregroundColor`, `selected`, `defaultReminders`,
+  `notificationSettings`, `conferenceProperties`; `summary`/
+  `summaryOverride` → `name`, `accessRole` → `access_role`, `timeZone` →
+  `time_zone`). `calendar_check_time_availability` returns `all_free`,
+  `time_min`, `time_max`, `account_timezone` and `calendars` as a list in
+  request order of `{id, free, busy, errors}` with busy periods in the
+  requested time zone, instead of Google's map keyed by calendar ID
+  (`errors` holds Google's reasons, e.g. `notFound`; `free` is null when a
+  calendar could not be read). `calendar_search_events` gains
+  `account_timezone`.
+- **`search_workspace`.** Gmail hits carry `thread_id`, `subject`,
+  `from`, `date`, `snippet` and `unread` (one metadata request per hit,
+  concurrent and bounded); their `name` (the thread ID) is gone. Drive
+  searches names and content (`fullText contains` or `name contains`), name
+  matches first; Drive hits report `kind` as the file kind (`document`,
+  `folder`, ...) with the MIME type in `mime_type`, `url` → `web_url`, and
+  `modified_at` in the account's time zone. Matches are grouped by service
+  in the order of `services`. The result gains `account_timezone`.
+- **Docs.** `docs_get_document` returns an editing outline instead of the
+  Document resource: `document_id`, `title`, `revision_id`, `url`,
+  `suggestions_view_mode` and `tabs` (always a list; one entry with null
+  `tab_id`/`title` without `include_tabs_content`), each tab with
+  `tab_id`, `title`, `index`, `nesting_level`, `parent_tab_id`, `headers`,
+  `footers`, `footnotes`, `named_ranges` and `content`: structural elements
+  with `kind` (`paragraph`, `table`, `table_of_contents`,
+  `section_break`), `start_index`, `end_index`, the plain `text`, the named
+  `style` (null for normal text), `list` (`list_id`, `nesting_level`,
+  `ordered`), `inline` objects and links with their indices, and table
+  `cells`. Dropped: `namedStyles`, `documentStyle`, every `textStyle`, the
+  rest of `paragraphStyle`, list glyph definitions, `inlineObjects` /
+  `positionedObjects` details, `suggested*` fields, table styles. Read the
+  Document resource unchanged with `docs_read_document` `format=raw`.
+  `docs_create_document` returns `status`, `document_id`, `title`,
+  `revision_id`, `url`; `docs_append_document_text` and
+  `docs_replace_document_text` return `status`, `document_id`,
+  `revision_id` (+ `occurrences_changed`, 0 when nothing matched);
+  `docs_batch_update_document` returns `status`, `document_id`,
+  `revision_id`, `replies` (Google's, unchanged) and `count`.
+- **Sheets.** `sheets_get_spreadsheet` returns `spreadsheet_id`, `title`,
+  `locale`, `spreadsheet_time_zone`, `url`, `sheets` (`sheet_id`, `title`,
+  `index`, `type`, `row_count`, `column_count`, `frozen_row_count`,
+  `frozen_column_count`, `hidden`, and with `include_grid_data` the
+  displayed `values` and their top-left cell `values_start` instead of raw
+  `rowData`) and `named_ranges` (`named_range_id`, `name`, A1 `range`).
+  Dropped: `defaultFormat`, `spreadsheetTheme`, `autoRecalc`,
+  `iterativeCalculationSettings`, `dataSources`, `dataSourceSchedules`,
+  `developerMetadata`, and per sheet `conditionalFormats`,
+  `protectedRanges`, `bandedRanges`, `charts`, `filterViews`,
+  `basicFilter`, `merges`, tab colors and cell formatting.
+  `sheets_create_spreadsheet` returns `status`, `spreadsheet_id`, `title`,
+  `url`, `sheets`. `sheets_get_sheet_values` returns `spreadsheet_id`,
+  `range`, `major_dimension`, `values` (`[]` for an empty range) and
+  `row_count`; `sheets_batch_get_sheet_values` returns `spreadsheet_id`,
+  `value_ranges` (same fields) and `count`. `sheets_append_sheet_values`
+  and `sheets_update_sheet_values` return `status`, `spreadsheet_id`,
+  (`table_range`,) `updated_range`, `updated_rows`, `updated_columns`,
+  `updated_cells` and `updated_values` (null unless
+  `include_values_in_response`). `sheets_batch_update_spreadsheet` returns
+  `status`, `spreadsheet_id`, `replies`, `count` and `spreadsheet` (the
+  `sheets_get_spreadsheet` shape when requested, else null).
+- **Slides.** `slides_get_presentation` returns an outline:
+  `presentation_id`, `title`, `revision_id`, `url`, `page_size`
+  (`width_pt`, `height_pt`), `count` and `slides`, each with `object_id`,
+  `index`, `layout` (its name), `title`, `text` (all text in reading
+  order), `notes` (speaker notes) and `elements` (`object_id`, `type`,
+  `placeholder`, `text`). Dropped: `masters`, `layouts`, `notesMaster`,
+  `locale`, transforms, sizes, styles, fills, content URLs.
+  `slides_get_slide_page` returns `object_id`, `page_type`, `title`,
+  `text`, `notes` and `elements` with each element's `size` and `position`
+  in points. `slides_get_slide_thumbnail`
+  returns `content_url`, `width`, `height`, `mime_type`;
+  `slides_create_presentation` `status`, `presentation_id`, `title`, `url`,
+  `slides`; `slides_replace_text_in_presentation` `status`,
+  `presentation_id`, `occurrences_changed`;
+  `slides_batch_update_presentation` `status`, `presentation_id`,
+  `revision_id`, `replies`, `count`.
+- **Forms.** `forms_get_form` returns `form_id`, `title`,
+  `document_title`, `description`, `responder_url`, `revision_id`,
+  `linked_spreadsheet_id`, `is_quiz`, `published`, `accepting_responses`
+  (null for legacy forms), `count` and `items` (`item_id`, `title`,
+  `description`, `kind`, `question_id`, `required`, `question_type` such as
+  `short_text`, `multiple_choice`, `scale`, and `options`). Dropped:
+  `settings` other than the quiz flag, `emailCollectionType`, grading,
+  choice navigation and images, media, `shuffle`, file-upload limits.
+  `forms_create_form` returns `status`, `form_id`, `title`,
+  `document_title`, `responder_url`, `revision_id`;
+  `forms_batch_update_form` `status`, `form_id`, `revision_id`,
+  `replies`, `count`, `form` (the `forms_get_form` shape when requested);
+  `forms_set_form_publish_settings` `status`, `form_id`, `published`,
+  `accepting_responses`. Form responses drop the per-item `timezone`.
+- **People.** Every contact is `{resource_name, etag, name, given_name,
+  family_name, emails, phones, organizations, biography}` with `emails` and
+  `phones` as `[{value, type}]` (duplicates from merged sources listed once)
+  and `organizations` as `[{name, title}]`; dropped: `metadata`, sources,
+  primary flags, `formattedType`, `canonicalForm`,
+  `displayNameLastFirst`, `unstructuredName`. `people_list_contacts`
+  returns `contacts`, `count`, `total` (was `totalItems`) and
+  `next_page_token` (dropped `totalPeople`, `nextSyncToken`);
+  `people_search_contacts` returns `contacts` and `count` (each
+  `results[].person` unwrapped); `people_get_contact` returns `contact`;
+  `people_create_contact` / `people_update_contact` return `status` and
+  `contact`. Contact groups are `{resource_name, name, group_type ('user'
+  or 'system'), member_count}`: `people_list_contact_groups` returns
+  `contact_groups`, `count`, `total`, `next_page_token`;
+  `people_create_contact_group` `status` and `contact_group`;
+  `people_modify_contact_group_members` `status`, `group_name`,
+  `not_found`, `cannot_remove_last_group` (both `[]` when every change
+  applied).
+- **Tasks.** Tasks drop `source_due` and `due_is_date_only` (Google Tasks
+  stores only a date: `due_date`), report `completed_at` and `updated_at`
+  in the account's time zone, and gain `url`. `tasks_create_task`,
+  `tasks_update_task`, `tasks_complete_task` and `tasks_move_task` return
+  `status` and `task` (the `tasks_get_task` shape) instead of Google's Task
+  resource; `tasks_create_tasklist` returns `status` and `tasklist`. Task
+  lists report `updated_at` in the account's time zone and
+  `tasks_list_tasklists` gains `account_timezone`. `tasks_tasks_digest`
+  gains `count`. `tasks_list_tasks` and `tasks_tasks_digest` report the
+  list's real ID as `tasklist_id`.
 
 ### Changed
 
@@ -116,14 +310,33 @@ still sends a removed parameter gets the normal input-validation error.
 
 ### Fixed
 
+- `tasks_tasks_digest` was published with `readOnlyHint: false` and
+  `idempotentHint: false` (its local name starts with its namespace, which the
+  annotation rules stripped); it is now read-only and idempotent.
 - `drive_hide_drive` and `drive_unhide_drive` failed on every call: they
   passed `useDomainAdminAccess`, which `drives.hide`/`drives.unhide` do not
   accept, and the Google client raised before sending the request.
 
 ### Added
 
+- `docs_read_document(document_id, format=text|markdown|raw, offset)`: a
+  document as clean text or Markdown (headings, nested lists, tables, links,
+  person and rich-link chips, footnotes, every tab), paged like an email
+  body (`body`, `truncated`, `next_offset`, `body_chars`, `body_sha256`);
+  `raw` returns the Document resource unchanged.
+- `drive_read_file(file_id, format=text|markdown, offset)`: the text of a
+  Drive file with the same paging fields, without the server's filesystem:
+  Google Docs (also as Markdown) and Slides exported as text, Sheets as CSV
+  of the first sheet, stored text files up to 5 MB downloaded; binary files,
+  folders, forms and drawings fail with `invalid_input`.
+- `tasks_list_tasks` and `tasks_tasks_digest` take `tasklist_id` as
+  optional; omitted, they read the account's default list.
 - `tests/test_catalog_budget.py` pins a ceiling for the default and
   all-optional catalogs; `scripts/measure_tokens.py` prints their size.
+- `tests/fixtures/google_payloads/` holds a recorded-shape Google payload
+  per normalizer and its golden output (`tests/test_response_goldens.py`);
+  `scripts/measure_tokens.py` reports each response's size against its
+  payload, and per-item token ceilings are tested.
 
 ## 1.1.0 — 2026-11-04
 
