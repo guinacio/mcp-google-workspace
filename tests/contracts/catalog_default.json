@@ -345,6 +345,35 @@
             },
             "type": "array"
           },
+          "reminders": {
+            "description": "Reminders with their method, at most 5, each {minutes (0 to 40320, minutes before the start), method ('popup' or 'email', an email to the calendar's owner)}, e.g. [{\"minutes\": 1440, \"method\": \"email\"}, {\"minutes\": 10, \"method\": \"popup\"}]. An empty list sets no reminders; omit it to use the calendar's default reminders. Use instead of reminder_minutes; passing both is an error.",
+            "items": {
+              "additionalProperties": false,
+              "description": "Pass this as a JSON object payload to the tool. Do not pass a raw string for the full request.",
+              "properties": {
+                "method": {
+                  "description": "'popup' alerts on the user's devices; 'email' emails the user (the calendar's owner).",
+                  "enum": [
+                    "popup",
+                    "email"
+                  ],
+                  "type": "string"
+                },
+                "minutes": {
+                  "description": "Minutes before the event's start, 0 to 40320 (4 weeks).",
+                  "maximum": 40320,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "minutes",
+                "method"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "send_updates": {
             "description": "Who Google emails the invitation: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar) or 'none'. When omitted, Google's default of sending no notification applies.",
             "enum": [
@@ -1372,6 +1401,35 @@
             "description": "New popup reminders, in minutes before the start (each 0 to 40320, at most 5), replacing the event's reminders, e.g. [10, 60]. An empty list removes all reminders; omit it to leave them unchanged.",
             "items": {
               "type": "integer"
+            },
+            "type": "array"
+          },
+          "reminders": {
+            "description": "New reminders with their method, replacing the event's reminders, at most 5, each {minutes (0 to 40320, minutes before the start), method ('popup' or 'email', an email to the calendar's owner)}, e.g. [{\"minutes\": 1440, \"method\": \"email\"}]. An empty list removes all reminders; omit it to leave them unchanged. Use instead of reminder_minutes; passing both is an error.",
+            "items": {
+              "additionalProperties": false,
+              "description": "Pass this as a JSON object payload to the tool. Do not pass a raw string for the full request.",
+              "properties": {
+                "method": {
+                  "description": "'popup' alerts on the user's devices; 'email' emails the user (the calendar's owner).",
+                  "enum": [
+                    "popup",
+                    "email"
+                  ],
+                  "type": "string"
+                },
+                "minutes": {
+                  "description": "Minutes before the event's start, 0 to 40320 (4 weeks).",
+                  "maximum": 40320,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "minutes",
+                "method"
+              ],
+              "type": "object"
             },
             "type": "array"
           },

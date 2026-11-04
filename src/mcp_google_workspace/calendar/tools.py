@@ -35,6 +35,7 @@ from .schemas import (
     EventAttachmentInput,
     EventAttachmentSelector,
     EventAttendeeInput,
+    EventReminderInput,
     FindFreeTimeRequest,
     ReadEventsRequest,
     RespondToEventRequest,
@@ -90,6 +91,24 @@ def _popup_reminders(minutes: list[int]) -> dict[str, Any]:
             {"method": "popup", "minutes": value} for value in sorted(set(minutes))
         ],
     }
+
+
+def _event_reminders(reminders: list[EventReminderInput]) -> dict[str, Any]:
+    """reminders with each reminder's method, in minutes order; [] means none."""
+    unique = sorted({(item.minutes, item.method) for item in reminders})
+    return {
+        "useDefault": False,
+        "overrides": [{"method": method, "minutes": minutes} for minutes, method in unique],
+    }
+
+
+def _reminders_body(request: CreateEventRequest | UpdateEventRequest) -> dict[str, Any] | None:
+    """The Event reminders field for whichever reminder parameter was given, else None."""
+    if request.reminders is not None:
+        return _event_reminders(request.reminders)
+    if request.reminder_minutes is not None:
+        return _popup_reminders(request.reminder_minutes)
+    return None
 
 
 def _idempotent_event_id(key: str) -> str:
@@ -810,6 +829,16 @@ def register_tools(server: FastMCP) -> None:
                 "reminders."
             ),
         ] = None,
+        reminders: Annotated[
+            list[EventReminderInput] | None,
+            (
+                "Reminders with their method, at most 5, each {minutes (0 to 40320, minutes before the "
+                "start), method ('popup' or 'email', an email to the calendar's owner)}, e.g. "
+                "[{\"minutes\": 1440, \"method\": \"email\"}, {\"minutes\": 10, \"method\": \"popup\"}]. An "
+                "empty list sets no reminders; omit it to use the calendar's default reminders. Use "
+                "instead of reminder_minutes; passing both is an error."
+            ),
+        ] = None,
         recurrence: Annotated[
             list[str] | None,
             "RFC 5545 recurrence lines, e.g. ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10']; EXDATE and RDATE lines are also accepted.",
@@ -844,6 +873,7 @@ def register_tools(server: FastMCP) -> None:
             supports_attachments=supports_attachments,
             send_updates=send_updates,
             reminder_minutes=reminder_minutes,
+            reminders=reminders,
             recurrence=recurrence,
             on_conflict=on_conflict,
         )
@@ -904,8 +934,8 @@ def register_tools(server: FastMCP) -> None:
             body["attendees"] = [item.model_dump(by_alias=True, exclude_none=True) for item in request.attendees]
         if request.attachments is not None:
             body["attachments"] = [a.to_api() for a in request.attachments]
-        if request.reminder_minutes is not None:
-            body["reminders"] = _popup_reminders(request.reminder_minutes)
+        if (reminders_body := _reminders_body(request)) is not None:
+            body["reminders"] = reminders_body
         if request.recurrence:
             body["recurrence"] = request.recurrence
         conflict_check = await run_blocking(
@@ -1039,6 +1069,16 @@ def register_tools(server: FastMCP) -> None:
                 "reminders; omit it to leave them unchanged."
             ),
         ] = None,
+        reminders: Annotated[
+            list[EventReminderInput] | None,
+            (
+                "New reminders with their method, replacing the event's reminders, at most 5, each "
+                "{minutes (0 to 40320, minutes before the start), method ('popup' or 'email', an email "
+                "to the calendar's owner)}, e.g. [{\"minutes\": 1440, \"method\": \"email\"}]. An empty "
+                "list removes all reminders; omit it to leave them unchanged. Use instead of "
+                "reminder_minutes; passing both is an error."
+            ),
+        ] = None,
         recurrence: Annotated[
             list[str] | None,
             (
@@ -1084,6 +1124,7 @@ def register_tools(server: FastMCP) -> None:
             attachments=attachments,
             supports_attachments=supports_attachments,
             reminder_minutes=reminder_minutes,
+            reminders=reminders,
             recurrence=recurrence,
             send_updates=send_updates,
             on_conflict=on_conflict,
@@ -1109,8 +1150,8 @@ def register_tools(server: FastMCP) -> None:
                 )
         if request.color_id is not None:
             patch_data["colorId"] = request.color_id
-        if request.reminder_minutes is not None:
-            patch_data["reminders"] = _popup_reminders(request.reminder_minutes)
+        if (reminders_body := _reminders_body(request)) is not None:
+            patch_data["reminders"] = reminders_body
         if request.add_meet_link:
             patch_data["conferenceData"] = _meet_conference_request(None)
         if request.attachments is not None:

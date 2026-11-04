@@ -479,6 +479,7 @@ _EVENT_FIELDS = (
     ("recurrence", "recurrence (every occurrence of the series)"),
     ("attachments", "attachments"),
     ("reminder_minutes", "reminders"),
+    ("reminders", "reminders"),
     ("visibility", "visibility"),
     ("transparency", "busy/free"),
     ("add_meet_link", "Meet link"),

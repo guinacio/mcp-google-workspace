@@ -51,6 +51,18 @@ unchanged.
   lists `raw` in `core` too, and the call fails there with `invalid_input`
   naming `MCP_TOOL_TIER=extended` (`details.required_tier`,
   `details.tool_tier`) before any Google request.
+- **Email reminders on calendar events.** `calendar_create_event` and
+  `calendar_update_event` gain `reminders`, a list of `{minutes, method}`
+  with `method` `popup` or `email` (an email to the calendar's owner), beside
+  `reminder_minutes`, which keeps setting popup reminders only. Google's
+  limits are published in the schema and checked before any request:
+  `minutes` 0 to 40320 (4 weeks), at most 5 reminders. As with
+  `reminder_minutes`, an empty list means no reminders (Google's
+  `useDefault: false` with no overrides) and omitting it keeps the calendar's
+  defaults on create and the event's reminders on update; the same reminder
+  given twice is sent once. Passing both `reminders` and `reminder_minutes`
+  fails with `invalid_input` and changes nothing. The update preview lists
+  `reminders` among the changed fields.
 
 ## 2.0.1 — 2026-11-04
 

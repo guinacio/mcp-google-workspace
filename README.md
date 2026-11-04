@@ -293,7 +293,7 @@ Calendar (namespaced as `calendar_*`):
 - `search_events`, `read_events`, `get_calendar_digest`
 - `get_calendar_context`: the account time zone and current time, plus the user's calendars
 - `find_free_time`: one FreeBusy query that reports whether a window is free for everyone (`all_free`, busy periods per calendar) and suggests slots of a given length inside working hours
-- `create_event`, `update_event` (`add_meet_link`, `reminder_minutes`, `send_updates`, color, visibility, transparency, attendees, attachments, recurrence), `respond_to_event`, `delete_event`
+- `create_event`, `update_event` (`add_meet_link`, `reminder_minutes` or `reminders` with popup and email methods, `send_updates`, color, visibility, transparency, attendees, attachments, recurrence), `respond_to_event`, `delete_event`
 - `set_event_attachments`: add and remove attachments in one change; attached Drive files download through `drive_download_file`
 - Conflict prevention: create/update run overlap checks and fail with `conflict` when the slot is unavailable; updates exclude the event being moved
 - Retry safety: pass a stable `idempotency_key` to `create_event`; the App does this automatically and Google Calendar stores a deterministic event ID
