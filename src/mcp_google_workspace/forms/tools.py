@@ -18,7 +18,6 @@ from .presentation import (
     form_responses_envelope,
     publish_settings_envelope,
     question_titles,
-    response_envelope,
 )
 from .schemas import (
     BatchUpdateFormRequest,
@@ -225,6 +224,13 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_form_responses")
     async def list_form_responses(
         form_id: str,
+        response_id: Annotated[
+            str | None,
+            (
+                "ID of one response to read, the id of a response in an earlier result. When given, "
+                "responses holds just that response and page_size, page_token and filter are ignored."
+            ),
+        ] = None,
         page_size: Annotated[int, "Responses per page, 1 to 5000."] = 50,
         page_token: str | None = None,
         filter: Annotated[
@@ -236,17 +242,24 @@ def register_tools(server: FastMCP) -> None:
         ] = None,
         enrich_questions: Annotated[bool, _ENRICH_QUESTIONS] = True,
     ) -> dict[str, Any]:
-        """List the submitted responses of a Google Form, one page at a time. The form_id comes from drive_list_files, search_workspace or forms_create_form; to re-read one response use forms_get_form_response. Returns form_id, count, next_page_token, account_timezone and responses, each with id (the response_id), created_at and submitted_at in the account time zone, respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads)."""
+        """List the submitted responses of a Google Form one page at a time, or read one of them by response_id. The form_id comes from drive_list_files, search_workspace or forms_create_form; for the questions themselves use forms_get_form. Returns form_id, count, next_page_token, account_timezone and responses, each with id (the response_id), created_at and submitted_at in the account time zone, respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads). With response_id, responses holds that one response and next_page_token is null."""
         try:
-            result = await run_blocking(
-                list_form_responses_payload,
-                ListFormResponsesRequest(
-                    form_id=form_id,
-                    page_size=page_size,
-                    page_token=page_token,
-                    filter=filter,
+            if response_id is not None:
+                response = await run_blocking(
+                    get_form_response_payload,
+                    GetFormResponseRequest(form_id=form_id, response_id=response_id),
                 )
-            )
+                result: dict[str, Any] = {"responses": [response]}
+            else:
+                result = await run_blocking(
+                    list_form_responses_payload,
+                    ListFormResponsesRequest(
+                        form_id=form_id,
+                        page_size=page_size,
+                        page_token=page_token,
+                        filter=filter,
+                    ),
+                )
             account_timezone = await resolve_user_timezone()
             titles = (
                 question_titles(await run_blocking(get_form_payload, GetFormRequest(form_id=form_id)))
@@ -254,27 +267,6 @@ def register_tools(server: FastMCP) -> None:
                 else {}
             )
         except HttpError as exc:
-            raise provider_tool_error(exc, form_id=form_id) from exc
+            context = {"form_id": form_id} if response_id is None else {"form_id": form_id, "response_id": response_id}
+            raise provider_tool_error(exc, **context) from exc
         return form_responses_envelope(result, titles, form_id=form_id, account_timezone=account_timezone)
-
-    @server.tool(name="get_form_response")
-    async def get_form_response(
-        form_id: str,
-        response_id: str,
-        enrich_questions: Annotated[bool, _ENRICH_QUESTIONS] = True,
-    ) -> dict[str, Any]:
-        """Read one submitted response of a Google Form. To list or page through responses use forms_list_form_responses, which also supplies the response_id. Returns id, created_at and submitted_at in the account time zone (ISO 8601 with offset), respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads)."""
-        try:
-            response = await run_blocking(
-                get_form_response_payload,
-                GetFormResponseRequest(form_id=form_id, response_id=response_id),
-            )
-            account_timezone = await resolve_user_timezone()
-            titles = (
-                question_titles(await run_blocking(get_form_payload, GetFormRequest(form_id=form_id)))
-                if enrich_questions
-                else {}
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, form_id=form_id, response_id=response_id) from exc
-        return response_envelope(response, titles, account_timezone=account_timezone)
