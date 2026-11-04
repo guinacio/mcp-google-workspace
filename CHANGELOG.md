@@ -8,7 +8,10 @@ noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 ## 1.0.1 — Unreleased
 
 Correctness fixes to the published output schemas and the error envelope. No
-tool, parameter or successful response shape is removed or renamed.
+tool or parameter is removed or renamed. One result changes shape: a calendar
+time-slot conflict is now an error result instead of a successful result with
+`status: "CONFLICT"` (see below); clients that match on that status need to
+check for the `conflict` error code instead.
 
 ### Fixed
 
