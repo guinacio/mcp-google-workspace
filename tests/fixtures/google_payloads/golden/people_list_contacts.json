@@ -11,6 +11,7 @@
       "etag": "%EgcBAj0JPjcuGgQBAgUHIgxhYmNkZWZnaGlqa2w=",
       "family_name": "Lovelace",
       "given_name": "Ada",
+      "id": "people/c1234567890123456789",
       "name": "Ada Lovelace",
       "organizations": [
         {
@@ -42,6 +43,7 @@
       "etag": "%EgcBAj0JPjcuGgQBAgUHIgx6eXh3dnV0c3JxcG8=",
       "family_name": "Hopper",
       "given_name": "Grace",
+      "id": "people/c9876543210987654321",
       "name": "Grace Hopper",
       "organizations": [],
       "phones": [],
@@ -58,6 +60,7 @@
       "etag": "%EgcBAj0JPjcuGgQBAgUHIgxQbHVtYmVyT25seQ==",
       "family_name": null,
       "given_name": null,
+      "id": "people/c3141592653589793238",
       "name": null,
       "organizations": [],
       "phones": [

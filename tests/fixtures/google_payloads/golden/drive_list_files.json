@@ -34,6 +34,7 @@
       },
       "shared": true,
       "size": null,
+      "size_bytes": null,
       "starred": false,
       "trashed": false,
       "web_url": "https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg/edit"
@@ -65,6 +66,7 @@
       },
       "shared": true,
       "size": "184213",
+      "size_bytes": 184213,
       "starred": true,
       "trashed": false,
       "web_url": "https://drive.google.com/file/d/1PdfFileExample0123456789abcdefghijk/view"
@@ -101,6 +103,7 @@
       },
       "shared": false,
       "size": null,
+      "size_bytes": null,
       "starred": false,
       "trashed": false,
       "web_url": "https://drive.google.com/drive/folders/0AFolderExample0123456789"

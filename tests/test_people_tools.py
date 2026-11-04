@@ -267,6 +267,8 @@ def test_search_contacts_without_query_lists_contacts(service):
     structured = result.structured_content
     assert set(structured) == CONTACTS_SHAPE
     assert [contact["resource_name"] for contact in structured["contacts"]] == ["people/c1"]
+    # id, the key every other service uses, holds the same resource name (2.0.1).
+    assert [contact["id"] for contact in structured["contacts"]] == ["people/c1"]
     assert (structured["count"], structured["total"]) == (1, 41)
     assert (structured["next_page_token"], structured["has_more"]) == ("page-2", True)
 
@@ -508,6 +510,7 @@ def test_contact_envelope_keeps_what_the_next_call_needs():
     envelope = contact_envelope(person)
 
     assert envelope == {
+        "id": "people/c1",
         "resource_name": "people/c1",
         "etag": "%etag",
         "name": "Ada Lovelace",

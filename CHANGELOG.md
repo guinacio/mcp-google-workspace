@@ -43,6 +43,13 @@ otherwise; no tool, parameter or dependency is added or removed.
   `gmail_delete` gains `count` (distinct message IDs; null for a
   `thread_id`) and `requested_count` (the IDs as given): the preview text
   lists only the first five IDs.
+- **Consistent keys.** Every People contact gains `id`, the same value as
+  `resource_name` (which stays and is still what `person_name` takes), so a
+  contact is keyed like a Drive file or a Gmail message. Every Drive file
+  envelope (`drive_list_files`, `drive_get_file` and the `file` of the
+  Drive change tools) gains `size_bytes`, the size as an integer (null when
+  Drive reports none, as for Google-native files); `size` stays the string
+  Drive sends.
 
 ### Changed
 
@@ -51,6 +58,11 @@ otherwise; no tool, parameter or dependency is added or removed.
   `tzname()` gave, which for many zones is only an offset such as `"-03"`; the
   offset stays in `utc_offset`. `utc_datetime` keeps the value of
   `current_utc_time` and is now described as its alias rather than removed.
+- **`get_google_connection_status` no longer returns `principal_key`**, the
+  internal token-store key of the caller (`"local"`, or a hash for remote
+  users). Its description never listed it, no tool takes it and the
+  dashboard does not read it; it is gone from the published output schema
+  too.
 
 - **`docs_read_document` outline of a long document** returns its first page
   instead of the whole outline (a document whose outline fits in one page is

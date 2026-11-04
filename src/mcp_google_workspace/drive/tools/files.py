@@ -377,7 +377,7 @@ def register(server: FastMCP) -> None:
         file_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Get the metadata of one Drive file or folder by ID, including how its content can be retrieved. To find files by name or filter use drive_list_files; to read a file's text use drive_read_file, and to save or export it drive_download_file. Returns file (id, name, kind, mime_type, size, created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download, is_google_native, export_formats: the MIME types a Google-native file can be exported to)."""
+        """Get the metadata of one Drive file or folder by ID, including how its content can be retrieved. To find files by name or filter use drive_list_files; to read a file's text use drive_read_file, and to save or export it drive_download_file. Returns file (id, name, kind, mime_type, size (Drive's string) and size_bytes (the number), created_at, modified_at, owners, last_modified_by, parent_ids, drive_id, web_url, shared, trashed, can_edit, can_download, is_google_native, export_formats: the MIME types a Google-native file can be exported to)."""
         request = GetFileRequest(
             file_id=file_id,
         )
@@ -416,7 +416,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_upload_file with only name and mime_type; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it); use file.id as a parent ID in later calls."""
+        """Create a new Drive folder. For other empty files, such as a blank Google Doc, use drive_upload_file with only name and mime_type; to put an existing file into a folder use drive_move_file. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it); use file.id as a parent ID in later calls."""
         request = CreateFolderRequest(
             name=name,
             parent_ids=parent_ids or [],
@@ -521,7 +521,7 @@ def register(server: FastMCP) -> None:
         ] = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Upload a file to Drive from the Workspace Files picker or a local path, as a new file or, with file_id, as new content of an existing file (same ID, name, folder and sharing). With neither source it creates an empty file from name and mime_type, such as a blank Google Doc in a chosen folder; for folders use drive_create_folder and to rename or set properties drive_update_file_metadata. Returns status 'ok', mode ('create', 'overwrite', 'skipped', 'replace' or 'metadata_only') and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where not reported). Mode 'skipped' returns the same-named file that already exists."""
+        """Upload a file to Drive from the Workspace Files picker or a local path, as a new file or, with file_id, as new content of an existing file (same ID, name, folder and sharing). With neither source it creates an empty file from name and mime_type, such as a blank Google Doc in a chosen folder; for folders use drive_create_folder and to rename or set properties drive_update_file_metadata. Returns status 'ok', mode ('create', 'overwrite', 'skipped', 'replace' or 'metadata_only') and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where not reported). Mode 'skipped' returns the same-named file that already exists."""
         request = UploadFileRequest(
             local_path=local_path,
             uploaded_file=uploaded_file,
@@ -667,7 +667,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_upload_file with file_id. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it)."""
+        """Rename a Drive file or change its description and custom properties. Only the fields you pass change. To move it between folders use drive_move_file, and to replace its content use drive_upload_file with file_id. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it)."""
         request = UpdateFileMetadataRequest(
             file_id=file_id,
             name=name,
@@ -720,7 +720,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it)."""
+        """Move a Drive file or folder to another folder. Drive allows one parent per file, so a move passes the destination in add_parent_ids and the current parent (from drive_get_file) in remove_parent_ids. To rename use drive_update_file_metadata, and to duplicate use drive_copy_file. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it)."""
         request = MoveFileRequest(
             file_id=file_id,
             add_parent_ids=add_parent_ids or [],
@@ -754,7 +754,7 @@ def register(server: FastMCP) -> None:
         description: Annotated[str | None, "Optional description to set on the new copy."] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it) of the new copy; the source file is unchanged."""
+        """Make a copy of a Drive file, such as duplicating a template Doc or Sheet. To relocate the original instead use drive_move_file, and to rename it drive_update_file_metadata. Returns status 'ok' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it) of the new copy; the source file is unchanged."""
         request = CopyFileRequest(
             file_id=file_id,
             name=name,
@@ -793,7 +793,7 @@ def register(server: FastMCP) -> None:
         ] = "trash",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_unshare_file instead. Returns status 'ok' with mode 'trash' and file (id, name, kind, mime_type, size, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline."""
+        """Delete a Drive file or folder: move it to the trash (default) or delete it permanently. Prefer the default trash mode, which is reversible from Drive's trash; to only revoke someone's access use drive_unshare_file instead. Returns status 'ok' with mode 'trash' and file (id, name, kind, mime_type, size, size_bytes, parent_ids, drive_id, web_url, trashed; null where the change does not report it), or mode 'permanent' and file_id. A permanent delete cannot be undone, asks the user to confirm first and returns status 'cancelled' if they decline."""
         request = DeleteFileRequest(
             file_id=file_id,
             delete_mode=delete_mode,

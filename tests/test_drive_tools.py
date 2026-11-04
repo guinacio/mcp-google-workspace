@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from mcp_google_workspace.drive.server import drive_mcp
-from mcp_google_workspace.drive.presentation import file_envelope
+from mcp_google_workspace.drive.presentation import file_envelope, file_summary
 from mcp_google_workspace.drive.tools import drives as drive_drives
 from mcp_google_workspace.drive.tools import files as drive_files
 from mcp_google_workspace.drive.tools import permissions as drive_permissions
@@ -74,6 +74,15 @@ def test_file_envelope_reports_unfetched_fields_as_null():
     for field in ("shared", "starred", "trashed", "owned_by_me", "owners", "parent_ids", "last_modified_by", "can_edit", "can_download", "mime_type"):
         assert result[field] is None, field
     assert result["kind"] == "file"
+
+
+def test_file_envelope_reports_the_size_as_a_number_too():
+    # Drive sends int64 values as strings; size stays as Google sent it (2.0.0 shape).
+    stored = file_envelope({"id": "file-1", "size": "8028"}, account_timezone="UTC")
+    assert (stored["size"], stored["size_bytes"]) == ("8028", 8028)
+    native = file_envelope({"id": "doc-1", "mimeType": "application/vnd.google-apps.document"}, account_timezone="UTC")
+    assert (native["size"], native["size_bytes"]) == (None, None)
+    assert file_summary({"id": "file-1", "size": "12"})["size_bytes"] == 12
 
 
 def test_file_envelope_keeps_fetched_false_and_empty_values():

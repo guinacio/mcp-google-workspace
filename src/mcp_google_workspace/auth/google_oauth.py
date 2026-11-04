@@ -283,7 +283,6 @@ def register_connection_tools(server: FastMCP) -> None:
         return {
             "state": str(status.get("state")),
             "connected": bool(status.get("connected")),
-            "principal_key": str(status.get("principal_key")),
             "granted_capabilities": list(status.get("granted_capabilities", [])),
             "granted_scopes": list(status.get("granted_scopes", [])),
             "checked_capability": str(capability) if capability is not None else None,

@@ -107,15 +107,15 @@
       "name": "drive_list_files",
       "fixture": "drive_list_files.json",
       "payload_tokens": 483,
-      "response_tokens": 590,
+      "response_tokens": 604,
       "items": 3,
-      "tokens_per_item": 187
+      "tokens_per_item": 192
     },
     {
       "name": "drive_get_file",
       "fixture": "drive_list_files.json",
       "payload_tokens": 483,
-      "response_tokens": 191
+      "response_tokens": 196
     },
     {
       "name": "forms_get_form",
@@ -191,17 +191,17 @@
       "name": "people_list_contacts",
       "fixture": "people_list_contacts.json",
       "payload_tokens": 780,
-      "response_tokens": 337,
+      "response_tokens": 363,
       "items": 3,
-      "tokens_per_item": 106
+      "tokens_per_item": 114
     },
     {
       "name": "people_search_contacts",
       "fixture": "people_search_contacts.json",
       "payload_tokens": 627,
-      "response_tokens": 268,
+      "response_tokens": 285,
       "items": 2,
-      "tokens_per_item": 131
+      "tokens_per_item": 140
     },
     {
       "name": "people_search_contacts_no_match",
@@ -213,19 +213,19 @@
       "name": "people_get_contact",
       "fixture": "people_get_contact.json",
       "payload_tokens": 442,
-      "response_tokens": 167
+      "response_tokens": 176
     },
     {
       "name": "people_create_contact",
       "fixture": "people_create_contact.json",
       "payload_tokens": 251,
-      "response_tokens": 122
+      "response_tokens": 131
     },
     {
       "name": "people_update_contact",
       "fixture": "people_update_contact.json",
       "payload_tokens": 376,
-      "response_tokens": 161
+      "response_tokens": 169
     },
     {
       "name": "people_list_contact_groups",
