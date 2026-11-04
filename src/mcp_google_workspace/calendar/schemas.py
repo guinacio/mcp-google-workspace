@@ -8,6 +8,9 @@ from pydantic import EmailStr, Field
 
 from ..common.request_model import ToolRequestModel
 
+# Calendar API events.* sendUpdates values.
+SendUpdates = Literal["all", "externalOnly", "none"]
+
 
 class ListEventsRequest(ToolRequestModel):
     calendar_id: str = Field(
@@ -30,7 +33,7 @@ class ListEventsRequest(ToolRequestModel):
     )
     max_results: int = Field(default=25, ge=1, le=2500, description="Maximum events to return.")
     single_events: bool = Field(default=True, description="Expand recurring events into single instances.")
-    order_by: str = Field(default="startTime", description="Sort order, typically 'startTime'.")
+    order_by: Literal["startTime", "updated"] = Field(default="startTime", description="Sort order.")
     range_preset: Literal["today", "tomorrow", "this_week", "next_7_days"] | None = Field(
         default=None,
         description=(
@@ -72,7 +75,7 @@ class RespondToEventRequest(ToolRequestModel):
     response_status: Literal["accepted", "tentative", "declined"] = Field(
         description="Response to set for the authenticated attendee."
     )
-    send_updates: Literal["all", "externalOnly", "none"] | None = Field(
+    send_updates: SendUpdates | None = Field(
         default="all",
         description="Guest notification mode.",
     )
@@ -135,7 +138,7 @@ class CreateEventRequest(ToolRequestModel):
         default=True,
         description="Whether client supports event attachments (sets supportsAttachments query param).",
     )
-    send_updates: str | None = Field(
+    send_updates: SendUpdates | None = Field(
         default=None,
         description="Guest notification mode for create (all, externalOnly, none).",
     )
@@ -181,7 +184,7 @@ class UpdateEventRequest(ToolRequestModel):
     )
     reminders: dict[str, Any] | None = Field(default=None, description="Updated reminder configuration.")
     recurrence: list[str] | None = Field(default=None, description="Updated recurrence rules.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for update.")
+    send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for update.")
     on_conflict: Literal["fail", "suggest_next_slot"] = Field(
         default="fail",
         description="Conflict strategy when updated time overlaps existing events.",
@@ -191,7 +194,7 @@ class UpdateEventRequest(ToolRequestModel):
 class DeleteEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
     event_id: str = Field(description="Calendar event ID to delete.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for deletion.")
+    send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for deletion.")
     force: bool = Field(
         default=False,
         description=(
@@ -276,7 +279,7 @@ class AddEventAttachmentRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
     event_id: str = Field(description="Event ID to mutate.")
     attachment: EventAttachmentInput = Field(description="Attachment metadata to add.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
+    send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
 
 
 class RemoveEventAttachmentRequest(ToolRequestModel):
@@ -284,7 +287,7 @@ class RemoveEventAttachmentRequest(ToolRequestModel):
     event_id: str = Field(description="Event ID to mutate.")
     file_url: str | None = Field(default=None, description="Attachment fileUrl to remove.")
     file_id: str | None = Field(default=None, description="Attachment fileId to remove.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
+    send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
 
 
 class DownloadEventAttachmentRequest(ToolRequestModel):

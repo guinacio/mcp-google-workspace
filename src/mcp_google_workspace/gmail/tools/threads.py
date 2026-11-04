@@ -77,7 +77,6 @@ def register(server: FastMCP) -> None:
     async def get_thread(
         thread_id: str,
         format: Literal["full", "metadata", "minimal", "clean"] = "clean",
-        metadata_headers: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Fetch a thread cleanly: latest full message plus compact prior-message lines."""
@@ -85,7 +84,6 @@ def register(server: FastMCP) -> None:
         request = GetThreadRequest(
             thread_id=thread_id,
             format=api_format,
-            metadata_headers=metadata_headers or [],
         )
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
@@ -97,7 +95,6 @@ def register(server: FastMCP) -> None:
                 userId="me",
                 id=request.thread_id,
                 format=request.format,
-                metadataHeaders=request.metadata_headers or None,
             )
         )
         messages = thread.get("messages", [])

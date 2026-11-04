@@ -21,6 +21,12 @@ from ..schemas import (
 
 LOGGER = logging.getLogger(__name__)
 
+# Shared drives are always in scope and calls act as the user, never with
+# domain-administrator access; the fields are the ones each response returns.
+_PERMISSION_LIST_FIELDS = "nextPageToken,permissions(id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime)"
+_PERMISSION_FIELDS = "id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime"
+_WRITTEN_PERMISSION_FIELDS = "id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime"
+
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_permissions")
@@ -28,9 +34,6 @@ def register(server: FastMCP) -> None:
         file_id: str,
         page_size: int = 50,
         page_token: str | None = None,
-        supports_all_drives: bool = True,
-        use_domain_admin_access: bool = False,
-        fields: str = "nextPageToken,permissions(id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime)",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """List permissions on a Drive file."""
@@ -38,9 +41,6 @@ def register(server: FastMCP) -> None:
             file_id=file_id,
             page_size=page_size,
             page_token=page_token,
-            supports_all_drives=supports_all_drives,
-            use_domain_admin_access=use_domain_admin_access,
-            fields=fields,
         )
         service = drive_service()
         LOGGER.debug(f"Listing permissions for file {request.file_id}.")
@@ -50,9 +50,9 @@ def register(server: FastMCP) -> None:
                 fileId=request.file_id,
                 pageSize=request.page_size,
                 pageToken=request.page_token,
-                supportsAllDrives=request.supports_all_drives,
-                useDomainAdminAccess=request.use_domain_admin_access,
-                fields=request.fields,
+                supportsAllDrives=True,
+                useDomainAdminAccess=False,
+                fields=_PERMISSION_LIST_FIELDS,
             )
         )
         items = result.get("permissions", [])
@@ -68,18 +68,12 @@ def register(server: FastMCP) -> None:
     async def get_permission(
         file_id: str,
         permission_id: str,
-        supports_all_drives: bool = True,
-        use_domain_admin_access: bool = False,
-        fields: str = "id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Get a specific permission on a Drive file."""
         request = GetPermissionRequest(
             file_id=file_id,
             permission_id=permission_id,
-            supports_all_drives=supports_all_drives,
-            use_domain_admin_access=use_domain_admin_access,
-            fields=fields,
         )
         service = drive_service()
         LOGGER.debug(f"Fetching permission {request.permission_id} for file {request.file_id}.")
@@ -88,9 +82,9 @@ def register(server: FastMCP) -> None:
             .get(
                 fileId=request.file_id,
                 permissionId=request.permission_id,
-                supportsAllDrives=request.supports_all_drives,
-                useDomainAdminAccess=request.use_domain_admin_access,
-                fields=request.fields,
+                supportsAllDrives=True,
+                useDomainAdminAccess=False,
+                fields=_PERMISSION_FIELDS,
             )
         )
         return {"permission": permission}
@@ -115,9 +109,6 @@ def register(server: FastMCP) -> None:
             str | None, "Custom message included in the sharing notification email."
         ] = None,
         transfer_ownership: bool | None = None,
-        use_domain_admin_access: bool = False,
-        supports_all_drives: bool = True,
-        fields: str = "id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a sharing permission for a Drive file."""
@@ -132,9 +123,6 @@ def register(server: FastMCP) -> None:
             send_notification_email=send_notification_email,
             email_message=email_message,
             transfer_ownership=transfer_ownership,
-            use_domain_admin_access=use_domain_admin_access,
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         grantee = request.email_address or request.domain or request.type
         create_details = [f"role {request.role}"]
@@ -185,9 +173,9 @@ def register(server: FastMCP) -> None:
                 sendNotificationEmail=request.send_notification_email,
                 emailMessage=request.email_message,
                 transferOwnership=request.transfer_ownership,
-                supportsAllDrives=request.supports_all_drives,
-                useDomainAdminAccess=request.use_domain_admin_access,
-                fields=request.fields,
+                supportsAllDrives=True,
+                useDomainAdminAccess=False,
+                fields=_WRITTEN_PERMISSION_FIELDS,
             )
         )
         return {"status": "ok", "permission": created}
@@ -196,14 +184,11 @@ def register(server: FastMCP) -> None:
     async def update_permission(
         file_id: str,
         permission_id: str,
-        role: str | None = None,
+        role: Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"] | None = None,
         allow_file_discovery: bool | None = None,
         expiration_time: str | None = None,
         remove_expiration: bool = False,
         transfer_ownership: bool | None = None,
-        use_domain_admin_access: bool = False,
-        supports_all_drives: bool = True,
-        fields: str = "id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Update an existing Drive file permission."""
@@ -215,9 +200,6 @@ def register(server: FastMCP) -> None:
             expiration_time=expiration_time,
             remove_expiration=remove_expiration,
             transfer_ownership=transfer_ownership,
-            use_domain_admin_access=use_domain_admin_access,
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         update_details: list[str] = []
         if request.role is not None:
@@ -267,9 +249,9 @@ def register(server: FastMCP) -> None:
                 permissionId=request.permission_id,
                 body=body,
                 transferOwnership=request.transfer_ownership,
-                supportsAllDrives=request.supports_all_drives,
-                useDomainAdminAccess=request.use_domain_admin_access,
-                fields=request.fields,
+                supportsAllDrives=True,
+                useDomainAdminAccess=False,
+                fields=_WRITTEN_PERMISSION_FIELDS,
             )
         )
         return {"status": "ok", "permission": updated}
@@ -278,16 +260,12 @@ def register(server: FastMCP) -> None:
     async def delete_permission(
         file_id: str,
         permission_id: str,
-        use_domain_admin_access: bool = False,
-        supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Delete a file permission."""
         request = DeletePermissionRequest(
             file_id=file_id,
             permission_id=permission_id,
-            use_domain_admin_access=use_domain_admin_access,
-            supports_all_drives=supports_all_drives,
         )
         if not await confirm_destructive_action(
             ctx,
@@ -307,8 +285,8 @@ def register(server: FastMCP) -> None:
             service.permissions().delete(
                 fileId=request.file_id,
                 permissionId=request.permission_id,
-                supportsAllDrives=request.supports_all_drives,
-                useDomainAdminAccess=request.use_domain_admin_access,
+                supportsAllDrives=True,
+                useDomainAdminAccess=False,
             )
         )
         return {

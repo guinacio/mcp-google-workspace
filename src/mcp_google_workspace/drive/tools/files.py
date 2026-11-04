@@ -38,6 +38,17 @@ from ..presentation import file_envelope
 LOGGER = logging.getLogger(__name__)
 
 
+# Shared drives are always in scope (supportsAllDrives=true on every call), and
+# each call requests the fields its normalizer reads; neither is a tool input.
+_LIST_FILES_FIELDS = "nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload))"
+_FILE_FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload)"
+_CREATED_FILE_FIELDS = "id,name,mimeType,parents,driveId,webViewLink"
+_UPLOADED_FILE_FIELDS = "id,name,mimeType,size,parents,driveId,webViewLink"
+_UPDATED_METADATA_FIELDS = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink"
+_UPDATED_CONTENT_FIELDS = "id,name,mimeType,size,parents,driveId,webViewLink,modifiedTime"
+_MOVED_FILE_FIELDS = "id,name,parents,driveId,webViewLink"
+
+
 def _build_metadata_body(request: CreateFileMetadataRequest) -> dict[str, Any]:
     body: dict[str, Any] = {"name": request.name}
     if request.mime_type:
@@ -62,7 +73,6 @@ def _find_existing_file_by_name(
     *,
     name: str,
     parent_ids: list[str],
-    supports_all_drives: bool,
 ) -> dict[str, Any] | None:
     safe_name = _escape_drive_query_string(name)
     query_parts = [f"name = '{safe_name}'", "trashed = false"]
@@ -71,7 +81,7 @@ def _find_existing_file_by_name(
     result = service.files().list(
         q=" and ".join(query_parts),
         pageSize=1,
-        supportsAllDrives=supports_all_drives,
+        supportsAllDrives=True,
         includeItemsFromAllDrives=True,
         fields="files(id,name,parents,mimeType,driveId,webViewLink)",
     ).execute()
@@ -121,12 +131,9 @@ def register(server: FastMCP) -> None:
         page_size: int = 25,
         page_token: str | None = None,
         order_by: str | None = None,
-        corpora: str | None = None,
+        corpora: Literal["user", "drive", "domain", "allDrives"] | None = None,
         drive_id: str | None = None,
-        include_items_from_all_drives: bool = True,
-        supports_all_drives: bool = True,
-        spaces: str | None = None,
-        fields: str = "nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload))",
+        spaces: Literal["drive", "appDataFolder"] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """List/search files with Shared Drives-aware query options."""
@@ -137,10 +144,7 @@ def register(server: FastMCP) -> None:
             order_by=order_by,
             corpora=corpora,
             drive_id=drive_id,
-            include_items_from_all_drives=include_items_from_all_drives,
-            supports_all_drives=supports_all_drives,
             spaces=spaces,
-            fields=fields,
         )
         service = drive_service()
         account_timezone = await resolve_user_timezone()
@@ -154,10 +158,10 @@ def register(server: FastMCP) -> None:
                 orderBy=request.order_by,
                 corpora=request.corpora,
                 driveId=request.drive_id,
-                includeItemsFromAllDrives=request.include_items_from_all_drives,
-                supportsAllDrives=request.supports_all_drives,
+                includeItemsFromAllDrives=True,
+                supportsAllDrives=True,
                 spaces=request.spaces,
-                fields=request.fields,
+                fields=_LIST_FILES_FIELDS,
             )
         )
         files = result.get("files", [])
@@ -173,15 +177,11 @@ def register(server: FastMCP) -> None:
     @server.tool(name="get_file")
     async def get_file(
         file_id: str,
-        supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload)",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Get metadata for a single Drive file."""
         request = GetFileRequest(
             file_id=file_id,
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         account_timezone = await resolve_user_timezone()
@@ -190,8 +190,8 @@ def register(server: FastMCP) -> None:
             service.files()
             .get(
                 fileId=request.file_id,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_FILE_FIELDS,
             )
         )
         return {
@@ -203,16 +203,12 @@ def register(server: FastMCP) -> None:
     async def create_folder(
         name: str,
         parent_ids: list[str] | None = None,
-        supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,parents,driveId,webViewLink",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a folder in Drive."""
         request = CreateFolderRequest(
             name=name,
             parent_ids=parent_ids or [],
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         body: dict[str, Any] = {
@@ -226,8 +222,8 @@ def register(server: FastMCP) -> None:
             service.files()
             .create(
                 body=body,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_CREATED_FILE_FIELDS,
             )
         )
         return {"status": "ok", "file": created}
@@ -244,8 +240,6 @@ def register(server: FastMCP) -> None:
         properties: Annotated[
             dict[str, Any] | None, "Public custom properties key/value map, visible to other apps."
         ] = None,
-        supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,parents,driveId,webViewLink",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a Drive file shell (metadata only, no media upload)."""
@@ -256,8 +250,6 @@ def register(server: FastMCP) -> None:
             description=description,
             app_properties=app_properties,
             properties=properties,
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         body = _build_metadata_body(request)
@@ -266,8 +258,8 @@ def register(server: FastMCP) -> None:
             service.files()
             .create(
                 body=body,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_CREATED_FILE_FIELDS,
             )
         )
         return {"status": "ok", "file": created}
@@ -286,8 +278,6 @@ def register(server: FastMCP) -> None:
             Literal["rename", "overwrite", "skip"],
             "Behavior when a file with the same name already exists in the target parent scope.",
         ] = "rename",
-        supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,size,parents,driveId,webViewLink",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Upload a local file to Drive."""
@@ -299,8 +289,6 @@ def register(server: FastMCP) -> None:
             mime_type=mime_type,
             resumable=resumable,
             if_exists=if_exists,
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         if request.uploaded_file:
@@ -324,7 +312,6 @@ def register(server: FastMCP) -> None:
             service,
             name=requested_name,
             parent_ids=request.parent_ids,
-            supports_all_drives=request.supports_all_drives,
         )
         if existing_file and request.if_exists == "skip":
             LOGGER.debug(
@@ -352,8 +339,8 @@ def register(server: FastMCP) -> None:
                     fileId=existing_file["id"],
                     body={"name": target_name},
                     media_body=media,
-                    supportsAllDrives=request.supports_all_drives,
-                    fields=request.fields,
+                    supportsAllDrives=True,
+                    fields=_UPLOADED_FILE_FIELDS,
                 )
             )
             if request.resumable:
@@ -373,8 +360,8 @@ def register(server: FastMCP) -> None:
             .create(
                 body=body,
                 media_body=media,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_UPLOADED_FILE_FIELDS,
             )
         )
         if request.resumable:
@@ -406,8 +393,6 @@ def register(server: FastMCP) -> None:
         remove_app_property_keys: Annotated[
             list[str] | None, "Private appProperties keys to clear."
         ] = None,
-        supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Patch file metadata (name/description/properties)."""
@@ -419,8 +404,6 @@ def register(server: FastMCP) -> None:
             properties=properties,
             remove_property_keys=remove_property_keys or [],
             remove_app_property_keys=remove_app_property_keys or [],
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         body: dict[str, Any] = {}
@@ -446,8 +429,8 @@ def register(server: FastMCP) -> None:
             .update(
                 fileId=request.file_id,
                 body=body,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_UPDATED_METADATA_FIELDS,
             )
         )
         return {"status": "ok", "file": updated}
@@ -464,8 +447,6 @@ def register(server: FastMCP) -> None:
         keep_revision_forever: Annotated[
             bool | None, "Pin the new revision so it is never auto-purged, when the account supports it."
         ] = None,
-        supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,size,parents,driveId,webViewLink,modifiedTime",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Replace file binary content from a local file."""
@@ -476,8 +457,6 @@ def register(server: FastMCP) -> None:
             mime_type=mime_type,
             resumable=resumable,
             keep_revision_forever=keep_revision_forever,
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         if request.uploaded_file:
@@ -497,8 +476,8 @@ def register(server: FastMCP) -> None:
                 fileId=request.file_id,
                 media_body=media,
                 keepRevisionForever=request.keep_revision_forever,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_UPDATED_CONTENT_FIELDS,
             )
         )
         if request.resumable:
@@ -518,8 +497,6 @@ def register(server: FastMCP) -> None:
         file_id: str,
         add_parent_ids: Annotated[list[str] | None, "Parent folder IDs to add."] = None,
         remove_parent_ids: Annotated[list[str] | None, "Parent folder IDs to remove."] = None,
-        supports_all_drives: bool = True,
-        fields: str = "id,name,parents,driveId,webViewLink",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Move file by adding/removing parent folders."""
@@ -527,8 +504,6 @@ def register(server: FastMCP) -> None:
             file_id=file_id,
             add_parent_ids=add_parent_ids or [],
             remove_parent_ids=remove_parent_ids or [],
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         LOGGER.debug(f"Moving Drive file {request.file_id}.")
@@ -538,8 +513,8 @@ def register(server: FastMCP) -> None:
                 fileId=request.file_id,
                 addParents=",".join(request.add_parent_ids) if request.add_parent_ids else None,
                 removeParents=",".join(request.remove_parent_ids) if request.remove_parent_ids else None,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_MOVED_FILE_FIELDS,
             )
         )
         return {"status": "ok", "file": updated}
@@ -550,8 +525,6 @@ def register(server: FastMCP) -> None:
         name: str | None = None,
         parent_ids: list[str] | None = None,
         description: str | None = None,
-        supports_all_drives: bool = True,
-        fields: str = "id,name,mimeType,parents,driveId,webViewLink",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Copy a Drive file to a new file."""
@@ -560,8 +533,6 @@ def register(server: FastMCP) -> None:
             name=name,
             parent_ids=parent_ids or [],
             description=description,
-            supports_all_drives=supports_all_drives,
-            fields=fields,
         )
         service = drive_service()
         body: dict[str, Any] = {}
@@ -577,8 +548,8 @@ def register(server: FastMCP) -> None:
             .copy(
                 fileId=request.file_id,
                 body=body,
-                supportsAllDrives=request.supports_all_drives,
-                fields=request.fields,
+                supportsAllDrives=True,
+                fields=_CREATED_FILE_FIELDS,
             )
         )
         return {"status": "ok", "file": copied}
@@ -597,7 +568,6 @@ def register(server: FastMCP) -> None:
                 "delete is always confirmed interactively. Ignored for delete_mode='trash'."
             ),
         ] = True,
-        supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Delete a Drive file safely (trash by default, permanent optional)."""
@@ -605,7 +575,6 @@ def register(server: FastMCP) -> None:
             file_id=file_id,
             delete_mode=delete_mode,
             confirm_permanent=confirm_permanent,
-            supports_all_drives=supports_all_drives,
         )
         service = drive_service()
         if request.delete_mode == "trash":
@@ -614,7 +583,7 @@ def register(server: FastMCP) -> None:
                 service.files().update(
                     fileId=request.file_id,
                     body={"trashed": True},
-                    supportsAllDrives=request.supports_all_drives,
+                    supportsAllDrives=True,
                     fields="id,name,trashed,driveId,webViewLink",
                 )
             )
@@ -633,7 +602,7 @@ def register(server: FastMCP) -> None:
         await execute_google_request(
             service.files().delete(
                 fileId=request.file_id,
-                supportsAllDrives=request.supports_all_drives,
+                supportsAllDrives=True,
             )
         )
         return {"status": "ok", "mode": "permanent", "file_id": request.file_id}
@@ -644,7 +613,6 @@ def register(server: FastMCP) -> None:
         output_path: str,
         overwrite: bool = False,
         acknowledge_abuse: bool = False,
-        supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Download binary file content to local path."""
@@ -653,7 +621,6 @@ def register(server: FastMCP) -> None:
             output_path=output_path,
             overwrite=overwrite,
             acknowledge_abuse=acknowledge_abuse,
-            supports_all_drives=supports_all_drives,
         )
         require_local_filesystem("Drive download")
         service = drive_service()
@@ -661,7 +628,7 @@ def register(server: FastMCP) -> None:
         media_req = service.files().get_media(
             fileId=request.file_id,
             acknowledgeAbuse=request.acknowledge_abuse,
-            supportsAllDrives=request.supports_all_drives,
+            supportsAllDrives=True,
         )
         size = await stream_google_download(
             media_req,
@@ -715,13 +682,11 @@ def register(server: FastMCP) -> None:
     @server.tool(name="get_file_content_capabilities")
     async def get_file_content_capabilities(
         file_id: str,
-        supports_all_drives: bool = True,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Return whether file can be downloaded/exported and available export links."""
         request = GetFileContentCapabilitiesRequest(
             file_id=file_id,
-            supports_all_drives=supports_all_drives,
         )
         service = drive_service()
         LOGGER.debug(f"Inspecting content capabilities for file {request.file_id}.")
@@ -729,7 +694,7 @@ def register(server: FastMCP) -> None:
             service.files()
             .get(
                 fileId=request.file_id,
-                supportsAllDrives=request.supports_all_drives,
+                supportsAllDrives=True,
                 fields="id,name,mimeType,size,capabilities(canDownload,canEdit),webContentLink,exportLinks",
             )
         )

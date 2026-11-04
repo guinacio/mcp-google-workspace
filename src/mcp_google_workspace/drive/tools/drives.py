@@ -14,6 +14,10 @@ from ..schemas import GetDriveRequest, HideDriveRequest, ListDrivesRequest, Unhi
 
 LOGGER = logging.getLogger(__name__)
 
+# Calls act as the user, never with domain-administrator access.
+_DRIVE_LIST_FIELDS = "nextPageToken,drives(id,name,hidden,createdTime,orgUnitId,restrictions,capabilities)"
+_DRIVE_FIELDS = "id,name,hidden,createdTime,orgUnitId,restrictions,capabilities"
+
 
 def register(server: FastMCP) -> None:
     @server.tool(name="list_drives")
@@ -21,8 +25,6 @@ def register(server: FastMCP) -> None:
         page_size: int = 25,
         page_token: str | None = None,
         query: str | None = None,
-        use_domain_admin_access: bool = False,
-        fields: str = "nextPageToken,drives(id,name,hidden,createdTime,orgUnitId,restrictions,capabilities)",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """List Shared Drives visible to the authenticated account."""
@@ -30,8 +32,6 @@ def register(server: FastMCP) -> None:
             page_size=page_size,
             page_token=page_token,
             query=query,
-            use_domain_admin_access=use_domain_admin_access,
-            fields=fields,
         )
         service = drive_service()
         LOGGER.debug("Listing Shared Drives.")
@@ -41,8 +41,8 @@ def register(server: FastMCP) -> None:
                 pageSize=request.page_size,
                 pageToken=request.page_token,
                 q=request.query,
-                useDomainAdminAccess=request.use_domain_admin_access,
-                fields=request.fields,
+                useDomainAdminAccess=False,
+                fields=_DRIVE_LIST_FIELDS,
             )
         )
         items = result.get("drives", [])
@@ -57,15 +57,11 @@ def register(server: FastMCP) -> None:
     @server.tool(name="get_drive")
     async def get_drive(
         drive_id: str,
-        use_domain_admin_access: bool = False,
-        fields: str = "id,name,hidden,createdTime,orgUnitId,restrictions,capabilities",
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Get metadata for one Shared Drive."""
         request = GetDriveRequest(
             drive_id=drive_id,
-            use_domain_admin_access=use_domain_admin_access,
-            fields=fields,
         )
         service = drive_service()
         LOGGER.debug(f"Fetching Shared Drive {request.drive_id}.")
@@ -73,8 +69,8 @@ def register(server: FastMCP) -> None:
             service.drives()
             .get(
                 driveId=request.drive_id,
-                useDomainAdminAccess=request.use_domain_admin_access,
-                fields=request.fields,
+                useDomainAdminAccess=False,
+                fields=_DRIVE_FIELDS,
             )
         )
         return {"drive": drive}
@@ -82,13 +78,11 @@ def register(server: FastMCP) -> None:
     @server.tool(name="hide_drive")
     async def hide_drive(
         drive_id: str,
-        use_domain_admin_access: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Hide a Shared Drive from the Drive UI."""
         request = HideDriveRequest(
             drive_id=drive_id,
-            use_domain_admin_access=use_domain_admin_access,
         )
         service = drive_service()
         LOGGER.debug(f"Hiding Shared Drive {request.drive_id}.")
@@ -96,7 +90,6 @@ def register(server: FastMCP) -> None:
             service.drives()
             .hide(
                 driveId=request.drive_id,
-                useDomainAdminAccess=request.use_domain_admin_access,
             )
         )
         return {"status": "ok", "drive": drive}
@@ -104,13 +97,11 @@ def register(server: FastMCP) -> None:
     @server.tool(name="unhide_drive")
     async def unhide_drive(
         drive_id: str,
-        use_domain_admin_access: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Unhide a Shared Drive in the Drive UI."""
         request = UnhideDriveRequest(
             drive_id=drive_id,
-            use_domain_admin_access=use_domain_admin_access,
         )
         service = drive_service()
         LOGGER.debug(f"Unhiding Shared Drive {request.drive_id}.")
@@ -118,7 +109,6 @@ def register(server: FastMCP) -> None:
             service.drives()
             .unhide(
                 driveId=request.drive_id,
-                useDomainAdminAccess=request.use_domain_admin_access,
             )
         )
         return {"status": "ok", "drive": drive}

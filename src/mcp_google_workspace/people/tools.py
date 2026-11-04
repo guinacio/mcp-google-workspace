@@ -12,6 +12,8 @@ from ..common.confirmation import confirm_destructive_action
 from ..common.errors import provider_tool_error
 from .client import normalize_contact_group_name, normalize_person_name, people_service
 from .schemas import (
+    GROUP_FIELDS,
+    PERSON_FIELDS,
     CreateContactGroupRequest,
     CreateContactRequest,
     DeleteContactRequest,
@@ -70,7 +72,7 @@ def list_contacts_payload(request: ListContactsRequest) -> dict[str, Any]:
         resourceName="people/me",
         pageSize=request.page_size,
         pageToken=request.page_token,
-        personFields=request.person_fields,
+        personFields=PERSON_FIELDS,
         sortOrder=request.sort_order,
         sources=request.sources,
     ).execute()
@@ -82,10 +84,10 @@ def search_contacts_payload(request: SearchContactsRequest) -> dict[str, Any]:
     # cache, and Google's docs instruct clients to send an empty-query warmup
     # request first so the real search sees fresh results.
     # https://developers.google.com/people/v1/contacts#search_the_users_contacts
-    service.people().searchContacts(query="", readMask=request.read_mask, pageSize=1, sources=request.sources).execute()
+    service.people().searchContacts(query="", readMask=PERSON_FIELDS, pageSize=1, sources=request.sources).execute()
     return service.people().searchContacts(
         query=request.query,
-        readMask=request.read_mask,
+        readMask=PERSON_FIELDS,
         pageSize=request.page_size,
         sources=request.sources,
     ).execute()
@@ -95,7 +97,7 @@ def get_contact_payload(request: GetContactRequest) -> dict[str, Any]:
     service = people_service()
     return service.people().get(
         resourceName=normalize_person_name(request.person_name),
-        personFields=request.person_fields,
+        personFields=PERSON_FIELDS,
         sources=request.sources,
     ).execute()
 
@@ -111,7 +113,7 @@ def create_contact_payload(request: CreateContactRequest) -> dict[str, Any]:
         organization=request.organization,
         biography=request.biography,
     )
-    return service.people().createContact(personFields=request.person_fields, body=body).execute()
+    return service.people().createContact(personFields=PERSON_FIELDS, body=body).execute()
 
 
 def update_contact_payload(request: UpdateContactRequest) -> dict[str, Any]:
@@ -129,7 +131,7 @@ def update_contact_payload(request: UpdateContactRequest) -> dict[str, Any]:
     return service.people().updateContact(
         resourceName=normalize_person_name(request.person_name),
         updatePersonFields=",".join(update_fields),
-        personFields=request.person_fields,
+        personFields=PERSON_FIELDS,
         sources=request.sources,
         body=body,
     ).execute()
@@ -145,7 +147,7 @@ def delete_contact_payload(request: DeleteContactRequest) -> dict[str, Any]:
 def list_contact_groups_payload(request: ListContactGroupsRequest) -> dict[str, Any]:
     service = people_service()
     return service.contactGroups().list(
-        groupFields=request.group_fields,
+        groupFields=GROUP_FIELDS,
         pageSize=request.page_size,
         pageToken=request.page_token,
     ).execute()
@@ -172,7 +174,6 @@ def register_tools(server: FastMCP) -> None:
     def list_contacts(
         page_size: int = 100,
         page_token: str | None = None,
-        person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
         sort_order: SortOrder | None = None,
         sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
@@ -188,7 +189,6 @@ def register_tools(server: FastMCP) -> None:
                 ListContactsRequest(
                     page_size=page_size,
                     page_token=page_token,
-                    person_fields=person_fields,
                     sort_order=sort_order,
                     sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
                 )
@@ -200,7 +200,6 @@ def register_tools(server: FastMCP) -> None:
     def search_contacts(
         query: str,
         page_size: int = 20,
-        read_mask: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
         sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
         """Search saved contacts by name, email, phone, or organization text.
@@ -215,7 +214,6 @@ def register_tools(server: FastMCP) -> None:
                 SearchContactsRequest(
                     query=query,
                     page_size=page_size,
-                    read_mask=read_mask,
                     sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
                 )
             )
@@ -225,7 +223,6 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_contact")
     def get_contact(
         person_name: str,
-        person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
         sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
         """Fetch one contact by resource name (e.g. 'people/c123'; bare IDs are normalized).
@@ -238,7 +235,6 @@ def register_tools(server: FastMCP) -> None:
             return get_contact_payload(
                 GetContactRequest(
                     person_name=person_name,
-                    person_fields=person_fields,
                     sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
                 )
             )
@@ -254,7 +250,6 @@ def register_tools(server: FastMCP) -> None:
         phone_numbers: list[str] | None = None,
         organization: str | None = None,
         biography: str | None = None,
-        person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
     ) -> dict[str, Any]:
         """Create a new contact from the provided name/email/phone/organization fields.
 
@@ -272,7 +267,6 @@ def register_tools(server: FastMCP) -> None:
                     phone_numbers=phone_numbers or [],
                     organization=organization,
                     biography=biography,
-                    person_fields=person_fields,
                 )
             )
         except HttpError as exc:
@@ -289,7 +283,6 @@ def register_tools(server: FastMCP) -> None:
         phone_numbers: list[str] | None = None,
         organization: str | None = None,
         biography: str | None = None,
-        person_fields: str = "names,emailAddresses,phoneNumbers,organizations,biographies",
         sources: list[ReadSourceType] | None = None,
     ) -> dict[str, Any]:
         """Update fields on an existing contact identified by person_name.
@@ -312,7 +305,6 @@ def register_tools(server: FastMCP) -> None:
                     phone_numbers=phone_numbers,
                     organization=organization,
                     biography=biography,
-                    person_fields=person_fields,
                     sources=sources or ["READ_SOURCE_TYPE_CONTACT"],
                 )
             )
@@ -344,7 +336,6 @@ def register_tools(server: FastMCP) -> None:
     def list_contact_groups(
         page_size: int = 100,
         page_token: str | None = None,
-        group_fields: str = "name,groupType,memberCount,metadata",
     ) -> dict[str, Any]:
         """Page through the account's contact groups (labels).
 
@@ -354,7 +345,7 @@ def register_tools(server: FastMCP) -> None:
         """
         try:
             return list_contact_groups_payload(
-                ListContactGroupsRequest(page_size=page_size, page_token=page_token, group_fields=group_fields)
+                ListContactGroupsRequest(page_size=page_size, page_token=page_token)
             )
         except HttpError as exc:
             raise provider_tool_error(exc) from exc

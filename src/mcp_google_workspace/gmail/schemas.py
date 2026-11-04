@@ -245,7 +245,6 @@ class ListDraftsRequest(ToolRequestModel):
 class GetDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to fetch.")
     format: Literal["full", "metadata", "minimal", "raw"] = Field(default="full", description="Message format in draft payload.")
-    metadata_headers: list[str] = Field(default_factory=list, description="Headers to include when format is metadata.")
 
 
 class CreateDraftRequest(ToolRequestModel):
@@ -286,7 +285,6 @@ class ListThreadsRequest(ToolRequestModel):
 class GetThreadRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID to fetch.")
     format: Literal["full", "metadata", "minimal"] = Field(default="full", description="Gmail API message format for thread payload.")
-    metadata_headers: list[str] = Field(default_factory=list, description="Headers to include when format is metadata.")
 
 
 class ModifyThreadRequest(ToolRequestModel):

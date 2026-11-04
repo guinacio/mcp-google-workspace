@@ -14,40 +14,21 @@ class ListFilesRequest(ToolRequestModel):
     page_size: int = Field(default=25, ge=1, le=1000, description="Maximum items to return.")
     page_token: str | None = Field(default=None, description="Token for next result page.")
     order_by: str | None = Field(default=None, description="Sort expression (e.g. modifiedTime desc).")
-    corpora: str | None = Field(
+    corpora: Literal["user", "drive", "domain", "allDrives"] | None = Field(
         default=None,
         description="Search corpus (user, domain, drive, or allDrives).",
     )
     drive_id: str | None = Field(default=None, description="Shared Drive ID when searching a specific drive.")
-    include_items_from_all_drives: bool = Field(
-        default=True,
-        description="Include My Drive + Shared Drives items when supported.",
-    )
-    supports_all_drives: bool = Field(
-        default=True,
-        description="Indicates the application supports both My Drive and Shared Drives.",
-    )
-    spaces: str | None = Field(default=None, description="Spaces to query, usually 'drive'.")
-    fields: str = Field(
-        default="nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload))",
-        description="Partial response fields selector.",
-    )
+    spaces: Literal["drive", "appDataFolder"] | None = Field(default=None, description="Space to query.")
 
 
 class GetFileRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(
-        default="id,name,mimeType,size,parents,owners(displayName,emailAddress),driveId,webViewLink,webContentLink,description,createdTime,modifiedTime,shared,starred,trashed,ownedByMe,lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload),exportLinks",
-        description="Partial response fields selector.",
-    )
 
 
 class CreateFolderRequest(ToolRequestModel):
     name: str = Field(description="Folder name.")
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs (single parent recommended).")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,name,mimeType,parents,driveId,webViewLink", description="Fields selector.")
 
 
 class CreateFileMetadataRequest(ToolRequestModel):
@@ -57,8 +38,6 @@ class CreateFileMetadataRequest(ToolRequestModel):
     description: str | None = Field(default=None, description="Optional file description.")
     app_properties: dict[str, str] | None = Field(default=None, description="Private appProperties map.")
     properties: dict[str, str] | None = Field(default=None, description="Public custom properties map.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,name,mimeType,parents,driveId,webViewLink", description="Fields selector.")
 
 
 class UploadFileRequest(ToolRequestModel):
@@ -74,8 +53,6 @@ class UploadFileRequest(ToolRequestModel):
         default="rename",
         description="Behavior when a file with same name already exists in target parent scope.",
     )
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,name,mimeType,size,parents,driveId,webViewLink", description="Fields selector.")
 
     @model_validator(mode="after")
     def _validate_source(self) -> "UploadFileRequest":
@@ -92,8 +69,6 @@ class UpdateFileMetadataRequest(ToolRequestModel):
     properties: dict[str, str] | None = Field(default=None, description="properties replacement/patch.")
     remove_property_keys: list[str] = Field(default_factory=list, description="Public property keys to clear.")
     remove_app_property_keys: list[str] = Field(default_factory=list, description="appProperties keys to clear.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,name,mimeType,parents,driveId,modifiedTime,webViewLink", description="Fields selector.")
 
 
 class UpdateFileContentRequest(ToolRequestModel):
@@ -105,8 +80,6 @@ class UpdateFileContentRequest(ToolRequestModel):
     mime_type: str | None = Field(default=None, description="Content MIME type.")
     resumable: bool = Field(default=True, description="Use resumable upload flow.")
     keep_revision_forever: bool | None = Field(default=None, description="Pin new revision when supported.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,name,mimeType,size,modifiedTime,driveId,webViewLink", description="Fields selector.")
 
     @model_validator(mode="after")
     def _validate_source(self) -> "UpdateFileContentRequest":
@@ -119,8 +92,6 @@ class MoveFileRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID to move.")
     add_parent_ids: list[str] = Field(default_factory=list, description="Parent IDs to add.")
     remove_parent_ids: list[str] = Field(default_factory=list, description="Parent IDs to remove.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,name,parents,driveId,webViewLink", description="Fields selector.")
 
 
 class CopyFileRequest(ToolRequestModel):
@@ -128,8 +99,6 @@ class CopyFileRequest(ToolRequestModel):
     name: str | None = Field(default=None, description="Optional copied file name.")
     parent_ids: list[str] = Field(default_factory=list, description="Parent folder IDs for copied file.")
     description: str | None = Field(default=None, description="Description for copied file.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,name,mimeType,parents,driveId,webViewLink", description="Fields selector.")
 
 
 class DeleteFileRequest(ToolRequestModel):
@@ -145,7 +114,6 @@ class DeleteFileRequest(ToolRequestModel):
             "delete is always confirmed interactively. Ignored for delete_mode='trash'."
         ),
     )
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
 class DownloadFileRequest(ToolRequestModel):
@@ -153,7 +121,6 @@ class DownloadFileRequest(ToolRequestModel):
     output_path: str = Field(description="Destination path on local filesystem.")
     overwrite: bool = Field(default=False, description="Overwrite existing local file.")
     acknowledge_abuse: bool = Field(default=False, description="Acknowledge abusive content warning when required.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
 class ExportGoogleFileRequest(ToolRequestModel):
@@ -165,24 +132,17 @@ class ExportGoogleFileRequest(ToolRequestModel):
 
 class GetFileContentCapabilitiesRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
 class ListPermissionsRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     page_size: int = Field(default=50, ge=1, le=200, description="Maximum permissions to return.")
     page_token: str | None = Field(default=None, description="Token for next result page.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for Shared Drives when available.")
-    fields: str = Field(default="nextPageToken,permissions(id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime)", description="Fields selector.")
 
 
 class GetPermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     permission_id: str = Field(description="Permission ID.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for Shared Drives when available.")
-    fields: str = Field(default="id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime", description="Fields selector.")
 
 
 class CreatePermissionRequest(ToolRequestModel):
@@ -200,53 +160,41 @@ class CreatePermissionRequest(ToolRequestModel):
     send_notification_email: bool | None = Field(default=None, description="Send email notification to target user/group.")
     email_message: str | None = Field(default=None, description="Custom notification email message.")
     transfer_ownership: bool | None = Field(default=None, description="Required true when assigning owner role.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for Shared Drives when available.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime", description="Fields selector.")
 
 
 class UpdatePermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     permission_id: str = Field(description="Permission ID.")
-    role: str | None = Field(default=None, description="Updated role.")
+    role: Literal["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"] | None = Field(
+        default=None, description="Updated role."
+    )
     allow_file_discovery: bool | None = Field(default=None, description="Updated discoverability.")
     expiration_time: str | None = Field(default=None, description="Updated expiration timestamp (RFC3339).")
     remove_expiration: bool = Field(default=False, description="Remove permission expiration timestamp.")
     transfer_ownership: bool | None = Field(default=None, description="Required true when transferring ownership.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for Shared Drives when available.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
-    fields: str = Field(default="id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime", description="Fields selector.")
 
 
 class DeletePermissionRequest(ToolRequestModel):
     file_id: str = Field(description="Drive file ID.")
     permission_id: str = Field(description="Permission ID to remove.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for Shared Drives when available.")
-    supports_all_drives: bool = Field(default=True, description="Enable Shared Drives compatibility.")
 
 
 class ListDrivesRequest(ToolRequestModel):
     page_size: int = Field(default=25, ge=1, le=100, description="Maximum Shared Drives to return.")
     page_token: str | None = Field(default=None, description="Token for next result page.")
     query: str | None = Field(default=None, description="Query string for drives.list.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for domain-managed drives.")
-    fields: str = Field(default="nextPageToken,drives(id,name,hidden,createdTime,orgUnitId,restrictions,capabilities)", description="Fields selector.")
 
 
 class GetDriveRequest(ToolRequestModel):
     drive_id: str = Field(description="Shared Drive ID.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for domain-managed drives.")
-    fields: str = Field(default="id,name,hidden,createdTime,orgUnitId,restrictions,capabilities", description="Fields selector.")
 
 
 class HideDriveRequest(ToolRequestModel):
     drive_id: str = Field(description="Shared Drive ID to hide.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for domain-managed drives.")
 
 
 class UnhideDriveRequest(ToolRequestModel):
     drive_id: str = Field(description="Shared Drive ID to unhide.")
-    use_domain_admin_access: bool = Field(default=False, description="Use admin access for domain-managed drives.")
 
 
 class FileOperationStatus(BaseModel):

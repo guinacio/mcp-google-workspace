@@ -115,14 +115,12 @@ def register(server: FastMCP) -> None:
     async def get_draft(
         draft_id: str,
         format: Literal["full", "metadata", "minimal", "raw"] = "full",
-        metadata_headers: list[str] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Fetch a single draft and its underlying message metadata/body payload."""
         request = GetDraftRequest(
             draft_id=draft_id,
             format=format,
-            metadata_headers=metadata_headers or [],
         )
         service = gmail_service()
         LOGGER.debug(f"Reading draft {request.draft_id}.")

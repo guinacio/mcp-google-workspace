@@ -260,6 +260,11 @@
           },
           "send_updates": {
             "description": "Who Google notifies about this change: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar, by email), or 'none'.",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ],
             "type": "string"
           }
         },
@@ -501,6 +506,11 @@
           },
           "send_updates": {
             "description": "Who Google notifies about this change: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar, by email), or 'none'.",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ],
             "type": "string"
           },
           "start_datetime": {
@@ -608,6 +618,11 @@
           },
           "send_updates": {
             "description": "Who Google notifies about this change: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar, by email), or 'none'.",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ],
             "type": "string"
           }
         },
@@ -1150,6 +1165,11 @@
           },
           "send_updates": {
             "description": "Who Google notifies about this change: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar, by email), or 'none'.",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ],
             "type": "string"
           }
         },
@@ -1317,6 +1337,10 @@
           },
           "order_by": {
             "default": "startTime",
+            "enum": [
+              "startTime",
+              "updated"
+            ],
             "type": "string"
           },
           "range_preset": {
@@ -1528,6 +1552,11 @@
           },
           "send_updates": {
             "description": "Who Google notifies about this change: 'all' guests, 'externalOnly' (only guests who do not use Google Calendar, by email), or 'none'.",
+            "enum": [
+              "all",
+              "externalOnly",
+              "none"
+            ],
             "type": "string"
           },
           "start_datetime": {
@@ -2051,10 +2080,6 @@
           "description": {
             "type": "string"
           },
-          "fields": {
-            "default": "id,name,mimeType,parents,driveId,webViewLink",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -2067,10 +2092,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2130,10 +2151,6 @@
           "description": {
             "type": "string"
           },
-          "fields": {
-            "default": "id,name,mimeType,parents,driveId,webViewLink",
-            "type": "string"
-          },
           "mime_type": {
             "type": "string"
           },
@@ -2150,10 +2167,6 @@
             "additionalProperties": true,
             "description": "Public custom properties key/value map, visible to other apps.",
             "type": "object"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2206,10 +2219,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "fields": {
-            "default": "id,name,mimeType,parents,driveId,webViewLink",
-            "type": "string"
-          },
           "name": {
             "type": "string"
           },
@@ -2218,10 +2227,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2293,10 +2298,6 @@
             "description": "RFC3339 time at which the access expires, e.g. '2026-12-31T23:59:59Z'; must be in the future and at most a year ahead. Applies to user and group grants only.",
             "type": "string"
           },
-          "fields": {
-            "default": "id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -2316,10 +2317,6 @@
           "send_notification_email": {
             "type": "boolean"
           },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
-          },
           "transfer_ownership": {
             "description": "Must be true when role is 'owner', confirming that ownership of the file moves to the grantee.",
             "type": "boolean"
@@ -2333,10 +2330,6 @@
               "anyone"
             ],
             "type": "string"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2413,10 +2406,6 @@
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2484,14 +2473,6 @@
           "permission_id": {
             "description": "Drive permission ID, from drive_list_permissions or the response of drive_create_permission.",
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2566,10 +2547,6 @@
           },
           "overwrite": {
             "default": false,
-            "type": "boolean"
-          },
-          "supports_all_drives": {
-            "default": true,
             "type": "boolean"
           }
         },
@@ -2712,14 +2689,6 @@
           "drive_id": {
             "description": "Shared drive ID, from drive_list_drives.",
             "type": "string"
-          },
-          "fields": {
-            "default": "id,name,hidden,createdTime,orgUnitId,restrictions,capabilities",
-            "type": "string"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2764,17 +2733,9 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "fields": {
-            "default": "id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload)",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2828,10 +2789,6 @@
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2892,10 +2849,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "fields": {
-            "default": "id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -2903,14 +2856,6 @@
           "permission_id": {
             "description": "Drive permission ID, from drive_list_permissions or the response of drive_create_permission.",
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [
@@ -2960,10 +2905,6 @@
           "drive_id": {
             "description": "Shared drive ID, from drive_list_drives.",
             "type": "string"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [
@@ -3012,10 +2953,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "fields": {
-            "default": "nextPageToken,drives(id,name,hidden,createdTime,orgUnitId,restrictions,capabilities)",
-            "type": "string"
-          },
           "page_size": {
             "default": 25,
             "type": "integer"
@@ -3026,10 +2963,6 @@
           },
           "query": {
             "type": "string"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [],
@@ -3094,19 +3027,17 @@
         "additionalProperties": false,
         "properties": {
           "corpora": {
+            "enum": [
+              "user",
+              "drive",
+              "domain",
+              "allDrives"
+            ],
             "type": "string"
           },
           "drive_id": {
             "description": "Shared drive ID, from drive_list_drives.",
             "type": "string"
-          },
-          "fields": {
-            "default": "nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,size,driveId,webViewLink,description,shared,starred,trashed,ownedByMe,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress),capabilities(canEdit,canDownload))",
-            "type": "string"
-          },
-          "include_items_from_all_drives": {
-            "default": true,
-            "type": "boolean"
           },
           "order_by": {
             "type": "string"
@@ -3123,11 +3054,11 @@
             "type": "string"
           },
           "spaces": {
+            "enum": [
+              "drive",
+              "appDataFolder"
+            ],
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [],
@@ -3197,10 +3128,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "fields": {
-            "default": "nextPageToken,permissions(id,type,role,emailAddress,domain,displayName,deleted,allowFileDiscovery,pendingOwner,expirationTime)",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -3212,14 +3139,6 @@
           "page_token": {
             "description": "The next_page_token from the previous response of this same call; omit for the first page.",
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [
@@ -3292,10 +3211,6 @@
             },
             "type": "array"
           },
-          "fields": {
-            "default": "id,name,parents,driveId,webViewLink",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -3306,10 +3221,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -3364,10 +3275,6 @@
           "drive_id": {
             "description": "Shared drive ID, from drive_list_drives.",
             "type": "string"
-          },
-          "use_domain_admin_access": {
-            "default": false,
-            "type": "boolean"
           }
         },
         "required": [
@@ -3416,10 +3323,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "fields": {
-            "default": "id,name,mimeType,size,parents,driveId,webViewLink,modifiedTime",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -3435,10 +3338,6 @@
             "type": "string"
           },
           "resumable": {
-            "default": true,
-            "type": "boolean"
-          },
-          "supports_all_drives": {
             "default": true,
             "type": "boolean"
           },
@@ -3505,10 +3404,6 @@
           "description": {
             "type": "string"
           },
-          "fields": {
-            "default": "id,name,mimeType,parents,modifiedTime,size,driveId,webViewLink",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -3534,10 +3429,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           }
         },
         "required": [
@@ -3598,10 +3489,6 @@
             "description": "RFC3339 time at which the access expires, e.g. '2026-12-31T23:59:59Z'; must be in the future and at most a year ahead. Applies to user and group grants only.",
             "type": "string"
           },
-          "fields": {
-            "default": "id,type,role,emailAddress,domain,displayName,allowFileDiscovery,pendingOwner,expirationTime",
-            "type": "string"
-          },
           "file_id": {
             "description": "Drive file ID: the id field of Drive and search_workspace results, or the long ID in a Drive, Docs, Sheets or Slides URL.",
             "type": "string"
@@ -3616,18 +3503,18 @@
           },
           "role": {
             "description": "Access level: reader, commenter, writer, fileOrganizer or organizer (shared drives only), or owner (ownership transfer).",
+            "enum": [
+              "owner",
+              "organizer",
+              "fileOrganizer",
+              "writer",
+              "commenter",
+              "reader"
+            ],
             "type": "string"
-          },
-          "supports_all_drives": {
-            "default": true,
-            "type": "boolean"
           },
           "transfer_ownership": {
             "description": "Must be true when role is 'owner', confirming that ownership of the file moves to the grantee.",
-            "type": "boolean"
-          },
-          "use_domain_admin_access": {
-            "default": false,
             "type": "boolean"
           }
         },
@@ -3691,10 +3578,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "fields": {
-            "default": "id,name,mimeType,size,parents,driveId,webViewLink",
-            "type": "string"
-          },
           "if_exists": {
             "default": "rename",
             "description": "Behavior when a file with the same name already exists in the target parent scope.",
@@ -3721,10 +3604,6 @@
             "type": "array"
           },
           "resumable": {
-            "default": true,
-            "type": "boolean"
-          },
-          "supports_all_drives": {
             "default": true,
             "type": "boolean"
           },
@@ -6147,12 +6026,6 @@
               "raw"
             ],
             "type": "string"
-          },
-          "metadata_headers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
           }
         },
         "required": [
@@ -6343,12 +6216,6 @@
               "clean"
             ],
             "type": "string"
-          },
-          "metadata_headers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
           },
           "thread_id": {
             "description": "Gmail thread ID, from the thread_id field of Gmail search, digest and read results.",
@@ -8432,10 +8299,6 @@
             "description": "Company or organization name.",
             "type": "string"
           },
-          "person_fields": {
-            "default": "names,emailAddresses,phoneNumbers,organizations,biographies",
-            "type": "string"
-          },
           "phone_numbers": {
             "items": {
               "type": "string"
@@ -8564,10 +8427,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "person_fields": {
-            "default": "names,emailAddresses,phoneNumbers,organizations,biographies",
-            "type": "string"
-          },
           "person_name": {
             "description": "Contact resource name, e.g. 'people/c123', from people_list_contacts or people_search_contacts; a bare ID is prefixed automatically.",
             "type": "string"
@@ -8618,10 +8477,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "group_fields": {
-            "default": "name,groupType,memberCount,metadata",
-            "type": "string"
-          },
           "page_size": {
             "default": 100,
             "type": "integer"
@@ -8670,10 +8525,6 @@
           },
           "page_token": {
             "description": "The next_page_token from the previous response of this same call; omit for the first page.",
-            "type": "string"
-          },
-          "person_fields": {
-            "default": "names,emailAddresses,phoneNumbers,organizations,biographies",
             "type": "string"
           },
           "sort_order": {
@@ -8790,10 +8641,6 @@
           "query": {
             "type": "string"
           },
-          "read_mask": {
-            "default": "names,emailAddresses,phoneNumbers,organizations,biographies",
-            "type": "string"
-          },
           "sources": {
             "items": {
               "enum": [
@@ -8865,10 +8712,6 @@
           },
           "organization": {
             "description": "Company or organization name.",
-            "type": "string"
-          },
-          "person_fields": {
-            "default": "names,emailAddresses,phoneNumbers,organizations,biographies",
             "type": "string"
           },
           "person_name": {

@@ -25,6 +25,7 @@ from ..common.errors import RecoverableToolError
 from .presentation import event_envelope
 from ..common.timezone import resolve_user_timezone, user_now
 from .schemas import (
+    SendUpdates,
     AddEventAttachmentRequest,
     CreateEventRequest,
     DeleteEventRequest,
@@ -369,7 +370,7 @@ def register_tools(server: FastMCP) -> None:
         time_max: str | None = None,
         max_results: int = 25,
         single_events: bool = True,
-        order_by: str = "startTime",
+        order_by: Literal["startTime", "updated"] = "startTime",
         range_preset: Literal["today", "tomorrow", "this_week", "next_7_days"] | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
@@ -703,7 +704,7 @@ def register_tools(server: FastMCP) -> None:
         attendees: Annotated[list[EventAttendeeInput] | None, "Event attendees to invite."] = None,
         attachments: list[EventAttachmentInput] | None = None,
         supports_attachments: bool = True,
-        send_updates: str | None = None,
+        send_updates: SendUpdates | None = None,
         reminders: Annotated[
             dict[str, Any] | None, "Reminder override configuration (Google Calendar reminders shape)."
         ] = None,
@@ -862,7 +863,7 @@ def register_tools(server: FastMCP) -> None:
         supports_attachments: bool = True,
         reminders: Annotated[dict[str, Any] | None, "Updated reminder configuration."] = None,
         recurrence: Annotated[list[str] | None, "Updated recurrence rules as RRULE strings."] = None,
-        send_updates: str | None = None,
+        send_updates: SendUpdates | None = None,
         on_conflict: Annotated[
             Literal["fail", "suggest_next_slot"],
             "Conflict strategy when the updated time overlaps existing events.",
@@ -1028,7 +1029,7 @@ def register_tools(server: FastMCP) -> None:
             "Attachment to add: file_url plus optional title, mime_type, icon_link, and Drive file_id.",
         ],
         calendar_id: str = "primary",
-        send_updates: str | None = None,
+        send_updates: SendUpdates | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Add a single attachment to an existing event (deduplicates by fileUrl)."""
@@ -1066,7 +1067,7 @@ def register_tools(server: FastMCP) -> None:
         calendar_id: str = "primary",
         file_url: str | None = None,
         file_id: str | None = None,
-        send_updates: str | None = None,
+        send_updates: SendUpdates | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Remove event attachment(s) by fileUrl or fileId."""
@@ -1218,7 +1219,7 @@ def register_tools(server: FastMCP) -> None:
     async def delete_event(
         event_id: str,
         calendar_id: str = "primary",
-        send_updates: str | None = None,
+        send_updates: SendUpdates | None = None,
         force: Annotated[
             bool,
             (
