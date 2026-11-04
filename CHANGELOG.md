@@ -5,12 +5,15 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
-## 2.1.0 — Unreleased
+## 2.1.0 — 2026-11-04
 
-Two capabilities 2.0.0 removed come back as opt-in parameters. Nothing is
-removed or renamed, and every response is unchanged unless the new option is
-passed. Upgrading needs no reconnect: scopes and the token store are
-unchanged.
+A minor release: two capabilities 2.0.0 removed come back as opt-in
+parameters. The release is purely additive: no existing tool, parameter,
+default or response key changed, and a call that does not pass a new option
+returns the same bytes as in 2.0.1 (the descriptions of the affected tools
+and parameters mention the new options). No dependency changed. Upgrading
+from 2.0.1 needs no reconnect: scopes, the token store, the upload store and
+the operation records are unchanged.
 
 ### Added
 
