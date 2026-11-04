@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -13,6 +13,12 @@ class GetDocumentRequest(ToolRequestModel):
     document_id: str = Field(description="Google Docs document file ID.")
     include_tabs_content: bool = Field(default=False)
     suggestions_view_mode: str | None = Field(default=None)
+
+
+class ReadDocumentRequest(ToolRequestModel):
+    document_id: str = Field(description="Google Docs document file ID.")
+    format: Literal["text", "markdown", "raw"] = Field(default="text")
+    offset: int = Field(default=0, ge=0)
 
 
 class CreateDocumentRequest(ToolRequestModel):

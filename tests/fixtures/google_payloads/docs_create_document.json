@@ -1,0 +1,40 @@
+{
+  "title": "Sprint 42 retrospective",
+  "body": {
+    "content": [
+      {"endIndex": 1, "sectionBreak": {"sectionStyle": {"columnSeparatorStyle": "NONE", "contentDirection": "LEFT_TO_RIGHT", "sectionType": "CONTINUOUS"}}},
+      {
+        "startIndex": 1,
+        "endIndex": 2,
+        "paragraph": {
+          "elements": [{"startIndex": 1, "endIndex": 2, "textRun": {"content": "\n", "textStyle": {}}}],
+          "paragraphStyle": {"namedStyleType": "NORMAL_TEXT", "direction": "LEFT_TO_RIGHT"}
+        }
+      }
+    ]
+  },
+  "documentStyle": {
+    "background": {"color": {}},
+    "pageNumberStart": 1,
+    "marginTop": {"magnitude": 72, "unit": "PT"},
+    "marginBottom": {"magnitude": 72, "unit": "PT"},
+    "marginRight": {"magnitude": 72, "unit": "PT"},
+    "marginLeft": {"magnitude": 72, "unit": "PT"},
+    "pageSize": {"height": {"magnitude": 792, "unit": "PT"}, "width": {"magnitude": 612, "unit": "PT"}},
+    "marginHeader": {"magnitude": 36, "unit": "PT"},
+    "marginFooter": {"magnitude": 36, "unit": "PT"},
+    "useCustomHeaderFooterMargins": true
+  },
+  "namedStyles": {
+    "styles": [
+      {
+        "namedStyleType": "NORMAL_TEXT",
+        "textStyle": {"bold": false, "italic": false, "fontSize": {"magnitude": 11, "unit": "PT"}, "weightedFontFamily": {"fontFamily": "Arial", "weight": 400}, "baselineOffset": "NONE"},
+        "paragraphStyle": {"namedStyleType": "NORMAL_TEXT", "alignment": "START", "lineSpacing": 115, "direction": "LEFT_TO_RIGHT", "spacingMode": "COLLAPSE_LISTS"}
+      }
+    ]
+  },
+  "revisionId": "ALBJ4Lu7NewDocRevision0abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUV",
+  "suggestionsViewMode": "SUGGESTIONS_INLINE",
+  "documentId": "1NeWdOcUmEnT0Sprint42Retro0Example0000000abc"
+}

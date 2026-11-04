@@ -1,0 +1,578 @@
+{
+  "document": {
+    "body": {
+      "content": [
+        {
+          "endIndex": 1,
+          "sectionBreak": {
+            "sectionStyle": {
+              "columnSeparatorStyle": "NONE",
+              "contentDirection": "LEFT_TO_RIGHT",
+              "sectionType": "CONTINUOUS"
+            }
+          }
+        },
+        {
+          "endIndex": 13,
+          "paragraph": {
+            "elements": [
+              {
+                "endIndex": 13,
+                "startIndex": 1,
+                "textRun": {
+                  "content": "Launch plan\n",
+                  "textStyle": {}
+                }
+              }
+            ],
+            "paragraphStyle": {
+              "direction": "LEFT_TO_RIGHT",
+              "headingId": "h.abc123",
+              "namedStyleType": "HEADING_1"
+            }
+          },
+          "startIndex": 1
+        },
+        {
+          "endIndex": 62,
+          "paragraph": {
+            "elements": [
+              {
+                "endIndex": 36,
+                "startIndex": 13,
+                "textRun": {
+                  "content": "Ship the beta by June ",
+                  "textStyle": {}
+                }
+              },
+              {
+                "endIndex": 61,
+                "startIndex": 36,
+                "textRun": {
+                  "content": "with the current scope.",
+                  "textStyle": {
+                    "bold": true
+                  }
+                }
+              },
+              {
+                "endIndex": 62,
+                "startIndex": 61,
+                "textRun": {
+                  "content": "\n",
+                  "textStyle": {}
+                }
+              }
+            ],
+            "paragraphStyle": {
+              "direction": "LEFT_TO_RIGHT",
+              "namedStyleType": "NORMAL_TEXT"
+            }
+          },
+          "startIndex": 13
+        },
+        {
+          "endIndex": 80,
+          "paragraph": {
+            "bullet": {
+              "listId": "kix.list0",
+              "textStyle": {
+                "underline": false
+              }
+            },
+            "elements": [
+              {
+                "endIndex": 80,
+                "startIndex": 62,
+                "textRun": {
+                  "content": "Write the FAQ\n",
+                  "textStyle": {}
+                }
+              }
+            ],
+            "paragraphStyle": {
+              "direction": "LEFT_TO_RIGHT",
+              "indentFirstLine": {
+                "magnitude": 18,
+                "unit": "PT"
+              },
+              "indentStart": {
+                "magnitude": 36,
+                "unit": "PT"
+              },
+              "namedStyleType": "NORMAL_TEXT"
+            }
+          },
+          "startIndex": 62
+        },
+        {
+          "endIndex": 82,
+          "paragraph": {
+            "elements": [
+              {
+                "endIndex": 81,
+                "inlineObjectElement": {
+                  "inlineObjectId": "kix.img0",
+                  "textStyle": {}
+                },
+                "startIndex": 80
+              },
+              {
+                "endIndex": 82,
+                "startIndex": 81,
+                "textRun": {
+                  "content": "\n",
+                  "textStyle": {}
+                }
+              }
+            ],
+            "paragraphStyle": {
+              "direction": "LEFT_TO_RIGHT",
+              "namedStyleType": "NORMAL_TEXT"
+            }
+          },
+          "startIndex": 80
+        }
+      ]
+    },
+    "documentId": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg",
+    "documentStyle": {
+      "background": {
+        "color": {}
+      },
+      "defaultFooterId": "kix.ftr0",
+      "defaultHeaderId": "kix.hdr0",
+      "marginBottom": {
+        "magnitude": 72,
+        "unit": "PT"
+      },
+      "marginFooter": {
+        "magnitude": 36,
+        "unit": "PT"
+      },
+      "marginHeader": {
+        "magnitude": 36,
+        "unit": "PT"
+      },
+      "marginLeft": {
+        "magnitude": 72,
+        "unit": "PT"
+      },
+      "marginRight": {
+        "magnitude": 72,
+        "unit": "PT"
+      },
+      "marginTop": {
+        "magnitude": 72,
+        "unit": "PT"
+      },
+      "pageNumberStart": 1,
+      "pageSize": {
+        "height": {
+          "magnitude": 792,
+          "unit": "PT"
+        },
+        "width": {
+          "magnitude": 612,
+          "unit": "PT"
+        }
+      },
+      "useCustomHeaderFooterMargins": true
+    },
+    "footers": {
+      "kix.ftr0": {
+        "content": [
+          {
+            "endIndex": 1,
+            "paragraph": {
+              "elements": [
+                {
+                  "endIndex": 1,
+                  "textRun": {
+                    "content": "\n",
+                    "textStyle": {}
+                  }
+                }
+              ],
+              "paragraphStyle": {
+                "direction": "LEFT_TO_RIGHT",
+                "namedStyleType": "NORMAL_TEXT"
+              }
+            }
+          }
+        ],
+        "footerId": "kix.ftr0"
+      }
+    },
+    "footnotes": {
+      "kix.fn0": {
+        "content": [
+          {
+            "endIndex": 1,
+            "paragraph": {
+              "elements": [
+                {
+                  "endIndex": 1,
+                  "textRun": {
+                    "content": "\n",
+                    "textStyle": {}
+                  }
+                }
+              ],
+              "paragraphStyle": {
+                "direction": "LEFT_TO_RIGHT",
+                "namedStyleType": "NORMAL_TEXT"
+              }
+            }
+          }
+        ],
+        "footnoteId": "kix.fn0"
+      }
+    },
+    "headers": {
+      "kix.hdr0": {
+        "content": [
+          {
+            "endIndex": 1,
+            "paragraph": {
+              "elements": [
+                {
+                  "endIndex": 1,
+                  "textRun": {
+                    "content": "\n",
+                    "textStyle": {}
+                  }
+                }
+              ],
+              "paragraphStyle": {
+                "direction": "LEFT_TO_RIGHT",
+                "namedStyleType": "NORMAL_TEXT"
+              }
+            }
+          }
+        ],
+        "headerId": "kix.hdr0"
+      }
+    },
+    "inlineObjects": {
+      "kix.img0": {
+        "inlineObjectProperties": {
+          "embeddedObject": {
+            "embeddedObjectBorder": {
+              "color": {
+                "color": {
+                  "rgbColor": {}
+                }
+              },
+              "dashStyle": "SOLID",
+              "propertyState": "NOT_RENDERED",
+              "width": {
+                "unit": "PT"
+              }
+            },
+            "imageProperties": {
+              "contentUri": "https://lh7-us.googleusercontent.com/docsz/example",
+              "cropProperties": {}
+            },
+            "marginBottom": {
+              "magnitude": 9,
+              "unit": "PT"
+            },
+            "marginLeft": {
+              "magnitude": 9,
+              "unit": "PT"
+            },
+            "marginRight": {
+              "magnitude": 9,
+              "unit": "PT"
+            },
+            "marginTop": {
+              "magnitude": 9,
+              "unit": "PT"
+            },
+            "size": {
+              "height": {
+                "magnitude": 120,
+                "unit": "PT"
+              },
+              "width": {
+                "magnitude": 240,
+                "unit": "PT"
+              }
+            }
+          }
+        },
+        "objectId": "kix.img0"
+      }
+    },
+    "lists": {
+      "kix.list0": {
+        "listProperties": {
+          "nestingLevels": [
+            {
+              "bulletAlignment": "START",
+              "glyphFormat": "%0",
+              "glyphSymbol": "●",
+              "indentFirstLine": {
+                "magnitude": 18,
+                "unit": "PT"
+              },
+              "indentStart": {
+                "magnitude": 36,
+                "unit": "PT"
+              },
+              "startNumber": 1,
+              "textStyle": {
+                "underline": false
+              }
+            },
+            {
+              "bulletAlignment": "START",
+              "glyphFormat": "%1",
+              "glyphSymbol": "○",
+              "indentFirstLine": {
+                "magnitude": 54,
+                "unit": "PT"
+              },
+              "indentStart": {
+                "magnitude": 72,
+                "unit": "PT"
+              },
+              "startNumber": 1,
+              "textStyle": {
+                "underline": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    "namedRanges": {
+      "summary": {
+        "name": "summary",
+        "namedRanges": [
+          {
+            "name": "summary",
+            "namedRangeId": "kix.nr0",
+            "ranges": [
+              {
+                "endIndex": 62,
+                "startIndex": 13
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "namedStyles": {
+      "styles": [
+        {
+          "namedStyleType": "NORMAL_TEXT",
+          "paragraphStyle": {
+            "alignment": "START",
+            "avoidWidowAndOrphan": true,
+            "borderBetween": {
+              "color": {},
+              "dashStyle": "SOLID",
+              "padding": {
+                "unit": "PT"
+              },
+              "width": {
+                "unit": "PT"
+              }
+            },
+            "borderBottom": {
+              "color": {},
+              "dashStyle": "SOLID",
+              "padding": {
+                "unit": "PT"
+              },
+              "width": {
+                "unit": "PT"
+              }
+            },
+            "borderLeft": {
+              "color": {},
+              "dashStyle": "SOLID",
+              "padding": {
+                "unit": "PT"
+              },
+              "width": {
+                "unit": "PT"
+              }
+            },
+            "borderRight": {
+              "color": {},
+              "dashStyle": "SOLID",
+              "padding": {
+                "unit": "PT"
+              },
+              "width": {
+                "unit": "PT"
+              }
+            },
+            "borderTop": {
+              "color": {},
+              "dashStyle": "SOLID",
+              "padding": {
+                "unit": "PT"
+              },
+              "width": {
+                "unit": "PT"
+              }
+            },
+            "direction": "LEFT_TO_RIGHT",
+            "indentEnd": {
+              "unit": "PT"
+            },
+            "indentFirstLine": {
+              "unit": "PT"
+            },
+            "indentStart": {
+              "unit": "PT"
+            },
+            "keepLinesTogether": false,
+            "keepWithNext": false,
+            "lineSpacing": 115,
+            "namedStyleType": "NORMAL_TEXT",
+            "pageBreakBefore": false,
+            "shading": {
+              "backgroundColor": {}
+            },
+            "spaceAbove": {
+              "unit": "PT"
+            },
+            "spaceBelow": {
+              "unit": "PT"
+            },
+            "spacingMode": "COLLAPSE_LISTS"
+          },
+          "textStyle": {
+            "backgroundColor": {},
+            "baselineOffset": "NONE",
+            "bold": false,
+            "fontSize": {
+              "magnitude": 11,
+              "unit": "PT"
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {}
+              }
+            },
+            "italic": false,
+            "smallCaps": false,
+            "strikethrough": false,
+            "underline": false,
+            "weightedFontFamily": {
+              "fontFamily": "Arial",
+              "weight": 400
+            }
+          }
+        },
+        {
+          "namedStyleType": "HEADING_1",
+          "paragraphStyle": {
+            "direction": "LEFT_TO_RIGHT",
+            "keepLinesTogether": true,
+            "keepWithNext": true,
+            "namedStyleType": "NORMAL_TEXT",
+            "pageBreakBefore": false,
+            "spaceAbove": {
+              "magnitude": 20,
+              "unit": "PT"
+            },
+            "spaceBelow": {
+              "magnitude": 6,
+              "unit": "PT"
+            }
+          },
+          "textStyle": {
+            "fontSize": {
+              "magnitude": 20,
+              "unit": "PT"
+            }
+          }
+        },
+        {
+          "namedStyleType": "TITLE",
+          "paragraphStyle": {
+            "direction": "LEFT_TO_RIGHT",
+            "keepLinesTogether": true,
+            "keepWithNext": true,
+            "namedStyleType": "NORMAL_TEXT",
+            "pageBreakBefore": false,
+            "spaceAbove": {
+              "unit": "PT"
+            },
+            "spaceBelow": {
+              "magnitude": 3,
+              "unit": "PT"
+            }
+          },
+          "textStyle": {
+            "fontSize": {
+              "magnitude": 26,
+              "unit": "PT"
+            }
+          }
+        }
+      ]
+    },
+    "positionedObjects": {},
+    "revisionId": "ALBJ4LsyIxJbt1hRqeQ9YgQ0abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    "suggestionsViewMode": "SUGGESTIONS_INLINE",
+    "tabs": [
+      {
+        "documentTab": {
+          "body": {
+            "content": [
+              {
+                "endIndex": 1,
+                "sectionBreak": {
+                  "sectionStyle": {
+                    "columnSeparatorStyle": "NONE",
+                    "contentDirection": "LEFT_TO_RIGHT",
+                    "sectionType": "CONTINUOUS"
+                  }
+                }
+              },
+              {
+                "endIndex": 13,
+                "paragraph": {
+                  "elements": [
+                    {
+                      "endIndex": 13,
+                      "startIndex": 1,
+                      "textRun": {
+                        "content": "Launch plan\n",
+                        "textStyle": {}
+                      }
+                    }
+                  ],
+                  "paragraphStyle": {
+                    "direction": "LEFT_TO_RIGHT",
+                    "headingId": "h.abc123",
+                    "namedStyleType": "HEADING_1"
+                  }
+                },
+                "startIndex": 1
+              }
+            ]
+          }
+        },
+        "tabProperties": {
+          "index": 0,
+          "tabId": "t.0",
+          "title": "Launch plan"
+        }
+      }
+    ],
+    "title": "Launch plan"
+  },
+  "document_id": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg",
+  "format": "raw",
+  "revision_id": "ALBJ4LsyIxJbt1hRqeQ9YgQ0abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+  "title": "Launch plan",
+  "url": "https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg/edit"
+}
