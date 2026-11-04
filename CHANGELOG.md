@@ -39,6 +39,10 @@ otherwise; no tool, parameter or dependency is added or removed.
   same value as `next_cursor`, which stays) and `fetched_at`.
 - **`calendar_find_free_time`** gains `count`, the number of
   `suggested_slots`; `total_suggestions` stays with the same value.
+- **`dry_run` counts.** The dry-run result of `gmail_modify_messages` and
+  `gmail_delete` gains `count` (distinct message IDs; null for a
+  `thread_id`) and `requested_count` (the IDs as given): the preview text
+  lists only the first five IDs.
 
 ### Changed
 
@@ -55,6 +59,11 @@ otherwise; no tool, parameter or dependency is added or removed.
 
 ### Fixed
 
+- **`dry_run` wording** on `gmail_modify_messages` and `gmail_delete`: the
+  parameter said "no consent is asked" while the result carries
+  `consent_required: true`. It now says a dry run sends nothing to Google and
+  never asks, and that `consent_required` says whether the real call would
+  ask; `docs/CONSENT.md` says the same.
 - **Descriptions.** `docs_read_document` says `revision_id` is null unless
   the user can edit the document (the Docs API returns `revisionId` only to
   editors). `docs_read_document` and `drive_read_file` say that their text,
