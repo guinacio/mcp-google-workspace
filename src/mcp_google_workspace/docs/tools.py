@@ -104,7 +104,7 @@ def register_tools(server: FastMCP) -> None:
                 "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown "
                 "(headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 "
                 "characters. 'outline' returns the editing outline, unpaged: every structural element "
-                "with the start_index and end_index docs_batch_update_document requests need, styles "
+                "with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles "
                 "left out. 'raw' returns Google's Document resource unchanged and unpaged, every style "
                 "and index included."
             ),
@@ -135,7 +135,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = None,
     ) -> dict[str, Any]:
-        """Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document requests need (docs_append_document_text and docs_replace_document_text need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document."""
+        """Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs (the append and replace tools need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document."""
         request = ReadDocumentRequest(
             document_id=document_id,
             format=format,
@@ -175,7 +175,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ],
     ) -> dict[str, Any]:
-        """Append plain, unformatted text to the end of a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to change existing text use docs_replace_document_text, and for formatting or inserts at a position use docs_batch_update_document. Returns status 'ok', document_id and revision_id, the document's revision after the append."""
+        """Append plain, unformatted text to the end of a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to change existing text use docs_replace_document_text, and for formatting or inserts at a position use docs_batch_update_document (extended tool tier). Returns status 'ok', document_id and revision_id, the document's revision after the append."""
         try:
             payload = append_document_text_payload(AppendDocumentTextRequest(document_id=document_id, text=text))
         except HttpError as exc:
@@ -191,7 +191,7 @@ def register_tools(server: FastMCP) -> None:
             bool, "Match letter case exactly when true; by default matching ignores case."
         ] = False,
     ) -> dict[str, Any]:
-        """Replace every occurrence of a piece of text in a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to add text use docs_append_document_text, and for formatting or targeted edits use docs_batch_update_document. Returns status 'ok', document_id, revision_id and occurrences_changed, which is 0 when nothing matched."""
+        """Replace every occurrence of a piece of text in a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to add text use docs_append_document_text, and for formatting or targeted edits use docs_batch_update_document (extended tool tier). Returns status 'ok', document_id, revision_id and occurrences_changed, which is 0 when nothing matched."""
         try:
             payload = replace_document_text_payload(
                 ReplaceDocumentTextRequest(

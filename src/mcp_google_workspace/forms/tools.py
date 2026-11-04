@@ -148,7 +148,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = False,
     ) -> dict[str, Any]:
-        """Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form. Returns status ok, form_id (the ID every other forms_ tool takes), title, document_title, responder_url (the link to share with respondents) and revision_id. Unless unpublished is true, the form is published and accepting responses as soon as it exists."""
+        """Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form (extended tool tier). Returns status ok, form_id (the ID every other forms_ tool takes), title, document_title, responder_url (the link to share with respondents) and revision_id. Unless unpublished is true, the form is published and accepting responses as soon as it exists."""
         try:
             return created_form_envelope(
                 create_form_payload(
@@ -206,7 +206,7 @@ def register_tools(server: FastMCP) -> None:
             "Which publishSettings fields to write: 'publishState' or '*' (all fields, the default).",
         ] = "*",
     ) -> dict[str, Any]:
-        """Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form; the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, published and accepting_responses as they stand after the call. Legacy forms, whose forms_get_form result has null published, do not support this."""
+        """Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form (extended tool tier); the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, published and accepting_responses as they stand after the call. Legacy forms, whose forms_get_form result has null published, do not support this."""
         try:
             return publish_settings_envelope(
                 set_form_publish_settings_payload(

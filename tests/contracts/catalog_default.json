@@ -1656,7 +1656,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Append plain, unformatted text to the end of a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to change existing text use docs_replace_document_text, and for formatting or inserts at a position use docs_batch_update_document. Returns status 'ok', document_id and revision_id, the document's revision after the append.",
+      "description": "Append plain, unformatted text to the end of a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to change existing text use docs_replace_document_text, and for formatting or inserts at a position use docs_batch_update_document (extended tool tier). Returns status 'ok', document_id and revision_id, the document's revision after the append.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1796,7 +1796,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document requests need (docs_append_document_text and docs_replace_document_text need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document.",
+      "description": "Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document (extended tool tier) needs (the append and replace tools need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1806,7 +1806,7 @@
           },
           "format": {
             "default": "text",
-            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document requests need, styles left out. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
+            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
             "enum": [
               "text",
               "markdown",
@@ -1918,7 +1918,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Replace every occurrence of a piece of text in a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to add text use docs_append_document_text, and for formatting or targeted edits use docs_batch_update_document. Returns status 'ok', document_id, revision_id and occurrences_changed, which is 0 when nothing matched.",
+      "description": "Replace every occurrence of a piece of text in a Google Docs document. The document_id comes from drive_list_files, search_workspace or docs_create_document; to add text use docs_append_document_text, and for formatting or targeted edits use docs_batch_update_document (extended tool tier). Returns status 'ok', document_id, revision_id and occurrences_changed, which is 0 when nothing matched.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3160,7 +3160,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form. Returns status ok, form_id (the ID every other forms_ tool takes), title, document_title, responder_url (the link to share with respondents) and revision_id. Unless unpublished is true, the form is published and accepting responses as soon as it exists.",
+      "description": "Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form (extended tool tier). Returns status ok, form_id (the ID every other forms_ tool takes), title, document_title, responder_url (the link to share with respondents) and revision_id. Unless unpublished is true, the form is published and accepting responses as soon as it exists.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -3428,7 +3428,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form; the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, published and accepting_responses as they stand after the call. Legacy forms, whose forms_get_form result has null published, do not support this.",
+      "description": "Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form (extended tool tier); the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, published and accepting_responses as they stand after the call. Legacy forms, whose forms_get_form result has null published, do not support this.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6331,7 +6331,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Write values into one A1 range of a Google Sheets spreadsheet, overwriting the cells it covers. To add rows below existing data use sheets_append_sheet_values, and for formatting or tab changes use sheets_batch_update_spreadsheet; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null).",
+      "description": "Write values into one A1 range of a Google Sheets spreadsheet, overwriting the cells it covers. To add rows below existing data use sheets_append_sheet_values, and for formatting or tab changes use sheets_batch_update_spreadsheet (extended tool tier); the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6432,7 +6432,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index.",
+      "description": "Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation (extended tool tier), or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6679,7 +6679,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched).",
+      "description": "Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation (extended tool tier). Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7352,7 +7352,7 @@
         "openWorldHint": false,
         "readOnlyHint": false
       },
-      "description": "App-only callback that permanently deletes one of the user's Workspace Files uploads from the MCP server's temporary upload area, freeing quota before the upload expires; Google Drive is not touched (for Drive files use drive_delete_file). Models cannot call it: uploads expire on their own, and get_mcp_apps_diagnostics uses it for its self-test. Returns status 'deleted', or 'not_found' when the ID is unknown or already expired, with the name.",
+      "description": "App-only callback that permanently deletes one of the user's Workspace Files uploads from the MCP server's temporary upload area, freeing quota before the upload expires; Google Drive is not touched (for Drive files use drive_delete_file). Models cannot call it: uploads expire on their own, and the extended tier's get_mcp_apps_diagnostics uses it for its self-test. Returns status 'deleted', or 'not_found' when the ID is unknown or already expired, with the name.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

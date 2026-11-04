@@ -108,7 +108,7 @@ def register_tools(server: FastMCP) -> None:
     def create_presentation(
         title: Annotated[str, "Title of the new presentation, also used as its Drive file name."],
     ) -> dict[str, Any]:
-        """Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation, or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index."""
+        """Create a new Google Slides presentation in the root of the user's My Drive. Add content with slides_batch_update_presentation (extended tool tier), or copy an existing deck with drive_copy_file and fill its placeholders with slides_replace_text_in_presentation. Returns status ok, presentation_id (the ID every other slides_ tool takes), title, url and slides, each with object_id and index."""
         try:
             return created_presentation_envelope(
                 create_presentation_payload(CreatePresentationRequest(title=title))
@@ -125,7 +125,7 @@ def register_tools(server: FastMCP) -> None:
             bool, "Match letter case exactly when true; by default matching ignores case."
         ] = False,
     ) -> dict[str, Any]:
-        """Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation. Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched)."""
+        """Replace every occurrence of a piece of text on all slides of a Google Slides presentation, e.g. a template placeholder such as {{name}}. The presentation_id comes from drive_list_files, search_workspace or slides_create_presentation; for any other edit use slides_batch_update_presentation (extended tool tier). Returns status ok, presentation_id and occurrences_changed, the number of replacements (0 when nothing matched)."""
         try:
             return replace_text_envelope(
                 replace_text_in_presentation_payload(

@@ -247,7 +247,7 @@ def register_tools(server: FastMCP) -> None:
             bool, "Also return the written cells, as stored after parsing, in updated_values."
         ] = False,
     ) -> dict[str, Any]:
-        """Write values into one A1 range of a Google Sheets spreadsheet, overwriting the cells it covers. To add rows below existing data use sheets_append_sheet_values, and for formatting or tab changes use sheets_batch_update_spreadsheet; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null)."""
+        """Write values into one A1 range of a Google Sheets spreadsheet, overwriting the cells it covers. To add rows below existing data use sheets_append_sheet_values, and for formatting or tab changes use sheets_batch_update_spreadsheet (extended tool tier); the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null)."""
         try:
             return update_values_envelope(
                 update_sheet_values_payload(

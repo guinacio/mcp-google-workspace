@@ -685,7 +685,7 @@ class WorkspaceFileUpload(FileUpload):
             """App-only callback that permanently deletes one of the user's Workspace Files uploads from the MCP
             server's temporary upload area, freeing quota before the upload expires; Google Drive is not touched (for
             Drive files use drive_delete_file). Models cannot call it: uploads expire on their own, and
-            get_mcp_apps_diagnostics uses it for its self-test. Returns status 'deleted', or 'not_found' when the ID
+            the extended tier's get_mcp_apps_diagnostics uses it for its self-test. Returns status 'deleted', or 'not_found' when the ID
             is unknown or already expired, with the name."""
             store, scope = self._scoped_store()
             deleted = store.delete(scope, name)
