@@ -5,6 +5,126 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
+## 2.0.0 — Unreleased
+
+Smaller, truthful tool catalog. Every tool and parameter description is
+written for the tool (no generated text), schemas stop repeating limits and
+`null` alternatives, raw Google payloads stop publishing an inferred output
+schema, and API plumbing parameters are gone. The default catalog shrinks from
+about 89,000 to about 62,000 estimated tokens (characters / 4; 75,444 to
+53,907 with the cl100k tokenizer). Tool names, results and behaviour are
+unchanged except where listed under Breaking changes.
+
+### Breaking changes
+
+Input schemas are closed (`additionalProperties: false`), so a caller that
+still sends a removed parameter gets the normal input-validation error.
+
+- **Removed parameters.** The server now always sends what the removed
+  defaults sent.
+  - `supports_all_drives` from `drive_list_files`, `drive_get_file`,
+    `drive_create_folder`, `drive_create_file_metadata`, `drive_upload_file`,
+    `drive_update_file_metadata`, `drive_update_file_content`,
+    `drive_move_file`, `drive_copy_file`, `drive_delete_file`,
+    `drive_download_file`, `drive_get_file_content_capabilities`,
+    `drive_list_permissions`, `drive_get_permission`,
+    `drive_create_permission`, `drive_update_permission`,
+    `drive_delete_permission` (shared drives are always in scope).
+  - `include_items_from_all_drives` from `drive_list_files` (always true).
+  - `use_domain_admin_access` from `drive_list_permissions`,
+    `drive_get_permission`, `drive_create_permission`,
+    `drive_update_permission`, `drive_delete_permission`, `drive_list_drives`,
+    `drive_get_drive`, `drive_hide_drive`, `drive_unhide_drive` (calls act as
+    the user, never as a domain administrator).
+  - `fields` from `drive_list_files`, `drive_get_file`, `drive_create_folder`,
+    `drive_create_file_metadata`, `drive_upload_file`,
+    `drive_update_file_metadata`, `drive_update_file_content`,
+    `drive_move_file`, `drive_copy_file`, `drive_list_permissions`,
+    `drive_get_permission`, `drive_create_permission`,
+    `drive_update_permission`, `drive_list_drives`, `drive_get_drive`. Each
+    call requests the fields its response needs; `drive_list_files` and
+    `drive_get_file` keep the masks that were their defaults, so a normalized
+    file never reports a value that was not fetched.
+  - `person_fields` from `people_list_contacts`, `people_get_contact`,
+    `people_create_contact`, `people_update_contact`; `read_mask` from
+    `people_search_contacts`; `group_fields` from `people_list_contact_groups`
+    (fixed masks: names, email addresses, phone numbers, organizations,
+    biographies; for groups name, type, member count, metadata).
+  - `metadata_headers` from `gmail_get_thread` and `gmail_get_draft`
+    (`gmail_get_draft` never forwarded it; `gmail_get_thread` with
+    `format=metadata` now returns every header).
+- **Values that passed through to Google and are now rejected by the schema.**
+  - `send_updates` on `calendar_create_event`, `calendar_update_event`,
+    `calendar_delete_event`, `calendar_add_event_attachment`,
+    `calendar_remove_event_attachment`: only `all`, `externalOnly`, `none`.
+  - `calendar_search_events` `order_by`: only `startTime`, `updated`.
+  - `drive_list_files` `corpora`: only `user`, `drive`, `domain`,
+    `allDrives`; `spaces`: only `drive` or `appDataFolder` (the
+    comma-separated `drive,appDataFolder` and the retired `photos` space are
+    rejected).
+  - `drive_update_permission` `role`: only `owner`, `organizer`,
+    `fileOrganizer`, `writer`, `commenter`, `reader`.
+- **No output schema for tools that return a Google resource unchanged**
+  (37 tools): every Docs, Sheets and Slides tool; `forms_get_form`,
+  `forms_create_form`, `forms_batch_update_form`,
+  `forms_set_form_publish_settings`; every People tool except
+  `people_delete_contact`; `calendar_list_calendars`,
+  `calendar_check_time_availability`; `tasks_create_task`,
+  `tasks_update_task`, `tasks_complete_task`, `tasks_move_task`,
+  `tasks_create_tasklist`. Results still arrive as `structuredContent`;
+  the descriptions name the fields a caller needs.
+- **Optional parameters are published as their plain type.** `T | None`
+  parameters no longer appear as `anyOf: [T, {type: null}]` with
+  `default: null`; they are simply not in `required`. A client that validates
+  arguments against the schema before sending should omit an unset parameter
+  rather than send `null` (the server itself still accepts `null`).
+
+### Changed
+
+- **Descriptions.** Every default-catalog tool description says what the tool
+  does, when to use it instead of its siblings, what it returns and its side
+  effects. Every parameter has a written description; the generated
+  fallback ("Whether to enable ...", "Human-readable description for the
+  target resource.", "Email address for the from.") is removed and
+  `tests/test_description_lint.py` fails on a missing, name-restating or
+  templated description and on an enum-shaped parameter without `enum`.
+  Descriptions no longer promise an `{"error": ...}` result; failures are
+  `isError` results with the shared error envelope.
+- **Schemas no longer publish the generic limits.** `maxLength: 1000000`,
+  `maxItems: 10000` and `maxProperties: 10000` are still enforced on every
+  call but are not repeated in each input schema. Tool-specific limits (the
+  upload picker's payload) stay published.
+- **Output schemas** lose the generated "Response field: x" descriptions,
+  their filler title and description, and the top-level `resource` block that
+  most results never carry. Published schemas stay open.
+- **Discovery front page.** With tool search on, the always-visible tools are
+  the connection and consent tools, `search_workspace`,
+  `resolve_workspace_resource`, `gmail_search_emails`,
+  `gmail_get_mail_digest`, `calendar_search_events`,
+  `calendar_get_calendar_digest`, `drive_list_files` and
+  `tasks_tasks_digest`. The upload picker (`files_file_manager`,
+  `files_list_files`, `files_list_files_page`) and
+  `get_mcp_apps_diagnostics` are reachable through `search_tools`.
+- **Enums for closed sets the tools already enforced**, so the schema states
+  them: `search_workspace` `services`, `connect_google_workspace`
+  `capabilities`, `get_google_connection_status` `capability`,
+  `prepare_workspace_action` `tool_name`, `keep_patch_note_checklist`
+  `operation`. The accepted values are unchanged; an invalid value is now
+  rejected by input validation instead of by the tool.
+- The Chat `notify` field was documented as "notify users immediately"; it
+  asks the user to confirm the post, and the description now says so.
+
+### Fixed
+
+- `drive_hide_drive` and `drive_unhide_drive` failed on every call: they
+  passed `useDomainAdminAccess`, which `drives.hide`/`drives.unhide` do not
+  accept, and the Google client raised before sending the request.
+
+### Added
+
+- `tests/test_catalog_budget.py` pins a ceiling for the default and
+  all-optional catalogs; `scripts/measure_tokens.py` prints their size.
+
 ## 1.1.0 — 2026-11-04
 
 Cleaner Gmail text. No tool or parameter is removed or renamed; one optional
