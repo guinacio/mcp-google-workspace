@@ -1,0 +1,60 @@
+{
+  "account_timezone": "America/Sao_Paulo",
+  "count": 2,
+  "form_id": "1FAIpQLSdExampleFormIdentifier0123456789abcdefghijklmnop",
+  "next_page_token": "ACYDBNi_examplePageToken",
+  "responses": [
+    {
+      "answers": [
+        {
+          "question": "How satisfied are you with the product?",
+          "question_id": "7b2d9e10",
+          "values": [
+            "4"
+          ]
+        },
+        {
+          "question": "Which features do you use?",
+          "question_id": "3a5c7e9b",
+          "values": [
+            "Reports",
+            "Exports"
+          ]
+        },
+        {
+          "question": "Rate each area: Speed",
+          "question_id": "4b6d8f0a",
+          "values": [
+            "Great"
+          ]
+        },
+        {
+          "question": "Attach a screenshot",
+          "question_id": "0b2d4f6a",
+          "values": [
+            "1UploadedFileIdExample0123"
+          ]
+        }
+      ],
+      "created_at": "2026-11-02T10:05:12.345000-03:00",
+      "id": "ACYDBNj_exampleResponse01",
+      "respondent_email": "ana@example.com",
+      "submitted_at": "2026-11-02T10:05:12.345678-03:00"
+    },
+    {
+      "answers": [
+        {
+          "question": "Would you recommend it to a colleague?",
+          "question_id": "1e4f6a8c",
+          "values": [
+            "Not sure"
+          ]
+        }
+      ],
+      "created_at": "2026-11-03T06:41:00-03:00",
+      "id": "ACYDBNj_exampleResponse02",
+      "respondent_email": null,
+      "submitted_at": "2026-11-03T06:43:27.100000-03:00"
+    }
+  ]
+}

@@ -455,7 +455,7 @@ def test_task_submitted_on_one_replica_runs_on_the_worker_and_is_polled_on_the_o
     polls: list[Call] = []
     done = _wait_task(fleet, "dave", submitted.result["taskId"], polls=polls)
     assert done["status"] == "completed"
-    assert done["result"]["structuredContent"]["spreadsheetId"] == sheet
+    assert done["result"]["structuredContent"]["spreadsheet_id"] == sheet
     assert polls[0].replica != submitted.replica
     assert_alternates([submitted, *polls])
     executions = fleet.calls_matching(sheet)
@@ -761,7 +761,7 @@ def test_sigterm_drains_a_replica_while_the_proxy_routes_around_it(fleet: Fleet)
     assert "error" not in outcome, outcome.get("error")
     call: Call = outcome["call"]
     assert call.result["resultType"] == "complete" and call.result.get("isError") in (None, False), call.result
-    assert structured(call)["spreadsheetId"] == sheet
+    assert structured(call)["spreadsheet_id"] == sheet
     assert time.monotonic() - signalled > 2.5  # longer than FastMCP's former 2 s cut-off
     assert fleet.calls_matching(sheet, "done")
 

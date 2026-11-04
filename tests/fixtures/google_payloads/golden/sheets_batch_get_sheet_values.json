@@ -1,0 +1,47 @@
+{
+  "count": 3,
+  "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "value_ranges": [
+    {
+      "major_dimension": "ROWS",
+      "range": "Summary!A1:C3",
+      "row_count": 3,
+      "values": [
+        [
+          "Category",
+          "Planned",
+          "Actual"
+        ],
+        [
+          "Rent",
+          "1200",
+          "1200"
+        ],
+        [
+          "Groceries",
+          "450",
+          "512.3"
+        ]
+      ]
+    },
+    {
+      "major_dimension": "COLUMNS",
+      "range": "Q1!A1:A1000",
+      "row_count": 1,
+      "values": [
+        [
+          "Month",
+          "January",
+          "February",
+          "March"
+        ]
+      ]
+    },
+    {
+      "major_dimension": "ROWS",
+      "range": "'Archive 2025'!A1:B10",
+      "row_count": 0,
+      "values": []
+    }
+  ]
+}

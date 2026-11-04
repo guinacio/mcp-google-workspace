@@ -1,0 +1,23 @@
+{
+  "locale": null,
+  "named_ranges": [],
+  "sheets": [
+    {
+      "column_count": null,
+      "frozen_column_count": null,
+      "frozen_row_count": null,
+      "hidden": false,
+      "index": null,
+      "row_count": null,
+      "sheet_id": 0,
+      "title": "Sheet1",
+      "type": null,
+      "values": null,
+      "values_start": null
+    }
+  ],
+  "spreadsheet_id": "fleet-sheet",
+  "spreadsheet_time_zone": null,
+  "title": "Fleet fleet-sheet",
+  "url": null
+}

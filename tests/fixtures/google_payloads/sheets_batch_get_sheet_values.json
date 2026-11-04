@@ -1,0 +1,42 @@
+{
+  "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "valueRanges": [
+    {
+      "range": "Summary!A1:C3",
+      "majorDimension": "ROWS",
+      "values": [
+        [
+          "Category",
+          "Planned",
+          "Actual"
+        ],
+        [
+          "Rent",
+          "1200",
+          "1200"
+        ],
+        [
+          "Groceries",
+          "450",
+          "512.3"
+        ]
+      ]
+    },
+    {
+      "range": "Q1!A1:A1000",
+      "majorDimension": "COLUMNS",
+      "values": [
+        [
+          "Month",
+          "January",
+          "February",
+          "March"
+        ]
+      ]
+    },
+    {
+      "range": "'Archive 2025'!A1:B10",
+      "majorDimension": "ROWS"
+    }
+  ]
+}

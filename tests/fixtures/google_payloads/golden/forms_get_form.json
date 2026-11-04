@@ -1,0 +1,191 @@
+{
+  "accepting_responses": true,
+  "count": 14,
+  "description": "Two minutes, five questions.",
+  "document_title": "Customer feedback (June 2026)",
+  "form_id": "1FAIpQLSdExampleFormIdentifier0123456789abcdefghijklmnop",
+  "is_quiz": false,
+  "items": [
+    {
+      "description": null,
+      "item_id": "2f1a8c3e",
+      "kind": "question",
+      "options": {
+        "high": 5,
+        "high_label": "Very",
+        "low": 1,
+        "low_label": "Not at all"
+      },
+      "question_id": "7b2d9e10",
+      "question_type": "scale",
+      "required": true,
+      "title": "How satisfied are you with the product?"
+    },
+    {
+      "description": null,
+      "item_id": "5c0e2b4a",
+      "kind": "question",
+      "options": [
+        "Yes",
+        "No",
+        "Not sure"
+      ],
+      "question_id": "1e4f6a8c",
+      "question_type": "multiple_choice",
+      "required": true,
+      "title": "Would you recommend it to a colleague?"
+    },
+    {
+      "description": null,
+      "item_id": "9d3b7f1e",
+      "kind": "question",
+      "options": [
+        "Reports",
+        "Alerts",
+        "Exports",
+        "Other (free text)"
+      ],
+      "question_id": "3a5c7e9b",
+      "question_type": "checkboxes",
+      "required": false,
+      "title": "Which features do you use?"
+    },
+    {
+      "description": "Optional.",
+      "item_id": "4e8a2c6d",
+      "kind": "question",
+      "options": null,
+      "question_id": "8c1e3a5f",
+      "question_type": "paragraph",
+      "required": false,
+      "title": "Anything else?"
+    },
+    {
+      "description": "A few details for context.",
+      "item_id": "7a1c3e5b",
+      "kind": "page_break",
+      "options": null,
+      "question_id": null,
+      "question_type": null,
+      "required": null,
+      "title": "About your team"
+    },
+    {
+      "description": null,
+      "item_id": "0f2e4d6c",
+      "kind": "question_group",
+      "options": [
+        "Poor",
+        "Fine",
+        "Great"
+      ],
+      "question_id": [
+        {
+          "question_id": "4b6d8f0a",
+          "row_title": "Speed"
+        },
+        {
+          "question_id": "5c7e9a1b",
+          "row_title": "Reliability"
+        }
+      ],
+      "question_type": "multiple_choice_grid",
+      "required": true,
+      "title": "Rate each area"
+    },
+    {
+      "description": null,
+      "item_id": "1d3f5b7e",
+      "kind": "question",
+      "options": [
+        "1-10",
+        "11-50",
+        "51+"
+      ],
+      "question_id": "6d8f0b2c",
+      "question_type": "dropdown",
+      "required": false,
+      "title": "Team size"
+    },
+    {
+      "description": null,
+      "item_id": "2e4a6c8f",
+      "kind": "question",
+      "options": null,
+      "question_id": "7e9a1c3d",
+      "question_type": "date",
+      "required": false,
+      "title": "When did you start using it?"
+    },
+    {
+      "description": null,
+      "item_id": "3f5b7d9a",
+      "kind": "question",
+      "options": null,
+      "question_id": "8f0b2d4e",
+      "question_type": "short_text",
+      "required": true,
+      "title": "Your name"
+    },
+    {
+      "description": null,
+      "item_id": "4a6c8e0b",
+      "kind": "question",
+      "options": {
+        "high": 5,
+        "high_label": null,
+        "low": 1,
+        "low_label": null
+      },
+      "question_id": "9a1c3e5f",
+      "question_type": "rating",
+      "required": false,
+      "title": "Overall rating"
+    },
+    {
+      "description": null,
+      "item_id": "5b7d9f1c",
+      "kind": "question",
+      "options": null,
+      "question_id": "0b2d4f6a",
+      "question_type": "file_upload",
+      "required": false,
+      "title": "Attach a screenshot"
+    },
+    {
+      "description": null,
+      "item_id": "6c8e0a2d",
+      "kind": "video",
+      "options": null,
+      "question_id": null,
+      "question_type": null,
+      "required": null,
+      "title": "Product tour"
+    },
+    {
+      "description": null,
+      "item_id": "7d9f1b3e",
+      "kind": "image",
+      "options": null,
+      "question_id": null,
+      "question_type": null,
+      "required": null,
+      "title": "Our logo"
+    },
+    {
+      "description": null,
+      "item_id": "6b0d4f2a",
+      "kind": "text",
+      "options": null,
+      "question_id": null,
+      "question_type": null,
+      "required": null,
+      "title": "Thank you"
+    }
+  ],
+  "linked_spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "published": true,
+  "responder_url": "https://docs.google.com/forms/d/e/1FAIpQLSdExampleFormIdentifier0123456789abcdefghijklmnop/viewform",
+  "revision_id": "00000014",
+  "title": "Customer feedback"
+}

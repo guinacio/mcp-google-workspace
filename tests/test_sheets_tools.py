@@ -202,3 +202,156 @@ def test_get_sheet_values_tool_returns_structured_error(monkeypatch):
     assert result["provider_status"] == 400
     assert result["details"]["context"]["spreadsheet_id"] == "sheet-1"
     assert result["details"]["context"]["range_a1"] == "A:C"
+
+
+# --- Normalized responses (2.0.0) -------------------------------------------------
+
+import inspect  # noqa: E402
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import mcp_google_workspace.auth.google_auth as google_auth  # noqa: E402
+from mcp_google_workspace.common.output_schemas import infer_tool_output_schema  # noqa: E402
+from mcp_google_workspace.server import workspace_mcp  # noqa: E402
+from mcp_google_workspace.sheets.presentation import (  # noqa: E402
+    batch_update_spreadsheet_envelope,
+    column_letter,
+    grid_range_a1,
+    grid_values,
+    quote_sheet_title,
+    sheet_values_envelope,
+    spreadsheet_envelope,
+)
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "google_payloads"
+
+
+def _fixture(name):
+    return json.loads((_FIXTURES / name).read_text(encoding="utf-8"))
+
+
+class _PayloadService:
+    """A Google client stub whose every ``execute()`` returns one payload."""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.calls = []
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        self.calls.append(name)
+        return self
+
+    def __call__(self, *_args, **_kwargs):
+        return self
+
+    def execute(self, *_args, **_kwargs):
+        return json.loads(json.dumps(self._payload))
+
+
+def test_column_letters_and_sheet_title_quoting():
+    assert [column_letter(index) for index in (0, 25, 26, 51, 701, 702)] == ["A", "Z", "AA", "AZ", "ZZ", "AAA"]
+    assert quote_sheet_title("Summary") == "Summary"
+    assert quote_sheet_title("My Sheet") == "'My Sheet'"
+    assert quote_sheet_title("Q1") == "'Q1'"  # reads as a cell reference
+    assert quote_sheet_title("Bob's") == "'Bob''s'"
+
+
+def test_grid_range_a1_covers_bounded_and_open_ranges():
+    titles = {0: "Summary", 7: "My Sheet"}
+    assert grid_range_a1({"sheetId": 0, "startRowIndex": 1, "endRowIndex": 13, "startColumnIndex": 1, "endColumnIndex": 2}, titles) == "Summary!B2:B13"
+    # Google omits zero-valued fields: no sheetId is sheet 0, no start index is the first row/column.
+    assert grid_range_a1({"endRowIndex": 5, "endColumnIndex": 3}, titles) == "Summary!A1:C5"
+    assert grid_range_a1({"sheetId": 7, "startColumnIndex": 2, "endColumnIndex": 4}, titles) == "'My Sheet'!C:D"
+    assert grid_range_a1({"sheetId": 7, "startRowIndex": 1, "endRowIndex": 4}, titles) == "'My Sheet'!2:4"
+    assert grid_range_a1({"sheetId": 7, "startRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 2}, titles) == "'My Sheet'!A2:B"
+    assert grid_range_a1({"sheetId": 7}, titles) == "'My Sheet'"
+    assert grid_range_a1({"sheetId": 7, "startColumnIndex": 2}, titles) is None
+    assert grid_range_a1({"sheetId": 99, "endRowIndex": 2}, titles) is None
+
+
+def test_grid_values_places_blocks_and_trims_like_the_values_api():
+    data = [
+        {"startRow": 1, "startColumn": 1, "rowData": [{"values": [{"formattedValue": "a"}, {}]}, {"values": [{}]}]},
+        {"startRow": 3, "startColumn": 2, "rowData": [{"values": [{"formattedValue": "b"}]}]},
+    ]
+    values, start = grid_values(data)
+    assert start == "B2"
+    assert values == [["a"], [], ["", "b"]]
+    assert grid_values([]) == ([], None)
+    assert grid_values([{"rowData": [{"values": [{}]}]}]) == ([], None)
+
+
+def test_spreadsheet_envelope_handles_minimal_payloads():
+    """A stub or older payload with only an ID and title normalizes without errors."""
+    result = spreadsheet_envelope({"spreadsheetId": "s1", "properties": {"title": "T"}})
+    assert result["spreadsheet_id"] == "s1"
+    assert result["sheets"] == [] and result["named_ranges"] == []
+    assert result["url"] is None and result["spreadsheet_time_zone"] is None
+    assert spreadsheet_envelope({})["title"] is None
+
+    updated = batch_update_spreadsheet_envelope({"spreadsheetId": "s1", "replies": [{}]}, spreadsheet_id="s1")
+    assert updated == {"status": "ok", "spreadsheet_id": "s1", "replies": [{}], "count": 1, "spreadsheet": None}
+    assert batch_update_spreadsheet_envelope({}, spreadsheet_id="s2")["spreadsheet_id"] == "s2"
+
+
+def test_sheet_values_envelope_reports_empty_ranges_as_empty_lists():
+    result = sheet_values_envelope({"range": "Sheet1!A1:B2", "majorDimension": "ROWS"}, spreadsheet_id="s1")
+    assert result == {"spreadsheet_id": "s1", "range": "Sheet1!A1:B2", "major_dimension": "ROWS", "values": [], "row_count": 0}
+
+
+def test_get_spreadsheet_end_to_end_returns_the_normalized_shape(monkeypatch):
+    payload = _fixture("sheets_get_spreadsheet.json")
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool("sheets_get_spreadsheet", {"spreadsheet_id": payload["spreadsheetId"]})
+
+    result = anyio.run(scenario)
+    assert result.is_error is False
+    structured = result.structured_content
+    assert structured["spreadsheet_id"] == payload["spreadsheetId"]
+    assert structured["title"] == "Budget 2026"
+    assert structured["sheets"][0]["sheet_id"] == 0
+    assert structured["named_ranges"][0]["range"] == "Summary!B2:B13"
+    for raw_field in ("spreadsheetId", "properties", "developerMetadata", "dataSources"):
+        assert raw_field not in structured
+
+
+def test_batch_update_spreadsheet_end_to_end_with_a_minimal_payload(monkeypatch):
+    payload = {"spreadsheetId": "sheet-1", "replies": [{}]}
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool(
+                "sheets_batch_update_spreadsheet",
+                {"spreadsheet_id": "sheet-1", "requests": [{"addSheet": {"properties": {"title": "Q2"}}}]},
+            )
+
+    result = anyio.run(scenario)
+    assert result.is_error is False
+    assert result.structured_content["spreadsheet_id"] == "sheet-1"
+    assert result.structured_content["count"] == 1
+
+
+def test_sheets_tools_return_inferable_literal_shapes():
+    async def tools():
+        return {tool.name: tool for tool in await sheets_mcp.list_tools(run_middleware=False)}
+
+    listed = anyio.run(tools)
+    expected = {
+        "get_spreadsheet": {"spreadsheet_id", "title", "locale", "spreadsheet_time_zone", "url", "sheets", "named_ranges"},
+        "create_spreadsheet": {"status", "spreadsheet_id", "title", "url", "sheets"},
+        "get_sheet_values": {"spreadsheet_id", "range", "major_dimension", "values", "row_count"},
+        "batch_get_sheet_values": {"spreadsheet_id", "value_ranges", "count"},
+        "append_sheet_values": {"status", "spreadsheet_id", "table_range", "updated_range", "updated_values"},
+        "update_sheet_values": {"status", "spreadsheet_id", "updated_range", "updated_cells", "updated_values"},
+        "batch_update_spreadsheet": {"status", "spreadsheet_id", "replies", "count", "spreadsheet"},
+    }
+    for name, keys in expected.items():
+        schema = infer_tool_output_schema(inspect.unwrap(listed[name].fn))
+        assert schema is not None, name
+        assert keys <= set(schema["properties"]), (name, sorted(schema["properties"]))

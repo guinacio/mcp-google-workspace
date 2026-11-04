@@ -1,0 +1,28 @@
+{
+  "range": "Summary!A1:D5",
+  "majorDimension": "ROWS",
+  "values": [
+    [
+      "Category",
+      "Planned",
+      "Actual"
+    ],
+    [
+      "Rent",
+      "$1,200.00",
+      "$1,200.00"
+    ],
+    [
+      "Groceries",
+      "$450.00",
+      "$512.30",
+      "over"
+    ],
+    [],
+    [
+      "Total",
+      "$1,650.00",
+      "$1,712.30"
+    ]
+  ]
+}

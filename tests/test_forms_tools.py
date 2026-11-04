@@ -141,3 +141,149 @@ def test_response_envelope_resolves_question_ids_to_titles():
         account_timezone="America/Sao_Paulo",
     )
     assert result["answers"] == [{"question_id": "q1", "question": "Priority", "values": ["High"]}]
+
+
+# --- Normalized responses (2.0.0) -------------------------------------------------
+
+import inspect  # noqa: E402
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from fastmcp import Client  # noqa: E402
+
+import mcp_google_workspace.auth.google_auth as google_auth  # noqa: E402
+from mcp_google_workspace.common.output_schemas import infer_tool_output_schema  # noqa: E402
+from mcp_google_workspace.forms.presentation import (  # noqa: E402
+    OTHER_OPTION,
+    batch_update_form_envelope,
+    form_envelope,
+    form_item_envelope,
+    publish_settings_envelope,
+)
+from mcp_google_workspace.server import workspace_mcp  # noqa: E402
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "google_payloads"
+_TIMEZONE = "America/Sao_Paulo"
+
+
+def _fixture(name):
+    return json.loads((_FIXTURES / name).read_text(encoding="utf-8"))
+
+
+class _PayloadService:
+    """A Google client stub whose every ``execute()`` returns one payload."""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return self
+
+    def __call__(self, *_args, **_kwargs):
+        return self
+
+    def execute(self, *_args, **_kwargs):
+        return json.loads(json.dumps(self._payload))
+
+
+def test_response_envelope_carries_no_per_item_timezone():
+    result = response_envelope(
+        {"responseId": "r1", "createTime": "2026-11-03T12:00:00Z", "lastSubmittedTime": "2026-11-03T12:00:00Z"},
+        {},
+        account_timezone=_TIMEZONE,
+    )
+    assert "timezone" not in result
+    assert result["created_at"] == "2026-11-03T09:00:00-03:00"
+
+
+def test_form_item_types_and_options():
+    def question(**kind):
+        return form_item_envelope({"itemId": "i", "questionItem": {"question": {"questionId": "q", **kind}}})
+
+    assert question(textQuestion={})["question_type"] == "short_text"
+    assert question(textQuestion={"paragraph": True})["question_type"] == "paragraph"
+    checkbox = question(choiceQuestion={"type": "CHECKBOX", "options": [{"value": "A"}, {"isOther": True}]})
+    assert checkbox["question_type"] == "checkboxes"
+    assert checkbox["options"] == ["A", OTHER_OPTION]
+    assert checkbox["required"] is False
+    assert question(timeQuestion={"duration": True})["question_type"] == "duration"
+    assert question(dateQuestion={"includeTime": True})["question_type"] == "date_time"
+    scale = question(scaleQuestion={"low": 0, "high": 10})
+    assert scale["options"] == {"low": 0, "high": 10, "low_label": None, "high_label": None}
+    assert form_item_envelope({"itemId": "p", "pageBreakItem": {}})["kind"] == "page_break"
+    assert form_item_envelope({"itemId": "x"})["kind"] is None
+
+
+def test_form_publish_state_is_null_for_legacy_forms():
+    legacy = form_envelope({"formId": "f1", "info": {"title": "T"}})
+    assert legacy["published"] is None and legacy["accepting_responses"] is None
+    assert legacy["items"] == [] and legacy["count"] == 0
+    closed = publish_settings_envelope({"formId": "f1", "publishSettings": {"publishState": {}}}, form_id="f1")
+    assert closed == {"status": "ok", "form_id": "f1", "published": False, "accepting_responses": False}
+
+
+def test_batch_update_form_envelope_takes_the_form_id_from_the_request():
+    result = batch_update_form_envelope({"replies": [{}], "writeControl": {"requiredRevisionId": "00000005"}}, form_id="f1")
+    assert result == {"status": "ok", "form_id": "f1", "revision_id": "00000005", "replies": [{}], "count": 1, "form": None}
+
+
+def test_get_form_end_to_end_returns_the_normalized_shape(monkeypatch):
+    payload = _fixture("forms_get_form.json")
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool("forms_get_form", {"form_id": payload["formId"]})
+
+    result = anyio.run(scenario)
+    assert result.is_error is False
+    structured = result.structured_content
+    assert structured["form_id"] == payload["formId"]
+    assert structured["count"] == len(payload["items"])
+    assert structured["items"][0]["question_id"] == "7b2d9e10"
+    assert "usp=" not in structured["responder_url"]
+    for raw_field in ("formId", "info", "settings", "publishSettings", "responderUri"):
+        assert raw_field not in structured
+
+
+def test_list_form_responses_end_to_end_has_one_top_level_time_zone(monkeypatch):
+    payload = _fixture("forms_list_form_responses.json")
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _PayloadService(payload))
+
+    async def fake_timezone():
+        return _TIMEZONE
+
+    monkeypatch.setattr("mcp_google_workspace.forms.tools.resolve_user_timezone", fake_timezone)
+
+    async def scenario():
+        async with Client(workspace_mcp) as client:
+            return await client.call_tool(
+                "forms_list_form_responses", {"form_id": "form-1", "enrich_questions": False}
+            )
+
+    result = anyio.run(scenario)
+    assert result.is_error is False
+    structured = result.structured_content
+    assert structured["account_timezone"] == _TIMEZONE
+    assert structured["count"] == 2
+    assert all("timezone" not in response for response in structured["responses"])
+
+
+def test_forms_tools_return_inferable_literal_shapes():
+    async def tools():
+        return {tool.name: tool for tool in await forms_mcp.list_tools(run_middleware=False)}
+
+    listed = anyio.run(tools)
+    expected = {
+        "get_form": {"form_id", "title", "responder_url", "revision_id", "published", "accepting_responses", "items", "count"},
+        "create_form": {"status", "form_id", "title", "document_title", "responder_url", "revision_id"},
+        "batch_update_form": {"status", "form_id", "revision_id", "replies", "count", "form"},
+        "set_form_publish_settings": {"status", "form_id", "published", "accepting_responses"},
+        "list_form_responses": {"form_id", "responses", "next_page_token", "count", "account_timezone"},
+    }
+    for name, keys in expected.items():
+        schema = infer_tool_output_schema(inspect.unwrap(listed[name].fn))
+        assert schema is not None, name
+        assert keys <= set(schema["properties"]), (name, sorted(schema["properties"]))
