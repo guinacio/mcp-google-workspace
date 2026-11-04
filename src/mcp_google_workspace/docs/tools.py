@@ -13,6 +13,7 @@ from .client import docs_service
 from .presentation import (
     batch_update_result,
     created_document,
+    document_outline,
     document_text_view,
     raw_document_view,
     replace_text_result,
@@ -98,20 +99,22 @@ def register_tools(server: FastMCP) -> None:
             ),
         ],
         format: Annotated[
-            Literal["text", "markdown", "raw"],
+            Literal["text", "markdown", "outline", "raw"],
             (
                 "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown "
                 "(headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 "
-                "characters. 'raw' returns the editing outline, unpaged: every structural element with "
-                "the start_index and end_index docs_batch_update_document requests need, styles left out."
+                "characters. 'outline' returns the editing outline, unpaged: every structural element "
+                "with the start_index and end_index docs_batch_update_document requests need, styles "
+                "left out. 'raw' returns Google's Document resource unchanged and unpaged, every style "
+                "and index included."
             ),
         ] = "text",
         offset: Annotated[
             int,
             (
                 "Character offset into the rendered text to resume from: the next_offset of a truncated "
-                "'text' or 'markdown' result, with the same format; 0 starts at the beginning and 'raw' "
-                "ignores it."
+                "'text' or 'markdown' result, with the same format; 0 starts at the beginning, and "
+                "'outline' and 'raw' ignore it."
             ),
         ] = 0,
         include_tabs_content: Annotated[
@@ -132,7 +135,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = None,
     ) -> dict[str, Any]:
-        """Read a Google Docs document, every tab in order, as clean text or Markdown to read or summarize it, or with format 'raw' as the editing outline whose indices docs_batch_update_document needs (docs_append_document_text and docs_replace_document_text need none). Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; continue with offset=next_offset until it is null. Raw returns the same identity, suggestions_view_mode and tabs with content (kind, start_index, end_index, text with one U+FFFC per image or chip, style, list, inline), headers, footers, footnotes and named_ranges."""
+        """Read a Google Docs document, every tab in order: 'text' or 'markdown' to read or summarize it, 'outline' for the indices docs_batch_update_document requests need (docs_append_document_text and docs_replace_document_text need none), 'raw' for Google's Document resource unchanged. Text and markdown return document_id, title, revision_id, url, format, tabs (tab_id, title) and one page of body with truncated, next_offset, body_chars and body_sha256; page on with offset=next_offset until it is null. Outline returns document_id, title, revision_id, url, suggestions_view_mode and tabs whose content elements have kind, start_index, end_index, text and style; raw returns the resource in document."""
         request = ReadDocumentRequest(
             document_id=document_id,
             format=format,
@@ -144,6 +147,8 @@ def register_tools(server: FastMCP) -> None:
             payload = read_document_payload(request)
         except HttpError as exc:
             raise provider_tool_error(exc, document_id=document_id) from exc
+        if request.format == "outline":
+            return document_outline(payload)
         if request.format == "raw":
             return raw_document_view(payload)
         return document_text_view(payload, format=request.format, offset=request.offset)
@@ -215,8 +220,8 @@ def register_tools(server: FastMCP) -> None:
             dict[str, Any] | None,
             (
                 "Docs writeControl object that guards against concurrent edits, e.g. "
-                '{"requiredRevisionId": "<revision_id from docs_read_document>"}: the update fails if '
-                "the document changed since that revision."
+                '{"requiredRevisionId": "<revision_id from docs_read_document format outline>"}: '
+                "the update fails if the document changed since that revision."
             ),
         ] = None,
     ) -> dict[str, Any]:

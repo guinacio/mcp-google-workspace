@@ -118,7 +118,7 @@ def test_docs_payload_helpers(monkeypatch):
     first_tab = read_document_payload(
         ReadDocumentRequest(
             document_id="doc-1",
-            format="raw",
+            format="outline",
             include_tabs_content=False,
             suggestions_view_mode="PREVIEW_SUGGESTIONS_ACCEPTED",
         )
@@ -284,13 +284,12 @@ def test_read_view_shape():
 
 
 
-def test_raw_view_is_the_editing_outline():
+def test_raw_view_is_the_document_resource_unchanged():
     document = load(LONG_DOCUMENT)
     raw = raw_document_view(document)
-    assert list(raw) == ["document_id", "title", "revision_id", "url", "format", "suggestions_view_mode", "tabs"]
+    assert list(raw) == ["document_id", "title", "revision_id", "url", "format", "document"]
     assert raw["format"] == "raw"
-    assert {key: value for key, value in raw.items() if key != "format"} == document_outline(document)
-    assert "document" not in raw
+    assert raw["document"] is document
 
 
 def test_markdown_renders_each_construct():
@@ -442,7 +441,24 @@ def test_read_document_end_to_end(monkeypatch):
     assert second.structured_content["next_offset"] is None
 
 
-def test_read_document_raw_returns_the_editing_outline_of_every_tab(monkeypatch):
+def test_read_document_outline_returns_the_editing_outline_of_every_tab(monkeypatch):
+    payload = load(LONG_DOCUMENT)
+    calls: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _RecordingService(payload, calls))
+
+    _, result = anyio.run(_call_workspace, "docs_read_document", {"document_id": payload["documentId"], "format": "outline"})
+
+    assert result.is_error is False, result.content
+    assert calls[-1] == ("get", {"documentId": payload["documentId"], "includeTabsContent": True, "suggestionsViewMode": None})
+    # Exactly what docs_get_document returned.
+    assert result.structured_content == json.loads(json.dumps(document_outline(payload)))
+    assert list(result.structured_content) == [
+        "document_id", "title", "revision_id", "url", "suggestions_view_mode", "tabs",
+    ]
+    assert [tab["tab_id"] for tab in result.structured_content["tabs"]] == ["t.0", "t.tl1", "t.eng", "t.dec", "t.run"]
+
+
+def test_read_document_raw_returns_the_document_resource_unchanged(monkeypatch):
     payload = load(LONG_DOCUMENT)
     calls: list[tuple[str, dict[str, Any]]] = []
     monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _RecordingService(payload, calls))
@@ -451,26 +467,34 @@ def test_read_document_raw_returns_the_editing_outline_of_every_tab(monkeypatch)
 
     assert result.is_error is False, result.content
     assert calls[-1] == ("get", {"documentId": payload["documentId"], "includeTabsContent": True, "suggestionsViewMode": None})
-    assert result.structured_content == json.loads(json.dumps(raw_document_view(payload)))
-    assert [tab["tab_id"] for tab in result.structured_content["tabs"]] == ["t.0", "t.tl1", "t.eng", "t.dec", "t.run"]
+    assert result.structured_content["format"] == "raw"
+    assert result.structured_content["document"] == payload
+    assert "body" not in result.structured_content and "next_offset" not in result.structured_content
 
 
-def test_read_document_raw_first_tab_with_suggestions_previewed(monkeypatch):
-    """The documents.get options: only the first tab, and a suggestions view mode."""
+_FIRST_TAB_SUGGESTIONS_ACCEPTED = {
+    "include_tabs_content": False,
+    "suggestions_view_mode": "PREVIEW_SUGGESTIONS_ACCEPTED",
+}
+
+
+def _first_tab_payload() -> dict[str, Any]:
     payload = {key: value for key, value in load("docs_get_document.json").items() if key != "tabs"}
     payload["suggestionsViewMode"] = "PREVIEW_SUGGESTIONS_ACCEPTED"
+    return payload
+
+
+@pytest.mark.parametrize("fmt", ["outline", "raw"])
+def test_read_document_first_tab_with_suggestions_previewed(monkeypatch, fmt):
+    """The documents.get options docs_get_document had: only the first tab, and a suggestions view mode."""
+    payload = _first_tab_payload()
     calls: list[tuple[str, dict[str, Any]]] = []
     monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _RecordingService(payload, calls))
 
     _, result = anyio.run(
         _call_workspace,
         "docs_read_document",
-        {
-            "document_id": payload["documentId"],
-            "format": "raw",
-            "include_tabs_content": False,
-            "suggestions_view_mode": "PREVIEW_SUGGESTIONS_ACCEPTED",
-        },
+        {"document_id": payload["documentId"], "format": fmt, **_FIRST_TAB_SUGGESTIONS_ACCEPTED},
     )
 
     assert result.is_error is False, result.content
@@ -483,6 +507,9 @@ def test_read_document_raw_first_tab_with_suggestions_previewed(monkeypatch):
         },
     )
     structured = result.structured_content
+    if fmt == "raw":
+        assert structured["document"] == payload
+        return
     assert structured["suggestions_view_mode"] == "PREVIEW_SUGGESTIONS_ACCEPTED"
     assert [(tab["tab_id"], tab["title"]) for tab in structured["tabs"]] == [(None, None)]
     heading = structured["tabs"][0]["content"][1]

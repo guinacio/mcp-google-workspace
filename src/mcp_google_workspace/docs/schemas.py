@@ -19,7 +19,7 @@ SuggestionsViewMode = Literal[
 
 class ReadDocumentRequest(ToolRequestModel):
     document_id: str = Field(description="Google Docs document file ID.")
-    format: Literal["text", "markdown", "raw"] = Field(default="text")
+    format: Literal["text", "markdown", "outline", "raw"] = Field(default="text")
     offset: int = Field(default=0, ge=0)
     include_tabs_content: bool = Field(default=True)
     suggestions_view_mode: SuggestionsViewMode | None = Field(default=None)
