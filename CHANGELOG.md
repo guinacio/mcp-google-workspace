@@ -601,8 +601,8 @@ area:
   `resolve_workspace_resource`, `gmail_search_emails`,
   `gmail_get_mail_digest`, `calendar_search_events`,
   `calendar_get_calendar_digest`, `drive_list_files` and
-  `tasks_tasks_digest`. The upload picker (`files_file_manager`,
-  `files_list_files`, `files_list_files_page`) and
+  `tasks_tasks_digest`. The upload picker (`uploads_file_manager`,
+  `uploads_list_files`) and
   `get_mcp_apps_diagnostics` are reachable through `search_tools`.
 - **Enums for closed sets the tools already enforced**, so the schema states
   them: `search_workspace` `services`, `connect_google_workspace`
@@ -610,8 +610,6 @@ area:
   `prepare_workspace_action` `tool_name`, `keep_patch_note_checklist`
   `operation`. The accepted values are unchanged; an invalid value is now
   rejected by input validation instead of by the tool.
-- The Chat `notify` field was documented as "notify users immediately"; it
-  asks the user to confirm the post, and the description now says so.
 
 ### Fixed
 
