@@ -619,3 +619,24 @@ def test_people_tools_return_the_normalized_shape_through_the_server(tool, argum
     for added in ("has_more", "fetched_at"):  # the list pagination wrapper's fields
         structured.pop(added, None)
     assert structured == {**golden, **extra}
+
+
+def test_update_with_only_given_name_keeps_the_stored_family_and_middle_name(service):
+    stored = {"givenName": "Ada", "familyName": "Lovelace", "middleName": "King", "displayName": "Ada King Lovelace"}
+    service.people_api.get = lambda **kwargs: (
+        service.people_api.calls.append(("get", kwargs)) or _Exec({"resourceName": "people/123", "names": [stored]})
+    )
+
+    update_contact_payload(UpdateContactRequest(person_name="123", etag="etag-1", given_name="Augusta"))
+
+    (get,) = [kwargs for name, kwargs in service.people_api.calls if name == "get"]
+    assert get["resourceName"] == "people/123" and get["personFields"] == "names"
+    (update,) = [kwargs for name, kwargs in service.people_api.calls if name == "updateContact"]
+    assert update["updatePersonFields"] == "names"
+    assert update["body"]["names"] == [{"givenName": "Augusta", "familyName": "Lovelace", "middleName": "King"}]
+
+
+def test_update_without_name_parts_does_not_read_the_contact(service):
+    update_contact_payload(UpdateContactRequest(person_name="123", etag="etag-1", biography="Mathematician"))
+
+    assert [name for name, _ in service.people_api.calls] == ["updateContact"]

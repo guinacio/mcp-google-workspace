@@ -634,6 +634,10 @@ area:
   `if_exists="overwrite"` could replace an unrelated file's content (and
   `skip`/`rename` reacted to it). The check now looks only in the folder the
   upload lands in: the first parent, or the root of My Drive.
+- `people_update_contact` with only `given_name` (or only `family_name`)
+  cleared the other name parts, middle name included: Google replaces the
+  whole name. The tool now reads the stored name and writes the passed parts
+  over it.
 - The dashboard's event editor saved only through the form's `submit` event,
   which a sandbox without `allow-forms` blocks; it now saves from the submit
   button (and Enter in a field) in either sandbox.

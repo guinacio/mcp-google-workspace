@@ -5609,7 +5609,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography.",
+      "description": "Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and a name part left out keeps its stored value. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5633,11 +5633,11 @@
             "type": "string"
           },
           "family_name": {
-            "description": "New family (last) name. Written together with given_name as the contact's one name, so pass given_name too to keep it.",
+            "description": "New family (last) name; the stored given and middle names are kept unless passed.",
             "type": "string"
           },
           "given_name": {
-            "description": "New given (first) name. given_name, family_name and display_name are written together as the contact's one name, so a part left out is cleared; pass family_name too to keep it.",
+            "description": "New given (first) name; the stored family and middle names are kept unless passed.",
             "type": "string"
           },
           "organization": {

@@ -124,8 +124,35 @@ def create_contact_payload(request: CreateContactRequest) -> dict[str, Any]:
     return service.people().createContact(personFields=PERSON_FIELDS, body=body).execute()
 
 
+# Structured name parts Google stores and accepts back; display and
+# unstructured names are derived from them.
+_WRITABLE_NAME_PARTS = (
+    "givenName",
+    "familyName",
+    "middleName",
+    "honorificPrefix",
+    "honorificSuffix",
+    "phoneticGivenName",
+    "phoneticFamilyName",
+    "phoneticMiddleName",
+)
+
+
+def _merge_stored_name(service: Any, resource_name: str, name: dict[str, Any]) -> dict[str, Any]:
+    """The contact's stored name parts with the passed ones written over them.
+
+    Google replaces the whole name on a names update, so a part the caller left
+    out (the family name when only given_name is passed) would be cleared.
+    """
+    person = service.people().get(resourceName=resource_name, personFields="names").execute()
+    stored = next(iter(person.get("names") or []), {})
+    merged = {part: stored[part] for part in _WRITABLE_NAME_PARTS if stored.get(part)}
+    return {**merged, **name}
+
+
 def update_contact_payload(request: UpdateContactRequest) -> dict[str, Any]:
     service = people_service()
+    resource_name = normalize_person_name(request.person_name)
     body, update_fields = _build_contact_body(
         given_name=request.given_name,
         family_name=request.family_name,
@@ -136,8 +163,10 @@ def update_contact_payload(request: UpdateContactRequest) -> dict[str, Any]:
         biography=request.biography,
         etag=request.etag,
     )
+    if "names" in body:
+        body["names"] = [_merge_stored_name(service, resource_name, body["names"][0])]
     return service.people().updateContact(
-        resourceName=normalize_person_name(request.person_name),
+        resourceName=resource_name,
         updatePersonFields=",".join(update_fields),
         personFields=PERSON_FIELDS,
         sources=request.sources,
@@ -348,15 +377,13 @@ def register_tools(server: FastMCP) -> None:
         given_name: Annotated[
             str | None,
             (
-                "New given (first) name. given_name, family_name and display_name are written together as "
-                "the contact's one name, so a part left out is cleared; pass family_name too to keep it."
+                "New given (first) name; the stored family and middle names are kept unless passed."
             ),
         ] = None,
         family_name: Annotated[
             str | None,
             (
-                "New family (last) name. Written together with given_name as the contact's one name, so "
-                "pass given_name too to keep it."
+                "New family (last) name; the stored given and middle names are kept unless passed."
             ),
         ] = None,
         display_name: Annotated[str | None, _DISPLAY_NAME] = None,
@@ -373,7 +400,7 @@ def register_tools(server: FastMCP) -> None:
         biography: Annotated[str | None, "Replacement notes; replaces the stored notes."] = None,
         sources: Annotated[list[ReadSourceType] | None, _SOURCES] = None,
     ) -> dict[str, Any]:
-        """Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography."""
+        """Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and a name part left out keeps its stored value. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography."""
         try:
             updated = update_contact_payload(
                 UpdateContactRequest(
