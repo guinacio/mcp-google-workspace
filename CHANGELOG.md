@@ -279,6 +279,10 @@ still sends a removed parameter gets the normal input-validation error.
     `keep_patch_note_checklist` with `delete_original_on_apply`: never asked;
     now ask. `meet_end_active_conference` and `meet_update_space` opening the
     space to anyone (`accessType: OPEN`): never asked; now ask.
+  - The Apps dashboard no longer passes `force` when it cancels an event.
+    Cancelling an event, and saving one with guests, from the dashboard now
+    asks through the host; a host that cannot complete the question shows the
+    view's "ask the assistant in chat" message and nothing changes.
 - **Consent: changed contract.**
   - `confirmation_required`: `required_action` is the
     `prepare_workspace_action` call (`{tool, arguments: {tool_name,

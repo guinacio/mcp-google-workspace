@@ -1362,7 +1362,7 @@ async function initMcpMode() {
       void withUiPending(() =>
         runMutation({
           operation: "deleteEvent",
-          args: { calendar_id: action.calendarId, event_id: action.eventId, force: true, send_updates: "all" },
+          args: { calendar_id: action.calendarId, event_id: action.eventId, send_updates: "all" },
           optimistic: (data) => optimisticCancelEvent(data, action.calendarId, action.eventId),
           failureLabel: "Failed to cancel event",
           successNotice: "Event cancelled.",
