@@ -638,6 +638,9 @@ area:
   cleared the other name parts, middle name included: Google replaces the
   whole name. The tool now reads the stored name and writes the passed parts
   over it.
+- `chat_list_messages` with `thread_name` failed on every call: it passed a
+  `thread.name` keyword the Chat client does not accept. The thread is now a
+  `filter` clause, combined with any `filter` given by AND.
 - The dashboard's event editor saved only through the form's `submit` event,
   which a sandbox without `allow-forms` blocks; it now saves from the submit
   button (and Enter in a field) in either sandbox.

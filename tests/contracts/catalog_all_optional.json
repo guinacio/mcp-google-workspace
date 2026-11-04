@@ -3470,7 +3470,7 @@
                 "type": "string"
               },
               "thread_name": {
-                "description": "Thread resource name 'spaces/AAAA/threads/BBBB'. To list one thread's messages, put 'thread.name = spaces/AAAA/threads/BBBB' in filter instead.",
+                "description": "Thread resource name 'spaces/AAAA/threads/BBBB': list only that thread's messages (combined with filter by AND).",
                 "type": "string"
               }
             },
