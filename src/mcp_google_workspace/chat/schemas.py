@@ -66,8 +66,8 @@ class ListMessagesRequest(ToolRequestModel):
     thread_name: str | None = Field(
         default=None,
         description=(
-            "Thread resource name 'spaces/AAAA/threads/BBBB'. To list one thread's messages, "
-            "put 'thread.name = spaces/AAAA/threads/BBBB' in filter instead."
+            "Thread resource name 'spaces/AAAA/threads/BBBB': list only that thread's messages "
+            "(combined with filter by AND)."
         ),
     )
     enrich_authors: bool = Field(

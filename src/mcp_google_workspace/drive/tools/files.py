@@ -199,9 +199,10 @@ def _find_existing_file_by_name(
     parent_ids: list[str],
 ) -> dict[str, Any] | None:
     safe_name = _escape_drive_query_string(name)
-    query_parts = [f"name = '{safe_name}'", "trashed = false"]
-    if parent_ids:
-        query_parts.append(f"'{parent_ids[0]}' in parents")
+    # Only the folder the upload lands in: My Drive's root when no parent is
+    # given, so overwrite can never replace a same-named file elsewhere.
+    parent = _escape_drive_query_string(parent_ids[0]) if parent_ids else "root"
+    query_parts = [f"name = '{safe_name}'", "trashed = false", f"'{parent}' in parents"]
     result = service.files().list(
         q=" and ".join(query_parts),
         pageSize=1,
@@ -475,8 +476,8 @@ def register(server: FastMCP) -> None:
             list[str] | None,
             (
                 "One parent folder ID (Drive allows a single parent), or a shared drive ID for its top "
-                "level; omit for the root of My Drive. The if_exists name check looks only in the first "
-                "parent, or anywhere the user can access when omitted."
+                "level; omit for the root of My Drive. The if_exists name check looks only in that "
+                "folder (the root of My Drive when omitted)."
             ),
         ] = None,
         mime_type: Annotated[
@@ -497,7 +498,8 @@ def register(server: FastMCP) -> None:
         if_exists: Annotated[
             Literal["rename", "overwrite", "skip"] | None,
             (
-                "For a new upload, what to do when a non-trashed file with the same name exists: "
+                "For a new upload, what to do when a non-trashed file with the same name exists in the "
+                "target folder: "
                 "'rename' (the default) uploads a new file with a timestamp before the extension, e.g. "
                 "'report (upload 20261103-142500).pdf', 'overwrite' replaces that file's content as a "
                 "new revision, 'skip' uploads nothing and returns the existing file."

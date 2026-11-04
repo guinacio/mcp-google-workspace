@@ -41,6 +41,73 @@ export type WriteOperation =
 export type Operation = ReadOperation | WriteOperation;
 
 /**
+ * Every argument name the view may send to each operation's tool, including
+ * the `view_handle`/`expected_revision` the dashboard callbacks add. Call sites
+ * are typed against this table (`OperationArgs`), and
+ * tests/test_apps_ui_tool_contract.py checks each name against the tool's
+ * published input schema, so a renamed or removed argument fails CI.
+ */
+export const OPERATION_ARGUMENTS = {
+  getDashboard: ["view_handle", "date_override"],
+  getWeeklyCalendar: ["view_handle", "date_override", "include_weekend"],
+  getEventDetail: ["view_handle", "calendar_id", "event_id"],
+  getEmailDetail: ["view_handle", "message_id"],
+  getEmailAttachment: ["view_handle", "message_id", "attachment_id"],
+  listCalendars: [],
+  patchState: ["view_handle", "expected_revision", "include_weekend", "selected_calendars"],
+  nextRange: ["view_handle", "expected_revision"],
+  prevRange: ["view_handle", "expected_revision"],
+  today: ["view_handle", "expected_revision"],
+  respondToEvent: ["calendar_id", "event_id", "response_status", "send_updates"],
+  createEvent: [
+    "calendar_id",
+    "idempotency_key",
+    "summary",
+    "start_datetime",
+    "end_datetime",
+    "timezone",
+    "description",
+    "location",
+    "attendees",
+    "add_meet_link",
+    "send_updates",
+    "on_conflict",
+  ],
+  updateEvent: [
+    "event_id",
+    "calendar_id",
+    "summary",
+    "start_datetime",
+    "end_datetime",
+    "timezone",
+    "description",
+    "location",
+    "attendees",
+    "send_updates",
+    "on_conflict",
+  ],
+  deleteEvent: ["calendar_id", "event_id", "send_updates"],
+  markEmailRead: ["message_ids", "mark_read"],
+  markEmailUnread: ["message_ids", "mark_read"],
+  moveEmail: ["message_ids", "archive"],
+  deleteEmail: ["message_ids", "mode"],
+  untrashEmail: ["message_ids", "untrash"],
+  markEmailSpam: ["message_ids", "spam"],
+  markEmailNotSpam: ["message_ids", "spam"],
+} as const satisfies Record<Operation, readonly string[]>;
+
+/** Arguments an operation's tool accepts from this view (unknown names do not type-check). */
+export type OperationArgs<O extends Operation> = {
+  [K in (typeof OPERATION_ARGUMENTS)[O][number]]?: unknown;
+};
+
+/** Keep only the arguments `operation` accepts (for replayed host arguments). */
+export function pickOperationArgs<O extends Operation>(operation: O, args: Record<string, unknown>): OperationArgs<O> {
+  const allowed: readonly string[] = OPERATION_ARGUMENTS[operation];
+  return Object.fromEntries(Object.entries(args).filter(([key]) => allowed.includes(key))) as OperationArgs<O>;
+}
+
+/**
  * Read fallbacks only: root-composed name first, then the subserver-only name.
  * Writes have no fallback on purpose.
  */

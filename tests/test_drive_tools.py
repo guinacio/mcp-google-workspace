@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -341,6 +343,25 @@ def test_upload_overwrites_the_same_named_file(drive: _FakeDrive, upload: list[A
     (update,) = drive.called("files.update")
     assert update["fileId"] == "old" and update["body"] == {"name": "report.pdf"} and update["media_body"] == "MEDIA"
     assert drive.called("files.create") == []
+
+
+def test_overwrite_without_a_parent_never_replaces_a_same_named_file_elsewhere(
+    drive: _FakeDrive, upload: list[Any]
+) -> None:
+    """Without parent_ids the upload lands in My Drive's root, so only the root is searched."""
+    elsewhere = {"id": "unrelated", "name": "report.pdf", "parents": ["someone-elses-folder"]}
+
+    def list_files(kwargs: dict[str, Any]) -> dict[str, Any]:
+        # Drive's query semantics for this fake's one file: a parent clause must match.
+        clauses = re.findall(r"'([^']+)' in parents", kwargs["q"])
+        return {"files": [elsewhere] if all(c in elsewhere["parents"] for c in clauses) else []}
+
+    drive.responses["files.list"] = list_files
+    result = _upload(uploaded_file="upl_1", if_exists="overwrite")
+
+    assert "'root' in parents" in drive.called("files.list")[0]["q"]
+    assert drive.called("files.update") == []
+    assert result["mode"] == "create" and result["file"]["id"] == "new"
 
 
 def test_upload_skips_when_the_same_named_file_exists(drive: _FakeDrive, upload: list[Any]) -> None:

@@ -39,6 +39,7 @@ class ListEventsRequest(ToolRequestModel):
     max_results: int = Field(default=25, ge=1, le=2500, description="Maximum events to return.")
     single_events: bool = Field(default=True, description="Expand recurring events into single instances.")
     order_by: Literal["startTime", "updated"] = Field(default="startTime", description="Sort order.")
+    page_token: str | None = Field(default=None, description="next_page_token of the previous page.")
     range_preset: Literal["today", "tomorrow", "this_week", "next_7_days"] | None = Field(
         default=None,
         description=(

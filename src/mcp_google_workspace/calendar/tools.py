@@ -6,6 +6,7 @@ import logging
 
 from hashlib import sha256
 from datetime import datetime, timedelta
+from datetime import time as dt_time
 from typing import Annotated, Any, Literal, NoReturn
 from uuid import uuid4
 
@@ -329,7 +330,13 @@ def _apply_working_hours(
     free_ranges: list[tuple[datetime, datetime]],
     working_hours_start: str,
     working_hours_end: str,
+    zone: Any = pytz.UTC,
 ) -> list[tuple[datetime, datetime]]:
+    """Clamp free ranges to the working hours of each local day in ``zone`` (a pytz zone).
+
+    Each day's bounds are localized on their own date, so a window across a DST
+    change keeps the hours at local time instead of the first day's offset.
+    """
     if not free_ranges:
         return []
     start_hour, start_minute = _parse_hhmm(working_hours_start)
@@ -341,27 +348,11 @@ def _apply_working_hours(
 
     clamped: list[tuple[datetime, datetime]] = []
     for free_start, free_end in free_ranges:
-        current_day = free_start.date()
-        last_day = free_end.date()
+        current_day = free_start.astimezone(zone).date()
+        last_day = free_end.astimezone(zone).date()
         while current_day <= last_day:
-            day_start = free_start.replace(
-                year=current_day.year,
-                month=current_day.month,
-                day=current_day.day,
-                hour=start_hour,
-                minute=start_minute,
-                second=0,
-                microsecond=0,
-            )
-            day_end = free_start.replace(
-                year=current_day.year,
-                month=current_day.month,
-                day=current_day.day,
-                hour=end_hour,
-                minute=end_minute,
-                second=0,
-                microsecond=0,
-            )
+            day_start = zone.localize(datetime.combine(current_day, dt_time(start_hour, start_minute)))
+            day_end = zone.localize(datetime.combine(current_day, dt_time(end_hour, end_minute)))
             interval_start = max(free_start, day_start)
             interval_end = min(free_end, day_end)
             if interval_end > interval_start:
@@ -390,7 +381,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = None,
         max_results: Annotated[
-            int, "Maximum events to return, 1 to 2500; this tool takes no page token, so narrow the window instead of paging."
+            int, "Maximum events per page, 1 to 2500; next_page_token continues the list."
         ] = 25,
         single_events: Annotated[
             bool,
@@ -414,6 +405,14 @@ def register_tools(server: FastMCP) -> None:
                 "bound that time_min or time_max leaves unset."
             ),
         ] = None,
+        page_token: Annotated[
+            str | None,
+            (
+                "The next_page_token from the previous response of this same call; omit for the first "
+                "page. Keep every other argument the same; range_preset 'next_7_days' moves with the "
+                "clock, so page with the effective_time_min/effective_time_max of the first response."
+            ),
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Find events on one calendar in a time window, given as a range_preset or explicit time_min/time_max. For the user's upcoming week plus pending invitations use calendar_get_calendar_digest, and for full details of known events use calendar_read_events. Returns compact events (id, title, start and end in the account time zone, all_day, status, organizer, my_response, requires_response, meeting_url, location, is_recurring, updated_at), count, next_page_token, account_timezone and the effective_time_min/effective_time_max that were applied."""
@@ -425,6 +424,7 @@ def register_tools(server: FastMCP) -> None:
             single_events=single_events,
             order_by=order_by,
             range_preset=range_preset,
+            page_token=page_token,
         )
         service = build_calendar_service()
         LOGGER.debug(f"Listing events for calendar {request.calendar_id}.")
@@ -439,6 +439,8 @@ def register_tools(server: FastMCP) -> None:
             "maxResults": request.max_results,
             "singleEvents": request.single_events,
         }
+        if request.page_token:
+            list_kwargs["pageToken"] = request.page_token
         # Google Calendar only supports orderBy=startTime when singleEvents=True.
         if request.order_by and (request.single_events or request.order_by == "updated"):
             list_kwargs["orderBy"] = request.order_by
@@ -708,6 +710,7 @@ def register_tools(server: FastMCP) -> None:
                 free_ranges,
                 request.working_hours_start,
                 request.working_hours_end,
+                zone,
             ),
             request.slot_duration_minutes,
             request.granularity_minutes,

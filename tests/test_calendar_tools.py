@@ -789,3 +789,42 @@ def test_set_event_attachments_requires_a_change_and_real_selectors(monkeypatch)
         assert result.is_error is True, arguments
         assert requests == []
         assert confirmations == []
+
+
+def test_search_events_pages_with_the_next_page_token_it_returns(monkeypatch) -> None:
+    sent: list[dict[str, Any]] = []
+
+    class _Events:
+        def list(self, **kwargs: Any) -> dict[str, Any]:
+            sent.append(kwargs)
+            return kwargs
+
+    class _Service:
+        def events(self) -> _Events:
+            return _Events()
+
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(kwargs: dict[str, Any]) -> dict:
+        page = kwargs.get("pageToken")
+        return {"items": [], "nextPageToken": None if page else "page-2"}
+
+    monkeypatch.setattr(calendar_tools, "build_calendar_service", _Service)
+    monkeypatch.setattr(calendar_tools, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(calendar_tools, "execute_google_request", fake_execute)
+    window = {"time_min": "2026-07-01T00:00:00Z", "time_max": "2026-08-01T00:00:00Z"}
+
+    async def scenario() -> list[Any]:
+        async with Client(calendar_mcp) as client:
+            first = await client.call_tool("search_events", window)
+            second = await client.call_tool(
+                "search_events", {**window, "page_token": first.structured_content["next_page_token"]}
+            )
+            return [first.structured_content, second.structured_content]
+
+    first, second = asyncio.run(scenario())
+
+    assert first["next_page_token"] == "page-2" and second["next_page_token"] is None
+    assert "pageToken" not in sent[0] and sent[1]["pageToken"] == "page-2"
+    assert sent[1]["timeMin"] == window["time_min"] and sent[1]["timeMax"] == window["time_max"]

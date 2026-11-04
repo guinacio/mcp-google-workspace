@@ -601,8 +601,8 @@ area:
   `resolve_workspace_resource`, `gmail_search_emails`,
   `gmail_get_mail_digest`, `calendar_search_events`,
   `calendar_get_calendar_digest`, `drive_list_files` and
-  `tasks_tasks_digest`. The upload picker (`files_file_manager`,
-  `files_list_files`, `files_list_files_page`) and
+  `tasks_tasks_digest`. The upload picker (`uploads_file_manager`,
+  `uploads_list_files`) and
   `get_mcp_apps_diagnostics` are reachable through `search_tools`.
 - **Enums for closed sets the tools already enforced**, so the schema states
   them: `search_workspace` `services`, `connect_google_workspace`
@@ -610,8 +610,6 @@ area:
   `prepare_workspace_action` `tool_name`, `keep_patch_note_checklist`
   `operation`. The accepted values are unchanged; an invalid value is now
   rejected by input validation instead of by the tool.
-- The Chat `notify` field was documented as "notify users immediately"; it
-  asks the user to confirm the post, and the description now says so.
 
 ### Fixed
 
@@ -621,6 +619,48 @@ area:
 - `drive_hide_drive` and `drive_unhide_drive` failed on every call: they
   passed `useDomainAdminAccess`, which `drives.hide`/`drives.unhide` do not
   accept, and the Google client raised before sending the request.
+- Background-task runs of `tasks_tasks_digest` were authorized, admitted and
+  recorded under `tasks_digest`: the execution guard skipped the namespace
+  prefix for a local name that already starts with it.
+- The Apps dashboard created events with the removed `conference_data`
+  argument, which `calendar_create_event` rejects; it now sends
+  `add_meet_link`. Every argument the view sends is listed per operation in
+  `apps/ui/src/operations.ts` (`OPERATION_ARGUMENTS`), the call sites are
+  typed against it, and `tests/test_apps_ui_tool_contract.py` checks each
+  operation's tool and argument names against the published catalog. The
+  browser test host now rejects arguments the real input schema rejects.
+- `drive_upload_file` without `parent_ids` checked for a same-named file
+  across everything the user can access, including shared drives, so
+  `if_exists="overwrite"` could replace an unrelated file's content (and
+  `skip`/`rename` reacted to it). The check now looks only in the folder the
+  upload lands in: the first parent, or the root of My Drive.
+- `people_update_contact` with only `given_name` (or only `family_name`)
+  cleared the other name parts, middle name included: Google replaces the
+  whole name. The tool now reads the stored name and writes the passed parts
+  over it.
+- `chat_list_messages` with `thread_name` failed on every call: it passed a
+  `thread.name` keyword the Chat client does not accept. The thread is now a
+  `filter` clause, combined with any `filter` given by AND.
+- `calendar_search_events` returned `next_page_token` but had no way to
+  pass it back; it gains `page_token`, and `max_results` is per page.
+- `calendar_find_free_time` applied working hours at the first day's UTC
+  offset on every later day of the window, so across a DST change the
+  suggested slots moved by an hour. Each day's hours are now local time in
+  `time_zone`.
+- `gmail_save_draft` with `thread_id` set only the thread ID, without the
+  `In-Reply-To` and `References` headers Gmail needs to keep the draft in
+  the thread. They now point at the thread's latest message.
+- The `docs_read_document` outline description now says that an index
+  inside an element's text counts UTF-16 units (most emoji take two), as
+  Google's indices do; the indices it returns were already Google's own.
+- The dashboard's event editor saved only through the form's `submit` event,
+  which a sandbox without `allow-forms` blocks; it now saves from the submit
+  button (and Enter in a field) in either sandbox.
+- A dashboard action that needs consent the host cannot ask for
+  (`confirmation_required`) now shows the server's preview text and tells
+  the user nothing changed and to ask the assistant, which runs the
+  prepare/commit step; the view never prepares or commits itself. The
+  unused `prepare_required` message is removed.
 
 ### Added
 

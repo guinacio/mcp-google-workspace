@@ -13,6 +13,7 @@ filters, forwarding and the vacation responder.
 from __future__ import annotations
 
 import asyncio
+import base64
 from typing import Any
 
 import pytest
@@ -446,6 +447,31 @@ def test_save_draft_creates_or_rewrites_and_list_drafts_reads_one(monkeypatch: p
     one = _call(monkeypatch, gmail_drafts, gmail, "list_drafts", {"draft_id": "d1", "format": "metadata"})
     assert one["count"] == 1 and one["drafts"][0]["label_ids"] == ["DRAFT"] and one["has_more"] is False
     assert gmail.calls_to("users.drafts.get")[0].kwargs["format"] == "metadata"
+
+
+def test_save_draft_in_a_thread_sets_the_reply_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gmail threads a draft only with threadId plus In-Reply-To/References to the thread's last message."""
+    headers = lambda message_id, references="": {  # noqa: E731
+        "payload": {"headers": [{"name": "Message-ID", "value": message_id}, {"name": "References", "value": references}]}
+    }
+    gmail = _Gmail(
+        {
+            "users.threads.get": {
+                "id": "t1",
+                "messages": [headers("<first@example.com>"), headers("<last@example.com>", "<first@example.com>")],
+            },
+            "users.drafts.create": {"id": "d1", "message": {"id": "m1", "threadId": "t1"}},
+        }
+    )
+    _call(monkeypatch, gmail_drafts, gmail, "save_draft", {"subject": "Re: Plan", "text_body": "Hi", "thread_id": "t1"})
+
+    (thread,) = gmail.calls_to("users.threads.get")
+    assert thread.kwargs["id"] == "t1" and thread.kwargs["format"] == "metadata"
+    message = gmail.calls_to("users.drafts.create")[0].kwargs["body"]["message"]
+    assert message["threadId"] == "t1"
+    mime = base64.urlsafe_b64decode(message["raw"] + "=" * (-len(message["raw"]) % 4)).decode()
+    assert "In-Reply-To: <last@example.com>" in mime
+    assert "References: <first@example.com> <last@example.com>" in mime
 
 
 # --- labels, filters, forwarding, vacation --------------------------------------

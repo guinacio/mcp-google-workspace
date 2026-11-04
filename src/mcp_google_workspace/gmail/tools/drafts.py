@@ -19,6 +19,7 @@ from ..helpers import (
     recipient_set,
 )
 from ..presentation import clean_message_content, clean_snippet, header_map
+from .messages import _MESSAGE_ID_PATTERN, _reply_references
 from ..schemas import (
     AttachmentInput,
     CreateDraftRequest,
@@ -32,9 +33,8 @@ from ..schemas import (
 LOGGER = logging.getLogger(__name__)
 
 _DRAFT_THREAD_ID = (
-    "Gmail thread to file the draft under (thread_id from search or read results). Only the thread ID is "
-    "set; the In-Reply-To and References headers Gmail's threading also expects are not added, so the "
-    "draft may not join the thread. For a real reply use gmail_reply."
+    "Gmail thread to file the draft under as a reply (thread_id from search or read results): In-Reply-To "
+    "and References point at the thread's latest message, so keep the thread's subject for Gmail to join it."
 )
 _SAVE_ATTACHMENTS = (
     ATTACHMENTS_DESCRIPTION + " When rewriting a draft, attachments already on it are dropped unless passed again."
@@ -70,6 +70,8 @@ def _build_raw_message_payload(
     text_body: str | None,
     html_body: str | None,
     attachments: list[dict[str, Any]],
+    in_reply_to: str | None = None,
+    references: str | None = None,
 ) -> str:
     email_message = build_email_message(
         subject=subject,
@@ -79,8 +81,29 @@ def _build_raw_message_payload(
         text_body=text_body,
         html_body=html_body,
         attachments=attachments,
+        in_reply_to=in_reply_to,
+        references=references,
     )
     return email_to_gmail_raw(email_message)
+
+
+async def _thread_reply_headers(service: Any, thread_id: str) -> tuple[str | None, str | None]:
+    """In-Reply-To and References for a reply to the thread's latest message with a Message-ID.
+
+    Gmail files a draft into a thread only when, besides threadId, these headers
+    point into it (and the subject matches).
+    """
+    thread = await execute_google_request(
+        service.users()
+        .threads()
+        .get(userId="me", id=thread_id, format="metadata", metadataHeaders=["Message-ID", "References"])
+    )
+    for message in reversed(thread.get("messages") or []):
+        headers = header_map(message.get("payload", {}))
+        match = _MESSAGE_ID_PATTERN.search(headers.get("message-id", ""))
+        if match:
+            return match.group(0), _reply_references(headers.get("references", ""), match.group(0))
+    return None, None
 
 
 def _attachment_payloads(
@@ -218,7 +241,7 @@ def register(server: FastMCP) -> None:
         thread_id: Annotated[str | None, _DRAFT_THREAD_ID] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and for an in-thread reply gmail_reply sets the reply headers that a draft made here lacks. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId)."""
+        """Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and gmail_reply replies in a thread right away with the reply recipients filled in. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId)."""
         recipients = recipient_set(to=to, cc=cc, bcc=bcc)
         service = gmail_service()
         if draft_id is None:
@@ -240,6 +263,9 @@ def register(server: FastMCP) -> None:
                 attachments=attachments or [],
                 thread_id=thread_id,
             )
+        in_reply_to, references = (
+            await _thread_reply_headers(service, request.thread_id) if request.thread_id else (None, None)
+        )
         raw = _build_raw_message_payload(
             subject=request.subject,
             to=[str(v) for v in request.recipients.to],
@@ -248,6 +274,8 @@ def register(server: FastMCP) -> None:
             text_body=request.text_body,
             html_body=request.html_body,
             attachments=_attachment_payloads(request.attachments, ctx),
+            in_reply_to=in_reply_to,
+            references=references,
         )
         message_payload: dict[str, Any] = {"raw": raw}
         if request.thread_id:

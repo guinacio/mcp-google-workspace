@@ -549,3 +549,35 @@ def test_retired_get_document_is_not_published(monkeypatch):
     published = anyio.run(names)
     assert "docs_get_document" not in published
     assert "docs_read_document" in published
+
+
+def test_outline_text_positions_count_utf16_units_like_google_indices() -> None:
+    """An emoji is one Python character but two Docs index units; indices come from Google, not len()."""
+    payload = {
+        "documentId": "doc-1",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 6,
+                    "paragraph": {
+                        "elements": [
+                            {"startIndex": 1, "endIndex": 4, "textRun": {"content": "a\U0001f600"}},
+                            {
+                                "startIndex": 4,
+                                "endIndex": 6,
+                                "textRun": {"content": "b\n", "textStyle": {"link": {"url": "https://example.com"}}},
+                            },
+                        ]
+                    },
+                }
+            ]
+        },
+    }
+
+    (paragraph,) = document_outline(payload)["tabs"][0]["content"]
+
+    assert paragraph["text"] == "a\U0001f600b"
+    assert paragraph["inline"][0]["start_index"] == 4
+    position = len(paragraph["text"][: paragraph["text"].index("b")].encode("utf-16-le")) // 2
+    assert paragraph["start_index"] + position == paragraph["inline"][0]["start_index"]

@@ -2060,6 +2060,16 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
     hideEventTooltipLayer();
     const target = event.target as HTMLElement;
 
+    // A sandbox without `allow-forms` blocks form submission and never fires
+    // `submit`, so the editor saves from its submit button's click (Enter in a
+    // field clicks that button too); preventDefault stops the native submit.
+    const editorSubmit = target.closest<HTMLButtonElement>("[data-event-editor-form] button[type=submit]");
+    if (editorSubmit?.form) {
+      event.preventDefault();
+      if (editorSubmit.form.reportValidity()) submitEventEditor(editorSubmit.form);
+      return;
+    }
+
     if (routeLinkActivation(event)) {
       return;
     }
@@ -2278,31 +2288,35 @@ export function renderDashboard(root: HTMLElement, data: DashboardData, options:
       return;
     }
     event.preventDefault();
-    const formData = new FormData(form);
-    const modeRaw = formData.get("mode");
-    const mode = modeRaw === "edit" ? "edit" : "create";
-    const calendarId = String(formData.get("calendar_id") || "");
-    const summary = String(formData.get("summary") || "");
-    const startLocal = String(formData.get("start_local") || "");
-    const endLocal = String(formData.get("end_local") || "");
-    if (!calendarId || !summary || !startLocal || !endLocal) {
-      return;
-    }
-    const draft: EventEditorDraft = {
-      mode,
-      calendar_id: calendarId,
-      event_id: String(formData.get("event_id") || "") || undefined,
-      summary,
-      start_local: startLocal,
-      end_local: endLocal,
-      timezone: String(formData.get("timezone") || "UTC"),
-      location: String(formData.get("location") || ""),
-      description: String(formData.get("description") || ""),
-      attendees_csv: String(formData.get("attendees_csv") || ""),
-      create_conference: formData.get("create_conference") === "on",
-    };
-    _onAction({ type: "save_event_editor", draft });
+    submitEventEditor(form);
   };
+}
+
+function submitEventEditor(form: HTMLFormElement) {
+  const formData = new FormData(form);
+  const modeRaw = formData.get("mode");
+  const mode = modeRaw === "edit" ? "edit" : "create";
+  const calendarId = String(formData.get("calendar_id") || "");
+  const summary = String(formData.get("summary") || "");
+  const startLocal = String(formData.get("start_local") || "");
+  const endLocal = String(formData.get("end_local") || "");
+  if (!calendarId || !summary || !startLocal || !endLocal) {
+    return;
+  }
+  const draft: EventEditorDraft = {
+    mode,
+    calendar_id: calendarId,
+    event_id: String(formData.get("event_id") || "") || undefined,
+    summary,
+    start_local: startLocal,
+    end_local: endLocal,
+    timezone: String(formData.get("timezone") || "UTC"),
+    location: String(formData.get("location") || ""),
+    description: String(formData.get("description") || ""),
+    attendees_csv: String(formData.get("attendees_csv") || ""),
+    create_conference: formData.get("create_conference") === "on",
+  };
+  _onAction({ type: "save_event_editor", draft });
 }
 
 function renderFallbackLink(data: DashboardData, features?: UiHostFeatures): SafeHtml {

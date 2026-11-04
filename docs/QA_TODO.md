@@ -109,9 +109,9 @@ Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwardi
 | 23e | drive_download_file | Download/export an event attachment by its Drive file_id | Google-native docs are exported (PDF by default) |
 | 24 | calendar_get_calendar_context | Get timezone and local/UTC date-time context | Read-only |
 | 26 | calendar_find_free_time | participants=["primary"], time_min/time_max window | Read-only; all_free, suggested_slots, total_suggestions |
-| 27 | calendar_create_event | Create "QA test event" 1h from now | Then delete with force=True |
+| 27 | calendar_create_event | Create "QA test event" 1h from now | Then delete |
 | 28 | calendar_update_event | Update event summary/description | Use event from create |
-| 29 | calendar_delete_event | Delete QA test event, force=True | After create |
+| 29 | calendar_delete_event | Delete QA test event (asks for consent) | After create |
 
 ---
 
@@ -171,7 +171,7 @@ Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwardi
 | 39 | chat_get_message | Get one message by name | From list_messages |
 | 40 | chat_create_message | Post "QA test" in first space (asks for consent) | Then delete |
 | 41 | chat_update_message | Update message text | Use message from create |
-| 42 | chat_delete_message | Delete QA message, force=True | After create |
+| 42 | chat_delete_message | Delete QA message (asks for consent) | After create |
 
 ---
 

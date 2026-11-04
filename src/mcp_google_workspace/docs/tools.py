@@ -105,7 +105,7 @@ def register_tools(server: FastMCP) -> None:
                 "(headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 "
                 "characters. 'outline' returns the editing outline, unpaged: every structural element "
                 "with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles "
-                "left out. 'raw' returns Google's Document resource unchanged and unpaged, every style "
+                "left out; an index inside an element's text counts UTF-16 units, so most emoji take two. 'raw' returns Google's Document resource unchanged and unpaged, every style "
                 "and index included."
             ),
         ] = "text",

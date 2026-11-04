@@ -23,7 +23,10 @@ from ..gmail.presentation import remove_invisible_characters
 
 # An inline object (image, chip, footnote reference, break) occupies index
 # units but has no text; in the outline each unit reads as U+FFFC, so a
-# paragraph's start_index plus a character position stays a document index.
+# paragraph's start_index plus a position in its text stays a document index.
+# Positions count UTF-16 code units, as Docs indices do: a character outside
+# the Basic Multilingual Plane (most emoji) is one Python character but two
+# units. Every index in the outline is Google's own, never a Python length.
 OBJECT_MARKER = "\ufffc"
 
 ReadFormat = Literal["text", "markdown"]

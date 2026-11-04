@@ -988,7 +988,7 @@
           },
           "max_results": {
             "default": 25,
-            "description": "Maximum events to return, 1 to 2500; this tool takes no page token, so narrow the window instead of paging.",
+            "description": "Maximum events per page, 1 to 2500; next_page_token continues the list.",
             "type": "integer"
           },
           "order_by": {
@@ -998,6 +998,10 @@
               "startTime",
               "updated"
             ],
+            "type": "string"
+          },
+          "page_token": {
+            "description": "The next_page_token from the previous response of this same call; omit for the first page. Keep every other argument the same; range_preset 'next_7_days' moves with the clock, so page with the effective_time_min/effective_time_max of the first response.",
             "type": "string"
           },
           "range_preset": {
@@ -1786,7 +1790,7 @@
           },
           "format": {
             "default": "text",
-            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
+            "description": "Output form: 'text' returns clean readable text; 'markdown' the same content as Markdown (headings, lists, pipe tables, links, footnotes); both come in pages of about 8,000 characters. 'outline' returns the editing outline, unpaged: every structural element with the start_index and end_index docs_batch_update_document (extended tool tier) requests need, styles left out; an index inside an element's text counts UTF-16 units, so most emoji take two. 'raw' returns Google's Document resource unchanged and unpaged, every style and index included.",
             "enum": [
               "text",
               "markdown",
@@ -3031,7 +3035,7 @@
             "type": "string"
           },
           "if_exists": {
-            "description": "For a new upload, what to do when a non-trashed file with the same name exists: 'rename' (the default) uploads a new file with a timestamp before the extension, e.g. 'report (upload 20261103-142500).pdf', 'overwrite' replaces that file's content as a new revision, 'skip' uploads nothing and returns the existing file.",
+            "description": "For a new upload, what to do when a non-trashed file with the same name exists in the target folder: 'rename' (the default) uploads a new file with a timestamp before the extension, e.g. 'report (upload 20261103-142500).pdf', 'overwrite' replaces that file's content as a new revision, 'skip' uploads nothing and returns the existing file.",
             "enum": [
               "rename",
               "overwrite",
@@ -3056,7 +3060,7 @@
             "type": "string"
           },
           "parent_ids": {
-            "description": "One parent folder ID (Drive allows a single parent), or a shared drive ID for its top level; omit for the root of My Drive. The if_exists name check looks only in the first parent, or anywhere the user can access when omitted.",
+            "description": "One parent folder ID (Drive allows a single parent), or a shared drive ID for its top level; omit for the root of My Drive. The if_exists name check looks only in that folder (the root of My Drive when omitted).",
             "items": {
               "type": "string"
             },
@@ -4715,7 +4719,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and for an in-thread reply gmail_reply sets the reply headers that a draft made here lacks. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId).",
+      "description": "Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and gmail_reply replies in a thread right away with the reply recipients filled in. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -4799,7 +4803,7 @@
             "type": "string"
           },
           "thread_id": {
-            "description": "Gmail thread to file the draft under (thread_id from search or read results). Only the thread ID is set; the In-Reply-To and References headers Gmail's threading also expects are not added, so the draft may not join the thread. For a real reply use gmail_reply.",
+            "description": "Gmail thread to file the draft under as a reply (thread_id from search or read results): In-Reply-To and References point at the thread's latest message, so keep the thread's subject for Gmail to join it.",
             "type": "string"
           },
           "to": {
@@ -5609,7 +5613,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and the name parts are written together as one name. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography.",
+      "description": "Change fields of an existing Google contact. Only the fields passed are written and each replaces the stored value: list fields replace the whole list, and a name part left out keeps its stored value. Get the current etag first with people_get_contact. Returns status 'ok' and contact, the contact as stored now: resource_name, its new etag (needed for a further update), name, given_name, family_name, emails, phones, organizations and biography.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5633,11 +5637,11 @@
             "type": "string"
           },
           "family_name": {
-            "description": "New family (last) name. Written together with given_name as the contact's one name, so pass given_name too to keep it.",
+            "description": "New family (last) name; the stored given and middle names are kept unless passed.",
             "type": "string"
           },
           "given_name": {
-            "description": "New given (first) name. given_name, family_name and display_name are written together as the contact's one name, so a part left out is cleared; pass family_name too to keep it.",
+            "description": "New given (first) name; the stored family and middle names are kept unless passed.",
             "type": "string"
           },
           "organization": {

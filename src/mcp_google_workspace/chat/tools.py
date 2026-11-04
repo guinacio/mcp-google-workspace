@@ -152,16 +152,19 @@ def register_tools(server: FastMCP) -> None:
         service = chat_service()
         parent = normalize_space_name(request.space_name)
         LOGGER.debug(f"Listing messages for {parent}.")
-        query: dict[str, Any] = {
-            "parent": parent,
-            "pageSize": request.page_size,
-            "pageToken": request.page_token,
-            "filter": request.filter,
-            "orderBy": request.order_by,
-        }
+        # The API has no thread parameter: a thread is a filter clause.
+        clauses = [request.filter] if request.filter else []
         if request.thread_name:
-            query["thread.name"] = request.thread_name
-        result = await execute_google_request(service.spaces().messages().list(**query))
+            clauses.append(f"thread.name = {request.thread_name}")
+        result = await execute_google_request(
+            service.spaces().messages().list(
+                parent=parent,
+                pageSize=request.page_size,
+                pageToken=request.page_token,
+                filter=" AND ".join(clauses) or None,
+                orderBy=request.order_by,
+            )
+        )
         account_timezone = await resolve_user_timezone()
         messages = result.get("messages", [])
         await ctx.report_progress(len(messages), request.page_size, "Chat messages page loaded")

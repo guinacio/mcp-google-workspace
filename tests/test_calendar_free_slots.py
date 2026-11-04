@@ -327,3 +327,28 @@ def test_find_free_time_rejects_an_empty_window(monkeypatch) -> None:
     assert result.is_error is True
     assert result.structured_content["code"] == "invalid_input"
     assert queries == []
+
+
+def test_working_hours_are_local_time_whatever_the_window_offset(monkeypatch) -> None:
+    """A UTC window, and a multi-day window across a DST change, still get 08:00 local each day."""
+    result, _ = _find_free_time(
+        monkeypatch,
+        {"primary": {"busy": []}},
+        participants=["primary"],
+        # America/New_York leaves EST (-05:00) for EDT (-04:00) on 2026-03-08.
+        time_min="2026-03-07T00:00:00Z",
+        time_max="2026-03-11T00:00:00Z",
+        time_zone="America/New_York",
+        slot_duration_minutes=480,
+        granularity_minutes=240,
+        max_results=100,
+    )
+
+    assert result.is_error is False, result.content
+    starts = [slot["start"] for slot in result.structured_content["suggested_slots"]]
+    assert starts == [
+        "2026-03-07T08:00:00-05:00",
+        "2026-03-08T08:00:00-04:00",
+        "2026-03-09T08:00:00-04:00",
+        "2026-03-10T08:00:00-04:00",
+    ]
