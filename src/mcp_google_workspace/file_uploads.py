@@ -33,7 +33,7 @@ from .common.errors import RecoverableToolError
 from .common.fastmcp_compat import local_tools, remove_local_tool
 from .common.component_annotations import consent_hints, flow_description, simplify_optional_properties
 from .common.prefab_render_cache import install_prefab_resource_cache
-from .runtime import get_token_storage_settings
+from .runtime import get_token_storage_settings, mcp_app_domain
 
 AUDIT_LOGGER = logging.getLogger("mcp_google_workspace.audit")
 
@@ -764,6 +764,12 @@ class WorkspaceFileUpload(FileUpload):
                 # model's tools for using and cleaning up uploads.
                 meta = dict(component.meta or {})
                 meta["ui"] = {**(meta.get("ui") or {}), "visibility": ["model"]}
+                component.meta = meta
+            if component.name == "file_manager" and (domain := mcp_app_domain()):
+                # The synthesized renderer resource copies _meta.ui.domain from
+                # this tool (fastmcp prefab_synthesis); ChatGPT requires it.
+                meta = dict(component.meta or {})
+                meta["ui"] = {**(meta.get("ui") or {}), "domain": domain}
                 component.meta = meta
             if component.name == "store_files":
                 # FastMCP 4 lists this app-only callback in tools/list (hosts

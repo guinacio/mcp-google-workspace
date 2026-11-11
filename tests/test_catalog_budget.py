@@ -6,6 +6,12 @@ them equal to the live catalog) with the chars/4 estimate documented in
 2.0.0 catalog, so ordinary edits pass and a change that grows the catalog
 noticeably has to raise a ceiling here, in review.
 
+2.1.x after documenting result fields (+4,118 default, all in output schemas):
+13 tools whose inferred output schemas were untyped (event, file, message and
+task items, connection and consent results) now type and describe each field,
+for directory compatibility checks; input schemas are unchanged in size:
+    default       52,412; without output schemas 39,958
+    all optional  81,450; without output schemas 61,431
 2.0.0 after the consent model (estimated tokens; -287 default): the
 model-settable safety flags are gone, dry_run is new on the bulk and raw
 batch-update tools, prepare_workspace_action drops its tool_name enum, and
@@ -47,8 +53,8 @@ if str(ROOT / "tests") not in sys.path:
 from contracts.catalog_budget import estimate_tokens, measure  # noqa: E402
 
 CEILINGS = {
-    "catalog_default.json": {"tokens": 51_000, "tokens_without_output_schemas": 42_500},
-    "catalog_all_optional.json": {"tokens": 83_000, "tokens_without_output_schemas": 66_000},
+    "catalog_default.json": {"tokens": 56_000, "tokens_without_output_schemas": 42_500},
+    "catalog_all_optional.json": {"tokens": 87_000, "tokens_without_output_schemas": 66_000},
 }
 
 

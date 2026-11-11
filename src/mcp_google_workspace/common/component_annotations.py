@@ -15,6 +15,7 @@ from mcp.types import ToolAnnotations
 from .fastmcp_compat import local_tools
 from .confirmation import install_confirmation_guard
 from .execution import install_execution_guard
+from .output_field_docs import apply_output_field_docs
 from .output_schemas import infer_tool_output_schema
 from .parameter_descriptions import shared_parameter_description
 
@@ -407,7 +408,8 @@ def apply_default_tool_annotations(server: FastMCP) -> None:
                         },
                     }
                 )
-            tool_component.output_schema = inferred_output_schema
+            documented_name = f"{namespace_hint}_{tool_component.name}" if namespace_hint else tool_component.name
+            tool_component.output_schema = apply_output_field_docs(documented_name, inferred_output_schema)
         _wrap_pagination(
             tool_component,
             _base_tool_name(tool_component.name, namespace_hint=namespace_hint),

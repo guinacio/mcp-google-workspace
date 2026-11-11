@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
+from pydantic import Field
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
@@ -249,7 +250,12 @@ def register_tools(server: FastMCP) -> None:
             "Days ahead of today whose due tasks go in 'upcoming'; tasks due later appear in no group.",
         ] = 7,
         max_results: Annotated[
-            int, "Maximum open tasks to read from the list, 1 to 100; there is no paging, so tasks past this are left out."
+            int,
+            Field(
+                ge=1,
+                le=100,
+                description="Open tasks to read from the list; there is no paging, so tasks past this are left out.",
+            ),
         ] = 100,
     ) -> dict[str, Any]:
         """Triage one task list's open tasks into overdue, upcoming and unscheduled work; it reads the default list unless tasklist_id names another one from tasks_list_tasklists. For completed tasks or custom filters use tasks_list_tasks. Returns overdue (due before today in the account time zone), upcoming (due from today through the window, soonest first) and unscheduled (no due date), each a list of tasks shaped as in tasks_list_tasks, plus count (tasks in the three groups), tasklist_id (the list's real ID when Google reports it), window_days and account_timezone."""
