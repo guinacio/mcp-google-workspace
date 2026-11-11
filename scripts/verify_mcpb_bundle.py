@@ -85,13 +85,14 @@ async def _run_lifecycle(bundle_dir: Path) -> None:
         assert client.protocol_version == "2026-07-28", client.protocol_version
         tools = await client.list_tools()
         names = {tool.name for tool in tools}
-        # The bundle entrypoint enables progressive (BM25) tool discovery, so
-        # `tools/list` only advertises the always-visible subset (matching
-        # tests/test_bundle_runtime.py). The picker tools and hashed
-        # app-callback tools like store_tool/delete_tool are not listed but
-        # stay directly callable by name below.
-        for required in ("get_google_connection_status", "gmail_search_emails", "search_tools", "call_tool"):
+        # Progressive (BM25) tool discovery is opt-in (MCP_TOOL_SEARCH=on), so
+        # the bundle lists the complete catalog with no search_tools/call_tool
+        # (matching tests/test_bundle_runtime.py). Hashed app-callback tools
+        # like store_tool/delete_tool stay directly callable by name below.
+        for required in ("get_google_connection_status", "gmail_search_emails", "uploads_file_manager"):
             assert required in names, f"missing tool {required!r} in extracted bundle catalog"
+        for absent in ("search_tools", "call_tool"):
+            assert absent not in names, f"unexpected tool-search tool {absent!r} in bundle catalog"
 
         _log("Calling a safe tool (resolve_workspace_resource, parse only) ...")
         safe = await client.call_tool(
