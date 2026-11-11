@@ -212,6 +212,28 @@ uv run python -m mcp_google_workspace.server_http
 
 Clients connect with an OIDC bearer JWT. The server validates its signature (JWKS), issuer, audience and expiry, and requires `iss`, `sub` and `exp`; the verified `iss` + `sub` selects an isolated encrypted Google token. MCP bearer tokens are never forwarded to Google. A request without a valid token gets `401` with a `WWW-Authenticate` challenge whose `resource_metadata` points to the RFC 9728 document served at `/.well-known/oauth-protected-resource<base path>/mcp`, which names the issuer as the authorization server (the server does not implement an authorization server or dynamic client registration). Each user calls `connect_google_workspace`, opens its returned URL and completes Google consent; `tools/list` reflects the caller's current grants on every request (`refresh_workspace_catalog` only reports them). The callback is PKCE-protected, one-time, checks the RFC 9207 `iss` parameter when present, and cannot connect Google credentials to a different MCP principal.
 
+### Prefect Horizon (FastMCP Cloud)
+
+Horizon imports a server object with `fastmcp run` semantics. Package modules
+use relative imports, so do **not** point it at `src/mcp_google_workspace/server.py`
+(that fails with "attempted relative import with no known parent package").
+
+- **Entrypoint:** `horizon_server.py:mcp`
+- **Authentication:** keep Horizon's Authentication **enabled**. Horizon forwards
+  no verifiable caller identity, so this entrypoint serves a single owner
+  (`MCP_TRUSTED_GATEWAY_AUTH=true`): anyone who can reach `/mcp` acts with the
+  owner's Google grant.
+- **Environment variables (Production):**
+  - `MCP_HTTP_BASE_URL` = `https://<name>.fastmcp.app`
+  - `GOOGLE_OAUTH_CLIENT_JSON` = contents of the Google OAuth client JSON
+    (client type *Web application*, with authorized redirect URI
+    `https://<name>.fastmcp.app/google/oauth/callback`)
+  - `MCP_TOKEN_ENCRYPTION_KEY` = a Fernet key
+    (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
+  - optional `MCP_REDIS_URL` to keep the Google grant across redeploys; without it
+    the grant is stored on the instance's disk and you reconnect after a redeploy.
+- Then call `connect_google_workspace`, open the returned URL and finish consent.
+
 ### Docker / GHCR
 
 Every GitHub release publishes a signed multi-architecture image for

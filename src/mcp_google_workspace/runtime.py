@@ -117,6 +117,14 @@ def _require_secure_url(name: str, value: str) -> str:
     return value.rstrip("/")
 
 
+def get_google_oauth_redirect_url() -> str:
+    """Google OAuth callback URL for the remote (browser redirect) consent flow."""
+    return _require_secure_url(
+        "MCP_GOOGLE_OAUTH_REDIRECT_URL",
+        _required_env("MCP_GOOGLE_OAUTH_REDIRECT_URL"),
+    )
+
+
 def get_remote_security_settings() -> RemoteSecuritySettings:
     """Load the non-optional security contract for remote HTTP hosting."""
     base_url = _require_secure_url("MCP_HTTP_BASE_URL", _required_env("MCP_HTTP_BASE_URL"))

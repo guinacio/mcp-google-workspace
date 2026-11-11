@@ -15,7 +15,7 @@ from google.oauth2.credentials import Credentials
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
-from ..runtime import get_remote_security_settings
+from ..runtime import get_google_oauth_redirect_url
 from ..common.async_ops import run_blocking
 from .google_auth import (
     CAPABILITY_SCOPES,
@@ -37,7 +37,6 @@ def _flow(
     code_verifier: str | None = None,
     scopes: list[str] | None = None,
 ) -> Flow:
-    settings = get_remote_security_settings()
     credentials_path = resolve_client_credentials_path()
     if not credentials_path.exists():
         raise FileNotFoundError(
@@ -47,7 +46,7 @@ def _flow(
         str(credentials_path),
         scopes=scopes or get_google_scopes(["gmail"]),
         state=state,
-        redirect_uri=settings.google_oauth_redirect_url,
+        redirect_uri=get_google_oauth_redirect_url(),
         autogenerate_code_verifier=False,
     )
     flow.code_verifier = code_verifier

@@ -31,13 +31,32 @@ class Principal:
 UNAUTHENTICATED_ISSUER = "unauthenticated"
 
 
+TRUSTED_GATEWAY_AUTH_ENV = "MCP_TRUSTED_GATEWAY_AUTH"
+
+
+def trusted_gateway_auth() -> bool:
+    """Whether an upstream gateway authenticates every request for one owner.
+
+    Set by the hosted-gateway entrypoint (``horizon_server.py``), where a
+    platform such as Prefect Horizon authenticates callers before they reach
+    the server and forwards no verifiable identity. The process then serves a
+    single trusted principal (``MCP_LOCAL_PRINCIPAL``) while still using the
+    remote Google OAuth callback flow. Never enable it on a server reachable
+    without that gateway: every caller would act as the owner.
+    """
+    return os.getenv(TRUSTED_GATEWAY_AUTH_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def remote_identity_required() -> bool:
     """Whether this process serves remote, bearer-authenticated users.
 
     True for the authenticated HTTP entrypoint and any task worker sharing its
     configuration (``MCP_GOOGLE_OAUTH_REDIRECT_URL`` selects remote Google
-    OAuth; ``MCP_HTTP_JWT_ISSUER`` configures MCP bearer verification).
+    OAuth; ``MCP_HTTP_JWT_ISSUER`` configures MCP bearer verification), unless
+    a trusted gateway authenticates callers (:func:`trusted_gateway_auth`).
     """
+    if trusted_gateway_auth():
+        return False
     return bool(
         os.getenv("MCP_GOOGLE_OAUTH_REDIRECT_URL", "").strip()
         or os.getenv("MCP_HTTP_JWT_ISSUER", "").strip()
