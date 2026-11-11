@@ -27,9 +27,20 @@ def _server() -> FastMCP:
     return server
 
 
-def test_progressive_discovery_is_enabled_by_default(monkeypatch) -> None:
+def test_progressive_discovery_is_opt_in(monkeypatch) -> None:
+    # Claude clients search catalogs themselves: by default nobody gets
+    # search_tools/call_tool, whatever the client model.
     monkeypatch.delenv("MCP_TOOL_SEARCH", raising=False)
     monkeypatch.delenv("MCP_CLIENT_MODEL", raising=False)
+    tool_discovery._CONFIGURED_SERVERS.clear()
+    server = _server()
+    assert not tool_discovery.configure_tool_search(server)
+    assert anyio.run(_catalog, server) == {"alpha_lookup", "beta_update"}
+
+
+def test_auto_mode_enables_discovery_for_non_claude_models(monkeypatch) -> None:
+    monkeypatch.setenv("MCP_TOOL_SEARCH", "auto")
+    monkeypatch.setenv("MCP_CLIENT_MODEL", "gpt-5")
     tool_discovery._CONFIGURED_SERVERS.clear()
     server = _server()
     assert tool_discovery.configure_tool_search(server)

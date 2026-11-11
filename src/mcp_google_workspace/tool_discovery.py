@@ -37,12 +37,14 @@ _ALWAYS_VISIBLE = [
 def tool_search_enabled() -> bool:
     """Return whether the catalog should collapse behind FastMCP Tool Search.
 
-    ``MCP_TOOL_SEARCH=on|off`` is the explicit override. In ``auto`` mode,
-    Claude clients receive the complete catalog because Claude Desktop's Apps
-    bridge currently resolves globally-qualified UI tool names from that list.
-    Other clients receive progressive discovery by default.
+    Opt-in (default ``off``): Claude clients already search large tool
+    catalogs themselves, so a second, server-side search_tools/call_tool layer
+    only hides tools from them, and Claude Desktop's Apps bridge resolves
+    globally-qualified UI tool names from the complete list. ``on`` enables it
+    for clients without their own tool search; ``auto`` enables it unless
+    ``MCP_CLIENT_MODEL`` names a Claude model.
     """
-    mode = os.getenv("MCP_TOOL_SEARCH", "auto").strip().lower()
+    mode = os.getenv("MCP_TOOL_SEARCH", "off").strip().lower()
     if mode in {"1", "true", "yes", "on", "enabled"}:
         return True
     if mode in {"0", "false", "no", "off", "disabled"}:
@@ -145,7 +147,7 @@ def configure_tool_search(server: Any) -> bool:
 
 
 def tool_search_diagnostics() -> dict[str, object]:
-    mode = os.getenv("MCP_TOOL_SEARCH", "auto").strip().lower()
+    mode = os.getenv("MCP_TOOL_SEARCH", "off").strip().lower()
     model = os.getenv("MCP_CLIENT_MODEL", "").strip()
     return {
         "enabled": tool_search_enabled(),

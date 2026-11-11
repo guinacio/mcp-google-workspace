@@ -1792,10 +1792,14 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Connect the user's Google account, or add services to an existing connection, so Workspace tools can run. In local mode (no remote OAuth callback configured) it runs Google's browser consent flow on the server machine and waits up to 180 seconds by default, unless the stored grant already covers every enabled service. In remote mode it returns a one-time authorization_url, valid for 10 minutes, for the user to open. Returns state, connected and granted_capabilities locally, or authorization_url, expires_at and requested_scopes remotely; after remote consent call get_google_connection_status.",
+      "description": "Connect the user's Google account, or add services to an existing connection, so Workspace tools can run. In local mode (no remote OAuth callback configured) it runs Google's browser consent flow on the server machine and waits up to 180 seconds by default, unless the stored grant already covers every enabled service. In remote mode it returns a one-time authorization_url, valid for 10 minutes, for the user to open. Returns state, connected and granted_capabilities locally, or authorization_url, expires_at and requested_scopes remotely; after remote consent call get_google_connection_status. If the callback page was blocked, pass the URL the browser ended on as authorization_response.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "authorization_response": {
+            "description": "Remote mode only: the full URL the browser ended on after Google consent, pasted back when the server's callback page could not be reached. Completes that consent instead of starting a new one; capabilities is ignored.",
+            "type": "string"
+          },
           "capabilities": {
             "description": "Services to request access for; omit for ['gmail']. In remote mode these scopes are added to the ones already granted; in local mode the names are only validated and every enabled service is requested.",
             "items": {
@@ -1889,6 +1893,14 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "if_callback_blocked": {
+            "description": "Behind an authenticating gateway: how to finish consent with authorization_response.",
+            "type": "string"
+          },
+          "message": {
+            "description": "Outcome of a pasted authorization_response, in words.",
+            "type": "string"
           },
           "mode": {
             "description": "'local_stdio' when consent ran on the server machine.",

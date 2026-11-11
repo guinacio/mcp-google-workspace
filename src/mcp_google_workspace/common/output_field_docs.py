@@ -229,6 +229,10 @@ OUTPUT_FIELD_DOCS: Final[dict[str, dict[str, dict[str, Any]]]] = {
         "newly_requested_scopes": _s(
             "array", "Remote mode: scopes not granted before this consent.", items={"type": "string"}
         ),
+        "if_callback_blocked": _s(
+            "string", "Behind an authenticating gateway: how to finish consent with authorization_response."
+        ),
+        "message": _s("string", "Outcome of a pasted authorization_response, in words."),
     },
     "get_google_connection_status": {
         "state": _STATE,

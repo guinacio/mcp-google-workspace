@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 from typing import Annotated, Any, Literal, get_args
@@ -31,7 +32,7 @@ from .google_auth import (
     is_remote_oauth_mode,
     resolve_client_credentials_path,
 )
-from .identity import Principal, current_principal
+from .identity import Principal, current_principal, trusted_gateway_auth
 
 #: Capability names accepted by the connection tools (the keys of CAPABILITY_SCOPES).
 CapabilityName = Literal[
@@ -99,6 +100,7 @@ def create_google_authorization(
         "capabilities": selected_capabilities,
         "requested_scopes": scopes,
         "newly_requested_scopes": newly_requested_scopes,
+        **({"if_callback_blocked": PASTE_HINT} if trusted_gateway_auth() else {}),
     }
 
 
@@ -239,16 +241,29 @@ def register_connection_tools(server: FastMCP) -> None:
                 "validated and every enabled service is requested."
             ),
         ] = None,
+        authorization_response: Annotated[
+            str | None,
+            (
+                "Remote mode only: the full URL the browser ended on after Google consent, pasted "
+                "back when the server's callback page could not be reached. Completes that consent "
+                "instead of starting a new one; capabilities is ignored."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Connect the user's Google account, or add services to an existing connection, so Workspace tools can run.
         In local mode (no remote OAuth callback configured) it runs Google's browser consent flow on the server machine
         and waits up to 180 seconds by default, unless the stored grant already covers every enabled service. In remote
         mode it returns a one-time authorization_url, valid for 10 minutes, for the user to open. Returns state,
         connected and granted_capabilities locally, or authorization_url, expires_at and requested_scopes remotely;
-        after remote consent call get_google_connection_status."""
+        after remote consent call get_google_connection_status. If the callback page was blocked, pass the URL the browser
+        ended on as authorization_response."""
         if not is_remote_oauth_mode():
+            if authorization_response:
+                raise ValueError("authorization_response applies only to remote (callback) OAuth mode.")
             return await run_blocking(connect_local_google_account, capabilities)
         principal = current_principal()
+        if authorization_response:
+            return await run_blocking(complete_pasted_authorization, authorization_response, principal)
         return await run_blocking(create_google_authorization, capabilities, principal=principal)
 
     @server.tool(name="get_google_connection_status")
@@ -333,7 +348,12 @@ _CALLBACK_MESSAGES = {
 
 
 def complete_google_authorization(
-    state: str, code: str | None, error: str | None, issuer: str | None
+    state: str,
+    code: str | None,
+    error: str | None,
+    issuer: str | None,
+    *,
+    expected_principal: Principal | None = None,
 ) -> str:
     """Finish one Google authorization response (blocking I/O; run off the loop).
 
@@ -344,10 +364,17 @@ def complete_google_authorization(
     URL, whose scheme and host are the proxy-internal ones behind TLS
     termination. The exchange result is stored only under the principal that
     created the state; the MCP bearer token is never involved.
+
+    ``expected_principal`` is set when the response is pasted into a tool call
+    instead of reaching the callback route: the state must then belong to the
+    caller, so one user cannot complete another user's pending consent.
     """
     store = get_token_store()
     pending = store.consume_oauth_state(state) if state else None
     if pending is None:
+        return "invalid_state"
+    if expected_principal is not None and pending.principal.storage_key != expected_principal.storage_key:
+        LOGGER.warning("Pasted Google OAuth response rejected: state belongs to another principal.")
         return "invalid_state"
     if error or not code:
         return "not_completed"
@@ -374,6 +401,41 @@ def complete_google_authorization(
         LOGGER.warning("Google OAuth code exchange failed (%s).", type(exc).__name__)
         return "failed"
     return "connected"
+
+
+PASTE_HINT = (
+    "If the browser shows an error page such as 'Bearer token required' after consent (the server "
+    "sits behind an authenticating gateway that blocks the callback), copy the complete URL from the "
+    "browser's address bar and call connect_google_workspace with authorization_response set to it."
+)
+
+
+def complete_pasted_authorization(authorization_response: str, principal: Principal) -> dict[str, Any]:
+    """Finish consent from a callback URL the user copied out of the browser (blocking)."""
+    raw = authorization_response.strip()
+    query = urlsplit(raw).query if "://" in raw else raw.lstrip("?")
+    params = parse_qs(query, keep_blank_values=False)
+
+    def first(name: str) -> str | None:
+        values = params.get(name)
+        return values[0] if values else None
+
+    outcome = complete_google_authorization(
+        first("state") or "",
+        first("code"),
+        first("error"),
+        first("iss"),
+        expected_principal=principal,
+    )
+    if outcome != "connected":
+        return {"state": outcome, "connected": False, "message": _CALLBACK_MESSAGES[outcome]}
+    status = google_connection_status()
+    return {
+        "state": str(status.get("state")),
+        "connected": bool(status.get("connected")),
+        "granted_capabilities": list(status.get("granted_capabilities", [])),
+        "message": "Google Workspace connected. List tools again to see the newly granted services.",
+    }
 
 
 def register_oauth_callback_route(server: FastMCP) -> None:

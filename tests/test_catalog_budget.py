@@ -9,9 +9,10 @@ noticeably has to raise a ceiling here, in review.
 2.1.x after documenting result fields (+4,118 default, all in output schemas):
 13 tools whose inferred output schemas were untyped (event, file, message and
 task items, connection and consent results) now type and describe each field,
-for directory compatibility checks; input schemas are unchanged in size:
-    default       52,412; without output schemas 39,958
-    all optional  81,450; without output schemas 61,431
+for directory compatibility checks; input schemas are unchanged in size
+(measured with connect_google_workspace's authorization_response input):
+    default       52,565; without output schemas 40,051
+    all optional  81,603; without output schemas 61,525
 2.0.0 after the consent model (estimated tokens; -287 default): the
 model-settable safety flags are gone, dry_run is new on the bulk and raw
 batch-update tools, prepare_workspace_action drops its tool_name enum, and

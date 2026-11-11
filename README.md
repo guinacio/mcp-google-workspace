@@ -258,6 +258,11 @@ use relative imports, so do **not** point it at `src/mcp_google_workspace/server
   - optional `MCP_REDIS_URL` to keep the Google grant across redeploys; without it
     the grant is stored on the instance's disk and you reconnect after a redeploy.
 - Then call `connect_google_workspace`, open the returned URL and finish consent.
+  Horizon's gateway also guards `/google/oauth/callback`, so after consent the browser
+  shows `Bearer token required`. Copy that page's full URL from the address bar and call
+  `connect_google_workspace` with `authorization_response` set to it. The state in the
+  URL is one-time and bound to the caller, and the code only works with the server's
+  PKCE verifier.
 
 ### Docker / GHCR
 
@@ -527,16 +532,17 @@ The picker always serves the self-contained renderer bundled in the locked `pref
 
 ### Progressive Tool Discovery
 
-Both stdio and authenticated Streamable HTTP use FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search) by default. The model-visible catalog is reduced to the connection and consent tools, `search_workspace`, the main read entry point of each core service (`gmail_search_emails`, `gmail_get_mail_digest`, `calendar_search_events`, `calendar_get_calendar_digest`, `drive_list_files`, `tasks_tasks_digest`), plus `search_tools` and `call_tool`; hidden tools, including the upload picker and diagnostics, remain callable after discovery. HTTP additionally hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. The catalog is sorted and evaluated against the caller's current grants on every request (and re-checked when a tool is called, so a stale catalog cannot run a revoked capability); after a consent, list tools again (`get_google_connection_status` reports the grants; no notification is sent).
+Progressive discovery is **opt-in**. Claude clients search large tool catalogs themselves, so by default every client gets the complete catalog and no `search_tools`/`call_tool` layer. For a client without its own tool search, `MCP_TOOL_SEARCH=on` switches on FastMCP's [BM25 Tool Search transform](https://fastmcp.wiki/en/servers/transforms/tool-search): the model-visible catalog is reduced to the connection and consent tools, `search_workspace`, the main read entry point of each core service (`gmail_search_emails`, `gmail_get_mail_digest`, `calendar_search_events`, `calendar_get_calendar_digest`, `drive_list_files`, `tasks_tasks_digest`), plus `search_tools` and `call_tool`; hidden tools, including the upload picker and diagnostics, remain callable after discovery.
+
+Independently of discovery, HTTP hides namespaces whose OAuth capability is not granted and removes host-filesystem-only tools and parameters. The catalog is sorted and evaluated against the caller's current grants on every request (and re-checked when a tool is called, so a stale catalog cannot run a revoked capability); after a consent, list tools again (`get_google_connection_status` reports the grants; no notification is sent).
 
 Configuration:
 
-- `MCP_TOOL_SEARCH=auto` (default): enable progressive discovery unless `MCP_CLIENT_MODEL` contains `claude`.
-- `MCP_TOOL_SEARCH=on`: always enable progressive discovery.
-- `MCP_TOOL_SEARCH=off`: expose the complete catalog.
-- `MCP_CLIENT_MODEL=claude`: disable progressive discovery in auto mode for Claude's current tool/App routing behavior.
+- `MCP_TOOL_SEARCH=off` (default): expose the complete catalog.
+- `MCP_TOOL_SEARCH=on`: enable progressive discovery (for clients without their own tool search).
+- `MCP_TOOL_SEARCH=auto`: enable progressive discovery unless `MCP_CLIENT_MODEL` contains `claude`.
 
-The official MCPB manifest declares `MCP_CLIENT_MODEL=claude`, so Claude Desktop receives the complete catalog. For a manual Claude Desktop stdio configuration, add the same environment variable explicitly.
+The official MCPB manifest also declares `MCP_CLIENT_MODEL=claude`, which keeps Claude Desktop on the complete catalog even under `auto`.
 
 `get_google_connection_status` reports, besides the user's grants, the active tool tier, enabled namespaces, OAuth capability names, and supported file-input strategies. `search_workspace` searches Drive (names and content), contacts, and Gmail concurrently and returns normalized hits: Gmail hits carry subject, sender, date and snippet. `docs_read_document` and `drive_read_file` return a document or file as text (Docs also as Markdown) in pages, with the same `next_offset`, `body_chars` and `body_sha256` paging fields as email bodies, so a remote client can read content without the server's filesystem.
 

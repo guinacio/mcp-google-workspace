@@ -165,8 +165,8 @@ async def _call_picker_over_bundle_stdio(tmp_path: Path):
         assert client.protocol_version == "2026-07-28"
         tools = await client.list_tools()
         names = {tool.name for tool in tools}
-        # Tool search is on: the picker is not on the front page (2.0.0) but
-        # stays callable by name, and diagnostics reports its UI resource.
+        # Tool search is opt-in (off by default): the complete catalog is
+        # listed, picker included, and diagnostics reports its UI resource.
         diagnostics = await client.call_tool("get_mcp_apps_diagnostics", {})
         uri = diagnostics.structured_content["resource_uri"]
         contents = await client.read_resource(uri)
@@ -181,10 +181,9 @@ def test_bundle_stdio_lists_and_calls_prefab_file_manager(tmp_path) -> None:
         _call_picker_over_bundle_stdio, tmp_path
     )
 
-    assert "uploads_file_manager" not in names
+    assert "uploads_file_manager" in names
     assert "gmail_search_emails" in names
-    assert len(names) <= 17
-    assert {"search_tools", "call_tool"} <= names
+    assert not {"search_tools", "call_tool"} & names
     assert uri.startswith("ui://")
     assert contents[0].mime_type == "text/html;profile=mcp-app"
     assert result.is_error is False
@@ -231,9 +230,7 @@ async def _upload_lifecycle_over_bundle_stdio(tmp_path: Path):
         upload_id = stored.structured_content["result"][0]["upload_id"]
         listed = await client.call_tool("uploads_list_files", {})
         page = await client.call_tool("uploads_list_files", {"limit": 10})
-        read = await client.call_tool(
-            "call_tool", {"name": "uploads_read_file", "arguments": {"name": upload_id}}
-        )
+        read = await client.call_tool("uploads_read_file", {"name": upload_id})
         deleted = await client.call_tool(delete_tool, {"name": upload_id})
         after = await client.call_tool("uploads_list_files", {})
     return upload_id, listed, page, read, deleted, after
