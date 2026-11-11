@@ -2,8 +2,20 @@
   "result": {
     "_meta": {
       "io.modelcontextprotocol/serverInfo": {
+        "description": "Lets an agent work in a user's Google Workspace: search and send Gmail, read and schedule Calendar events, find and manage Drive files, read and edit Docs, Sheets, Slides and Forms, manage Tasks and Contacts, with consent prompts before consequential actions.",
+        "icons": [
+          {
+            "mimeType": "image/png",
+            "sizes": [
+              "1024x1024"
+            ],
+            "src": "https://raw.githubusercontent.com/guinacio/mcp-google-workspace/main/icon.png"
+          }
+        ],
         "name": "google-workspace-mcp",
-        "version": "<SERVER_VERSION>"
+        "title": "Google Workspace",
+        "version": "<SERVER_VERSION>",
+        "websiteUrl": "https://github.com/guinacio/mcp-google-workspace"
       }
     },
     "content": [

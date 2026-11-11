@@ -117,6 +117,21 @@ def _require_secure_url(name: str, value: str) -> str:
     return value.rstrip("/")
 
 
+def mcp_app_domain() -> str | None:
+    """HTTPS origin MCP Apps views declare as ``_meta.ui.domain`` (ChatGPT sandbox origin).
+
+    ``MCP_APP_DOMAIN`` wins; otherwise the origin of ``MCP_HTTP_BASE_URL``.
+    ``None`` for a server without a public HTTPS origin (local stdio).
+    """
+    raw = os.getenv("MCP_APP_DOMAIN", "").strip() or os.getenv("MCP_HTTP_BASE_URL", "").strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return None
+    return f"https://{parsed.netloc}"
+
+
 def get_google_oauth_redirect_url() -> str:
     """Google OAuth callback URL for the remote (browser redirect) consent flow."""
     return _require_secure_url(

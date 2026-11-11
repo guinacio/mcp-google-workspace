@@ -30,7 +30,7 @@ from starlette.testclient import TestClient
 
 from mcp_google_workspace import __version__
 import mcp_google_workspace.auth.google_auth as google_auth
-from mcp_google_workspace.server import workspace_mcp
+from mcp_google_workspace.server import SERVER_DESCRIPTION, workspace_mcp
 
 from .harness import MODERN, assert_matches_fixture, modern_request, normalize
 
@@ -328,7 +328,20 @@ def test_server_info_version_is_the_package_release(client: TestClient) -> None:
     )
     assert response.status_code == 200, response.text
     info = response.json()["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]
-    assert info == {"name": "google-workspace-mcp", "version": released}
+    assert info == {
+        "name": "google-workspace-mcp",
+        "version": released,
+        "title": "Google Workspace",
+        "description": SERVER_DESCRIPTION,
+        "websiteUrl": "https://github.com/guinacio/mcp-google-workspace",
+        "icons": [
+            {
+                "src": "https://raw.githubusercontent.com/guinacio/mcp-google-workspace/main/icon.png",
+                "mimeType": "image/png",
+                "sizes": ["1024x1024"],
+            }
+        ],
+    }
 
 
 def test_listing_cache_hints(client: TestClient) -> None:

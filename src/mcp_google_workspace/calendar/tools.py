@@ -7,6 +7,7 @@ import logging
 from hashlib import sha256
 from datetime import datetime, timedelta
 from datetime import time as dt_time
+from pydantic import Field
 from typing import Annotated, Any, Literal, NoReturn
 from uuid import uuid4
 
@@ -400,7 +401,8 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = None,
         max_results: Annotated[
-            int, "Maximum events per page, 1 to 2500; next_page_token continues the list."
+            int,
+            Field(ge=1, le=2500, description="Events per page; next_page_token continues the list."),
         ] = 25,
         single_events: Annotated[
             bool,

@@ -10,6 +10,7 @@ from fastmcp import FastMCP
 
 from ..common.async_ops import read_text_file, run_blocking
 from ..common.timezone import resolve_user_timezone, user_now
+from ..runtime import mcp_app_domain
 from .addressing import DASHBOARD_UI_MIME, DASHBOARD_UI_URI
 from .schemas import DashboardState
 from .tools import build_dashboard_payload, build_weekly_calendar_payload
@@ -68,11 +69,18 @@ def register_resources(server: FastMCP) -> None:
         return json.dumps(payload, indent=2)
 
     # No ``_meta.ui.csp``: the single-file dashboard makes no network requests,
-    # so the host's restrictive default CSP applies unchanged.
+    # so the host's restrictive default CSP applies unchanged. ``domain`` is the
+    # server's public origin, shared with the upload picker's view.
+    domain = mcp_app_domain()
     @server.resource(
         DASHBOARD_UI_URI,
         name="apps_dashboard_ui_mcp",
+        description=(
+            "Interactive Google Workspace dashboard view: calendar, mail and tasks for one day "
+            "or week, opened by apps_get_dashboard."
+        ),
         mime_type=DASHBOARD_UI_MIME,
+        meta={"ui": {"domain": domain}} if domain else None,
     )
     async def apps_dashboard_ui_mcp() -> str:
         return await read_text_file(_UI_HTML_PATH, encoding="utf-8")

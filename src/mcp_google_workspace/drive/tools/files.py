@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from pydantic import Field
 
 import pytz
 from fastmcp import Context, FastMCP
@@ -307,7 +308,7 @@ def register(server: FastMCP) -> None:
                 "search); quotes in the text are escaped for you."
             ),
         ] = None,
-        page_size: Annotated[int, "Files per page, 1 to 1000."] = 25,
+        page_size: Annotated[int, Field(ge=1, le=1000, description="Files per page; next_page_token continues the list.")] = 25,
         page_token: str | None = None,
         order_by: Annotated[
             str | None,

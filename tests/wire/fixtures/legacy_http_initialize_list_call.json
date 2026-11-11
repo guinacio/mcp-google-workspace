@@ -21,8 +21,20 @@
       "instructions": "Unified Google Workspace MCP server with Gmail, Calendar, Drive, Docs, Sheets, Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations.",
       "protocolVersion": "2025-11-25",
       "serverInfo": {
+        "description": "Lets an agent work in a user's Google Workspace: search and send Gmail, read and schedule Calendar events, find and manage Drive files, read and edit Docs, Sheets, Slides and Forms, manage Tasks and Contacts, with consent prompts before consequential actions.",
+        "icons": [
+          {
+            "mimeType": "image/png",
+            "sizes": [
+              "1024x1024"
+            ],
+            "src": "https://raw.githubusercontent.com/guinacio/mcp-google-workspace/main/icon.png"
+          }
+        ],
         "name": "google-workspace-mcp",
-        "version": "<SERVER_VERSION>"
+        "title": "Google Workspace",
+        "version": "<SERVER_VERSION>",
+        "websiteUrl": "https://github.com/guinacio/mcp-google-workspace"
       }
     },
     "status_code": 200
@@ -100,40 +112,54 @@
           "additionalProperties": true,
           "properties": {
             "action": {
+              "description": "What the user must do to reconnect, or null.",
               "type": [
                 "string",
                 "null"
               ]
             },
             "checked_capability": {
+              "description": "The capability argument, or null.",
               "type": [
                 "string",
                 "null"
               ]
             },
             "connected": {
+              "description": "Whether a usable grant is stored for the caller.",
               "type": "boolean"
             },
             "expires_at": {
+              "description": "Access-token expiry, or null.",
               "type": [
                 "string",
                 "null"
               ]
             },
             "granted_capabilities": {
-              "items": {},
+              "description": "Services the grant covers.",
+              "items": {
+                "type": "string"
+              },
               "type": "array"
             },
             "granted_scopes": {
-              "items": {},
+              "description": "OAuth scopes the grant covers.",
+              "items": {
+                "type": "string"
+              },
               "type": "array"
             },
             "required_scopes": {
-              "items": {},
+              "description": "Scopes checked_capability needs.",
+              "items": {
+                "type": "string"
+              },
               "type": "array"
             },
             "server": {
               "additionalProperties": true,
+              "description": "This deployment's tool tier, enabled namespaces, OAuth capabilities and file inputs.",
               "properties": {
                 "enabled_namespaces": {
                   "items": {},
@@ -196,6 +222,7 @@
               "type": "object"
             },
             "state": {
+              "description": "Connection state: connected, refresh_required, missing_scopes, reauth_required, not_connected or error.",
               "type": "string"
             }
           },

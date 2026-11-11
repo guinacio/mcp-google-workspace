@@ -7,6 +7,7 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
+from pydantic import Field
 
 from fastmcp import Context, FastMCP
 
@@ -64,9 +65,12 @@ def register(server: FastMCP) -> None:
     async def get_mail_digest(
         window: Annotated[
             str,
-            (
-                "Lookback window as '<int><unit>' where unit is d (days), h (hours), or w (weeks), "
-                "e.g. '24h' or '2w'; default is '3d'. Mail received or sent since now minus the window is listed."
+            Field(
+                pattern=r"^\d+[dhw]$",
+                description=(
+                    "Lookback window: a number of days (d), hours (h) or weeks (w), e.g. '24h' or '2w'. "
+                    "Mail received or sent since now minus the window is listed."
+                ),
             ),
         ] = "3d",
         unread_only: Annotated[
@@ -74,9 +78,13 @@ def register(server: FastMCP) -> None:
         ] = False,
         max_items: Annotated[
             int,
-            (
-                "Maximum messages to return, 1 to 100 (default 25). There is no next page: when the window "
-                "holds more, shorten it or page through gmail_search_emails instead."
+            Field(
+                ge=1,
+                le=100,
+                description=(
+                    "Messages to return. There is no next page: when the window holds more, shorten it or "
+                    "page through gmail_search_emails instead."
+                ),
             ),
         ] = 25,
         ctx: Context | None = None,
@@ -135,9 +143,13 @@ def register(server: FastMCP) -> None:
         ] = None,
         max_results: Annotated[
             int,
-            (
-                "Messages (or, with group_by_thread, conversations) per page, 1 to 500 (default 25); each hit "
-                "is fetched separately, so large pages are slower."
+            Field(
+                ge=1,
+                le=500,
+                description=(
+                    "Messages (or, with group_by_thread, conversations) per page; each hit is fetched "
+                    "separately, so large pages are slower."
+                ),
             ),
         ] = 25,
         page_token: str | None = None,
@@ -158,13 +170,14 @@ def register(server: FastMCP) -> None:
             bool, "When true, adds is:unread so only unread messages match; false adds nothing, so read mail matches too."
         ] = False,
         newer_than_days: Annotated[
-            int | None, "Only mail from the last N days, 1 to 3650, translated to Gmail's newer_than:{N}d query operator."
+            int | None,
+            Field(ge=1, le=3650, description="Only mail from the last N days, added to the query as newer_than:{N}d."),
         ] = None,
         group_by_thread: Annotated[
             bool,
             (
-                "When true, returns conversations instead of messages: threads, each summarized by its newest "
-                "message plus message_count. Default false returns individual messages."
+                "Return conversations instead of messages: threads, each summarized by its newest "
+                "message plus message_count."
             ),
         ] = False,
         ctx: Context | None = None,

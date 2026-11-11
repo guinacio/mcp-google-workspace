@@ -810,6 +810,7 @@
         "additionalProperties": true,
         "properties": {
           "account_timezone": {
+            "description": "IANA time zone of every time in this result.",
             "type": "string"
           },
           "count": {
@@ -817,7 +818,100 @@
             "type": "integer"
           },
           "events": {
-            "items": {},
+            "description": "Events in the window, earliest first.",
+            "items": {
+              "description": "Compact event.",
+              "properties": {
+                "all_day": {
+                  "description": "Whether the event spans whole days.",
+                  "type": "boolean"
+                },
+                "attendee_count": {
+                  "description": "Number of guests.",
+                  "type": "integer"
+                },
+                "end": {
+                  "description": "End in the account time zone (RFC3339), or a date for all-day events.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "event_timezone": {
+                  "description": "Zone the event was scheduled in, when it differs from the account's.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "Event ID (an instance ID for an expanded recurring event).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "is_recurring": {
+                  "description": "Whether the event belongs to a recurring series.",
+                  "type": "boolean"
+                },
+                "location": {
+                  "description": "Location text.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "meeting_url": {
+                  "description": "Video meeting link.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "my_response": {
+                  "description": "The user's own response: needsAction, accepted, declined or tentative.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "organizer": {
+                  "description": "Organizer name and email.",
+                  "type": "object"
+                },
+                "requires_response": {
+                  "description": "True when the user has not answered the invitation.",
+                  "type": "boolean"
+                },
+                "start": {
+                  "description": "Start in the account time zone (RFC3339), or a date for all-day events.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "description": "confirmed, tentative or cancelled.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "description": "Event title, '(untitled event)' when it has none.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "Last modification time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "fetched_at": {
@@ -837,10 +931,14 @@
             ]
           },
           "requires_response": {
-            "items": {},
+            "description": "The events whose invitation the user has not answered, shaped like events.",
+            "items": {
+              "type": "object"
+            },
             "type": "array"
           },
           "window_day_count": {
+            "description": "Days covered, starting now.",
             "type": "integer"
           }
         },
@@ -1043,7 +1141,9 @@
           },
           "max_results": {
             "default": 25,
-            "description": "Maximum events per page, 1 to 2500; next_page_token continues the list.",
+            "description": "Events per page; next_page_token continues the list.",
+            "maximum": 2500,
+            "minimum": 1,
             "type": "integer"
           },
           "order_by": {
@@ -1105,16 +1205,122 @@
         "additionalProperties": true,
         "properties": {
           "account_timezone": {
+            "description": "IANA time zone of every time in this result.",
             "type": "string"
           },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
           },
-          "effective_time_max": {},
-          "effective_time_min": {},
+          "effective_time_max": {
+            "description": "Window end actually sent to Google; reuse it when paging.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effective_time_min": {
+            "description": "Window start actually sent to Google; reuse it when paging.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "events": {
-            "items": {},
+            "description": "Events on this page.",
+            "items": {
+              "description": "Compact event.",
+              "properties": {
+                "all_day": {
+                  "description": "Whether the event spans whole days.",
+                  "type": "boolean"
+                },
+                "attendee_count": {
+                  "description": "Number of guests.",
+                  "type": "integer"
+                },
+                "end": {
+                  "description": "End in the account time zone (RFC3339), or a date for all-day events.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "event_timezone": {
+                  "description": "Zone the event was scheduled in, when it differs from the account's.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "Event ID (an instance ID for an expanded recurring event).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "is_recurring": {
+                  "description": "Whether the event belongs to a recurring series.",
+                  "type": "boolean"
+                },
+                "location": {
+                  "description": "Location text.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "meeting_url": {
+                  "description": "Video meeting link.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "my_response": {
+                  "description": "The user's own response: needsAction, accepted, declined or tentative.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "organizer": {
+                  "description": "Organizer name and email.",
+                  "type": "object"
+                },
+                "requires_response": {
+                  "description": "True when the user has not answered the invitation.",
+                  "type": "boolean"
+                },
+                "start": {
+                  "description": "Start in the account time zone (RFC3339), or a date for all-day events.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "description": "confirmed, tentative or cancelled.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "description": "Event title, '(untitled event)' when it has none.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "Last modification time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "fetched_at": {
@@ -1133,7 +1339,13 @@
               "null"
             ]
           },
-          "range_preset": {}
+          "range_preset": {
+            "description": "The range_preset that was applied, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         },
         "required": [],
         "type": "object"
@@ -1556,16 +1768,17 @@
         "additionalProperties": true,
         "properties": {
           "result": {
+            "description": "That tool's structured result, as its own outputSchema describes.",
             "type": "object"
           },
           "status": {
-            "description": "Machine-readable operation status.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "'committed' when the bound call ran.",
+            "type": "string"
           },
-          "tool": {}
+          "tool": {
+            "description": "Published name of the tool that ran.",
+            "type": "string"
+          }
         },
         "required": [],
         "type": "object"
@@ -1628,6 +1841,7 @@
         "additionalProperties": true,
         "properties": {
           "action": {
+            "description": "What the user must do next, or null.",
             "type": [
               "string",
               "null"
@@ -1635,6 +1849,7 @@
           },
           "after_consent": {
             "additionalProperties": true,
+            "description": "Remote mode: the tool to call once consent is done.",
             "properties": {
               "arguments": {
                 "type": "object"
@@ -1647,41 +1862,74 @@
             "type": "object"
           },
           "authorization_url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "Remote mode: Google consent URL for the user to open.",
+            "type": "string"
           },
-          "capabilities": {},
+          "capabilities": {
+            "description": "Remote mode: services requested in this consent.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "connected": {
+            "description": "Whether a usable grant is stored (local mode).",
             "type": "boolean"
           },
-          "expires_at": {},
-          "granted_capabilities": {},
-          "granted_scopes": {},
+          "expires_at": {
+            "description": "Remote mode: Unix time (seconds) when authorization_url expires.",
+            "type": "integer"
+          },
+          "granted_capabilities": {
+            "description": "Services the stored grant covers.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "granted_scopes": {
+            "description": "OAuth scopes the stored grant covers.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "if_callback_blocked": {
+            "description": "Behind an authenticating gateway: how to finish consent with authorization_response.",
+            "type": "string"
+          },
           "message": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "Outcome of a pasted authorization_response, in words.",
+            "type": "string"
           },
           "mode": {
+            "description": "'local_stdio' when consent ran on the server machine.",
             "type": "string"
           },
           "newly_requested_scopes": {
-            "items": {},
+            "description": "Remote mode: scopes not granted before this consent.",
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
-          "requested_capabilities": {},
+          "requested_capabilities": {
+            "description": "Services that were asked for.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "requested_scopes": {
-            "items": {},
+            "description": "Remote mode: every scope the consent asks for.",
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "state": {
-            "type": [
-              "object",
-              "string"
-            ]
+            "description": "Connection state: connected, refresh_required, missing_scopes, reauth_required, not_connected or error.",
+            "type": "string"
           }
         },
         "required": [],
@@ -1718,10 +1966,19 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "grant_revoked": {},
-          "revocation_error": {},
+          "grant_revoked": {
+            "description": "Whether Google confirmed the grant was revoked.",
+            "type": "boolean"
+          },
+          "revocation_error": {
+            "description": "Why revocation failed, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
-            "description": "Machine-readable operation status.",
+            "description": "'disconnected', or 'cancelled' when the user declined.",
             "type": "string"
           }
         },
@@ -2550,7 +2807,9 @@
           },
           "page_size": {
             "default": 25,
-            "description": "Files per page, 1 to 1000.",
+            "description": "Files per page; next_page_token continues the list.",
+            "maximum": 1000,
+            "minimum": 1,
             "type": "integer"
           },
           "page_token": {
@@ -2586,6 +2845,7 @@
         "additionalProperties": true,
         "properties": {
           "account_timezone": {
+            "description": "IANA time zone of every time in this result.",
             "type": "string"
           },
           "count": {
@@ -2598,7 +2858,157 @@
             "type": "string"
           },
           "files": {
-            "items": {},
+            "description": "Files on this page.",
+            "items": {
+              "description": "Drive file metadata; a field Google did not return is null.",
+              "properties": {
+                "can_download": {
+                  "description": "Whether the user can download it.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "can_edit": {
+                  "description": "Whether the user can edit it.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "description": "Creation time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "description": "File description.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "drive_id": {
+                  "description": "Shared drive ID, null in My Drive.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "File ID.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "description": "folder, document, spreadsheet, presentation, form, image, video, audio or file.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_modified_by": {
+                  "description": "Person who last modified the file.",
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "mime_type": {
+                  "description": "MIME type.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "modified_at": {
+                  "description": "Last modification time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "description": "File name.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "owned_by_me": {
+                  "description": "Whether the user owns it.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "owners": {
+                  "description": "Owners (name, email); null for shared-drive files.",
+                  "items": {},
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "parent_ids": {
+                  "description": "Parent folder IDs.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "shared": {
+                  "description": "Whether the file is shared.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "size": {
+                  "description": "Size in bytes as Google sends it (a string); null for Google-native files.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "size_bytes": {
+                  "description": "Size in bytes as a number.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "starred": {
+                  "description": "Whether the user starred it.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "trashed": {
+                  "description": "Whether the file is in the trash.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "web_url": {
+                  "description": "Link that opens the file in Drive.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "has_more": {
@@ -3644,40 +4054,54 @@
         "additionalProperties": true,
         "properties": {
           "action": {
+            "description": "What the user must do to reconnect, or null.",
             "type": [
               "string",
               "null"
             ]
           },
           "checked_capability": {
+            "description": "The capability argument, or null.",
             "type": [
               "string",
               "null"
             ]
           },
           "connected": {
+            "description": "Whether a usable grant is stored for the caller.",
             "type": "boolean"
           },
           "expires_at": {
+            "description": "Access-token expiry, or null.",
             "type": [
               "string",
               "null"
             ]
           },
           "granted_capabilities": {
-            "items": {},
+            "description": "Services the grant covers.",
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "granted_scopes": {
-            "items": {},
+            "description": "OAuth scopes the grant covers.",
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "required_scopes": {
-            "items": {},
+            "description": "Scopes checked_capability needs.",
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "server": {
             "additionalProperties": true,
+            "description": "This deployment's tool tier, enabled namespaces, OAuth capabilities and file inputs.",
             "properties": {
               "enabled_namespaces": {
                 "items": {},
@@ -3740,6 +4164,7 @@
             "type": "object"
           },
           "state": {
+            "description": "Connection state: connected, refresh_required, missing_scopes, reauth_required, not_connected or error.",
             "type": "string"
           }
         },
@@ -4077,7 +4502,9 @@
         "properties": {
           "max_items": {
             "default": 25,
-            "description": "Maximum messages to return, 1 to 100 (default 25). There is no next page: when the window holds more, shorten it or page through gmail_search_emails instead.",
+            "description": "Messages to return. There is no next page: when the window holds more, shorten it or page through gmail_search_emails instead.",
+            "maximum": 100,
+            "minimum": 1,
             "type": "integer"
           },
           "unread_only": {
@@ -4087,7 +4514,8 @@
           },
           "window": {
             "default": "3d",
-            "description": "Lookback window as '<int><unit>' where unit is d (days), h (hours), or w (weeks), e.g. '24h' or '2w'; default is '3d'. Mail received or sent since now minus the window is listed.",
+            "description": "Lookback window: a number of days (d), hours (h) or weeks (w), e.g. '24h' or '2w'. Mail received or sent since now minus the window is listed.",
+            "pattern": "^\\d+[dhw]$",
             "type": "string"
           }
         },
@@ -4115,6 +4543,7 @@
         "additionalProperties": true,
         "properties": {
           "account_timezone": {
+            "description": "IANA time zone of every time in this result.",
             "type": "string"
           },
           "count": {
@@ -4131,7 +4560,64 @@
             "type": "boolean"
           },
           "messages": {
-            "items": {},
+            "description": "Received and sent messages in the window; drafts excluded.",
+            "items": {
+              "description": "Message summary.",
+              "properties": {
+                "date": {
+                  "description": "Received time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "direction": {
+                  "description": "'received' or 'sent'.",
+                  "type": "string"
+                },
+                "from": {
+                  "description": "Sender name and email.",
+                  "type": "object"
+                },
+                "has_attachments": {
+                  "description": "Whether the message has attachments.",
+                  "type": "boolean"
+                },
+                "id": {
+                  "description": "Message ID for gmail_read_emails.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "snippet": {
+                  "description": "Short plain-text preview.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subject": {
+                  "description": "Decoded subject.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "thread_id": {
+                  "description": "Conversation ID for gmail_get_thread.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "unread": {
+                  "description": "Whether the message is unread.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "next_page_token": {
@@ -4141,7 +4627,10 @@
               "null"
             ]
           },
-          "window": {}
+          "window": {
+            "description": "The lookback window that was applied, e.g. '3d'.",
+            "type": "string"
+          }
         },
         "required": [],
         "type": "object"
@@ -5026,7 +5515,7 @@
           },
           "group_by_thread": {
             "default": false,
-            "description": "When true, returns conversations instead of messages: threads, each summarized by its newest message plus message_count. Default false returns individual messages.",
+            "description": "Return conversations instead of messages: threads, each summarized by its newest message plus message_count.",
             "type": "boolean"
           },
           "has_attachment": {
@@ -5053,11 +5542,15 @@
           },
           "max_results": {
             "default": 25,
-            "description": "Messages (or, with group_by_thread, conversations) per page, 1 to 500 (default 25); each hit is fetched separately, so large pages are slower.",
+            "description": "Messages (or, with group_by_thread, conversations) per page; each hit is fetched separately, so large pages are slower.",
+            "maximum": 500,
+            "minimum": 1,
             "type": "integer"
           },
           "newer_than_days": {
-            "description": "Only mail from the last N days, 1 to 3650, translated to Gmail's newer_than:{N}d query operator.",
+            "description": "Only mail from the last N days, added to the query as newer_than:{N}d.",
+            "maximum": 3650,
+            "minimum": 1,
             "type": "integer"
           },
           "page_token": {
@@ -5101,13 +5594,20 @@
         "additionalProperties": true,
         "properties": {
           "account_timezone": {
+            "description": "IANA time zone of every time in this result.",
             "type": "string"
           },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
           },
-          "effective_query": {},
+          "effective_query": {
+            "description": "The Gmail query actually run, helper filters included.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
             "format": "date-time",
@@ -5118,7 +5618,83 @@
             "type": "boolean"
           },
           "messages": {
-            "items": {},
+            "description": "Matching messages (absent with group_by_thread).",
+            "items": {
+              "description": "Message summary.",
+              "properties": {
+                "category": {
+                  "description": "First Gmail category label on the message (CATEGORY_*), or null.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "date": {
+                  "description": "Received time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "from": {
+                  "description": "Sender name and email.",
+                  "type": "object"
+                },
+                "has_attachments": {
+                  "description": "Whether the message has attachments.",
+                  "type": "boolean"
+                },
+                "id": {
+                  "description": "Message ID for gmail_read_emails.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "is_automated": {
+                  "description": "Whether the sender looks automated (no-reply, bulk).",
+                  "type": "boolean"
+                },
+                "is_draft": {
+                  "description": "Whether the message is a draft.",
+                  "type": "boolean"
+                },
+                "is_newsletter": {
+                  "description": "Whether the message carries a List-Unsubscribe header.",
+                  "type": "boolean"
+                },
+                "is_sent": {
+                  "description": "Whether the user sent it.",
+                  "type": "boolean"
+                },
+                "snippet": {
+                  "description": "Short plain-text preview.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subject": {
+                  "description": "Decoded subject.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "thread_id": {
+                  "description": "Conversation ID for gmail_get_thread.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "unread": {
+                  "description": "Whether the message is unread.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "next_page_token": {
@@ -5128,9 +5704,21 @@
               "null"
             ]
           },
-          "result_size_estimate": {},
+          "result_size_estimate": {
+            "description": "Google's estimate of the total number of matches.",
+            "type": "integer"
+          },
           "threads": {
-            "items": {},
+            "description": "Matching conversations (only with group_by_thread): each the newest message's fields, as in messages, plus message_count.",
+            "items": {
+              "properties": {
+                "message_count": {
+                  "description": "Messages in the thread.",
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           }
         },
@@ -5907,28 +6495,28 @@
         "additionalProperties": true,
         "properties": {
           "action": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "Consequential action being confirmed, as named by the tool's consent policy, e.g. 'send_email'.",
+            "type": "string"
           },
           "commit_token": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "One-time token for commit_workspace_action.",
+            "type": "string"
           },
-          "expires_at": {},
+          "expires_at": {
+            "description": "Unix time (seconds) when commit_token expires.",
+            "type": "integer"
+          },
           "next_action": {
+            "description": "The commit_workspace_action call to make after the user agrees.",
             "type": "object"
           },
-          "preview": {},
+          "preview": {
+            "description": "Exact text to show the user before committing.",
+            "type": "string"
+          },
           "status": {
-            "description": "Machine-readable operation status.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "'prepared'.",
+            "type": "string"
           }
         },
         "required": [],
@@ -5973,9 +6561,25 @@
         "additionalProperties": true,
         "properties": {
           "resource": {
+            "description": "Stable resource handle: kind, id, uri (pass to resolve_workspace_resource), and name, mime_type, etag, modified_at and web_url when known.",
+            "properties": {
+              "id": {
+                "description": "Resource ID for the matching service tool.",
+                "type": "string"
+              },
+              "kind": {
+                "description": "Resource kind, e.g. drive_file, gmail_message, contact.",
+                "type": "string"
+              },
+              "uri": {
+                "description": "Resource URI, e.g. gdrive:///<file_id>.",
+                "type": "string"
+              }
+            },
             "type": "object"
           },
           "verified": {
+            "description": "True when Google confirmed the resource still exists; false when only parsed.",
             "type": "boolean"
           }
         },
@@ -5997,7 +6601,9 @@
         "properties": {
           "max_results_per_service": {
             "default": 5,
-            "description": "Maximum hits from each searched service, 1 to 25.",
+            "description": "Hits returned from each searched service.",
+            "maximum": 25,
+            "minimum": 1,
             "type": "integer"
           },
           "query": {
@@ -6005,7 +6611,7 @@
             "type": "string"
           },
           "services": {
-            "description": "Services to search: any of 'drive', 'people' (the user's saved contacts) and 'gmail'; omit to search all three.",
+            "description": "Which services to search; 'people' means the user's saved contacts. Omit to search all three.",
             "items": {
               "enum": [
                 "drive",
@@ -6036,12 +6642,19 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "account_timezone": {},
+          "account_timezone": {
+            "description": "IANA time zone of the times in this result.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "count": {
             "description": "Number of items in this response.",
             "type": "integer"
           },
           "errors": {
+            "description": "Error message per service that failed; empty when all answered.",
             "type": "object"
           },
           "fetched_at": {
@@ -6054,7 +6667,49 @@
             "type": "boolean"
           },
           "matches": {
-            "items": {},
+            "description": "Hits in the order of services, each service's hits in its own order.",
+            "items": {
+              "description": "One hit: service, id, kind and resource, plus Drive name, mime_type, modified_at, web_url; contact name, email; or Gmail thread_id, subject, from, date, snippet, unread.",
+              "properties": {
+                "id": {
+                  "description": "ID for that service's tools.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "description": "Drive file kind, 'contact' or 'message'.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "resource": {
+                  "description": "Stable resource handle: kind, id, uri (pass to resolve_workspace_resource), and name, mime_type, etag, modified_at and web_url when known.",
+                  "properties": {
+                    "id": {
+                      "description": "Resource ID for the matching service tool.",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "description": "Resource kind, e.g. drive_file, gmail_message, contact.",
+                      "type": "string"
+                    },
+                    "uri": {
+                      "description": "Resource URI, e.g. gdrive:///<file_id>.",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "service": {
+                  "description": "drive, people or gmail.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "next_page_token": {
@@ -6065,9 +6720,16 @@
             ]
           },
           "query": {
+            "description": "The query that was searched.",
             "type": "string"
           },
-          "services": {}
+          "services": {
+            "description": "Services that were searched.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
         },
         "required": [],
         "type": "object"
@@ -7354,7 +8016,9 @@
           },
           "max_results": {
             "default": 100,
-            "description": "Maximum open tasks to read from the list, 1 to 100; there is no paging, so tasks past this are left out.",
+            "description": "Open tasks to read from the list; there is no paging, so tasks past this are left out.",
+            "maximum": 100,
+            "minimum": 1,
             "type": "integer"
           },
           "tasklist_id": {
@@ -7382,10 +8046,11 @@
         "additionalProperties": true,
         "properties": {
           "account_timezone": {
+            "description": "IANA time zone of every time in this result.",
             "type": "string"
           },
           "count": {
-            "description": "Number of items in this response.",
+            "description": "Tasks in the three groups together.",
             "type": "integer"
           },
           "fetched_at": {
@@ -7405,21 +8070,251 @@
             ]
           },
           "overdue": {
-            "items": {},
+            "description": "Open tasks due before today.",
+            "items": {
+              "description": "Task, shaped as in tasks_list_tasks.",
+              "properties": {
+                "completed_at": {
+                  "description": "Completion time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "deleted": {
+                  "description": "Whether the task is deleted.",
+                  "type": "boolean"
+                },
+                "due_date": {
+                  "description": "Due date (YYYY-MM-DD); Google Tasks stores no due time.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "hidden": {
+                  "description": "Whether the task is hidden.",
+                  "type": "boolean"
+                },
+                "id": {
+                  "description": "Task ID.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "is_overdue": {
+                  "description": "Open and due before today in the account time zone.",
+                  "type": "boolean"
+                },
+                "notes_snippet": {
+                  "description": "Start of the notes.",
+                  "type": "string"
+                },
+                "notes_truncated": {
+                  "description": "Whether notes_snippet is cut short.",
+                  "type": "boolean"
+                },
+                "parent_id": {
+                  "description": "Parent task ID for a subtask.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "description": "needsAction or completed.",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Task title, '(untitled task)' when it has none.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "Last modification time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "description": "Link that opens the task.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "tasklist_id": {
+            "description": "ID of the list that was read.",
             "type": "string"
           },
           "unscheduled": {
-            "items": {},
+            "description": "Open tasks with no due date.",
+            "items": {
+              "description": "Task, shaped as in tasks_list_tasks.",
+              "properties": {
+                "completed_at": {
+                  "description": "Completion time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "deleted": {
+                  "description": "Whether the task is deleted.",
+                  "type": "boolean"
+                },
+                "due_date": {
+                  "description": "Due date (YYYY-MM-DD); Google Tasks stores no due time.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "hidden": {
+                  "description": "Whether the task is hidden.",
+                  "type": "boolean"
+                },
+                "id": {
+                  "description": "Task ID.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "is_overdue": {
+                  "description": "Open and due before today in the account time zone.",
+                  "type": "boolean"
+                },
+                "notes_snippet": {
+                  "description": "Start of the notes.",
+                  "type": "string"
+                },
+                "notes_truncated": {
+                  "description": "Whether notes_snippet is cut short.",
+                  "type": "boolean"
+                },
+                "parent_id": {
+                  "description": "Parent task ID for a subtask.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "description": "needsAction or completed.",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Task title, '(untitled task)' when it has none.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "Last modification time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "description": "Link that opens the task.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "upcoming": {
-            "items": {},
+            "description": "Open tasks due from today through the window, soonest first.",
+            "items": {
+              "description": "Task, shaped as in tasks_list_tasks.",
+              "properties": {
+                "completed_at": {
+                  "description": "Completion time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "deleted": {
+                  "description": "Whether the task is deleted.",
+                  "type": "boolean"
+                },
+                "due_date": {
+                  "description": "Due date (YYYY-MM-DD); Google Tasks stores no due time.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "hidden": {
+                  "description": "Whether the task is hidden.",
+                  "type": "boolean"
+                },
+                "id": {
+                  "description": "Task ID.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "is_overdue": {
+                  "description": "Open and due before today in the account time zone.",
+                  "type": "boolean"
+                },
+                "notes_snippet": {
+                  "description": "Start of the notes.",
+                  "type": "string"
+                },
+                "notes_truncated": {
+                  "description": "Whether notes_snippet is cut short.",
+                  "type": "boolean"
+                },
+                "parent_id": {
+                  "description": "Parent task ID for a subtask.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "description": "needsAction or completed.",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "Task title, '(untitled task)' when it has none.",
+                  "type": "string"
+                },
+                "updated_at": {
+                  "description": "Last modification time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "url": {
+                  "description": "Link that opens the task.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "window_days": {
+            "description": "Days ahead of today counted as upcoming.",
             "type": "integer"
           }
         },

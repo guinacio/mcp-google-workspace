@@ -82,10 +82,30 @@ from .slides import slides_mcp
 from .tasks import tasks_mcp
 from .tool_tiers import hidden_tools, tool_tier
 
+PROJECT_URL = "https://github.com/guinacio/mcp-google-workspace"
+SERVER_TITLE = "Google Workspace"
+SERVER_DESCRIPTION = (
+    "Lets an agent work in a user's Google Workspace: search and send Gmail, read and schedule "
+    "Calendar events, find and manage Drive files, read and edit Docs, Sheets, Slides and Forms, "
+    "manage Tasks and Contacts, with consent prompts before consequential actions."
+)
+# Served from the public repository: a gateway-hosted server (Prefect Horizon)
+# requires a bearer token on every one of its own paths, which a client or
+# directory fetching the icon does not send.
+SERVER_ICONS = [
+    mcp_types.Icon(
+        src="https://raw.githubusercontent.com/guinacio/mcp-google-workspace/main/icon.png",
+        mime_type="image/png",
+        sizes=["1024x1024"],
+    )
+]
+
 workspace_mcp = FastMCP(
     name="google-workspace-mcp",
     # serverInfo.version on the wire is this package's release, not FastMCP's.
     version=__version__,
+    website_url=PROJECT_URL,
+    icons=SERVER_ICONS,
     instructions=(
         "Unified Google Workspace MCP server with Gmail, Calendar, Drive, Docs, Sheets, "
         "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations."
@@ -95,6 +115,11 @@ workspace_mcp = FastMCP(
     # replicas via MCP_REQUEST_STATE_KEYS; ephemeral per process otherwise.
     request_state_security=build_request_state_security(audience=REQUEST_STATE_AUDIENCE),
 )
+# serverInfo.title / serverInfo.description (MCP Implementation fields): the
+# SDK server reads them when it builds the handshake, but FastMCP's constructor
+# does not take them, so set them on the wrapped server before any handshake.
+workspace_mcp._mcp_server.title = SERVER_TITLE
+workspace_mcp._mcp_server.description = SERVER_DESCRIPTION
 # One root-managed Tasks extension (and therefore one queue/worker) for every
 # runnable entrypoint: HTTP, stdio bundle, and out-of-process task workers all
 # serve this object. Mounted namespaces defer to the root's extension.
@@ -300,13 +325,10 @@ async def search_workspace(
     ],
     services: Annotated[
         list[Literal["drive", "people", "gmail"]] | None,
-        (
-            "Services to search: any of 'drive', 'people' (the user's saved contacts) and 'gmail'; "
-            "omit to search all three."
-        ),
+        "Which services to search; 'people' means the user's saved contacts. Omit to search all three.",
     ] = None,
     max_results_per_service: Annotated[
-        int, "Maximum hits from each searched service, 1 to 25."
+        int, Field(ge=1, le=25, description="Hits returned from each searched service.")
     ] = 5,
 ) -> dict[str, object]:
     """Search Drive, the user's saved contacts and Gmail with one query, for a first look when the right service is
