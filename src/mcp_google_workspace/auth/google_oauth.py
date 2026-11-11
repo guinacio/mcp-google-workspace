@@ -7,9 +7,9 @@ import logging
 import secrets
 
 import requests
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, get_args
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from starlette.requests import Request
@@ -17,15 +17,29 @@ from starlette.responses import HTMLResponse
 
 from ..runtime import get_google_oauth_redirect_url
 from ..common.async_ops import run_blocking
+from ..tool_tiers import TOOL_TIERS, tool_tier
 from .google_auth import (
     CAPABILITY_SCOPES,
     get_credentials,
     get_google_scopes,
     get_token_store,
+    is_apps_dashboard_enabled,
+    is_chat_enabled,
+    is_gemini_enabled,
+    is_keep_enabled,
+    is_meet_enabled,
     is_remote_oauth_mode,
     resolve_client_credentials_path,
 )
 from .identity import Principal, current_principal
+
+#: Capability names accepted by the connection tools (the keys of CAPABILITY_SCOPES).
+CapabilityName = Literal[
+    "calendar", "chat", "docs", "drive", "forms", "gmail",
+    "keep", "meet", "people", "sheets", "slides", "tasks",
+]
+if set(get_args(CapabilityName)) != set(CAPABILITY_SCOPES):  # pragma: no cover - import-time guard
+    raise RuntimeError("CapabilityName is out of sync with CAPABILITY_SCOPES.")
 
 LOGGER = logging.getLogger("mcp_google_workspace.oauth")
 _REGISTERED_CALLBACK_SERVERS: set[int] = set()
@@ -81,7 +95,7 @@ def create_google_authorization(
         "authorization_url": authorization_url,
         "expires_at": pending.expires_at,
         "action": "Open authorization_url in a browser and complete Google consent.",
-        "after_consent": {"tool": "refresh_workspace_catalog", "arguments": {}},
+        "after_consent": {"tool": "get_google_connection_status", "arguments": {}},
         "capabilities": selected_capabilities,
         "requested_scopes": scopes,
         "newly_requested_scopes": newly_requested_scopes,
@@ -179,9 +193,7 @@ def google_connection_status(
     }
 
 
-def disconnect_google_account(*, confirm: bool) -> dict[str, Any]:
-    if not confirm:
-        return {"status": "confirmation_required", "action": "Call again with confirm=true."}
+def disconnect_google_account() -> dict[str, Any]:
     principal = current_principal()
     store = get_token_store()
     credentials_json = store.load_credentials_json(principal)
@@ -211,20 +223,29 @@ def disconnect_google_account(*, confirm: bool) -> dict[str, Any]:
     }
 
 
+_CORE_NAMESPACES = ("calendar", "docs", "drive", "forms", "gmail", "people", "sheets", "slides", "tasks")
+
+
 def register_connection_tools(server: FastMCP) -> None:
     """Register OAuth connection tools on the composed server exactly once."""
 
     @server.tool(name="connect_google_workspace")
     async def connect_google_workspace(
         capabilities: Annotated[
-            list[str] | None,
+            list[CapabilityName] | None,
             (
-                "Google Workspace capability names to request scopes for, e.g. "
-                f"{sorted(CAPABILITY_SCOPES)}; defaults to ['gmail'] when omitted."
+                "Services to request access for; omit for ['gmail']. In remote mode these "
+                "scopes are added to the ones already granted; in local mode the names are only "
+                "validated and every enabled service is requested."
             ),
         ] = None,
     ) -> dict[str, Any]:
-        """Connect locally with loopback OAuth or return a remote incremental-consent URL."""
+        """Connect the user's Google account, or add services to an existing connection, so Workspace tools can run.
+        In local mode (no remote OAuth callback configured) it runs Google's browser consent flow on the server machine
+        and waits up to 180 seconds by default, unless the stored grant already covers every enabled service. In remote
+        mode it returns a one-time authorization_url, valid for 10 minutes, for the user to open. Returns state,
+        connected and granted_capabilities locally, or authorization_url, expires_at and requested_scopes remotely;
+        after remote consent call get_google_connection_status."""
         if not is_remote_oauth_mode():
             return await run_blocking(connect_local_google_account, capabilities)
         principal = current_principal()
@@ -233,40 +254,69 @@ def register_connection_tools(server: FastMCP) -> None:
     @server.tool(name="get_google_connection_status")
     async def get_google_connection_status(
         capability: Annotated[
-            str | None,
+            CapabilityName | None,
             (
-                "Single capability name to check granted scopes for, e.g. 'gmail' or 'calendar'; "
-                "omit to report overall connection state without a per-capability scope check."
+                "One service to verify, e.g. 'calendar'; if the grant lacks its scopes, state is "
+                "missing_scopes. Omit to report the overall connection only."
             ),
         ] = None,
     ) -> dict[str, Any]:
-        """Report whether the authenticated MCP user has connected Google Workspace."""
-        return await run_blocking(google_connection_status, capability)
+        """Check whether the calling user has a stored Google connection and which services it grants, and what this
+        server offers, without calling Google. Use it before connect_google_workspace, after a consent finishes, or to
+        learn the active tool tier; for remote users tools/list already reflects the current grants, so list tools
+        again after consent. Returns state (connected, refresh_required, missing_scopes, reauth_required, not_connected
+        or error), connected, granted_capabilities, granted_scopes, expires_at, an action hint when the user must
+        reconnect, and server (tool_tier, enabled_namespaces, optional_namespaces, oauth_capabilities, file_inputs, tool_search)."""
+        from ..tool_discovery import tool_search_enabled  # imports auth; resolved at call time
+
+        status = await run_blocking(google_connection_status, capability)
+        optional = {
+            "apps": is_apps_dashboard_enabled(),
+            "chat": is_chat_enabled(),
+            "gemini": is_gemini_enabled(),
+            "keep": is_keep_enabled(),
+            "meet": is_meet_enabled(),
+        }
+        expires_at = status.get("expires_at")
+        action = status.get("action")
+        return {
+            "state": str(status.get("state")),
+            "connected": bool(status.get("connected")),
+            "granted_capabilities": list(status.get("granted_capabilities", [])),
+            "granted_scopes": list(status.get("granted_scopes", [])),
+            "checked_capability": str(capability) if capability is not None else None,
+            "required_scopes": list(status.get("required_scopes", [])),
+            "expires_at": str(expires_at) if expires_at is not None else None,
+            "action": str(action) if action is not None else None,
+            # What this deployment offers, from its configuration alone.
+            "server": {
+                "tool_tier": str(tool_tier()),
+                "tool_tiers": list(TOOL_TIERS),
+                "enabled_namespaces": sorted([*_CORE_NAMESPACES, *(name for name, on in optional.items() if on)]),
+                "optional_namespaces": {
+                    "apps": bool(optional["apps"]),
+                    "chat": bool(optional["chat"]),
+                    "gemini": bool(optional["gemini"]),
+                    "keep": bool(optional["keep"]),
+                    "meet": bool(optional["meet"]),
+                },
+                "oauth_capabilities": sorted(CAPABILITY_SCOPES),
+                "file_inputs": {
+                    "remote": "Call uploads_file_manager, then pass the upload's uploaded_file handle.",
+                    "local": "Trusted stdio clients may pass local filesystem paths.",
+                    "drive": "Gemini media tools also accept drive_file_id.",
+                },
+                "tool_search": bool(tool_search_enabled()),
+            },
+        }
 
     @server.tool(name="disconnect_google_workspace")
-    async def disconnect_google_workspace_tool(confirm: bool = False) -> dict[str, Any]:
-        """Remove only the authenticated user's encrypted Google OAuth credentials."""
-        return await run_blocking(disconnect_google_account, confirm=confirm)
-
-    @server.tool(name="refresh_workspace_catalog")
-    async def refresh_workspace_catalog() -> dict[str, Any]:
-        """Report the caller's current Google grants after consent or disconnection.
-
-        tools/list is evaluated against the caller's current grants on every
-        request, so no refresh is needed for the catalog to change: list tools
-        again. No tools/list_changed notification is sent.
-        """
-        from .grants import read_grant_async
-
-        grant = await read_grant_async()
-        return {
-            "status": "catalog_current",
-            "connected": grant.connected,
-            "granted_capabilities": sorted(grant.capabilities),
-            "grant_revision": grant.revision,
-            "notification_sent": False,
-            "next_action": "Call tools/list again; it reflects these grants on every request.",
-        }
+    async def disconnect_google_workspace_tool(ctx: Context | None = None) -> dict[str, Any]:
+        """Disconnect the calling user's Google account: revoke the grant at Google and delete this user's stored
+        credentials; other users' connections are untouched. The user is asked to confirm first, and the call returns
+        status 'cancelled' if declined. Returns status 'disconnected' with grant_revoked and revocation_error; the
+        stored credentials are deleted even when revocation fails. Reconnect later with connect_google_workspace."""
+        return await run_blocking(disconnect_google_account)
 
 
 #: Authorization-response issuers accepted from Google (RFC 9207). Google is

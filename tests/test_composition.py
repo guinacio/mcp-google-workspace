@@ -24,8 +24,9 @@ def test_composition_mounts_default_namespaces(monkeypatch):
     tool_names = anyio.run(_list_tool_names, workspace)
 
     assert "gmail_send_email" in tool_names
-    assert "gmail_reply_email" in tool_names
-    assert "gmail_reply_all_email" in tool_names
+    assert "gmail_reply" in tool_names
+    assert "gmail_reply_email" not in tool_names
+    assert "gmail_reply_all_email" not in tool_names
     assert "gmail_search_emails" in tool_names
     assert "gmail_read_emails" in tool_names
     assert "gmail_get_mail_digest" in tool_names
@@ -39,8 +40,9 @@ def test_composition_mounts_default_namespaces(monkeypatch):
     assert "calendar_read_events" in tool_names
     assert "calendar_get_calendar_digest" in tool_names
     assert "calendar_get_calendar_context" in tool_names
-    assert "calendar_check_time_availability" in tool_names
-    assert "calendar_find_common_free_slots" in tool_names
+    assert "calendar_find_free_time" in tool_names
+    assert "calendar_check_time_availability" not in tool_names
+    assert "calendar_find_common_free_slots" not in tool_names
     assert "calendar_respond_to_event" in tool_names
     assert "calendar_get_events" not in tool_names
     assert "calendar_get_event" not in tool_names
@@ -48,11 +50,14 @@ def test_composition_mounts_default_namespaces(monkeypatch):
     assert "calendar_list_event_attachments" not in tool_names
     assert "drive_list_files" in tool_names
     assert "sheets_get_spreadsheet" in tool_names
-    assert "docs_get_document" in tool_names
+    assert "docs_read_document" in tool_names
     assert "tasks_list_tasklists" in tool_names
-    assert "people_list_contacts" in tool_names
+    assert "people_search_contacts" in tool_names
     assert "forms_get_form" in tool_names
-    assert "slides_get_presentation" in tool_names
+    assert "slides_read_presentation" in tool_names
+    # Extended-tier tools stay out of the default (core) catalog.
+    assert "docs_batch_update_document" not in tool_names
+    assert "gmail_manage_filters" not in tool_names
     assert "apps_get_dashboard" not in tool_names
     assert "chat_create_message" not in tool_names
     assert "gemini_generate_image" not in tool_names

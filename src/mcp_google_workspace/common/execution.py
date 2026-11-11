@@ -65,9 +65,13 @@ def background_task_id() -> str | None:
 
 
 def qualified_tool_name(name: str, namespace: str | None) -> str:
-    if namespace and not name.startswith(f"{namespace}_"):
-        return f"{namespace}_{name}"
-    return name
+    """Published name of a tool registered as *name* on a server mounted at *namespace*.
+
+    Mounted servers register local names, so the prefix is always added: a local
+    name that already starts with its namespace (``tasks_digest``) is published
+    doubled (``tasks_tasks_digest``).
+    """
+    return f"{namespace}_{name}" if namespace else name
 
 
 def _convert(error: Exception) -> Any:

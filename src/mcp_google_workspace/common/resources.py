@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlparse, urlunparse
 
 from pydantic import BaseModel, ConfigDict, Field
 import mcp.types as mt
@@ -36,6 +36,27 @@ _SCHEMES = {
 }
 
 
+# Query parameters Google appends to share and view links to attribute the
+# click (``usp=drivesdk``, ``ouid=<user id>``); they carry no meaning for the
+# link itself. Every other parameter (a Calendar link's ``eid``) is kept.
+_TRACKING_PARAMETERS = frozenset({"usp", "ouid", "rtpof", "sd", "pli", "authuser"})
+
+
+def clean_web_url(url: str | None) -> str | None:
+    """Drop tracking query parameters from a Google web link, keeping the rest."""
+    if not url:
+        return url
+    parsed = urlparse(url)
+    if not parsed.query:
+        return url
+    kept = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key not in _TRACKING_PARAMETERS and not key.startswith("utm_")
+    ]
+    return urlunparse(parsed._replace(query=urlencode(kept)))
+
+
 def resource_handle(
     kind: str,
     resource_id: str,
@@ -46,6 +67,7 @@ def resource_handle(
     modified_at: str | None = None,
     web_url: str | None = None,
 ) -> dict[str, Any]:
+    """A stable handle for one Workspace resource; fields that are unknown are omitted."""
     if kind not in _SCHEMES:
         raise ValueError(f"Unsupported resource kind: {kind}")
     handle = ResourceHandle(
@@ -56,9 +78,9 @@ def resource_handle(
         uri=f"{_SCHEMES[kind]}:///{quote(resource_id, safe='')}",
         etag=etag,
         modified_at=modified_at,
-        web_url=web_url,
+        web_url=clean_web_url(web_url),
     )
-    return handle.model_dump()
+    return handle.model_dump(exclude_none=True)
 
 
 def parse_resource_uri(uri: str) -> tuple[str, str]:
@@ -76,27 +98,75 @@ _CONTAINER_KINDS = {
     "messages": "gmail_message",
     "threads": "gmail_thread",
     "events": "calendar_event",
-    "connections": "contact",
+    "contacts": "contact",
     "tasks": "task",
+}
+
+# Lists named for what they group rather than for the resource, per namespace.
+_NAMESPACE_CONTAINER_KINDS = {
+    "tasks": {"overdue": "task", "upcoming": "task", "unscheduled": "task"},
+    "calendar": {"requires_response": "calendar_event"},
+}
+
+# Keys that hold one resource of a kind, e.g. ``{"file": {...}}``.
+_SINGLE_KINDS = {
+    "file": "drive_file",
+    "event": "calendar_event",
+    "contact": "contact",
+    "task": "task",
+}
+
+# Handle fields are left out when the item already carries the same fact under
+# one of these keys: a handle attached to an item adds only what it lacks.
+_ITEM_EQUIVALENTS = {
+    "name": ("name", "title", "summary"),
+    "mime_type": ("mime_type", "mimeType"),
+    "modified_at": ("modified_at", "updated_at", "modifiedTime", "updated"),
+    "web_url": ("web_url", "url", "webViewLink", "htmlLink"),
+    "etag": ("etag",),
 }
 
 
 def _handle_for(kind: str, item: dict[str, Any]) -> dict[str, Any] | None:
-    resource_id = item.get("resourceName") if kind == "contact" else item.get("id")
+    if kind == "contact":
+        resource_id = item.get("resource_name") or item.get("resourceName")
+    elif kind == "task" and "status" not in item:
+        # A task always has a status; a task list (same namespace, also an
+        # ``id``) does not, and must not get a handle to a task that does not exist.
+        return None
+    else:
+        resource_id = item.get("id")
     if not isinstance(resource_id, str) or not resource_id:
         return None
+
+    def missing(field: str) -> bool:
+        return not any(key in item for key in _ITEM_EQUIVALENTS[field])
+
     return resource_handle(
         kind,
         resource_id,
-        name=item.get("name") or item.get("summary") or item.get("title") or item.get("threadId"),
-        mime_type=item.get("mimeType") or item.get("mime_type"),
-        etag=item.get("etag"),
-        modified_at=item.get("modifiedTime") or item.get("updated"),
-        web_url=item.get("webViewLink") or item.get("htmlLink"),
+        name=(item.get("name") or item.get("summary") or item.get("title")) if missing("name") else None,
+        mime_type=(item.get("mimeType") or item.get("mime_type")) if missing("mime_type") else None,
+        etag=item.get("etag") if missing("etag") else None,
+        modified_at=(item.get("modifiedTime") or item.get("updated")) if missing("modified_at") else None,
+        web_url=(item.get("webViewLink") or item.get("htmlLink")) if missing("web_url") else None,
     )
 
 
+def _attach(item: Any, kind: str) -> None:
+    if isinstance(item, dict) and "resource" not in item:
+        handle = _handle_for(kind, item)
+        if handle is not None:
+            item["resource"] = handle
+
+
 def add_resource_handles(payload: dict[str, Any], namespace: str) -> None:
+    """Attach a ``resource`` handle to every Workspace resource in a result.
+
+    The handle is the cross-tool reference (``uri`` for
+    resolve_workspace_resource); attached to an item it carries only the kind,
+    id and uri plus whatever the item does not already say itself.
+    """
     root_kinds = {
         "drive": "drive_file",
         "gmail": "gmail_message",
@@ -104,19 +174,16 @@ def add_resource_handles(payload: dict[str, Any], namespace: str) -> None:
         "people": "contact",
         "tasks": "task",
     }
-    if "resource" not in payload and namespace in root_kinds:
-        handle = _handle_for(root_kinds[namespace], payload)
-        if handle is not None:
-            payload["resource"] = handle
-    for key, kind in _CONTAINER_KINDS.items():
+    if namespace in root_kinds:
+        _attach(payload, root_kinds[namespace])
+    containers = {**_CONTAINER_KINDS, **_NAMESPACE_CONTAINER_KINDS.get(namespace, {})}
+    for key, kind in containers.items():
         items = payload.get(key)
-        if not isinstance(items, list):
-            continue
-        for item in items:
-            if isinstance(item, dict) and "resource" not in item:
-                handle = _handle_for(kind, item)
-                if handle is not None:
-                    item["resource"] = handle
+        if isinstance(items, list):
+            for item in items:
+                _attach(item, kind)
+    for key, kind in _SINGLE_KINDS.items():
+        _attach(payload.get(key), kind)
 
 
 class ResourceHandleMiddleware(Middleware):

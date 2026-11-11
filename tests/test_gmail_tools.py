@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import threading
 from collections.abc import Callable
 from email import policy
 from email.parser import BytesParser
@@ -14,6 +15,7 @@ from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 from mcp_google_workspace.common.async_ops import execute_google_request
+from mcp_google_workspace.common.errors import classify_error
 from mcp_google_workspace.gmail.helpers import gather_in_order
 from mcp_google_workspace.gmail.mime_utils import (
     build_email_message,
@@ -29,6 +31,8 @@ from mcp_google_workspace.gmail.server import gmail_mcp
 import mcp_google_workspace.gmail.tools.history as gmail_history
 import mcp_google_workspace.gmail.tools.messages as gmail_messages
 import mcp_google_workspace.gmail.tools.search as gmail_search
+
+from consent_testing import answer_consent, gated
 
 
 class _ToolCapture:
@@ -137,16 +141,34 @@ def test_extract_message_bodies():
     assert "<p>html</p>" in bodies["html"]
 
 
-def test_send_email_defaults_to_no_confirmation():
-    request = SendEmailRequest(
-        recipients={"to": ["a@example.com"]},
-        subject="Test",
+@pytest.mark.parametrize("accepted", [False, True])
+def test_send_email_always_asks_before_sending(monkeypatch, accepted) -> None:
+    """There is no flag to skip the question: every send is previewed and asked first."""
+    assert "confirm_send" not in SendEmailRequest.model_fields
+    service, execute, sent_bodies = _reply_api({"id": "unused", "threadId": "thread-new"})
+    capture = _ToolCapture()
+    gmail_messages.register(capture)  # type: ignore[arg-type]
+    monkeypatch.setattr(gmail_messages, "gmail_service", lambda: service)
+    monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
+    answers = answer_consent(monkeypatch, accepted)
+    send = gated(capture.tools["send_email"], "gmail_send_email")
+
+    result = anyio.run(
+        lambda: send(subject="Test", to=["a@example.com"], text_body="Hello", ctx=None)
     )
 
-    assert request.confirm_send is False
+    assert answers.asked == [
+        (
+            "send_email",
+            "Send this email?\nTo: a@example.com\nCc: (none)\nBcc: (none)\nRecipients: 1 in total\n"
+            "Subject: Test\nText: Hello\nAttachments: 0",
+        )
+    ]
+    assert len(sent_bodies) == (1 if accepted else 0)
+    assert result["status"] == ("sent" if accepted else "cancelled")
 
 
-def test_reply_email_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> None:
+def test_reply_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> None:
     source = {
         "id": "source-1",
         "threadId": "thread-1",
@@ -168,7 +190,7 @@ def test_reply_email_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> Non
     monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools["reply_email"](
+        return await capture.tools["reply"](
             "source-1", text_body="Thanks for the update."
         )
 
@@ -186,7 +208,7 @@ def test_reply_email_uses_gmail_thread_and_rfc_reply_headers(monkeypatch) -> Non
     assert str(message["References"]) == "<root@example.com> <source-1@example.com>"
 
 
-def test_reply_all_email_includes_participants_once_and_excludes_self(
+def test_reply_all_includes_participants_once_and_excludes_self(
     monkeypatch,
 ) -> None:
     source = {
@@ -215,8 +237,8 @@ def test_reply_all_email_includes_participants_once_and_excludes_self(
     monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools["reply_all_email"](
-            "source-2", html_body="<p>Works for me.</p>"
+        return await capture.tools["reply"](
+            "source-2", reply_all=True, html_body="<p>Works for me.</p>"
         )
 
     result = anyio.run(call_tool)
@@ -232,8 +254,8 @@ def test_reply_all_email_includes_participants_once_and_excludes_self(
     assert str(message["References"]) == "<source-2@example.com>"
 
 
-@pytest.mark.parametrize("tool_name", ["reply_email", "reply_all_email"])
-def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, tool_name) -> None:
+@pytest.mark.parametrize("reply_all", [False, True])
+def test_declined_reply_sends_nothing(monkeypatch, reply_all) -> None:
     source = {
         "id": "source-cancelled",
         "threadId": "thread-cancelled",
@@ -252,33 +274,33 @@ def test_cancelled_reply_returns_schema_safe_arrays(monkeypatch, tool_name) -> N
     monkeypatch.setattr(gmail_messages, "gmail_service", lambda: service)
     monkeypatch.setattr(gmail_messages, "execute_google_request", execute)
 
-    class DecliningContext:
-        # Legacy (handshake-era) request from a client that declared
-        # elicitation, where the adapter's imperative branch applies.
-        is_background_task = False
-        request_context = SimpleNamespace(protocol_version="2025-11-25")
-        session = SimpleNamespace(client_capabilities=SimpleNamespace(elicitation=object()))
-
-        async def info(self, _message: str) -> None:
-            return None
-
-        async def elicit(self, *_args, **_kwargs):
-            return SimpleNamespace(action="decline", data=None)
+    answers = answer_consent(monkeypatch, False)
+    reply = gated(capture.tools["reply"], "gmail_reply")
 
     async def call_tool() -> dict[str, Any]:
-        return await capture.tools[tool_name](
+        return await reply(
             "source-cancelled",
+            reply_all=reply_all,
             text_body="Thanks for the update.",
-            confirm_send=True,
-            ctx=DecliningContext(),
+            ctx=None,
         )
 
     result = anyio.run(call_tool)
 
-    assert result["status"] == "cancelled"
-    assert result["to"] == []
-    assert result["cc"] == []
-    assert result["label_ids"] == []
+    assert result == {
+        "status": "cancelled",
+        "action": "reply_all_email" if reply_all else "reply_email",
+        "reason": "The user declined; nothing was changed.",
+    }
+    # The preview names the real recipients, read from the source message.
+    assert answers.asked == [
+        (
+            "reply_all_email" if reply_all else "reply_email",
+            f"{'Reply all' if reply_all else 'Reply'} to this email?\nTo: alice@example.com\nCc: (none)\n"
+            "Bcc: (none)\nRecipients: 1 in total\nSubject: Project update\nText: Thanks for the update.\n"
+            "Attachments: 0",
+        )
+    ]
     assert sent_bodies == []
 
 
@@ -306,8 +328,9 @@ def test_envelope_classifies_and_cleans_a_message():
     assert result["is_newsletter"] is True
     assert result["is_automated"] is True
     assert result["date"] == "2026-07-09T07:00:00-03:00"
-    assert result["date_timezone"] == "America/Sao_Paulo"
-    assert result["source_date"] == "Wed, 9 Jul 2026 10:00:00 +0000"
+    # The account zone is stated once per response, and the raw Date header
+    # only under gmail_read_emails format=full (details.date_header).
+    assert "date_timezone" not in result and "source_date" not in result
 
 
 def test_clean_message_content_collapses_quote_and_truncates():
@@ -316,8 +339,27 @@ def test_clean_message_content_collapses_quote_and_truncates():
 
     result = clean_message_content(message, limit=10)
 
-    assert result["body"] == text[:10]
+    # A 10-character page backs off to the word break instead of "Current re".
+    cleaned = "Current reply\n\n[quoted: 2 earlier messages in thread]"
+    assert text.startswith("Current reply")
+    assert result["body"] == "Current "
     assert result["truncated"] is True
+    assert result["next_offset"] == 8
+    assert result["quoted_messages_collapsed"] == 2
+
+    second = clean_message_content(message, offset=result["next_offset"], limit=10)
+    assert second["body"] == "reply\n\n"
+    assert second["next_offset"] == 15
+    assert second["body_sha256"] == result["body_sha256"]
+    assert second["body_chars"] == result["body_chars"] == len(cleaned)
+
+    pages, offset = [], 0
+    while offset is not None:
+        page = clean_message_content(message, offset=offset, limit=10)
+        pages.append(page["body"])
+        offset = page["next_offset"]
+    assert "".join(pages) == cleaned
+    assert all(len(page) <= 10 for page in pages)
 
 
 def test_invalid_grant_from_unknown_request_preserves_token_and_has_actionable_error():
@@ -439,7 +481,7 @@ def test_check_mail_updates_skips_deleted_history_messages(monkeypatch: pytest.M
 
     result = asyncio.run(scenario())
 
-    assert result["new_count"] == 1
+    assert result["count"] == 1
     assert result["next_history_id"] == "200"
     assert result["skipped_deleted_count"] == 1
     assert result["skipped_deleted_message_ids"] == ["deleted"]
@@ -497,6 +539,9 @@ def test_read_emails_has_one_consistent_batch_shape_and_isolates_missing_ids(
     assert result["messages"][0]["id"] == "available"
     assert result["messages"][0]["to"] == "me@example.com"
     assert result["messages"][0]["bodies_omitted"] is True
+    # The shared list envelope, beside the missing-ID fields (2.0.1).
+    assert (result["count"], result["has_more"], result["next_page_token"]) == (1, False, None)
+    assert result["fetched_at"]
 
 
 def _labelled_message(message_id: str, labels: list[str], sender: str, subject: str) -> dict:
@@ -586,7 +631,7 @@ def test_check_mail_updates_returns_received_and_sent_messages_without_triage(
 
     result = asyncio.run(scenario())
 
-    assert result["new_count"] == 3
+    assert result["count"] == 3
     assert [item["id"] for item in result["messages"]] == ["sent-1", "linkedin-1", "direct-1"]
     assert {item["id"]: item["direction"] for item in result["messages"]} == {
         "sent-1": "sent",
@@ -649,6 +694,58 @@ class _SearchService:
         return _SearchUsers()
 
 
+class _ConcurrentSearchMessages:
+    def list(self, **kwargs) -> _SearchRequest:
+        return _SearchRequest("list", query=kwargs.get("q"))
+
+    def get(self, *, id: str, **kwargs) -> _SearchRequest:
+        assert "fields" in kwargs  # search asks for the envelope mask, not bodies
+        return _SearchRequest("message", id)
+
+
+class _ConcurrentSearchService:
+    def users(self) -> Any:
+        return SimpleNamespace(messages=_ConcurrentSearchMessages)
+
+
+def test_search_emails_fetches_details_concurrently_and_keeps_result_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ids = [f"m-{index}" for index in range(6)]
+    in_flight = 0
+    peak = 0
+
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    async def fake_execute(request: _SearchRequest) -> dict:
+        nonlocal in_flight, peak
+        if request.kind == "list":
+            return {"messages": [{"id": message_id} for message_id in ids], "resultSizeEstimate": len(ids)}
+        assert request.message_id is not None
+        in_flight += 1
+        peak = max(peak, in_flight)
+        # Later hits finish first; the response must still follow Gmail's order.
+        await anyio.sleep(0.02 if request.message_id == "m-0" else 0.001)
+        in_flight -= 1
+        return _labelled_message(request.message_id, ["INBOX"], "Alice <alice@example.com>", request.message_id)
+
+    monkeypatch.setattr(gmail_search, "gmail_service", _ConcurrentSearchService)
+    monkeypatch.setattr(gmail_search, "resolve_user_timezone", fake_timezone)
+    monkeypatch.setattr(gmail_search, "execute_google_request", fake_execute)
+
+    async def scenario() -> dict:
+        async with Client(gmail_mcp) as client:
+            result = await client.call_tool("search_emails", {"query": "from:alice"})
+            return result.structured_content or result.data
+
+    result = anyio.run(scenario)
+
+    assert [message["id"] for message in result["messages"]] == ids
+    assert result["count"] == len(ids)
+    assert peak > 1, "message details were fetched one at a time"
+
+
 def test_get_mail_digest_returns_received_and_sent_without_triage_or_thread_deduplication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -695,7 +792,7 @@ def test_get_mail_digest_returns_received_and_sent_without_triage_or_thread_dedu
 
     result = asyncio.run(scenario())
 
-    assert result["message_count"] == 4
+    assert result["count"] == 4
     assert [item["id"] for item in result["messages"]] == ["sent-1", "linkedin-1", "person-1", "person-2"]
     assert {item["id"]: item["direction"] for item in result["messages"]} == {
         "sent-1": "sent",
@@ -705,6 +802,8 @@ def test_get_mail_digest_returns_received_and_sent_without_triage_or_thread_dedu
     }
     assert "people" not in result
     assert "automated" not in result
+    # The digest is not a checkpoint source (gmail_check_mail_updates is); no always-null cursor.
+    assert "next_history_id" not in result
     for message in result["messages"]:
         assert not {
             "category",
@@ -756,19 +855,44 @@ def test_gather_in_order_surfaces_the_original_worker_error() -> None:
         asyncio.run(scenario())
 
 
+def test_gather_in_order_surfaces_one_error_when_several_workers_fail() -> None:
+    """Parallel fetches hit by the same 429 still classify as ``rate_limited``."""
+
+    # Google requests run in worker threads that a cancelled task group still
+    # waits for, so every in-flight fetch reports its own failure. The barrier
+    # makes all three in flight before any fails.
+    barrier = threading.Barrier(3, timeout=5)
+
+    def fetch() -> int:
+        barrier.wait()
+        raise HttpError(Response({"status": "429"}), b'{"error": {"code": 429, "message": "Too many requests"}}')
+
+    async def worker(n: int) -> int:
+        return await anyio.to_thread.run_sync(fetch)
+
+    async def scenario() -> list[int]:
+        return await gather_in_order([1, 2, 3], worker)
+
+    with pytest.raises(HttpError) as raised:
+        asyncio.run(scenario())
+    rpc_code, envelope = classify_error(raised.value)
+    assert rpc_code is None
+    assert envelope["code"] == "rate_limited"
+
+
 @pytest.mark.parametrize(
-    ("tool_name", "arguments"),
+    "arguments",
     [
-        ("apply_labels", {"message_id": "m1"}),
-        ("move_email", {"message_id": "m1"}),
-        ("batch_modify", {"message_ids": ["m1"]}),
+        {"message_ids": ["m1"]},
+        {"thread_id": "t1"},
+        {"message_ids": ["m1", "m2"], "add_labels": []},
     ],
 )
-def test_label_modify_tools_reject_empty_label_id_lists(tool_name: str, arguments: dict) -> None:
-    # Matches modify_thread: empty add/remove lists must raise, not silently no-op.
+def test_modify_messages_rejects_a_call_that_changes_nothing(arguments: dict) -> None:
+    # Empty label lists and no flags must raise, not silently no-op.
     async def scenario() -> None:
         async with Client(gmail_mcp) as client:
-            await client.call_tool(tool_name, arguments)
+            await client.call_tool("modify_messages", arguments)
 
-    with pytest.raises(ToolError, match="At least one of add_label_ids/remove_label_ids"):
+    with pytest.raises(ToolError, match="Nothing to change"):
         asyncio.run(scenario())

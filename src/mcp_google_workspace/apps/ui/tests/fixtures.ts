@@ -114,9 +114,9 @@ export const dashboard = {
 };
 
 export const calendarCatalog = {
-  items: [
-    { id: "primary", summary: "Primary", primary: true },
-    { id: `cal${ATTR_BREAKOUT}`, summary: `Shared ${PAYLOAD}`, access_role: `reader${ATTR_BREAKOUT}` },
+  calendars: [
+    { id: "primary", name: "Primary", primary: true },
+    { id: `cal${ATTR_BREAKOUT}`, name: `Shared ${PAYLOAD}`, access_role: `reader${ATTR_BREAKOUT}` },
   ],
 };
 

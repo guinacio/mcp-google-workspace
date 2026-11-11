@@ -3,12 +3,12 @@
     "_meta": {
       "io.modelcontextprotocol/serverInfo": {
         "name": "google-workspace-mcp",
-        "version": "4.1.6"
+        "version": "<SERVER_VERSION>"
       }
     },
     "content": [
       {
-        "text": "The uploaded file handle was not found or has expired. [code: upload_expired_or_missing] Next step: {\"arguments\":{},\"tool\":\"files_file_manager\"}",
+        "text": "The uploaded file handle was not found or has expired. [code: upload_expired_or_missing] Next step: {\"arguments\":{},\"tool\":\"uploads_file_manager\"}",
         "type": "text"
       }
     ],
@@ -21,7 +21,7 @@
       "provider_status": null,
       "required_action": {
         "arguments": {},
-        "tool": "files_file_manager"
+        "tool": "uploads_file_manager"
       },
       "retry_after": null,
       "retryable": false

@@ -1,0 +1,148 @@
+{
+  "element_count": 4,
+  "form": {
+    "formId": "1FAIpQLRawQuizForm0123456789abcdefghijklmnopq",
+    "info": {
+      "description": "Answer every question before your first shift.",
+      "documentTitle": "Safety quiz (2027)",
+      "title": "Safety quiz"
+    },
+    "items": [
+      {
+        "itemId": "1a2b3c4d",
+        "questionItem": {
+          "image": {
+            "altText": "Floor plan",
+            "contentUri": "https://lh3.googleusercontent.com/raw-question-image",
+            "properties": {
+              "alignment": "CENTER",
+              "width": 640
+            }
+          },
+          "question": {
+            "choiceQuestion": {
+              "options": [
+                {
+                  "image": {
+                    "altText": "Lift lobby",
+                    "contentUri": "https://lh3.googleusercontent.com/raw-option-image",
+                    "properties": {
+                      "alignment": "LEFT",
+                      "width": 260
+                    }
+                  },
+                  "value": "Next to the lifts"
+                },
+                {
+                  "value": "Through the kitchen"
+                },
+                {
+                  "isOther": true
+                }
+              ],
+              "shuffle": true,
+              "type": "RADIO"
+            },
+            "grading": {
+              "correctAnswers": {
+                "answers": [
+                  {
+                    "value": "Next to the lifts"
+                  }
+                ]
+              },
+              "pointValue": 2,
+              "whenRight": {
+                "text": "Correct."
+              },
+              "whenWrong": {
+                "material": [
+                  {
+                    "link": {
+                      "displayText": "Floor plan",
+                      "uri": "https://example.com/floor-plan"
+                    }
+                  }
+                ],
+                "text": "Check the floor plan."
+              }
+            },
+            "questionId": "5e6f7a8b",
+            "required": true
+          }
+        },
+        "title": "Where is the nearest fire exit?"
+      },
+      {
+        "itemId": "2b3c4d5e",
+        "questionItem": {
+          "question": {
+            "fileUploadQuestion": {
+              "folderId": "0BRawUploadFolder",
+              "maxFileSize": "10485760",
+              "maxFiles": 1,
+              "types": [
+                "PDF",
+                "IMAGE"
+              ]
+            },
+            "questionId": "6f7a8b9c",
+            "required": true
+          }
+        },
+        "title": "Upload your signed checklist"
+      },
+      {
+        "itemId": "3c4d5e6f",
+        "title": "Safety briefing",
+        "videoItem": {
+          "caption": "Watch before answering",
+          "video": {
+            "properties": {
+              "alignment": "CENTER",
+              "width": 640
+            },
+            "youtubeUri": "https://www.youtube.com/watch?v=raw-video"
+          }
+        }
+      },
+      {
+        "imageItem": {
+          "image": {
+            "altText": "Site map",
+            "contentUri": "https://lh3.googleusercontent.com/raw-site-map",
+            "properties": {
+              "alignment": "CENTER"
+            }
+          }
+        },
+        "itemId": "4d5e6f7a",
+        "title": "Site map"
+      }
+    ],
+    "linkedSheetId": "1RawLinkedResponses0123456789abcdefghijk",
+    "publishSettings": {
+      "publishState": {
+        "isAcceptingResponses": true,
+        "isPublished": true
+      }
+    },
+    "responderUri": "https://docs.google.com/forms/d/e/1FAIpQLRawQuizResponder0123456789/viewform?usp=sharing",
+    "revisionId": "00000041",
+    "settings": {
+      "emailCollectionType": "VERIFIED",
+      "quizSettings": {
+        "isQuiz": true
+      }
+    }
+  },
+  "form_id": "1FAIpQLRawQuizForm0123456789abcdefghijklmnopq",
+  "format": "raw",
+  "next_offset": null,
+  "raw_chars": 2015,
+  "raw_sha256": "b25cb763fcfb13fae7fb7c795db82be038ebbe44a50af86a1e8bd02c68d5539d",
+  "responder_url": "https://docs.google.com/forms/d/e/1FAIpQLRawQuizResponder0123456789/viewform",
+  "revision_id": "00000041",
+  "title": "Safety quiz",
+  "truncated": false
+}

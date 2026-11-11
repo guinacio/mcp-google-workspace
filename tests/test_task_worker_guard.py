@@ -26,6 +26,7 @@ from fastmcp_tasks import TasksExtension, call_tool_task
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
+from consent_testing import WRITE, classify_tools
 from http_harness import LiveServers, SigningKeys, mcp_body, mcp_headers, mint, reserve_sockets
 
 import mcp_google_workspace.auth.google_auth as google_auth
@@ -135,6 +136,7 @@ def task_server_factory(tmp_path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("MCP_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.delenv("MCP_REDIS_URL", raising=False)
     monkeypatch.delenv("MCP_REVOKED_PRINCIPALS", raising=False)
+    classify_tools(monkeypatch, {name: WRITE for name in ("sheets_whoami", "sheets_failing", "sheets_stuck")})
     clear_grant_cache()
     for subject in ("alice", "bob"):
         google_auth.get_token_store().save_credentials_json(
@@ -348,3 +350,24 @@ def test_client_without_the_tasks_extension_runs_task_tools_in_the_foreground(ta
     assert result["resultType"] == "complete"
     assert result["structuredContent"]["subject"] == "bob"
     assert result["structuredContent"]["running"] == 0
+
+
+def test_execution_guard_binds_the_published_name_of_every_mounted_tool() -> None:
+    """The guard authorizes, admits and records a worker run under the published name.
+
+    A local name that already starts with its namespace (``tasks_digest``) is
+    still prefixed: it is published as ``tasks_tasks_digest``.
+    """
+    from contracts.catalog_snapshot import SNAPSHOT_DIR
+
+    from mcp_google_workspace.common.execution import qualified_tool_name
+
+    assert qualified_tool_name("tasks_digest", "tasks") == "tasks_tasks_digest"
+    assert qualified_tool_name("send_email", None) == "send_email"
+    published = {
+        tool["name"]
+        for tool in json.loads((SNAPSHOT_DIR / "catalog_all_optional.json").read_text())["tools"]
+    }
+    for namespace in ("gmail", "calendar", "drive", "sheets", "docs", "tasks", "people", "forms", "slides"):
+        for name in sorted(item for item in published if item.startswith(f"{namespace}_")):
+            assert qualified_tool_name(name.removeprefix(f"{namespace}_"), namespace) == name

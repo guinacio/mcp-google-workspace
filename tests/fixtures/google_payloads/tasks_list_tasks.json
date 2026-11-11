@@ -1,0 +1,96 @@
+{
+  "kind": "tasks#tasks",
+  "etag": "\"LTE3NjQ5ODIzNTk2MTk\"",
+  "nextPageToken": "CgwI0r2zqgYQgMa3ywMSCAoGEgQIABAB",
+  "items": [
+    {
+      "kind": "tasks#task",
+      "id": "Y2xvc2VfY29udHJhY3RzOjE",
+      "etag": "\"LTE3NjQ5ODIzNTk\"",
+      "title": "Send countersigned vendor contract",
+      "updated": "2026-10-28T13:42:10.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/Y2xvc2VfY29udHJhY3RzOjE",
+      "position": "00000000000000000000",
+      "notes": "Collect the signed copies from legal, scan them, and upload the PDFs to the shared Contracts folder. Then email the vendor contact with the countersigned version and the purchase order number, and update the tracking sheet so finance can release the first invoice. If legal still has open comments on the indemnity clause, schedule a 15-minute call with them before Friday.",
+      "status": "needsAction",
+      "due": "2026-10-30T00:00:00.000Z",
+      "links": [],
+      "webViewLink": "https://tasks.google.com/task/Y2xvc2VfY29udHJh?sa=6"
+    },
+    {
+      "kind": "tasks#task",
+      "id": "cmV2aWV3X2RlY2s6Mg",
+      "etag": "\"LTE3NjQ5ODIzNTk\"",
+      "title": "Review quarterly planning deck",
+      "updated": "2026-11-02T22:10:03.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/cmV2aWV3X2RlY2s6Mg",
+      "position": "00000000000000000001",
+      "notes": "Slides 4-9 only.",
+      "status": "needsAction",
+      "due": "2026-11-03T00:00:00.000Z",
+      "links": [
+        {
+          "type": "email",
+          "description": "Q4 planning deck: draft for review",
+          "link": "https://mail.google.com/mail/#all/18f3a2b4c5d6e7f8"
+        }
+      ],
+      "webViewLink": "https://tasks.google.com/task/cmV2aWV3X2RlY2s6?sa=6"
+    },
+    {
+      "kind": "tasks#task",
+      "id": "Ym9va19yb29tOjM",
+      "etag": "\"LTE3NjQ5ODIzNTk\"",
+      "title": "Book the meeting room",
+      "updated": "2026-11-01T09:00:00.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/Ym9va19yb29tOjM",
+      "parent": "cmV2aWV3X2RlY2s6Mg",
+      "position": "00000000000000000000",
+      "status": "needsAction",
+      "due": "2026-11-07T00:00:00.000Z",
+      "links": [],
+      "webViewLink": "https://tasks.google.com/task/Ym9va19yb29tOjM?sa=6"
+    },
+    {
+      "kind": "tasks#task",
+      "id": "cmVuZXdfcGFzc3BvcnQ6NA",
+      "etag": "\"LTE3NjQ5ODIzNTk\"",
+      "title": "Renew passport",
+      "updated": "2026-10-15T18:30:00.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/cmVuZXdfcGFzc3BvcnQ6NA",
+      "position": "00000000000000000002",
+      "status": "needsAction",
+      "due": "2026-11-20T00:00:00.000Z",
+      "links": [],
+      "webViewLink": "https://tasks.google.com/task/cmVuZXdfcGFzc3Bv?sa=6"
+    },
+    {
+      "kind": "tasks#task",
+      "id": "cmVhZF9wYXBlcjo1",
+      "etag": "\"LTE3NjQ5ODIzNTk\"",
+      "title": "Read the caching paper",
+      "updated": "2026-09-30T08:12:45.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/cmVhZF9wYXBlcjo1",
+      "position": "00000000000000000003",
+      "notes": "  https://example.org/papers/caching.pdf  ",
+      "status": "needsAction",
+      "links": [],
+      "webViewLink": "https://tasks.google.com/task/cmVhZF9wYXBlcjo1?sa=6"
+    },
+    {
+      "kind": "tasks#task",
+      "id": "cGF5X3JlbnQ6Ng",
+      "etag": "\"LTE3NjQ5ODIzNTk\"",
+      "title": "Pay rent",
+      "updated": "2026-11-02T21:15:42.000Z",
+      "selfLink": "https://www.googleapis.com/tasks/v1/lists/MDk2NTk0NzE1ODQxMjM0NTY3ODk6MDow/tasks/cGF5X3JlbnQ6Ng",
+      "position": "00000000000000000004",
+      "status": "completed",
+      "due": "2026-11-01T00:00:00.000Z",
+      "completed": "2026-11-02T21:15:42.000Z",
+      "hidden": false,
+      "links": [],
+      "webViewLink": "https://tasks.google.com/task/cGF5X3JlbnQ6Ng?sa=6"
+    }
+  ]
+}

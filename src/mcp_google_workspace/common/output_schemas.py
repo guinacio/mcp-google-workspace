@@ -1,4 +1,15 @@
-"""Derive strict JSON output schemas from tool implementation return paths."""
+"""Derive JSON output schemas from tool implementation return paths.
+
+Every schema produced here is *open* (``additionalProperties: true``): it
+documents the fields a client can rely on without claiming to be exhaustive.
+Every tool returns a response the server builds (2.0.0), but parts of it
+still come from Google (a batchUpdate's ``replies``, a raw document), and a
+return value assembled from a spread (``{**base, ...}``) or a helper the
+inference cannot see carries fields the literal dict does not; a closed
+schema would turn each such field into a client-side validation failure on
+conforming clients (the MCP specification asks clients to validate
+``structuredContent`` against ``outputSchema``).
+"""
 
 from __future__ import annotations
 
@@ -11,8 +22,9 @@ from types import UnionType
 from typing import Annotated, Any, Union, get_args, get_origin
 
 
+# Server-built responses whose fields cannot be read from a literal return.
 _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
-    "prepare_workspace_action": ("status", "commit_token", "expires_at", "impact", "next_action"),
+    "prepare_workspace_action": ("status", "action", "preview", "commit_token", "expires_at", "next_action"),
     "commit_workspace_action": ("status", "tool", "result"),
     "get_dashboard": ("title", "generated_at_utc", "state", "sections", "warnings", "section_errors", "weekly_calendar", "view"),
     "get_weekly_calendar_view": ("state", "week_start", "week_end", "timezone", "total_events", "days", "fallback_text", "view"),
@@ -27,43 +39,6 @@ _OUTPUT_FIELDS: dict[str, tuple[str, ...]] = {
         "date", "date_timezone", "source_date", "snippet", "text_body", "html_body",
         "attachments", "labels", "is_unread",
     ),
-    "list_calendars": ("kind", "etag", "nextPageToken", "nextSyncToken", "items"),
-    "check_time_availability": ("kind", "timeMin", "timeMax", "groups", "calendars"),
-    "get_spreadsheet": ("spreadsheetId", "properties", "sheets", "namedRanges", "spreadsheetUrl", "developerMetadata", "dataSources", "dataSourceSchedules"),
-    "create_spreadsheet": ("spreadsheetId", "properties", "sheets", "namedRanges", "spreadsheetUrl", "developerMetadata", "dataSources", "dataSourceSchedules"),
-    "get_sheet_values": ("range", "majorDimension", "values"),
-    "batch_get_sheet_values": ("spreadsheetId", "valueRanges"),
-    "append_sheet_values": ("spreadsheetId", "tableRange", "updates"),
-    "update_sheet_values": ("spreadsheetId", "updatedRange", "updatedRows", "updatedColumns", "updatedCells", "updatedData"),
-    "batch_update_spreadsheet": ("spreadsheetId", "replies", "updatedSpreadsheet"),
-    "get_document": ("documentId", "title", "body", "headers", "footers", "footnotes", "documentStyle", "namedStyles", "lists", "namedRanges", "revisionId", "suggestionsViewMode", "tabs"),
-    "create_document": ("documentId", "title", "body", "headers", "footers", "footnotes", "documentStyle", "namedStyles", "lists", "namedRanges", "revisionId", "suggestionsViewMode", "tabs"),
-    "append_document_text": ("documentId", "replies", "writeControl"),
-    "replace_document_text": ("documentId", "replies", "writeControl"),
-    "batch_update_document": ("documentId", "replies", "writeControl"),
-    "create_tasklist": ("kind", "id", "etag", "title", "updated", "selfLink"),
-    "create_task": ("kind", "id", "etag", "title", "updated", "selfLink", "parent", "position", "notes", "status", "due", "completed", "deleted", "hidden", "links", "webViewLink", "assignmentInfo"),
-    "update_task": ("kind", "id", "etag", "title", "updated", "selfLink", "parent", "position", "notes", "status", "due", "completed", "deleted", "hidden", "links", "webViewLink", "assignmentInfo"),
-    "complete_task": ("kind", "id", "etag", "title", "updated", "selfLink", "parent", "position", "notes", "status", "due", "completed", "deleted", "hidden", "links", "webViewLink", "assignmentInfo"),
-    "move_task": ("kind", "id", "etag", "title", "updated", "selfLink", "parent", "position", "notes", "status", "due", "completed", "deleted", "hidden", "links", "webViewLink", "assignmentInfo"),
-    "list_contacts": ("connections", "totalPeople", "nextPageToken", "nextSyncToken"),
-    "search_contacts": ("results",),
-    "get_contact": ("resourceName", "etag", "metadata", "names", "emailAddresses", "phoneNumbers", "organizations", "addresses", "biographies", "birthdays", "photos", "urls", "relations", "memberships"),
-    "create_contact": ("resourceName", "etag", "metadata", "names", "emailAddresses", "phoneNumbers", "organizations", "addresses", "biographies", "birthdays", "photos", "urls", "relations", "memberships"),
-    "update_contact": ("resourceName", "etag", "metadata", "names", "emailAddresses", "phoneNumbers", "organizations", "addresses", "biographies", "birthdays", "photos", "urls", "relations", "memberships"),
-    "list_contact_groups": ("contactGroups", "nextPageToken", "totalItems"),
-    "create_contact_group": ("resourceName", "etag", "metadata", "groupType", "name", "formattedName", "memberResourceNames", "memberCount", "clientData"),
-    "modify_contact_group_members": ("notFoundResourceNames", "canNotRemoveLastContactGroupResourceNames"),
-    "get_form": ("formId", "info", "settings", "items", "responderUri", "revisionId", "linkedSheetId"),
-    "create_form": ("formId", "info", "settings", "items", "responderUri", "revisionId", "linkedSheetId"),
-    "batch_update_form": ("form", "replies", "writeControl"),
-    "set_form_publish_settings": ("formId", "publishSettings"),
-    "get_presentation": ("presentationId", "pageSize", "slides", "title", "masters", "layouts", "locale", "revisionId", "notesMaster"),
-    "create_presentation": ("presentationId", "pageSize", "slides", "title", "masters", "layouts", "locale", "revisionId", "notesMaster"),
-    "replace_text_in_presentation": ("presentationId", "replies", "writeControl"),
-    "get_slide_page": ("objectId", "pageType", "pageElements", "pageProperties", "slideProperties", "layoutProperties", "notesProperties", "masterProperties", "revisionId"),
-    "get_slide_thumbnail": ("contentUrl", "width", "height"),
-    "batch_update_presentation": ("presentationId", "replies", "writeControl"),
 }
 
 
@@ -119,15 +94,13 @@ def _registered_schema(tool_name: str) -> dict[str, Any] | None:
         properties[name] = copy.deepcopy(schema)
     return {
         "type": "object",
-        "title": f"{tool_name.replace('_', ' ').title()} response",
-        "description": "Documented structured response returned by this MCP tool.",
         "properties": properties,
         "required": [],
-        "additionalProperties": False,
+        "additionalProperties": True,
     }
 
 
-def _field_description(name: str) -> str:
+def _field_description(name: str) -> str | None:
     special = {
         "status": "Machine-readable operation status.",
         "count": "Number of items in this response.",
@@ -135,11 +108,19 @@ def _field_description(name: str) -> str:
         "has_more": "Whether another page of results is available.",
         "fetched_at": "RFC3339 timestamp when the response was fetched.",
     }
-    return special.get(name, f"Response field: {name.replace('_', ' ')}.")
+    return special.get(name)
+
+
+def _described(schema: dict[str, Any], name: str) -> dict[str, Any]:
+    """Attach the field's shared description, when it has one."""
+    description = _field_description(name)
+    if description is not None:
+        schema.setdefault("description", description)
+    return schema
 
 
 def _named_field_schema(name: str) -> dict[str, Any]:
-    schema: dict[str, Any] = {"description": _field_description(name)}
+    schema: dict[str, Any] = _described({}, name)
     lowered = name.lower()
     if (
         lowered in {"count", "total", "totalitems", "totalpeople", "updatedrows", "updatedcolumns", "updatedcells", "width", "height", "bytes_written"}
@@ -155,14 +136,19 @@ def _named_field_schema(name: str) -> dict[str, Any]:
     elif lowered.endswith(("token", "id", "uri", "url", "time", "date", "status")) or lowered in {"kind", "etag", "title", "message", "mode", "action", "range", "majordimension"}:
         schema["type"] = ["string", "null"]
     elif lowered in {
-        "calendars", "error", "errors", "groups", "headers", "footers", "footnotes", "lists", "namedranges", "section_errors",
+        # ``namedRanges`` is deliberately absent: an object map on Docs, a list on Sheets.
+        "calendars", "error", "errors", "groups", "headers", "footers", "footnotes", "lists", "section_errors",
         "state", "properties", "settings", "metadata", "body", "form", "file", "event", "thread", "updates", "writecontrol", "publishsettings", "optional_namespaces", "file_inputs", "impact", "next_action", "result",
     }:
         schema["type"] = "object"
     elif lowered in {
         "items", "files", "responses", "results", "replies", "connections", "sheets", "slides", "masters", "layouts", "values", "valueranges", "contactgroups", "names", "emailaddresses", "phonenumbers", "organizations", "addresses", "biographies", "birthdays", "photos", "urls", "relations", "memberships", "links", "days", "sections", "warnings", "enabled_namespaces", "oauth_capabilities",
-    } or lowered.endswith("s") and lowered not in {"status", "properties", "settings"}:
+    }:
         schema.update({"type": "array", "items": {}})
+    # Any other name carries no type claim. A plural name is not evidence of
+    # an array: Google returns ``namedStyles`` and ``tabs`` as objects and
+    # ``totalItems`` as an integer, and a wrong claim fails client-side
+    # validation of every successful call.
     return schema
 
 
@@ -301,8 +287,7 @@ def _dict_shape(node: ast.Dict, resolver: _Resolver | None = None) -> dict[str, 
             field_schema = _literal_schema(value, resolver)
             if not field_schema:
                 field_schema = _named_field_schema(key.value)
-            field_schema.setdefault("description", _field_description(key.value))
-            shape[key.value] = field_schema
+            shape[key.value] = _described(field_schema, key.value)
     return shape
 
 
@@ -354,7 +339,7 @@ def _schema_for_shapes(shapes: list[dict[str, dict[str, Any]]]) -> dict[str, Any
         "type": "object",
         "properties": properties,
         "required": [],
-        "additionalProperties": False,
+        "additionalProperties": True,
     }
 
 
@@ -387,10 +372,9 @@ class _FunctionReturns(ast.NodeVisitor):
                 and isinstance(target.slice, ast.Constant)
                 and isinstance(target.slice.value, str)
             ):
-                self.subscript_fields.setdefault(target.value.id, {})[target.slice.value] = {
-                    **_literal_schema(node.value),
-                    "description": _field_description(target.slice.value),
-                }
+                self.subscript_fields.setdefault(target.value.id, {})[target.slice.value] = _described(
+                    _literal_schema(node.value), target.slice.value
+                )
         self.generic_visit(node.value)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
@@ -421,7 +405,7 @@ def infer_tool_output_schema(
     tool_name: str | None = None,
     _seen: set[int] | None = None,
 ) -> dict[str, Any] | None:
-    """Infer a closed object schema from literal dict returns and helper calls."""
+    """Infer an open object schema from literal dict returns and helper calls."""
     if tool_name is not None and (registered := _registered_schema(tool_name)) is not None:
         return registered
     seen = _seen or set()
@@ -514,6 +498,4 @@ def infer_tool_output_schema(
     schema = _schema_for_shapes(shapes)
     if not schema:
         return None
-    schema["title"] = f"{fn.__name__.replace('_', ' ').title()} response"
-    schema["description"] = "Structured response returned by this MCP tool."
     return schema

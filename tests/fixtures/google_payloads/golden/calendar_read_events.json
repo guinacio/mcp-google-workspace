@@ -1,0 +1,154 @@
+{
+  "account_timezone": "America/Sao_Paulo",
+  "calendar_id": "primary",
+  "events": [
+    {
+      "all_day": false,
+      "attachments": [],
+      "attendee_count": 3,
+      "attendees": [
+        {
+          "email": "bruno@example.com",
+          "is_resource": false,
+          "is_self": false,
+          "name": "Bruno Costa",
+          "optional": false,
+          "organizer": true,
+          "response_status": "accepted"
+        },
+        {
+          "email": "ana@example.com",
+          "is_resource": false,
+          "is_self": true,
+          "name": null,
+          "optional": false,
+          "organizer": false,
+          "response_status": "needsAction"
+        },
+        {
+          "email": "carla@example.org",
+          "is_resource": false,
+          "is_self": false,
+          "name": null,
+          "optional": true,
+          "organizer": false,
+          "response_status": "tentative"
+        }
+      ],
+      "description": "Budget, hiring plan, launch dates.",
+      "end": "2026-11-05T11:00:00-03:00",
+      "event_timezone": null,
+      "id": "4m2k9qexample0review",
+      "is_recurring": false,
+      "location": "Room 4",
+      "meeting_url": "https://meet.google.com/abc-defg-hij",
+      "my_response": "needsAction",
+      "organizer": {
+        "email": "bruno@example.com",
+        "name": "Bruno Costa"
+      },
+      "recurrence": [],
+      "recurring_event_id": null,
+      "requires_response": true,
+      "resource": {
+        "id": "4m2k9qexample0review",
+        "kind": "calendar_event",
+        "uri": "gcal-event:///4m2k9qexample0review"
+      },
+      "start": "2026-11-05T10:00:00-03:00",
+      "status": "confirmed",
+      "title": "Quarterly review",
+      "transparency": null,
+      "updated_at": "2026-11-02T06:14:03.512000-03:00",
+      "url": "https://www.google.com/calendar/event?eid=NG0yazlxZXhhbXBsZTByZXZpZXcgYW5hQGV4YW1wbGUuY29t",
+      "visibility": null
+    },
+    {
+      "all_day": true,
+      "attachments": [],
+      "attendee_count": 0,
+      "attendees": [],
+      "description": null,
+      "end": "2026-11-16",
+      "event_timezone": null,
+      "id": "holiday20261115_republic",
+      "is_recurring": false,
+      "location": null,
+      "meeting_url": null,
+      "my_response": null,
+      "organizer": {
+        "email": "ana@example.com",
+        "name": null
+      },
+      "recurrence": [],
+      "recurring_event_id": null,
+      "requires_response": false,
+      "resource": {
+        "id": "holiday20261115_republic",
+        "kind": "calendar_event",
+        "uri": "gcal-event:///holiday20261115_republic"
+      },
+      "start": "2026-11-14",
+      "status": "confirmed",
+      "title": "Out of office",
+      "transparency": "transparent",
+      "updated_at": "2025-11-30T21:00:00-03:00",
+      "url": "https://www.google.com/calendar/event?eid=aG9saWRheTIwMjYxMTE1X3JlcHVibGlj",
+      "visibility": null
+    },
+    {
+      "all_day": false,
+      "attachments": [],
+      "attendee_count": 2,
+      "attendees": [
+        {
+          "email": "ana@example.com",
+          "is_resource": false,
+          "is_self": true,
+          "name": null,
+          "optional": false,
+          "organizer": false,
+          "response_status": "accepted"
+        },
+        {
+          "email": "bruno@example.com",
+          "is_resource": false,
+          "is_self": false,
+          "name": null,
+          "optional": false,
+          "organizer": false,
+          "response_status": "accepted"
+        }
+      ],
+      "description": null,
+      "end": "2026-11-04T09:15:00-03:00",
+      "event_timezone": "UTC",
+      "id": "7standup0example_20261104T120000Z",
+      "is_recurring": true,
+      "location": null,
+      "meeting_url": null,
+      "my_response": "accepted",
+      "organizer": {
+        "email": "c_team0123456789abcdef@group.calendar.google.com",
+        "name": "Team"
+      },
+      "recurrence": [],
+      "recurring_event_id": "7standup0example",
+      "requires_response": false,
+      "resource": {
+        "id": "7standup0example_20261104T120000Z",
+        "kind": "calendar_event",
+        "uri": "gcal-event:///7standup0example_20261104T120000Z"
+      },
+      "start": "2026-11-04T09:00:00-03:00",
+      "status": "confirmed",
+      "title": "Team standup",
+      "transparency": null,
+      "updated_at": "2026-10-01T05:00:00-03:00",
+      "url": "https://www.google.com/calendar/event?eid=N3N0YW5kdXAwZXhhbXBsZV8yMDI2MTEwNFQxMjAwMDBa",
+      "visibility": null
+    }
+  ],
+  "missing_count": 0,
+  "missing_event_ids": []
+}

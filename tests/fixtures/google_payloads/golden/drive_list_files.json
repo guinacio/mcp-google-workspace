@@ -1,0 +1,113 @@
+{
+  "account_timezone": "America/Sao_Paulo",
+  "count": 3,
+  "files": [
+    {
+      "can_download": true,
+      "can_edit": true,
+      "created_at": "2026-09-14T10:02:11.412000-03:00",
+      "description": "Plan for the Q1 launch",
+      "drive_id": null,
+      "id": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg",
+      "kind": "document",
+      "last_modified_by": {
+        "email": "bruno@example.com",
+        "name": "Bruno Costa"
+      },
+      "mime_type": "application/vnd.google-apps.document",
+      "modified_at": "2026-11-02T15:45:03.120000-03:00",
+      "name": "Launch plan",
+      "owned_by_me": true,
+      "owners": [
+        {
+          "email": "ana@example.com",
+          "name": "Ana Lima"
+        }
+      ],
+      "parent_ids": [
+        "0AFolderExample0123456789"
+      ],
+      "resource": {
+        "id": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg",
+        "kind": "drive_file",
+        "uri": "gdrive:///1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg"
+      },
+      "shared": true,
+      "size": null,
+      "size_bytes": null,
+      "starred": false,
+      "trashed": false,
+      "web_url": "https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg/edit"
+    },
+    {
+      "can_download": true,
+      "can_edit": false,
+      "created_at": "2026-10-31T07:00:00-03:00",
+      "description": null,
+      "drive_id": "0ASharedDriveRoot0123",
+      "id": "1PdfFileExample0123456789abcdefghijk",
+      "kind": "file",
+      "last_modified_by": {
+        "email": "finance@example.org",
+        "name": "Finance Bot"
+      },
+      "mime_type": "application/pdf",
+      "modified_at": "2026-10-31T07:00:00-03:00",
+      "name": "Invoice 2026-10.pdf",
+      "owned_by_me": false,
+      "owners": null,
+      "parent_ids": [
+        "0ASharedDriveRoot0123"
+      ],
+      "resource": {
+        "id": "1PdfFileExample0123456789abcdefghijk",
+        "kind": "drive_file",
+        "uri": "gdrive:///1PdfFileExample0123456789abcdefghijk"
+      },
+      "shared": true,
+      "size": "184213",
+      "size_bytes": 184213,
+      "starred": true,
+      "trashed": false,
+      "web_url": "https://drive.google.com/file/d/1PdfFileExample0123456789abcdefghijk/view"
+    },
+    {
+      "can_download": false,
+      "can_edit": true,
+      "created_at": "2025-02-03T06:15:00-03:00",
+      "description": null,
+      "drive_id": null,
+      "id": "0AFolderExample0123456789",
+      "kind": "folder",
+      "last_modified_by": {
+        "email": "ana@example.com",
+        "name": "Ana Lima"
+      },
+      "mime_type": "application/vnd.google-apps.folder",
+      "modified_at": "2026-08-20T18:30:00-03:00",
+      "name": "Projects",
+      "owned_by_me": true,
+      "owners": [
+        {
+          "email": "ana@example.com",
+          "name": "Ana Lima"
+        }
+      ],
+      "parent_ids": [
+        "0AMyDriveRootExample"
+      ],
+      "resource": {
+        "id": "0AFolderExample0123456789",
+        "kind": "drive_file",
+        "uri": "gdrive:///0AFolderExample0123456789"
+      },
+      "shared": false,
+      "size": null,
+      "size_bytes": null,
+      "starred": false,
+      "trashed": false,
+      "web_url": "https://drive.google.com/drive/folders/0AFolderExample0123456789"
+    }
+  ],
+  "next_page_token": "~!!~AI9FV7Q2b3Zt0exampleNextPageToken"
+}

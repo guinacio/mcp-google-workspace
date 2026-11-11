@@ -147,26 +147,32 @@ def test_connection_status_schema_accepts_the_connected_state() -> None:
     properties = anyio.run(schema)
     assert properties["action"]["type"] == ["string", "null"]
     assert properties["checked_capability"]["type"] == ["string", "null"]
-    assert "type" not in properties.get("expires_at", {})
+    assert properties["expires_at"]["type"] == ["string", "null"]
 
 
-def test_workspace_capabilities_schema_and_call_accept_boolean_apps() -> None:
-    """End-to-end repro for issue #29: capability introspection must be callable."""
+def test_server_capabilities_schema_and_call_accept_boolean_apps(monkeypatch) -> None:
+    """End-to-end repro for issue #29: capability introspection must be callable.
+
+    Since 2.0.0 the capabilities are the ``server`` block of get_google_connection_status."""
     from fastmcp import Client
 
+    from mcp_google_workspace.auth import google_oauth
+
+    monkeypatch.setattr(google_oauth, "google_connection_status", lambda capability=None: {"state": "not_connected"})
+
     async def inspect_and_call() -> tuple[dict[str, Any], Any]:
-        tool = await workspace_mcp.get_tool("get_workspace_capabilities")
+        tool = await workspace_mcp.get_tool("get_google_connection_status")
         assert tool is not None
         assert tool.output_schema is not None
         async with Client(workspace_mcp) as client:
-            result = await client.call_tool("get_workspace_capabilities", {})
+            result = await client.call_tool("get_google_connection_status", {})
         return tool.output_schema, result
 
     schema, result = anyio.run(inspect_and_call)
-    optional_schema = schema["properties"]["optional_namespaces"]
+    optional_schema = schema["properties"]["server"]["properties"]["optional_namespaces"]
     assert optional_schema["properties"]["apps"]["type"] == "boolean"
     assert result.is_error is False
-    assert isinstance(result.structured_content["optional_namespaces"]["apps"], bool)
+    assert isinstance(result.structured_content["server"]["optional_namespaces"]["apps"], bool)
 
 
 def test_get_google_connection_status_validates_when_connected(monkeypatch) -> None:
@@ -200,6 +206,47 @@ def test_get_google_connection_status_validates_when_connected(monkeypatch) -> N
     assert result.is_error is False
     assert result.structured_content["state"] == "connected"
     assert result.structured_content["action"] is None
+
+
+def test_inferred_schemas_are_open_at_every_level() -> None:
+    """A closed schema fails validation on any field the inference did not see
+    (a ``**spread``, a helper it cannot read, a provider field)."""
+
+    def tool(base: dict[str, Any]) -> dict[str, Any]:
+        return {**base, "nested": {"seen": 1}, "ok": True}
+
+    schema = infer_tool_output_schema(tool)
+    assert schema is not None
+    assert schema["additionalProperties"] is True
+    assert schema["properties"]["nested"]["additionalProperties"] is True
+
+
+def test_unlisted_plural_names_carry_no_type_claim() -> None:
+    def tool(payload: Any) -> dict[str, Any]:
+        return {"namedStyles": payload.styles, "notes": payload.notes, "items": payload.items}
+
+    properties = _properties(tool)
+    assert "type" not in properties["namedStyles"]
+    assert "type" not in properties["notes"]
+    assert properties["items"]["type"] == "array"
+
+
+def test_catalog_publishes_an_open_schema_for_every_normalized_response() -> None:
+    """Since 2.0.0 every tool returns a server-built response, so every tool,
+    the former raw Google passthroughs included, publishes an open schema."""
+
+    async def catalog() -> list[Any]:
+        return await workspace_mcp.list_tools(run_middleware=False)
+
+    tools = {tool.name: tool for tool in anyio.run(catalog)}
+    for name in ("docs_read_document", "sheets_get_spreadsheet", "slides_read_presentation", "forms_get_form",
+                 "people_search_contacts", "calendar_get_calendar_context", "tasks_update_task", "gmail_modify_messages",
+                 "drive_share_file", "calendar_find_free_time", "get_google_connection_status"):
+        schema = tools[name].output_schema
+        assert schema is not None and schema["additionalProperties"] is True, name
+        assert schema["properties"], name
+    registered = [tools[name] for name in ("prepare_workspace_action", "commit_workspace_action")]
+    assert all(tool.output_schema["additionalProperties"] is True for tool in registered)
 
 
 def test_catalog_has_no_unit_suffix_fields_typed_as_arrays() -> None:

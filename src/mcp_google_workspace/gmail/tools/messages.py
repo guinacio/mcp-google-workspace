@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import logging
 
+from dataclasses import dataclass
 from email.utils import getaddresses
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ...common.async_ops import execute_google_request
-from ...common.confirmation import confirm_destructive_action
+from ...common.consent import memoized
 from ...common.repeat_safety import note_reconciliation
 from ...common.timezone import resolve_user_timezone
 from ...file_uploads import require_local_filesystem, workspace_file_upload
@@ -24,12 +25,21 @@ from ..mime_utils import (
     extract_message_bodies,
     stamp_message_id,
 )
-from ..helpers import recipient_set
-from ..presentation import clean_message_content, envelope, header_map, message_attachments
+from ..helpers import (
+    ATTACHMENTS_DESCRIPTION as _ATTACHMENTS,
+    HTML_BODY_DESCRIPTION as _HTML_BODY,
+    TEXT_BODY_DESCRIPTION as _TEXT_BODY,
+    recipient_set,
+)
+from ..presentation import (
+    PREVIEW_LIMIT_CHARS,
+    clean_message_content,
+    envelope,
+    header_map,
+    message_attachments,
+)
 from ..schemas import (
     AttachmentInput,
-    DeleteMessageRequest,
-    ModifyMessageRequest,
     ReadEmailsRequest,
     SendEmailRequest,
 )
@@ -135,6 +145,60 @@ def _resolve_reply_recipients(
     return to, cc
 
 
+@dataclass(frozen=True)
+class ReplyContext:
+    """Who a reply goes to and the headers it continues, read from the source message."""
+
+    thread_id: str
+    subject: str
+    to: list[str]
+    cc: list[str]
+    source_message_id: str
+    references: str
+
+
+async def _read_reply_context(message_id: str, reply_all: bool) -> ReplyContext:
+    service = gmail_service()
+    LOGGER.debug(f"Loading Gmail reply context for message {message_id}.")
+    source = await execute_google_request(
+        service.users()
+        .messages()
+        .get(
+            userId="me",
+            id=message_id,
+            format="metadata",
+            metadataHeaders=_REPLY_METADATA_HEADERS,
+        )
+    )
+    thread_id = str(source.get("threadId") or "")
+    if not thread_id:
+        raise ValueError("The source email has no Gmail thread ID and cannot be replied to.")
+    headers = header_map(source.get("payload", {}))
+    source_message_id = _normalize_message_id(headers.get("message-id", ""))
+    references = _reply_references(headers.get("references", ""), source_message_id)
+    subject = decode_rfc2047(headers.get("subject"))
+
+    profile = await execute_google_request(service.users().getProfile(userId="me"))
+    own_addresses = {str(profile.get("emailAddress") or "")}
+    send_as = await execute_google_request(service.users().settings().sendAs().list(userId="me"))
+    own_addresses.update(
+        str(item.get("sendAsEmail") or "") for item in send_as.get("sendAs", []) if item.get("sendAsEmail")
+    )
+    own_addresses.discard("")
+    to, cc = _resolve_reply_recipients(headers, own_addresses=own_addresses, reply_all=reply_all)
+    return ReplyContext(thread_id, subject, to, cc, source_message_id, references)
+
+
+async def load_reply_context(message_id: str, *, reply_all: bool) -> ReplyContext:
+    """The reply's recipients and headers; read once per call (preview and send share it)."""
+    return cast(
+        ReplyContext,
+        await memoized(
+            ("gmail_reply_context", message_id, reply_all), lambda: _read_reply_context(message_id, reply_all)
+        ),
+    )
+
+
 async def _prepare_attachment_payloads(
     attachments: list[AttachmentInput],
     ctx: Context | None,
@@ -170,39 +234,28 @@ async def _prepare_attachment_payloads(
 def register(server: FastMCP) -> None:
     @server.tool(name="send_email")
     async def send_email(
-        subject: str,
-        to: list[str],
-        cc: list[str] | None = None,
-        bcc: list[str] | None = None,
-        text_body: str | None = None,
-        html_body: str | None = None,
-        attachments: list[AttachmentInput] | None = None,
-        confirm_send: bool = False,
+        subject: Annotated[str, "Subject line; non-ASCII text is encoded automatically."],
+        to: Annotated[
+            list[str], "Primary recipient email addresses, e.g. ['ana@example.com']; each must be a valid address."
+        ],
+        cc: Annotated[list[str] | None, "Carbon-copy recipient email addresses, visible to every recipient."] = None,
+        bcc: Annotated[
+            list[str] | None, "Blind-copy recipient email addresses, hidden from the other recipients."
+        ] = None,
+        text_body: Annotated[str | None, _TEXT_BODY] = None,
+        html_body: Annotated[str | None, _HTML_BODY] = None,
+        attachments: Annotated[list[AttachmentInput] | None, _ATTACHMENTS] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Send an email with TO/CC/BCC, text/HTML body, and optional attachments."""
+        """Compose and send a new Gmail message, with a plain-text and/or HTML body and optional attachments. To answer an existing message inside its thread use gmail_reply; to save mail for review instead of sending it, use gmail_save_draft. Returns status 'sent' with the new message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is always asked to approve the send first (recipients, subject, the start of the text and the attachment count)."""
         request = SendEmailRequest(
             recipients=recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
             text_body=text_body,
             html_body=html_body,
             attachments=attachments or [],
-            confirm_send=confirm_send,
         )
         service = gmail_service()
-        if request.confirm_send:
-            if not await confirm_destructive_action(
-                ctx,
-                "send_email",
-                (
-                    f"Send email?\n"
-                    f"To: {', '.join(str(v) for v in request.recipients.to)}\n"
-                    f"Subject: {request.subject}\n"
-                    f"Attachments: {len(request.attachments)}"
-                ),
-                explicit_confirm_field=True,
-            ):
-                return {"status": "cancelled", "message": "User cancelled send."}
 
         LOGGER.debug("Building MIME email payload.")
         attachment_payloads = await _prepare_attachment_payloads(
@@ -241,63 +294,13 @@ def register(server: FastMCP) -> None:
         text_body: str | None,
         html_body: str | None,
         attachments: list[AttachmentInput],
-        confirm_send: bool,
         reply_all: bool,
         ctx: Context | None,
     ) -> dict[str, Any]:
         service = gmail_service()
-        LOGGER.debug(f"Loading Gmail reply context for message {message_id}.")
-        source = await execute_google_request(
-            service.users()
-            .messages()
-            .get(
-                userId="me",
-                id=message_id,
-                format="metadata",
-                metadataHeaders=_REPLY_METADATA_HEADERS,
-            )
-        )
-        thread_id = str(source.get("threadId") or "")
-        if not thread_id:
-            raise ValueError(
-                "The source email has no Gmail thread ID and cannot be replied to."
-            )
-        headers = header_map(source.get("payload", {}))
-        source_message_id = _normalize_message_id(headers.get("message-id", ""))
-        references = _reply_references(headers.get("references", ""), source_message_id)
-        subject = decode_rfc2047(headers.get("subject"))
-
-        profile = await execute_google_request(service.users().getProfile(userId="me"))
-        own_addresses = {str(profile.get("emailAddress") or "")}
-        send_as = await execute_google_request(
-            service.users().settings().sendAs().list(userId="me")
-        )
-        own_addresses.update(
-            str(item.get("sendAsEmail") or "")
-            for item in send_as.get("sendAs", [])
-            if item.get("sendAsEmail")
-        )
-        own_addresses.discard("")
-        to, cc = _resolve_reply_recipients(
-            headers,
-            own_addresses=own_addresses,
-            reply_all=reply_all,
-        )
-
-        if confirm_send:
-            if not await confirm_destructive_action(
-                ctx,
-                "reply_all_email" if reply_all else "reply_email",
-                (
-                    f"{'Reply all' if reply_all else 'Reply'} to email?\n"
-                    f"To: {', '.join(to)}\n"
-                    f"Cc: {', '.join(cc) or '(none)'}\n"
-                    f"Subject: {subject}\n"
-                    f"Attachments: {len(attachments)}"
-                ),
-                explicit_confirm_field=True,
-            ):
-                return {"status": "cancelled", "message": "User cancelled reply."}
+        context = await load_reply_context(message_id, reply_all=reply_all)
+        thread_id, subject, to, cc = context.thread_id, context.subject, context.to, context.cc
+        source_message_id, references = context.source_message_id, context.references
 
         attachment_payloads = await _prepare_attachment_payloads(attachments, ctx)
         email_message = build_email_message(
@@ -338,85 +341,81 @@ def register(server: FastMCP) -> None:
             "label_ids": sent.get("labelIds", []),
         }
 
-    @server.tool(name="reply_email")
-    async def reply_email(
-        message_id: str,
-        text_body: str | None = None,
-        html_body: str | None = None,
-        attachments: list[AttachmentInput] | None = None,
-        confirm_send: bool = False,
+    @server.tool(name="reply")
+    async def reply(
+        message_id: Annotated[
+            str, "ID of the Gmail message to answer, from gmail_search_emails, gmail_get_thread or gmail_read_emails."
+        ],
+        reply_all: Annotated[
+            bool,
+            (
+                "False (default) answers only the sender: the message's Reply-To address, else its From. "
+                "True also copies every other original To and Cc address in Cc."
+            ),
+        ] = False,
+        text_body: Annotated[str | None, _TEXT_BODY] = None,
+        html_body: Annotated[str | None, _HTML_BODY] = None,
+        attachments: Annotated[list[AttachmentInput] | None, _ATTACHMENTS] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Reply to one Gmail message in its existing thread, addressing its sender."""
-        reply = await _send_reply(
+        """Reply to one Gmail message inside its existing thread, to the sender only or with reply_all to everyone on it: the subject is reused and In-Reply-To and References point at that message, leaving out the account's own and send-as addresses (on your own sent mail the original recipients are kept). gmail_send_email starts a new conversation instead, and gmail_save_draft saves mail for review without sending. Returns status 'sent' with mode ('reply' or 'reply_all'), the new message_id, thread_id, to, cc and subject, or status 'cancelled' if the user declines. The user is always asked to approve the reply first, with its recipients."""
+        sent = await _send_reply(
             message_id=message_id,
             text_body=text_body,
             html_body=html_body,
             attachments=attachments or [],
-            confirm_send=confirm_send,
-            reply_all=False,
+            reply_all=reply_all,
             ctx=ctx,
         )
         return {
-            "status": reply.get("status"),
-            "mode": reply.get("mode"),
-            "replied_to_message_id": reply.get("replied_to_message_id"),
-            "message_id": reply.get("message_id"),
-            "thread_id": reply.get("thread_id"),
-            "to": reply.get("to") or [],
-            "cc": reply.get("cc") or [],
-            "subject": reply.get("subject"),
-            "label_ids": reply.get("label_ids") or [],
-            "message": reply.get("message"),
-        }
-
-    @server.tool(name="reply_all_email")
-    async def reply_all_email(
-        message_id: str,
-        text_body: str | None = None,
-        html_body: str | None = None,
-        attachments: list[AttachmentInput] | None = None,
-        confirm_send: bool = False,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Reply to all external participants in a Gmail message's existing thread."""
-        reply = await _send_reply(
-            message_id=message_id,
-            text_body=text_body,
-            html_body=html_body,
-            attachments=attachments or [],
-            confirm_send=confirm_send,
-            reply_all=True,
-            ctx=ctx,
-        )
-        return {
-            "status": reply.get("status"),
-            "mode": reply.get("mode"),
-            "replied_to_message_id": reply.get("replied_to_message_id"),
-            "message_id": reply.get("message_id"),
-            "thread_id": reply.get("thread_id"),
-            "to": reply.get("to") or [],
-            "cc": reply.get("cc") or [],
-            "subject": reply.get("subject"),
-            "label_ids": reply.get("label_ids") or [],
-            "message": reply.get("message"),
+            "status": sent.get("status"),
+            "mode": sent.get("mode") or ("reply_all" if reply_all else "reply"),
+            "replied_to_message_id": sent.get("replied_to_message_id"),
+            "message_id": sent.get("message_id"),
+            "thread_id": sent.get("thread_id"),
+            "to": sent.get("to") or [],
+            "cc": sent.get("cc") or [],
+            "subject": sent.get("subject"),
+            "label_ids": sent.get("label_ids") or [],
+            "message": sent.get("message"),
         }
 
     @server.tool(name="read_emails")
     async def read_emails(
         message_ids: list[str],
-        format: Literal["metadata", "preview", "clean", "full"] = "clean",
+        format: Annotated[
+            Literal["metadata", "preview", "clean", "full"],
+            (
+                "Body detail: 'metadata' omits the body; 'preview' returns the first 1,000 characters "
+                "of the cleaned body text; 'clean' returns the cleaned body text in pages of about "
+                "8,000 characters; 'full' returns the whole cleaned body unpaged plus the original "
+                "text/plain part (text_body), the raw date header, internal_date and history_id under details and, "
+                "with include_html, the HTML part."
+            ),
+        ] = "clean",
         offset: Annotated[
             int,
             (
-                "Character offset into the cleaned body text to resume from, for paginating through "
-                "'preview'/'clean' format bodies via the response's next_offset; not a message index."
+                "Character offset into the cleaned body text to resume from: the next_offset of a "
+                "truncated 'preview' or 'clean' result; not a message index. It applies to every message "
+                "in the call, so continue one message at a time; 'full' ignores it."
             ),
         ] = 0,
+        include_html: Annotated[
+            bool,
+            (
+                "With format='full' only: also return the original HTML part as html_body. Set it "
+                "only when the markup itself is needed (layout, images, exact link targets with "
+                "their query strings); newsletter HTML is often tens of kilobytes. When false, "
+                "html_body is null and the readable text is in body."
+            ),
+        ] = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Read one to 100 Gmail messages with a consistent, model-friendly detail level."""
-        request = ReadEmailsRequest(message_ids=message_ids, format=format, offset=offset)
+        """Read the content of one to 100 Gmail messages by ID, all at the same detail level. Use it after gmail_search_emails, gmail_get_mail_digest or gmail_check_mail_updates, which return only snippets; gmail_get_thread reads a whole conversation at once. Returns messages (id, thread_id, from, to, subject, date, snippet, label_ids, attachments with filename, mime_type, size and the download_id gmail_download_attachment takes, and, by format, body with truncated and next_offset), missing_count and missing_message_ids for IDs that no longer exist instead of failing the call, account_timezone, and count, has_more (always false), next_page_token and fetched_at."""
+        request = ReadEmailsRequest(
+            message_ids=message_ids, format=format, offset=offset, include_html=include_html
+        )
         service = gmail_service()
         account_timezone = await resolve_user_timezone()
         outputs: list[dict[str, Any]] = []
@@ -436,113 +435,40 @@ def register(server: FastMCP) -> None:
             output = envelope(message, account_timezone=account_timezone)
             output.update({
                 "to": decode_rfc2047(headers.get("to")),
-                "attachments": message_attachments(payload),
+                "attachments": message_attachments(payload, include_download_id=True),
                 "label_ids": message.get("labelIds", []),
-                "history_id": message.get("historyId"),
-                "internal_date": message.get("internalDate"),
                 "format": request.format,
             })
             if request.format == "metadata":
                 output["bodies_omitted"] = True
             elif request.format == "preview":
-                output.update(clean_message_content(message, offset=request.offset, limit=1_000))
+                output.update(
+                    clean_message_content(message, offset=request.offset, limit=PREVIEW_LIMIT_CHARS)
+                )
             elif request.format == "clean":
                 output.update(clean_message_content(message, offset=request.offset))
             elif request.format == "full":
                 bodies = extract_message_bodies(payload)
+                output.update(clean_message_content(message, limit=None))
                 output.update({
                     "text_body": bodies.get("text"),
-                    "html_body": bodies.get("html"),
-                    "truncated": False,
+                    "html_body": bodies.get("html") if request.include_html else None,
+                    # Raw provider values behind ``date``, for callers that
+                    # need the exact header or Gmail's own ordering keys.
+                    "details": {
+                        "date_header": headers.get("date"),
+                        "internal_date": message.get("internalDate"),
+                        "history_id": message.get("historyId"),
+                    },
                 })
             outputs.append(output)
             if ctx is not None:
                 await ctx.report_progress(index, len(request.message_ids), "Messages loaded")
         return {
             "messages": outputs,
+            "count": len(outputs),
             "format": request.format,
             "missing_count": len(missing_message_ids),
             "missing_message_ids": missing_message_ids,
             "account_timezone": account_timezone,
         }
-
-    @server.tool(name="mark_as_read")
-    async def mark_as_read(message_id: str, ctx: Context) -> dict[str, Any]:
-        """Remove the UNREAD label from a message."""
-        service = gmail_service()
-        LOGGER.debug(f"Marking {message_id} as read.")
-        await execute_google_request(
-            service.users().messages().modify(
-                userId="me",
-                id=message_id,
-                body={"removeLabelIds": ["UNREAD"]},
-            )
-        )
-        return {"status": "ok", "message_id": message_id, "operation": "mark_as_read"}
-
-    @server.tool(name="mark_as_unread")
-    async def mark_as_unread(message_id: str, ctx: Context) -> dict[str, Any]:
-        """Add the UNREAD label to a message."""
-        service = gmail_service()
-        LOGGER.debug(f"Marking {message_id} as unread.")
-        await execute_google_request(
-            service.users().messages().modify(
-                userId="me",
-                id=message_id,
-                body={"addLabelIds": ["UNREAD"]},
-            )
-        )
-        return {"status": "ok", "message_id": message_id, "operation": "mark_as_unread"}
-
-    @server.tool(name="move_email")
-    async def move_email(
-        message_id: str,
-        add_label_ids: list[str] | None = None,
-        remove_label_ids: list[str] | None = None,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Modify a message's labels to move/classify it across mailbox states."""
-        request = ModifyMessageRequest(
-            message_id=message_id,
-            add_label_ids=add_label_ids or [],
-            remove_label_ids=remove_label_ids or [],
-        )
-        if not request.add_label_ids and not request.remove_label_ids:
-            raise ValueError("At least one of add_label_ids/remove_label_ids must be provided.")
-        service = gmail_service()
-        LOGGER.debug(f"Moving message {request.message_id}.")
-        result = await execute_google_request(
-            service.users().messages().modify(
-                userId="me",
-                id=request.message_id,
-                body={
-                    "addLabelIds": request.add_label_ids,
-                    "removeLabelIds": request.remove_label_ids,
-                },
-            )
-        )
-        return {"status": "ok", "message": result}
-
-    @server.tool(name="delete_email")
-    async def delete_email(
-        message_id: str,
-        permanent: bool = False,
-        ctx: Context | None = None,
-    ) -> dict[str, Any]:
-        """Trash or permanently delete a message based on the request mode."""
-        request = DeleteMessageRequest(message_id=message_id, permanent=permanent)
-        service = gmail_service()
-        if request.permanent:
-            if not await confirm_destructive_action(
-                ctx,
-                "delete_email",
-                "Permanently delete this email? This cannot be undone.",
-            ):
-                return {"status": "cancelled"}
-            await execute_google_request(
-                service.users().messages().delete(userId="me", id=request.message_id)
-            )
-            return {"status": "ok", "mode": "permanent", "message_id": request.message_id}
-
-        await execute_google_request(service.users().messages().trash(userId="me", id=request.message_id))
-        return {"status": "ok", "mode": "trash", "message_id": request.message_id}

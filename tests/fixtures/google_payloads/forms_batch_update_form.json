@@ -1,0 +1,51 @@
+{
+  "form": {
+    "formId": "1FAIpQLSdNewFormIdentifier0123456789abcdefghijklmnopqrstuv",
+    "info": {
+      "title": "Retro",
+      "documentTitle": "Retro (team)",
+      "description": "What went well, what did not."
+    },
+    "settings": {
+      "quizSettings": {},
+      "emailCollectionType": "DO_NOT_COLLECT"
+    },
+    "revisionId": "00000004",
+    "responderUri": "https://docs.google.com/forms/d/e/1FAIpQLSdNewFormIdentifier0123456789abcdefghijklmnopqrstuv/viewform",
+    "items": [
+      {
+        "itemId": "3c5e7a9b",
+        "title": "What went well?",
+        "questionItem": {
+          "question": {
+            "questionId": "4d6f8b0c",
+            "required": true,
+            "textQuestion": {
+              "paragraph": true
+            }
+          }
+        }
+      }
+    ],
+    "publishSettings": {
+      "publishState": {
+        "isPublished": true,
+        "isAcceptingResponses": true
+      }
+    }
+  },
+  "replies": [
+    {},
+    {
+      "createItem": {
+        "itemId": "3c5e7a9b",
+        "questionId": [
+          "4d6f8b0c"
+        ]
+      }
+    }
+  ],
+  "writeControl": {
+    "requiredRevisionId": "00000004"
+  }
+}

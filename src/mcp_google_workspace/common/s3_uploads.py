@@ -109,7 +109,7 @@ class S3UploadStore:
                         raise RecoverableToolError(
                             "upload_quota_exhausted",
                             f"Upload quota exceeded ({self.quota_bytes} bytes per principal).",
-                            required_action={"tool": "files_list_files", "arguments": {}},
+                            required_action={"tool": "uploads_list_files", "arguments": {}},
                         )
                     pipe.multi()
                     for upload_id, metadata, _ in prepared:
@@ -203,7 +203,7 @@ class S3UploadStore:
             raise RecoverableToolError(
                 "upload_expired_or_missing",
                 "The uploaded file handle was not found or has expired.",
-                required_action={"tool": "files_file_manager", "arguments": {}},
+                required_action={"tool": "uploads_file_manager", "arguments": {}},
             )
         item = json.loads(raw)
         if item.get("status", "ready") != "ready":
@@ -219,7 +219,7 @@ class S3UploadStore:
             raise RecoverableToolError(
                 "upload_expired_or_missing",
                 "The uploaded file handle has expired.",
-                required_action={"tool": "files_file_manager", "arguments": {}},
+                required_action={"tool": "uploads_file_manager", "arguments": {}},
             )
         response = self.s3.get_object(Bucket=self.bucket, Key=self._object_key(scope, upload_id))
         result = self.keyring.decrypt(response["Body"].read())

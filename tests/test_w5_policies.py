@@ -278,6 +278,11 @@ def test_partial_batch_success_versus_total_failure(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(server_module, "build_people_service", lambda: _Failing())
     monkeypatch.setattr(server_module, "build_drive_service", lambda: _Drive())
 
+    async def fake_timezone() -> str:
+        return "UTC"
+
+    monkeypatch.setattr(server_module, "resolve_user_timezone", fake_timezone)
+
     async def call(services: list[str]) -> Any:
         async with Client(workspace_mcp) as client:
             return await client.call_tool(
@@ -286,7 +291,8 @@ def test_partial_batch_success_versus_total_failure(monkeypatch: pytest.MonkeyPa
 
     partial = anyio.run(call, ["drive", "gmail"])
     assert partial.is_error is False
-    assert partial.structured_content["status"] == "partial"
+    # Partial success is a non-empty errors map; reads carry no status field.
+    assert "status" not in partial.structured_content
     assert set(partial.structured_content["errors"]) == {"gmail"}
     assert partial.structured_content["count"] == 1
 
@@ -759,20 +765,41 @@ def test_grant_cache_is_keyed_by_principal_and_revision(tmp_path, monkeypatch: p
     assert read_grant(alice) == GrantSnapshot(alice.storage_key, None, frozenset())
 
 
-def test_refresh_catalog_tool_is_truthful_and_needs_no_connection_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_connection_status_reports_grants_and_the_server_without_calling_google(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 2.0.0: refresh_workspace_catalog and get_workspace_capabilities folded in here.
     monkeypatch.setattr(
-        "mcp_google_workspace.auth.grants.read_grant",
-        lambda principal=None: GrantSnapshot("p", "rev-7", frozenset({"gmail", "calendar"})),
+        "mcp_google_workspace.auth.google_oauth.google_connection_status",
+        lambda capability=None: {
+            "state": "connected",
+            "connected": True,
+            "principal_key": "p",
+            "granted_capabilities": ["calendar", "gmail"],
+            "granted_scopes": [],
+            "expires_at": None,
+            "action": None,
+        },
     )
 
     async def call() -> Any:
         async with Client(workspace_mcp) as client:
-            return await client.call_tool("refresh_workspace_catalog", {})
+            return await client.call_tool("get_google_connection_status", {})
 
     result = anyio.run(call)
-    assert result.structured_content["notification_sent"] is False
     assert result.structured_content["granted_capabilities"] == ["calendar", "gmail"]
-    assert result.structured_content["grant_revision"] == "rev-7"
+    server = result.structured_content["server"]
+    assert server["tool_tier"] == "core"
+    assert server["tool_tiers"] == ["core", "extended", "complete"]
+    assert "gmail" in server["enabled_namespaces"] and server["optional_namespaces"]["chat"] is False
+    # The token-store key is internal: no tool takes it, so the model never sees it (2.0.1).
+    assert "principal_key" not in result.structured_content
+    assert "principal_key" not in (anyio.run(_status_tool).output_schema or {}).get("properties", {})
+
+
+async def _status_tool() -> Any:
+    async with Client(workspace_mcp) as client:
+        return next(tool for tool in await client.list_tools() if tool.name == "get_google_connection_status")
 
 
 # ---------------------------------------------------------------------------

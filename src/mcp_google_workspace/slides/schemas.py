@@ -9,8 +9,11 @@ from pydantic import Field
 from ..common.request_model import ToolRequestModel
 
 
-class GetPresentationRequest(ToolRequestModel):
+class ReadPresentationRequest(ToolRequestModel):
     presentation_id: str = Field(description="Google Slides presentation file ID.")
+    slide_ids: list[str] | None = Field(default=None)
+    format: Literal["normalized", "raw"] = Field(default="normalized")
+    offset: int = Field(default=0, ge=0)
 
 
 class CreatePresentationRequest(ToolRequestModel):
@@ -22,11 +25,6 @@ class ReplaceTextInPresentationRequest(ToolRequestModel):
     contains_text: str = Field(description="Literal text to match.")
     replace_text: str = Field(description="Replacement text.")
     match_case: bool = Field(default=False)
-
-
-class GetSlidePageRequest(ToolRequestModel):
-    presentation_id: str = Field(description="Google Slides presentation file ID.")
-    page_object_id: str = Field(description="Slide page object ID.")
 
 
 class GetSlideThumbnailRequest(ToolRequestModel):

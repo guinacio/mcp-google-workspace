@@ -6,7 +6,7 @@ All tests assume real credentials and APIs enabled. Destructive tests create the
 
 ## Calendar full matrix run (2026-02-28)
 
-Scope executed with live API calls and attendee invite target `guilherme.inacio@franq.com.br`.
+Scope executed with live API calls and an attendee invite target (`QA_CALENDAR_ATTENDEE`).
 
 - [x] Time handling matrix
   - [x] naive datetime
@@ -48,49 +48,52 @@ Follow-up note:
 
 ## Gmail (`gmail_*`)
 
+Filters, forwarding and vacation (`gmail_manage_filters`, `gmail_manage_forwarding`, `gmail_manage_vacation`) are extended-tier tools: run with `MCP_TOOL_TIER=extended` (the QA script sets it).
+
 | # | Tool | Test | Notes |
 |---|------|------|--------|
 | 1 | gmail_list_labels | List all labels | Read-only |
-| 2 | gmail_search_emails | List INBOX via label_ids, max_results=5 | Read-only |
+| 2 | gmail_search_emails | List INBOX via labels=["INBOX"], max_results=5 | Read-only; labels take names or IDs |
 | 3 | gmail_search_emails | Search e.g. "unsubscribe", max_results=5 | Find ad-like mail for delete |
 | 4 | gmail_read_emails | Read one or more IDs from search_emails | Read-only |
-| 5 | gmail_send_email | Send to self, confirm_send=False | Use existing address |
-| 6 | gmail_mark_as_read | Mark one message read | Id from list |
-| 7 | gmail_mark_as_unread | Mark same message unread | Id from list |
-| 8 | gmail_delete_email | Trash one message (ad/unsubscribe), permanent=False | Use ID from search |
-| 9 | gmail_move_email | Add/remove label on one message | ModifyMessageRequest |
-| 10 | gmail_list_attachments | List attachments for a message that has one | Optional if no such mail |
-| 11 | gmail_batch_modify | Batch add/remove labels on 2 message IDs | Small batch |
-| 12 | gmail_batch_delete | Trash 1–2 messages, permanent=False | Small batch |
-| 13 | gmail_create_label | Create label "QA-test-label" | Then delete_label |
-| 14 | gmail_update_label | Update label (e.g. name) | If create succeeded |
-| 15 | gmail_delete_label | Delete "QA-test-label" | After create/update |
-| 16 | gmail_apply_labels | Apply label to message | Id + label from above |
-| 18 | gmail_download_attachment | Download one attachment to temp file | If message with attachment exists |
-| 19 | gmail_list_filters | List all existing Gmail filters | Read-only |
-| 20 | gmail_create_filter | Create filter with criteria+action | Requires label or forward target |
-| 21 | gmail_delete_filter | Delete created test filter | Cleanup after create |
+| 5 | gmail_send_email | Send to self (asks for consent) | Use existing address |
+| 6 | gmail_modify_messages | mark_read=true on one message | Id from search |
+| 7 | gmail_modify_messages | mark_read=false on same message | Id from search |
+| 8 | gmail_delete | Trash one message (ad/unsubscribe), mode="trash" | Use ID from search |
+| 9 | gmail_modify_messages | add_labels / remove_labels on one message (label ID) | Replaces move/apply labels |
+| 10 | gmail_read_emails | Attachments of a message that has one (format="metadata") | Each attachment carries download_id; optional if no such mail |
+| 11 | gmail_modify_messages | add_labels / remove_labels on 2 message_ids | Small batch |
+| 12 | gmail_delete | Trash 1–2 message_ids, mode="trash" | Small batch |
+| 13 | gmail_manage_labels | action="create", name "QA-test-label" | Then update and delete |
+| 14 | gmail_manage_labels | action="update", label=<id or name>, new name | If create succeeded |
+| 15 | gmail_manage_labels | action="delete", label=<id or name> | After create/update; asks to confirm |
+| 16 | gmail_modify_messages | add_labels=["QA-test-label"] by name | Name resolution; before label delete |
+| 18 | gmail_download_attachment | Download one attachment (attachment_id=download_id) to temp file | If message with attachment exists |
+| 19 | gmail_manage_filters | action="list" | Read-only; extended tier |
+| 20 | gmail_manage_filters | action="create", criteria + filter_action{add_labels/remove_labels/forward} | Requires label or forward target |
+| 21 | gmail_manage_filters | action="delete", filter_id | Cleanup after create; asks to confirm |
 | 22 | gmail_list_drafts | List drafts | Read-only |
-| 23 | gmail_create_draft | Create test draft | Then get/update/delete |
-| 24 | gmail_get_draft | Get draft by id | From create_draft |
-| 25 | gmail_update_draft | Update existing draft | Optional content update |
+| 23 | gmail_save_draft | Create test draft (no draft_id) | Then read/rewrite/delete |
+| 24 | gmail_list_drafts | Read one draft with draft_id | From save_draft |
+| 25 | gmail_save_draft | Rewrite existing draft (draft_id) | Replaces recipients/subject/body |
 | 26 | gmail_send_draft | Send draft by id | Optional, side-effectful |
 | 27 | gmail_delete_draft | Delete draft by id | Cleanup |
-| 28 | gmail_list_threads | List threads | Read-only |
-| 29 | gmail_get_thread | Get one thread | Use thread_id from read_emails/list_threads |
-| 30 | gmail_modify_thread | Add/remove labels on a thread | Requires label ids |
-| 31 | gmail_trash_thread | Move thread to trash | Then untrash_thread |
-| 32 | gmail_untrash_thread | Restore trashed thread | Cleanup |
-| 33 | gmail_delete_thread | Permanently delete thread | Optional, destructive |
-| 35 | gmail_list_forwarding_addresses | List forwarding addresses | Read-only |
-| 36 | gmail_get_forwarding_address | Get one forwarding address | If known address exists |
-| 37 | gmail_create_forwarding_address | Create forwarding address | May require account policy/verification |
-| 38 | gmail_delete_forwarding_address | Delete forwarding address | Cleanup |
-| 39 | gmail_get_vacation_settings | Read vacation responder settings | Read-only |
-| 40 | gmail_update_vacation_settings | Update vacation settings | Revert after test |
-| 41 | gmail_untrash_email | Restore one trashed message | Use message_id from delete_email |
-| 42 | gmail_mark_as_spam | Mark one message as spam | Then mark_as_not_spam |
-| 43 | gmail_mark_as_not_spam | Mark message as not spam | Restore to inbox |
+| 28 | gmail_search_emails | group_by_thread=true | Read-only; returns threads |
+| 29 | gmail_get_thread | Get one thread | Use thread_id from read_emails/search_emails |
+| 30 | gmail_modify_messages | thread_id + add_labels / remove_labels | Requires label ids or names |
+| 31 | gmail_delete | thread_id, mode="trash" | Then untrash |
+| 32 | gmail_modify_messages | thread_id, untrash=true | Cleanup |
+| 33 | gmail_delete | thread_id, mode="permanent" | Optional, destructive; asks to confirm |
+| 34 | gmail_reply | Reply (reply_all=false / true) to a message (asks for consent) | Optional, side-effectful |
+| 35 | gmail_manage_forwarding | action="list" | Read-only; extended tier |
+| 36 | gmail_manage_forwarding | action="get", forwarding_email | If known address exists |
+| 37 | gmail_manage_forwarding | action="create", forwarding_email | May require account policy/verification |
+| 38 | gmail_manage_forwarding | action="delete", forwarding_email | Cleanup; asks to confirm |
+| 39 | gmail_manage_vacation | action="get" | Read-only; extended tier |
+| 40 | gmail_manage_vacation | action="update" | Revert after test |
+| 41 | gmail_modify_messages | untrash=true on the message trashed in #8 | Restore from Trash |
+| 42 | gmail_modify_messages | spam=true on one message | Then spam=false |
+| 43 | gmail_modify_messages | spam=false | Removes SPAM and restores to inbox |
 
 ---
 
@@ -98,46 +101,48 @@ Follow-up note:
 
 | # | Tool | Test | Notes |
 |---|------|------|--------|
-| 22 | calendar_list_calendars | List calendars | Read-only |
+| 22 | calendar_get_calendar_context | include_calendars=true: list calendars | Read-only; returns calendars |
 | 23 | calendar_search_events | List primary, next 7 days, max 10 | Read-only |
 | 23a | calendar_read_events | Read one or more events including attachments | Deterministic verification for mutation |
-| 23c | calendar_add_event_attachment | Add one attachment by fileUrl | Requires valid Drive-style file URL + supportsAttachments |
-| 23d | calendar_remove_event_attachment | Remove attachment by fileUrl/fileId | Cleanup |
-| 23e | calendar_download_event_attachment | Download/export attached file to local path | Uses Drive API; Google-native docs are exported (e.g. PDF) |
+| 23c | calendar_set_event_attachments | add=[{file_url}] one attachment | Requires valid Drive-style file URL |
+| 23d | calendar_set_event_attachments | remove=[{file_url or file_id}] | Cleanup |
+| 23e | drive_download_file | Download/export an event attachment by its Drive file_id | Google-native docs are exported (PDF by default) |
 | 24 | calendar_get_calendar_context | Get timezone and local/UTC date-time context | Read-only |
-| 26 | calendar_check_time_availability | Fixed-slot FreeBusy check for primary | Read-only |
-| 27 | calendar_create_event | Create "QA test event" 1h from now | Then delete with force=True |
+| 26 | calendar_find_free_time | participants=["primary"], time_min/time_max window | Read-only; all_free, suggested_slots, total_suggestions |
+| 27 | calendar_create_event | Create "QA test event" 1h from now | Then delete |
 | 28 | calendar_update_event | Update event summary/description | Use event from create |
-| 29 | calendar_delete_event | Delete QA test event, force=True | After create |
+| 29 | calendar_delete_event | Delete QA test event (asks for consent) | After create |
 
 ---
 
 ## Drive (`drive_*`)
+
+`drive_update_drive` is an extended-tier tool (`MCP_TOOL_TIER=extended`).
 
 | # | Tool | Test | Notes |
 |---|------|------|--------|
 | 30 | drive_list_files | List recent files, page_size=10 | Read-only |
 | 31 | drive_get_file | Read one file by id | Use id from upload/create |
 | 32 | drive_create_folder | Create folder "QA Drive MCP Folder" | Cleanup optional |
-| 33 | drive_create_file_metadata | Create metadata-only file (and Google Doc for export test) | Side-effectful |
+| 33 | drive_upload_file | No local_path/uploaded_file: metadata-only create (Google Doc for export test) | Side-effectful; mode "metadata_only" |
 | 34 | drive_upload_file | Upload local text fixture file | Then download/update/copy |
 | 35 | drive_update_file_metadata | Rename/update description/properties | Mutation |
-| 36 | drive_update_file_content | Replace content from local file | Mutation |
+| 36 | drive_upload_file | file_id + local_path: replace content | Mutation; mode "replace" |
 | 37 | drive_move_file | Move by addParents/removeParents | Optional depending on structure |
 | 38 | drive_copy_file | Copy uploaded file | Then cleanup |
 | 39 | drive_delete_file | Delete one generated test file | Cleanup |
 | 40 | drive_download_file | Download uploaded file to tmp path | Validate bytes > 0 |
-| 41 | drive_export_google_file | Export Google Doc to PDF | Requires google-apps file id |
-| 42 | drive_get_file_content_capabilities | Read downloadable/exportable metadata | Read-only |
+| 41 | drive_download_file | Export Google Doc, export_mime_type="application/pdf" | Requires google-apps file id; mode "export" |
+| 42 | drive_get_file | is_google_native / export_formats of the Google Doc | Read-only |
 | 43 | drive_list_permissions | List sharing permissions for test file | Read-only |
-| 44 | drive_create_permission | Create test permission (e.g. anyone reader) | Cleanup required |
-| 45 | drive_get_permission | Get created permission | Uses permission id |
-| 46 | drive_update_permission | Update role on created permission | Policy dependent |
-| 47 | drive_delete_permission | Delete created permission | Cleanup |
+| 44 | drive_share_file | Create test permission (e.g. anyone reader) | type="anyone" needs prepare_workspace_action + commit_workspace_action; cleanup required |
+| 45 | drive_list_permissions | Get created permission (permission_id) | One-item list |
+| 46 | drive_share_file | permission_id + new role | Policy dependent |
+| 47 | drive_unshare_file | Delete created permission | Cleanup; asks to confirm |
 | 48 | drive_list_drives | List Shared Drives | Read-only |
-| 49 | drive_get_drive | Get one Shared Drive by id | If list_drives returns one |
-| 50 | drive_hide_drive | Hide Shared Drive | Optional/admin side-effect |
-| 51 | drive_unhide_drive | Unhide Shared Drive | Optional/admin side-effect |
+| 49 | drive_list_drives | Get one Shared Drive (drive_id) | If list_drives returns one |
+| 50 | drive_update_drive | hidden=true | Optional/admin side-effect; extended tier |
+| 51 | drive_update_drive | hidden=false | Optional/admin side-effect; extended tier |
 
 ---
 
@@ -146,9 +151,9 @@ Follow-up note:
 | # | Tool | Test | Notes |
 |---|------|------|--------|
 | 27 | keep_list_notes | List notes, page_size=5 | Read-only |
-| 28 | keep_create_note | Create note "QA test note", confirm_create=False | Then delete |
+| 28 | keep_create_note | Create note "QA test note" | Then delete |
 | 29 | keep_get_note | Get note by ID from list/create | Read-only |
-| 30 | keep_delete_note | Delete QA note, confirm_delete=False | After create |
+| 30 | keep_delete_note | Delete QA note (asks for consent) | After create |
 | 31 | keep_share_note | (Optional) Share note if we have collaborator | May skip |
 | 32 | keep_update_note | Call (expect unsupported) | Expect status unsupported |
 | 33 | keep_archive_note | Call (expect unsupported) | Expect status unsupported |
@@ -164,9 +169,9 @@ Follow-up note:
 | 37 | chat_get_space | Get first space by name | From list_spaces |
 | 38 | chat_list_messages | List messages in one space, page_size=5 | Read-only |
 | 39 | chat_get_message | Get one message by name | From list_messages |
-| 40 | chat_create_message | Post "QA test" in first space, notify=False | Then delete |
+| 40 | chat_create_message | Post "QA test" in first space (asks for consent) | Then delete |
 | 41 | chat_update_message | Update message text | Use message from create |
-| 42 | chat_delete_message | Delete QA message, force=True | After create |
+| 42 | chat_delete_message | Delete QA message (asks for consent) | After create |
 
 ---
 
@@ -208,13 +213,13 @@ Follow-up note:
 ## Execution order (for script)
 
 1. Auth once (lifespan / get_credentials).
-2. Read-only tools first (list_*, get_*, search_*, check_time_availability).
-3. Create resources (create_event, create_note, create_message, create_label, create_folder/upload_file if desired).
-4. Update tools (update_event, update_message, update_label, move_email, apply_labels, drive metadata/content updates).
+2. Read-only tools first (list_*, get_*, search_*, find_free_time).
+3. Create resources (create_event, create_note, create_message, manage_labels create, create_folder/upload_file if desired).
+4. Update tools (update_event, update_message, manage_labels update, modify_messages, drive metadata updates and upload_file content replacement).
 5. Resource reads (all URIs above).
 6. Prompt renders (all prompt names + minimal args).
-7. Destructive with created IDs: delete_event (force), delete_note (confirm_delete=False), delete_message (force=True), delete_email (trash), delete_label, drive_delete_file, batch_delete (trash).
-8. Optional: download_attachment if message with attachment found; summarize_* tools.
+7. Destructive with created IDs: delete_event, delete_note, delete_message (each asks for consent), gmail_delete (mode="trash"), manage_labels delete, drive_delete_file.
+8. Optional: download_attachment if a message with an attachment is found (download_id from read_emails); summarize_* tools.
 
 ---
 
@@ -227,10 +232,13 @@ uv run python scripts/qa_run_all_tools.py
 ```
 
 - **In-memory client**: Uses `Client(workspace_mcp)` so the server runs in the same process; credentials from lifespan are used.
+- **Tool tier**: The script sets `MCP_TOOL_TIER=extended` (unless already set) so the Gmail filter/forwarding/vacation tools and `drive_update_drive` are registered.
+- **Confirmations**: The script answers the server's confirmation questions with yes and prints each one; it deletes only what it created (plus moving the "unsubscribe" search hit to Trash).
+- **Optional steps**: `ENABLE_DRAFT_SEND` (with `QA_DRAFT_TO`), `ENABLE_FORWARDING_CREATE_DELETE` (`QA_FORWARDING_EMAIL`), `ENABLE_VACATION_UPDATE`, `ENABLE_DRIVE_HIDE_UNHIDE`, `ENABLE_KEEP`, `ENABLE_CHAT`; `QA_CALENDAR_ATTENDEE` invites an attendee to the QA event.
 - **Namespaced resources**: Mounted resources use a path prefix (e.g. `gmail://gmail/inbox/summary`, `calendar://calendar/today`).
 - **Expected failures** (environment-dependent):
   - **Chat**: All `chat_*` tools and `chat://chat/*` resources fail with 404 if the Google Chat API / Chat app is not enabled and configured in the project.
-  - **gmail_move_email / gmail_batch_modify**: May return 400 if messages are invalid (e.g. already trashed) or label state is inconsistent.
-  - **Forwarding create/delete**: May fail due to Gmail policy, verification state, or workspace admin restrictions.
+  - **gmail_modify_messages**: May return 400 if messages are invalid (e.g. already trashed) or label state is inconsistent.
+  - **Forwarding create/delete**: May fail due to Gmail policy, verification state, or workspace admin restrictions (create and delete need a service account with domain-wide delegation).
   - **Vacation update**: Mutating settings requires scope/consent and should be tested with rollback.
   - **chat://chat/users/me**: May show "Unknown resource" depending on Chat API/project setup.

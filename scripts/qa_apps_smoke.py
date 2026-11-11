@@ -54,7 +54,7 @@ async def _run_smoke(client: Client) -> list[tuple[str, bool, str]]:
         "apps_today",
         "apps_get_dashboard",
         "apps_get_weekly_calendar_view",
-        "calendar_find_common_free_slots",
+        "calendar_find_free_time",
         "calendar_respond_to_event",
     }
     missing = sorted(required_tools - tool_names)
@@ -93,7 +93,7 @@ async def _run_smoke(client: Client) -> list[tuple[str, bool, str]]:
     end = start + timedelta(hours=8)
     slots = _extract_data(
         await client.call_tool(
-            "calendar_find_common_free_slots",
+            "calendar_find_free_time",
             {
                 "participants": ["primary"],
                 "time_min": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -105,8 +105,8 @@ async def _run_smoke(client: Client) -> list[tuple[str, bool, str]]:
             },
         )
     )
-    ok, msg = _is_ok_response(slots, ["participants", "suggested_slots", "total_suggestions"])
-    checks.append(("tool:calendar_find_common_free_slots", ok, msg))
+    ok, msg = _is_ok_response(slots, ["suggested_slots", "total_suggestions", "all_free"])
+    checks.append(("tool:calendar_find_free_time", ok, msg))
 
     today_ymd = date.today().isoformat()
     resources = [

@@ -1,0 +1,1687 @@
+{
+  "document_id": "1Qw3rTyU1oPaSdFgHjKlZxCvBnM0987654321poiuyt",
+  "element_count": 104,
+  "next_offset": null,
+  "outline_chars": 33074,
+  "outline_sha256": "ee40d3e83e863b0786b87f606aa72a324315bc26e9d80fed9a68c977306966f9",
+  "revision_id": "ALBJ4LtQ9mZx7Kp2Vb5Nc8Rd1Sf4Tg7Uh0Wi3Xj6Yk9Zl2Am5Bn8Co1Dp4Eq7Fr0Gs3Ht6Iu9Jv2Kw5Lx8My",
+  "suggestions_view_mode": "SUGGESTIONS_INLINE",
+  "tabs": [
+    {
+      "content": [
+        {
+          "end_index": 1,
+          "kind": "section_break",
+          "start_index": 0
+        },
+        {
+          "end_index": 33,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1,
+          "style": "TITLE",
+          "text": "Project Atlas: Q3 delivery plan"
+        },
+        {
+          "end_index": 99,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 33,
+          "style": "SUBTITLE",
+          "text": "Northwind Labs · Platform team · revision for the steering review"
+        },
+        {
+          "end_index": 153,
+          "kind": "table_of_contents",
+          "start_index": 99,
+          "text": "Summary\nGoals\nMilestones\nOwners and contacts\nBudget"
+        },
+        {
+          "end_index": 161,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 153,
+          "style": "HEADING_1",
+          "text": "Summary"
+        },
+        {
+          "end_index": 870,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 161,
+          "style": null,
+          "text": "Project Atlas replaces the three regional order pipelines with one event-driven service that every storefront can call. The current pipelines were written at different times, by different teams, against different assumptions about stock, payment and fraud checks, and the cost of keeping them aligned has grown with every new market. The goal for this quarter is a production launch in two regions, with the third following once the migration tooling has been exercised on real traffic. This document is the working plan: it lists the goals, the milestones and their owners, the budget, and the risks we already know about. Comments are welcome in the margin; decisions are recorded in the Decisions log tab."
+        },
+        {
+          "end_index": 1019,
+          "inline": [
+            {
+              "email": "ana.souza@example.com",
+              "end_index": 898,
+              "kind": "person",
+              "name": "Ana Souza",
+              "start_index": 897
+            },
+            {
+              "email": "marcus.lee@example.org",
+              "end_index": 923,
+              "kind": "person",
+              "name": "Marcus Lee",
+              "start_index": 922
+            },
+            {
+              "end_index": 938,
+              "kind": "date",
+              "start_index": 937,
+              "text": "Oct 28, 2026"
+            },
+            {
+              "end_index": 971,
+              "kind": "rich_link",
+              "start_index": 970,
+              "title": "Atlas launch checklist",
+              "url": "https://docs.google.com/spreadsheets/d/1Sheet0Atlas0Launch0Checklist0Example000/edit"
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 870,
+          "style": null,
+          "text": "The plan was reviewed with ￼ (engineering lead) and ￼ (product) on ￼. The launch checklist lives in ￼ and is the source of truth for go/no-go items."
+        },
+        {
+          "end_index": 1371,
+          "inline": [
+            {
+              "end_index": 1074,
+              "footnote_id": "kix.fn1",
+              "kind": "footnote_reference",
+              "number": "1",
+              "start_index": 1073
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1019,
+          "style": null,
+          "text": "Atlas was first proposed in the platform strategy memo￼ and funded in the spring planning cycle. Since then the scope has narrowed: the loyalty integration and the marketplace sellers moved to a later phase, so the first release only covers first-party orders. The narrower scope is what makes a single-quarter launch realistic. (pending legal review)"
+        },
+        {
+          "end_index": 1377,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1371,
+          "style": "HEADING_1",
+          "text": "Goals"
+        },
+        {
+          "end_index": 1472,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1377,
+          "style": null,
+          "text": "We will consider the quarter a success when all of the following hold at the end of September:"
+        },
+        {
+          "end_index": 1554,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul1",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 1472,
+          "style": null,
+          "text": "One order service handles every first-party order in the north and south regions."
+        },
+        {
+          "end_index": 1601,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul1",
+            "nesting_level": 1,
+            "ordered": false
+          },
+          "start_index": 1554,
+          "style": null,
+          "text": "Peak traffic is served without manual scaling."
+        },
+        {
+          "end_index": 1657,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul1",
+            "nesting_level": 2,
+            "ordered": false
+          },
+          "start_index": 1601,
+          "style": null,
+          "text": "Black-friday load test at three times last year's peak."
+        },
+        {
+          "end_index": 1709,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul1",
+            "nesting_level": 1,
+            "ordered": false
+          },
+          "start_index": 1657,
+          "style": null,
+          "text": "Failover between zones takes less than two minutes."
+        },
+        {
+          "end_index": 1789,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul1",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 1709,
+          "style": null,
+          "text": "The legacy pipelines in those regions are read-only and scheduled for deletion."
+        },
+        {
+          "end_index": 1919,
+          "inline": [
+            {
+              "end_index": 1917,
+              "kind": "link",
+              "start_index": 1898,
+              "url": "https://wiki.example.com/platform/slo/order-latency"
+            }
+          ],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul1",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 1789,
+          "style": null,
+          "text": "Order latency at the 99th percentile stays under 400 ms, measured at the storefront edge as described in the latency SLO runbook."
+        },
+        {
+          "end_index": 2006,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul1",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 1919,
+          "style": null,
+          "text": "Support tickets about missing or duplicated orders drop below the pre-launch baseline."
+        },
+        {
+          "end_index": 2415,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2006,
+          "style": null,
+          "text": "Non-goals for this quarter are just as important. We are not changing the storefront APIs, we are not migrating historical orders older than eighteen months, and we are not replacing the fraud vendor. Each of these came up during planning and each would have pushed the launch out by at least a month. If one of them becomes urgent, it gets its own plan and its own owner rather than being folded into Atlas."
+        },
+        {
+          "end_index": 2426,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2415,
+          "style": "HEADING_1",
+          "text": "Milestones"
+        },
+        {
+          "end_index": 2539,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2426,
+          "style": null,
+          "text": "The work is sequenced so that each milestone can ship on its own and be rolled back without touching the others."
+        },
+        {
+          "end_index": 2554,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 2539,
+          "style": null,
+          "text": "Shadow traffic"
+        },
+        {
+          "end_index": 2612,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 1,
+            "ordered": true
+          },
+          "start_index": 2554,
+          "style": null,
+          "text": "Mirror north-region orders to Atlas and compare outcomes."
+        },
+        {
+          "end_index": 2663,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 1,
+            "ordered": true
+          },
+          "start_index": 2612,
+          "style": null,
+          "text": "Fix every divergence above 0.1​% before moving on."
+        },
+        {
+          "end_index": 2689,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 2,
+            "ordered": true
+          },
+          "start_index": 2663,
+          "style": null,
+          "text": "Triage divergences daily."
+        },
+        {
+          "end_index": 2723,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 2,
+            "ordered": true
+          },
+          "start_index": 2689,
+          "style": null,
+          "text": "Publish the comparison dashboard."
+        },
+        {
+          "end_index": 2750,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 2723,
+          "style": null,
+          "text": "Canary in the north region"
+        },
+        {
+          "end_index": 2809,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 1,
+            "ordered": true
+          },
+          "start_index": 2750,
+          "style": null,
+          "text": "Route 5% of orders, then 25%, then 50%, one step per week."
+        },
+        {
+          "end_index": 2840,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 2809,
+          "style": null,
+          "text": "Full launch in north and south"
+        },
+        {
+          "end_index": 2867,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num1",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 2840,
+          "style": null,
+          "text": "Read-only legacy pipelines"
+        },
+        {
+          "cells": [
+            [
+              {
+                "end_index": 2880,
+                "inline": [],
+                "start_index": 2869,
+                "text": "Milestone"
+              },
+              {
+                "end_index": 2887,
+                "inline": [],
+                "start_index": 2880,
+                "text": "Owner"
+              },
+              {
+                "end_index": 2900,
+                "inline": [],
+                "start_index": 2887,
+                "text": "Target date"
+              },
+              {
+                "end_index": 2908,
+                "inline": [],
+                "start_index": 2900,
+                "text": "Status"
+              }
+            ],
+            [
+              {
+                "end_index": 2925,
+                "inline": [],
+                "start_index": 2909,
+                "text": "Shadow traffic"
+              },
+              {
+                "end_index": 2928,
+                "inline": [
+                  {
+                    "email": "priya.raman@example.com",
+                    "end_index": 2927,
+                    "kind": "person",
+                    "name": "Priya Raman",
+                    "start_index": 2926
+                  }
+                ],
+                "start_index": 2925,
+                "text": "￼"
+              },
+              {
+                "end_index": 2936,
+                "inline": [],
+                "start_index": 2928,
+                "text": "Jul 14"
+              },
+              {
+                "end_index": 2942,
+                "inline": [],
+                "start_index": 2936,
+                "text": "Done"
+              }
+            ],
+            [
+              {
+                "end_index": 2959,
+                "inline": [],
+                "start_index": 2943,
+                "text": "Canary (north)"
+              },
+              {
+                "end_index": 2962,
+                "inline": [
+                  {
+                    "email": "tomas.ferreira@example.com",
+                    "end_index": 2961,
+                    "kind": "person",
+                    "name": "Tomás Ferreira",
+                    "start_index": 2960
+                  }
+                ],
+                "start_index": 2959,
+                "text": "￼"
+              },
+              {
+                "end_index": 2969,
+                "inline": [],
+                "start_index": 2962,
+                "text": "Aug 4"
+              },
+              {
+                "end_index": 2982,
+                "inline": [],
+                "start_index": 2969,
+                "text": "In progress"
+              }
+            ],
+            [
+              {
+                "end_index": 2996,
+                "inline": [],
+                "start_index": 2983,
+                "text": "Full launch"
+              },
+              {
+                "end_index": 3007,
+                "inline": [],
+                "start_index": 2996,
+                "text": "Ana Souza"
+              },
+              {
+                "end_index": 3014,
+                "inline": [],
+                "start_index": 3007,
+                "text": "Sep 1"
+              },
+              {
+                "end_index": 3054,
+                "inline": [],
+                "start_index": 3014,
+                "text": "Not started\nBlocked on capacity review"
+              }
+            ],
+            [
+              {
+                "end_index": 3073,
+                "inline": [],
+                "start_index": 3055,
+                "text": "Legacy read-only"
+              },
+              {
+                "end_index": 3085,
+                "inline": [],
+                "start_index": 3073,
+                "text": "Marcus Lee"
+              },
+              {
+                "end_index": 3093,
+                "inline": [],
+                "start_index": 3085,
+                "text": "Sep 22"
+              },
+              {
+                "end_index": 3116,
+                "inline": [],
+                "start_index": 3093,
+                "text": "Not started | pending"
+              }
+            ]
+          ],
+          "columns": 4,
+          "end_index": 3117,
+          "kind": "table",
+          "rows": 5,
+          "start_index": 2867
+        },
+        {
+          "end_index": 3401,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3117,
+          "style": null,
+          "text": "Dates in the table are commitments, not estimates: a slip of more than a week is raised in the weekly steering review, with a proposal, rather than discovered at the end of the quarter. The architecture diagram below shows the target state once the full launch milestone is complete."
+        },
+        {
+          "end_index": 3403,
+          "inline": [
+            {
+              "end_index": 3402,
+              "kind": "image",
+              "object_id": "kix.img_arch",
+              "start_index": 3401
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3401,
+          "style": null,
+          "text": "￼"
+        },
+        {
+          "end_index": 3524,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3403,
+          "style": null,
+          "text": "Figure 1. Target architecture: storefronts publish order events; Atlas owns validation, payment and fulfilment hand-off."
+        },
+        {
+          "end_index": 3544,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3524,
+          "style": "HEADING_1",
+          "text": "Owners and contacts"
+        },
+        {
+          "end_index": 3700,
+          "inline": [
+            {
+              "end_index": 3671,
+              "kind": "link",
+              "start_index": 3633,
+              "url": "https://oncall.example.com/rotas/atlas"
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3544,
+          "style": null,
+          "text": "Escalations go to the on-call engineer first, then to the milestone owner.\u000bOn-call rota: https://oncall.example.com/rotas/atlas\u000bTeam channel: #atlas-launch"
+        },
+        {
+          "end_index": 3891,
+          "inline": [
+            {
+              "email": "marcus.lee@example.org",
+              "end_index": 3749,
+              "kind": "person",
+              "name": "Marcus Lee",
+              "start_index": 3748
+            },
+            {
+              "email": "ana.souza@example.com",
+              "end_index": 3793,
+              "kind": "person",
+              "name": "Ana Souza",
+              "start_index": 3792
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3700,
+          "style": null,
+          "text": "For anything about scope or priorities, talk to ￼; for anything about the technical design, ￼. Vendor questions (payments, fraud) go through procurement﻿ and are tracked in the vendor sheet."
+        },
+        {
+          "end_index": 3898,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3891,
+          "style": "HEADING_1",
+          "text": "Budget"
+        },
+        {
+          "end_index": 4179,
+          "inline": [
+            {
+              "end_index": 4061,
+              "kind": "equation",
+              "start_index": 4060
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3898,
+          "style": null,
+          "text": "The approved budget covers infrastructure for both regions and one contractor for the migration tooling. Cloud spend is estimated with the usual capacity formula ￼, where peak orders per second is taken from last year's busiest hour. The estimate below includes a 20% contingency."
+        },
+        {
+          "cells": [
+            [
+              {
+                "end_index": 4187,
+                "inline": [],
+                "start_index": 4181,
+                "text": "Item"
+              },
+              {
+                "end_index": 4200,
+                "inline": [],
+                "start_index": 4187,
+                "text": "Q3 estimate"
+              },
+              {
+                "end_index": 4207,
+                "inline": [],
+                "start_index": 4200,
+                "text": "Notes"
+              }
+            ],
+            [
+              {
+                "end_index": 4231,
+                "inline": [],
+                "start_index": 4208,
+                "text": "Compute (two regions)"
+              },
+              {
+                "end_index": 4240,
+                "inline": [],
+                "start_index": 4231,
+                "text": "$84,000"
+              },
+              {
+                "end_index": 4272,
+                "inline": [],
+                "start_index": 4240,
+                "text": "Reserved instances from August"
+              }
+            ],
+            [
+              {
+                "end_index": 4300,
+                "inline": [],
+                "start_index": 4273,
+                "text": "Managed queue and storage"
+              },
+              {
+                "end_index": 4309,
+                "inline": [],
+                "start_index": 4300,
+                "text": "$21,500"
+              },
+              {
+                "end_index": 4311,
+                "inline": [],
+                "start_index": 4309,
+                "text": ""
+              }
+            ],
+            [
+              {
+                "end_index": 4334,
+                "inline": [],
+                "start_index": 4312,
+                "text": "Migration contractor"
+              },
+              {
+                "end_index": 4343,
+                "inline": [],
+                "start_index": 4334,
+                "text": "$48,000"
+              },
+              {
+                "end_index": 4357,
+                "inline": [],
+                "start_index": 4343,
+                "text": "Twelve weeks"
+              }
+            ],
+            [
+              {
+                "end_index": 4377,
+                "inline": [],
+                "start_index": 4358,
+                "text": "Contingency (20%)"
+              },
+              {
+                "end_index": 4386,
+                "inline": [],
+                "start_index": 4377,
+                "text": "$30,700"
+              },
+              {
+                "end_index": 4409,
+                "inline": [],
+                "start_index": 4386,
+                "text": "Released after launch"
+              }
+            ]
+          ],
+          "columns": 3,
+          "end_index": 4410,
+          "kind": "table",
+          "rows": 5,
+          "start_index": 4179
+        },
+        {
+          "end_index": 4412,
+          "inline": [
+            {
+              "end_index": 4411,
+              "kind": "page_break",
+              "start_index": 4410
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 4410,
+          "style": null,
+          "text": "￼"
+        },
+        {
+          "end_index": 4414,
+          "inline": [
+            {
+              "end_index": 4413,
+              "kind": "horizontal_rule",
+              "start_index": 4412
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 4412,
+          "style": null,
+          "text": "￼"
+        },
+        {
+          "end_index": 4534,
+          "inline": [
+            {
+              "end_index": 4476,
+              "kind": "link",
+              "start_index": 4464,
+              "url": "https://wiki.example.com/platform/atlas?utm_source=docs"
+            },
+            {
+              "end_index": 4504,
+              "kind": "link",
+              "start_index": 4487,
+              "url": "?tab=t.eng#heading=h.risk01"
+            }
+          ],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 4414,
+          "style": null,
+          "text": "Earlier versions of this plan are linked from the project page. See also the risk register in the Engineering plan tab."
+        }
+      ],
+      "footers": [],
+      "footnotes": [
+        {
+          "content": [
+            {
+              "end_index": 67,
+              "inline": [],
+              "kind": "paragraph",
+              "list": null,
+              "start_index": 0,
+              "style": null,
+              "text": " Platform strategy memo, March 2026, section 4 (“One order path”)."
+            }
+          ],
+          "footnote_id": "kix.fn1"
+        }
+      ],
+      "headers": [
+        {
+          "content": [
+            {
+              "end_index": 32,
+              "inline": [
+                {
+                  "end_index": 31,
+                  "kind": "auto_text",
+                  "start_index": 30
+                }
+              ],
+              "kind": "paragraph",
+              "list": null,
+              "start_index": 0,
+              "style": null,
+              "text": "Project Atlas — internal\tPage ￼"
+            }
+          ],
+          "header_id": "kix.hdr1"
+        }
+      ],
+      "index": 0,
+      "named_ranges": [
+        {
+          "name": "budget_table",
+          "named_range_id": "kix.nr_budget",
+          "ranges": [
+            {
+              "end_index": 4410,
+              "segment_id": null,
+              "start_index": 4179
+            }
+          ]
+        }
+      ],
+      "nesting_level": 0,
+      "parent_tab_id": null,
+      "tab_id": "t.0",
+      "title": "Overview"
+    },
+    {
+      "content": [
+        {
+          "end_index": 1,
+          "kind": "section_break",
+          "start_index": 0
+        },
+        {
+          "end_index": 10,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1,
+          "style": "HEADING_1",
+          "text": "Timeline"
+        },
+        {
+          "end_index": 18,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 10,
+          "style": "HEADING_3",
+          "text": "Week 27"
+        },
+        {
+          "end_index": 267,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 18,
+          "style": null,
+          "text": "Shadow traffic enabled for the north region. The comparison job runs every hour and posts divergences to the team channel. The first run found a rounding difference in tax totals for orders with more than twenty lines, which was fixed the same day."
+        },
+        {
+          "end_index": 275,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 267,
+          "style": "HEADING_3",
+          "text": "Week 29"
+        },
+        {
+          "end_index": 457,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 275,
+          "style": null,
+          "text": "Divergence rate below 0.1% for five consecutive days. Load test at two times last year's peak passed; the queue consumer needed one extra partition to keep lag under thirty seconds."
+        },
+        {
+          "end_index": 465,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 457,
+          "style": "HEADING_3",
+          "text": "Week 31"
+        },
+        {
+          "end_index": 654,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 465,
+          "style": null,
+          "text": "Canary at 5% of north-region orders. Two incidents, both caused by a stale feature flag in one storefront; neither lost an order, and the flag cleanup is now part of the release checklist."
+        },
+        {
+          "end_index": 662,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 654,
+          "style": "HEADING_3",
+          "text": "Week 32"
+        },
+        {
+          "end_index": 810,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 662,
+          "style": null,
+          "text": "Canary at 25%. Payment authorisation latency improved by 18% compared with the legacy path because Atlas reuses connections to the payment gateway."
+        },
+        {
+          "end_index": 818,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 810,
+          "style": "HEADING_3",
+          "text": "Week 33"
+        },
+        {
+          "end_index": 926,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 818,
+          "style": null,
+          "text": "Canary at 50%. Capacity review for the south region scheduled; the full-launch date depends on its outcome."
+        }
+      ],
+      "footers": [],
+      "footnotes": [],
+      "headers": [],
+      "index": 0,
+      "named_ranges": [],
+      "nesting_level": 1,
+      "parent_tab_id": "t.0",
+      "tab_id": "t.tl1",
+      "title": "Timeline"
+    },
+    {
+      "content": [
+        {
+          "end_index": 1,
+          "kind": "section_break",
+          "start_index": 0
+        },
+        {
+          "end_index": 18,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1,
+          "style": "HEADING_1",
+          "text": "Engineering plan"
+        },
+        {
+          "end_index": 298,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 18,
+          "style": null,
+          "text": "This tab describes how the order service is built and operated. It is written for the engineers on the team and for reviewers from security and finance, so it favours concrete decisions over background. Where a decision is still open it says so, with the owner who will close it."
+        },
+        {
+          "end_index": 311,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 298,
+          "style": "HEADING_2",
+          "text": "Architecture"
+        },
+        {
+          "end_index": 870,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 311,
+          "style": null,
+          "text": "Storefronts publish an OrderPlaced event to a regional queue. The Atlas consumer validates the order against the catalogue snapshot, reserves stock, authorises the payment and hands the order to fulfilment. Each step writes its outcome to the order log before acknowledging the event, so a crash at any point is recovered by replaying the log rather than by reconciling three systems after the fact. The legacy pipelines did the same steps synchronously inside the storefront request, which is why a slow payment gateway used to show up as checkout timeouts."
+        },
+        {
+          "end_index": 1155,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 870,
+          "style": null,
+          "text": "State lives in one regional database per region with a hot standby in a second zone. Cross-region traffic is limited to the catalogue snapshot, which is replicated every five minutes, and to the reporting export, which runs nightly. Nothing on the order path waits for another region."
+        },
+        {
+          "end_index": 1172,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1155,
+          "style": "HEADING_2",
+          "text": "Testing strategy"
+        },
+        {
+          "end_index": 1241,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul2",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 1172,
+          "style": null,
+          "text": "Unit tests for every validation rule, generated from the rule table."
+        },
+        {
+          "end_index": 1297,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul2",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 1241,
+          "style": null,
+          "text": "Contract tests against the payment and fraud sandboxes."
+        },
+        {
+          "end_index": 1393,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul2",
+            "nesting_level": 0,
+            "ordered": false
+          },
+          "start_index": 1297,
+          "style": null,
+          "text": "Replay tests: a day of production orders, anonymised, replayed against every release candidate."
+        },
+        {
+          "end_index": 1455,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.bul2",
+            "nesting_level": 1,
+            "ordered": false
+          },
+          "start_index": 1393,
+          "style": null,
+          "text": "Anonymisation removes names, addresses and card fingerprints."
+        },
+        {
+          "end_index": 1625,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1455,
+          "style": null,
+          "text": "The replay suite is the one that catches real problems. It is slow (about forty minutes) so it runs on the release branch and nightly on main, not on every pull request."
+        },
+        {
+          "end_index": 1631,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1625,
+          "style": "HEADING_2",
+          "text": "Risks"
+        },
+        {
+          "cells": [
+            [
+              {
+                "end_index": 1639,
+                "inline": [],
+                "start_index": 1633,
+                "text": "Risk"
+              },
+              {
+                "end_index": 1651,
+                "inline": [],
+                "start_index": 1639,
+                "text": "Likelihood"
+              },
+              {
+                "end_index": 1659,
+                "inline": [],
+                "start_index": 1651,
+                "text": "Impact"
+              },
+              {
+                "end_index": 1671,
+                "inline": [],
+                "start_index": 1659,
+                "text": "Mitigation"
+              }
+            ],
+            [
+              {
+                "end_index": 1708,
+                "inline": [],
+                "start_index": 1672,
+                "text": "South-region capacity review slips"
+              },
+              {
+                "end_index": 1716,
+                "inline": [],
+                "start_index": 1708,
+                "text": "Medium"
+              },
+              {
+                "end_index": 1735,
+                "inline": [],
+                "start_index": 1716,
+                "text": "Launch date moves"
+              },
+              {
+                "end_index": 1790,
+                "inline": [],
+                "start_index": 1735,
+                "text": "Book the review now; prepare a north-only launch plan"
+              }
+            ],
+            [
+              {
+                "end_index": 1820,
+                "inline": [],
+                "start_index": 1791,
+                "text": "Payment gateway rate limits"
+              },
+              {
+                "end_index": 1825,
+                "inline": [],
+                "start_index": 1820,
+                "text": "Low"
+              },
+              {
+                "end_index": 1850,
+                "inline": [],
+                "start_index": 1825,
+                "text": "Checkout errors at peak"
+              },
+              {
+                "end_index": 1893,
+                "inline": [],
+                "start_index": 1850,
+                "text": "Agree a higher limit before the load test"
+              }
+            ],
+            [
+              {
+                "end_index": 1933,
+                "inline": [],
+                "start_index": 1894,
+                "text": "Legacy pipeline still receives writes"
+              },
+              {
+                "end_index": 1941,
+                "inline": [],
+                "start_index": 1933,
+                "text": "Medium"
+              },
+              {
+                "end_index": 1960,
+                "inline": [],
+                "start_index": 1941,
+                "text": "Duplicated orders"
+              },
+              {
+                "end_index": 2011,
+                "inline": [],
+                "start_index": 1960,
+                "text": "Block writes at the gateway, alert on any attempt"
+              }
+            ]
+          ],
+          "columns": 4,
+          "end_index": 2012,
+          "kind": "table",
+          "rows": 4,
+          "start_index": 1631
+        },
+        {
+          "end_index": 2185,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2012,
+          "style": null,
+          "text": "Each risk has an owner in the launch checklist. The register is reviewed every Monday; a risk whose likelihood or impact changes is raised in the steering review that week."
+        },
+        {
+          "end_index": 2199,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2185,
+          "style": "HEADING_2",
+          "text": "Observability"
+        },
+        {
+          "end_index": 2719,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2199,
+          "style": null,
+          "text": "Every order carries a correlation identifier from the storefront request to the fulfilment hand-off, and every log line, metric and trace span on the order path includes it. The on-call dashboard shows, per region, the event backlog, the age of the oldest unacknowledged event, the authorisation success rate and the replay rate. Alerts fire on symptoms that customers feel (backlog age above two minutes, authorisation success below 97%) rather than on individual host metrics, which the platform team already watches."
+        },
+        {
+          "end_index": 3041,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2719,
+          "style": null,
+          "text": "Traces are sampled at 5% in normal operation and at 100% for any order that fails a step, so that every failure can be followed end to end without paying for full tracing of the happy path. Sampling decisions are made at the storefront and propagated, so a trace is never cut in half by two services sampling differently."
+        },
+        {
+          "end_index": 3057,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3041,
+          "style": "HEADING_2",
+          "text": "Security review"
+        },
+        {
+          "end_index": 3519,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3057,
+          "style": null,
+          "text": "The security review covered the payment flow, the handling of personal data in the order log and the access model for the operations console. Card data never reaches Atlas: storefronts tokenise cards with the payment provider and Atlas only stores the token and the last four digits. Names and addresses are stored encrypted at rest with per-region keys, and the order log keeps them for ninety days, after which only the anonymised order remains for reporting."
+        },
+        {
+          "end_index": 3962,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3519,
+          "style": null,
+          "text": "Access to the operations console requires single sign-on with hardware keys, and every action that changes an order (cancel, refund, re-send to fulfilment) is written to an audit log that the team cannot edit. Two findings from the review are open: the replay tooling needs its own service account instead of borrowing the consumer's, and the nightly reporting export must drop free-text delivery notes, which sometimes contain phone numbers."
+        },
+        {
+          "end_index": 3973,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3962,
+          "style": "HEADING_2",
+          "text": "Operations"
+        },
+        {
+          "end_index": 4539,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 3973,
+          "style": null,
+          "text": "Atlas is deployed several times a day from main through the standard pipeline: build, unit and contract tests, deploy to staging, replay suite on the release candidate once a day, then a progressive rollout across zones. A deploy that raises the error rate or the backlog age in the first zone is rolled back automatically before it reaches the second. Database schema changes are expand-and-contract only: a column is added and back-filled in one release and the old one is dropped at least a week later, so any release can be rolled back without a data migration."
+        },
+        {
+          "end_index": 4875,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 4539,
+          "style": null,
+          "text": "The on-call engineer owns incidents end to end, from the first page to the written review. Reviews are blameless and short: what happened, how we found out, what we changed. Any incident that lost or duplicated an order is reviewed in the steering meeting regardless of its size, because those are the failures Atlas exists to prevent."
+        }
+      ],
+      "footers": [],
+      "footnotes": [],
+      "headers": [],
+      "index": 1,
+      "named_ranges": [],
+      "nesting_level": 0,
+      "parent_tab_id": null,
+      "tab_id": "t.eng",
+      "title": "Engineering plan"
+    },
+    {
+      "content": [
+        {
+          "end_index": 1,
+          "kind": "section_break",
+          "start_index": 0
+        },
+        {
+          "end_index": 15,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1,
+          "style": "HEADING_1",
+          "text": "Decisions log"
+        },
+        {
+          "end_index": 72,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num2",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 15,
+          "style": null,
+          "text": "Use one database per region instead of a global cluster."
+        },
+        {
+          "end_index": 260,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 72,
+          "style": null,
+          "text": "A global cluster would simplify reporting but puts cross-region latency on the order path. Reporting can tolerate a nightly export; checkout cannot tolerate an extra hundred milliseconds."
+        },
+        {
+          "end_index": 300,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num2",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 260,
+          "style": null,
+          "text": "Keep the fraud vendor for this quarter."
+        },
+        {
+          "end_index": 467,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 300,
+          "style": null,
+          "text": "Replacing it was discussed twice. The new vendor's integration would need its own shadow period, and the contract with the current vendor runs until next year anyway."
+        },
+        {
+          "end_index": 518,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num2",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 467,
+          "style": null,
+          "text": "Migrate eighteen months of history, not all of it."
+        },
+        {
+          "end_index": 671,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 518,
+          "style": null,
+          "text": "Older orders are only read by finance for audits, and the legacy archive already serves that need. Migrating everything would triple the migration time."
+        },
+        {
+          "end_index": 730,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num2",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 671,
+          "style": null,
+          "text": "Run the replay suite nightly rather than per pull request."
+        },
+        {
+          "end_index": 876,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 730,
+          "style": null,
+          "text": "Forty minutes per pull request would slow the team down more than the occasional nightly failure costs us; failures are triaged the next morning."
+        },
+        {
+          "end_index": 1068,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 876,
+          "style": null,
+          "text": "Decisions are added here once they are agreed in the steering review. To propose a change to one, add a comment on it and bring it to the next review; do not edit an agreed decision in place."
+        }
+      ],
+      "footers": [],
+      "footnotes": [],
+      "headers": [],
+      "index": 2,
+      "named_ranges": [],
+      "nesting_level": 0,
+      "parent_tab_id": null,
+      "tab_id": "t.dec",
+      "title": "Decisions log"
+    },
+    {
+      "content": [
+        {
+          "end_index": 1,
+          "kind": "section_break",
+          "start_index": 0
+        },
+        {
+          "end_index": 19,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1,
+          "style": "HEADING_1",
+          "text": "Migration runbook"
+        },
+        {
+          "end_index": 334,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 19,
+          "style": null,
+          "text": "This runbook is followed for each region when its orders move from the legacy pipeline to Atlas. It assumes the shadow and canary milestones are complete for that region and that the capacity review has signed off. Read it end to end before the migration window; each step says how to verify it and how to undo it."
+        },
+        {
+          "end_index": 625,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num3",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 334,
+          "style": null,
+          "text": "Announce the window. Post the migration window in the team channel and the support channel at least two working days ahead, with the expected duration and the rollback criteria. Support needs the window to tell customers why an order confirmation might take a few seconds longer than usual."
+        },
+        {
+          "end_index": 853,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num3",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 625,
+          "style": null,
+          "text": "Freeze legacy deploys. Ask the owners of the legacy pipeline to stop deploying from the start of the window until a week after it. A legacy deploy during the migration makes it impossible to tell which side caused a divergence."
+        },
+        {
+          "end_index": 1136,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num3",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 853,
+          "style": null,
+          "text": "Raise the canary to 100%. Route every order in the region through Atlas while the legacy pipeline keeps processing a shadow copy. Watch the divergence dashboard for thirty minutes; any divergence above the agreed threshold means stop and roll back to the previous canary percentage."
+        },
+        {
+          "end_index": 1340,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num3",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 1136,
+          "style": null,
+          "text": "Stop the shadow copy. Once the region has run at 100% for a full business day without divergence, stop mirroring orders to the legacy pipeline. From this point the legacy pipeline receives no new orders."
+        },
+        {
+          "end_index": 1569,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num3",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 1340,
+          "style": null,
+          "text": "Make the legacy pipeline read-only. Revoke write access for the legacy service accounts and enable the gateway rule that rejects writes. Leave read access in place so that support and finance can still look up historical orders."
+        },
+        {
+          "end_index": 1804,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num3",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 1569,
+          "style": null,
+          "text": "Migrate recent history. Run the history migration for the last eighteen months of orders. The job is idempotent and can be stopped and resumed; it reports progress every ten thousand orders and verifies each batch by comparing totals."
+        },
+        {
+          "end_index": 1979,
+          "inline": [],
+          "kind": "paragraph",
+          "list": {
+            "list_id": "kix.num3",
+            "nesting_level": 0,
+            "ordered": true
+          },
+          "start_index": 1804,
+          "style": null,
+          "text": "Close the window. Post a summary in both channels: start and end times, any divergences and how they were resolved, and the date on which the legacy pipeline will be deleted."
+        },
+        {
+          "end_index": 1988,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1979,
+          "style": "HEADING_2",
+          "text": "Rollback"
+        },
+        {
+          "end_index": 2428,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 1988,
+          "style": null,
+          "text": "Until the shadow copy is stopped, rollback is a routing change: set the canary percentage back to its previous value and the legacy pipeline takes the orders again, with nothing to reconcile because it saw every order. After the shadow copy is stopped, rollback means re-enabling writes on the legacy pipeline and replaying the Atlas order log into it, which takes about an hour per day of orders and needs the engineering lead's approval."
+        },
+        {
+          "end_index": 2612,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2428,
+          "style": null,
+          "text": "If in doubt during the window, stop and ask. A delayed migration costs a week; a botched one costs customer orders and the trust of the support team, which is much harder to win back."
+        },
+        {
+          "end_index": 2621,
+          "inline": [],
+          "kind": "paragraph",
+          "list": null,
+          "start_index": 2612,
+          "style": "HEADING_2",
+          "text": "Glossary"
+        },
+        {
+          "cells": [
+            [
+              {
+                "end_index": 2629,
+                "inline": [],
+                "start_index": 2623,
+                "text": "Term"
+              },
+              {
+                "end_index": 2638,
+                "inline": [],
+                "start_index": 2629,
+                "text": "Meaning"
+              }
+            ],
+            [
+              {
+                "end_index": 2655,
+                "inline": [],
+                "start_index": 2639,
+                "text": "Shadow traffic"
+              },
+              {
+                "end_index": 2760,
+                "inline": [],
+                "start_index": 2655,
+                "text": "Orders processed by Atlas in parallel with the legacy pipeline, whose outcome is compared but not used."
+              }
+            ],
+            [
+              {
+                "end_index": 2769,
+                "inline": [],
+                "start_index": 2761,
+                "text": "Canary"
+              },
+              {
+                "end_index": 2839,
+                "inline": [],
+                "start_index": 2769,
+                "text": "A share of real orders processed only by Atlas, raised step by step."
+              }
+            ],
+            [
+              {
+                "end_index": 2852,
+                "inline": [],
+                "start_index": 2840,
+                "text": "Divergence"
+              },
+              {
+                "end_index": 2966,
+                "inline": [],
+                "start_index": 2852,
+                "text": "An order whose outcome (total, stock reservation, payment result) differs between Atlas and the legacy pipeline."
+              }
+            ],
+            [
+              {
+                "end_index": 2978,
+                "inline": [],
+                "start_index": 2967,
+                "text": "Order log"
+              },
+              {
+                "end_index": 3071,
+                "inline": [],
+                "start_index": 2978,
+                "text": "The append-only record of every step Atlas took for an order, used for recovery and audits."
+              }
+            ]
+          ],
+          "columns": 2,
+          "end_index": 3072,
+          "kind": "table",
+          "rows": 5,
+          "start_index": 2621
+        }
+      ],
+      "footers": [],
+      "footnotes": [],
+      "headers": [],
+      "index": 3,
+      "named_ranges": [],
+      "nesting_level": 0,
+      "parent_tab_id": null,
+      "tab_id": "t.run",
+      "title": "Migration runbook"
+    }
+  ],
+  "title": "Project Atlas: Q3 delivery plan",
+  "truncated": false,
+  "url": "https://docs.google.com/document/d/1Qw3rTyU1oPaSdFgHjKlZxCvBnM0987654321poiuyt/edit"
+}

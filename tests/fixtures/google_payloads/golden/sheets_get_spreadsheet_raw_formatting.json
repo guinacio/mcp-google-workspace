@@ -1,0 +1,768 @@
+{
+  "element_count": 4,
+  "format": "raw",
+  "next_offset": null,
+  "raw_chars": 8887,
+  "raw_sha256": "4665af41e773f25ce10b71f891083a0a06d0ee8a0a16139efe617d61f1669c54",
+  "spreadsheet": {
+    "developerMetadata": [
+      {
+        "location": {
+          "locationType": "SPREADSHEET",
+          "spreadsheet": true
+        },
+        "metadataId": 731,
+        "metadataKey": "budget-version",
+        "metadataValue": "3",
+        "visibility": "DOCUMENT"
+      }
+    ],
+    "namedRanges": [
+      {
+        "name": "Totals",
+        "namedRangeId": "nr-totals",
+        "range": {
+          "endColumnIndex": 4,
+          "endRowIndex": 41,
+          "sheetId": 0,
+          "startColumnIndex": 0,
+          "startRowIndex": 40
+        }
+      }
+    ],
+    "properties": {
+      "autoRecalc": "ON_CHANGE",
+      "defaultFormat": {
+        "backgroundColor": {
+          "blue": 1,
+          "green": 1,
+          "red": 1
+        },
+        "backgroundColorStyle": {
+          "rgbColor": {
+            "blue": 1,
+            "green": 1,
+            "red": 1
+          }
+        },
+        "padding": {
+          "bottom": 2,
+          "left": 3,
+          "right": 3,
+          "top": 2
+        },
+        "textFormat": {
+          "bold": false,
+          "fontFamily": "arial,sans,sans-serif",
+          "fontSize": 10,
+          "foregroundColor": {},
+          "foregroundColorStyle": {
+            "rgbColor": {}
+          },
+          "italic": false,
+          "strikethrough": false,
+          "underline": false
+        },
+        "verticalAlignment": "BOTTOM",
+        "wrapStrategy": "OVERFLOW_CELL"
+      },
+      "iterativeCalculationSettings": {
+        "convergenceThreshold": 0.001,
+        "maxIterations": 50
+      },
+      "locale": "pt_BR",
+      "spreadsheetTheme": {
+        "primaryFontFamily": "Arial",
+        "themeColors": [
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 0,
+                "green": 0,
+                "red": 0
+              }
+            },
+            "colorType": "TEXT"
+          },
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 1,
+                "green": 1,
+                "red": 1
+              }
+            },
+            "colorType": "BACKGROUND"
+          },
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 0.96,
+                "green": 0.52,
+                "red": 0.26
+              }
+            },
+            "colorType": "ACCENT1"
+          },
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 0.21,
+                "green": 0.26,
+                "red": 0.92
+              }
+            },
+            "colorType": "ACCENT2"
+          },
+          {
+            "color": {
+              "rgbColor": {
+                "blue": 0.8,
+                "green": 0.33,
+                "red": 0.07
+              }
+            },
+            "colorType": "LINK"
+          }
+        ]
+      },
+      "timeZone": "America/Sao_Paulo",
+      "title": "Budget 2027"
+    },
+    "sheets": [
+      {
+        "basicFilter": {
+          "filterSpecs": [
+            {
+              "columnIndex": 1,
+              "filterCriteria": {
+                "condition": {
+                  "type": "TEXT_NOT_CONTAINS",
+                  "values": [
+                    {
+                      "userEnteredValue": "draft"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "range": {
+            "endColumnIndex": 4,
+            "endRowIndex": 40,
+            "sheetId": 0,
+            "startColumnIndex": 0,
+            "startRowIndex": 1
+          },
+          "sortSpecs": [
+            {
+              "dimensionIndex": 2,
+              "sortOrder": "DESCENDING"
+            }
+          ]
+        },
+        "charts": [
+          {
+            "border": {
+              "color": {
+                "blue": 1,
+                "green": 1,
+                "red": 1
+              },
+              "colorStyle": {
+                "rgbColor": {
+                  "blue": 1,
+                  "green": 1,
+                  "red": 1
+                }
+              }
+            },
+            "chartId": 1749823011,
+            "position": {
+              "overlayPosition": {
+                "anchorCell": {
+                  "columnIndex": 6,
+                  "rowIndex": 2,
+                  "sheetId": 0
+                },
+                "heightPixels": 371,
+                "offsetXPixels": 12,
+                "offsetYPixels": 4,
+                "widthPixels": 600
+              }
+            },
+            "spec": {
+              "basicChart": {
+                "axis": [
+                  {
+                    "position": "BOTTOM_AXIS",
+                    "title": "Category"
+                  },
+                  {
+                    "position": "LEFT_AXIS",
+                    "title": "R$"
+                  }
+                ],
+                "chartType": "COLUMN",
+                "domains": [
+                  {
+                    "domain": {
+                      "sourceRange": {
+                        "sources": [
+                          {
+                            "endColumnIndex": 1,
+                            "endRowIndex": 40,
+                            "sheetId": 0,
+                            "startColumnIndex": 0,
+                            "startRowIndex": 1
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ],
+                "headerCount": 1,
+                "legendPosition": "BOTTOM_LEGEND",
+                "series": [
+                  {
+                    "series": {
+                      "sourceRange": {
+                        "sources": [
+                          {
+                            "endColumnIndex": 3,
+                            "endRowIndex": 40,
+                            "sheetId": 0,
+                            "startColumnIndex": 2,
+                            "startRowIndex": 1
+                          }
+                        ]
+                      }
+                    },
+                    "targetAxis": "LEFT_AXIS"
+                  }
+                ]
+              },
+              "fontName": "Roboto",
+              "hiddenDimensionStrategy": "SKIP_HIDDEN_ROWS_AND_COLUMNS",
+              "title": "Spend by category"
+            }
+          }
+        ],
+        "conditionalFormats": [
+          {
+            "booleanRule": {
+              "condition": {
+                "type": "NUMBER_GREATER",
+                "values": [
+                  {
+                    "userEnteredValue": "0"
+                  }
+                ]
+              },
+              "format": {
+                "textFormat": {
+                  "foregroundColor": {
+                    "red": 0.8
+                  },
+                  "foregroundColorStyle": {
+                    "rgbColor": {
+                      "blue": 0,
+                      "green": 0,
+                      "red": 0.8
+                    }
+                  }
+                }
+              }
+            },
+            "ranges": [
+              {
+                "endColumnIndex": 4,
+                "endRowIndex": 40,
+                "sheetId": 0,
+                "startColumnIndex": 3,
+                "startRowIndex": 1
+              }
+            ]
+          }
+        ],
+        "filterViews": [
+          {
+            "filterSpecs": [
+              {
+                "columnIndex": 3,
+                "filterCriteria": {
+                  "condition": {
+                    "type": "NUMBER_GREATER",
+                    "values": [
+                      {
+                        "userEnteredValue": "0"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "filterViewId": 184325307,
+            "range": {
+              "endColumnIndex": 4,
+              "endRowIndex": 40,
+              "sheetId": 0,
+              "startColumnIndex": 0,
+              "startRowIndex": 1
+            },
+            "title": "Over budget"
+          }
+        ],
+        "merges": [
+          {
+            "endColumnIndex": 3,
+            "endRowIndex": 1,
+            "sheetId": 0,
+            "startColumnIndex": 0,
+            "startRowIndex": 0
+          }
+        ],
+        "properties": {
+          "gridProperties": {
+            "columnCount": 26,
+            "frozenRowCount": 1,
+            "rowCount": 1000
+          },
+          "index": 0,
+          "sheetId": 0,
+          "sheetType": "GRID",
+          "tabColorStyle": {
+            "rgbColor": {
+              "blue": 0.96,
+              "green": 0.52,
+              "red": 0.26
+            }
+          },
+          "title": "Summary"
+        }
+      },
+      {
+        "bandedRanges": [
+          {
+            "bandedRangeId": 562839104,
+            "range": {
+              "endColumnIndex": 8,
+              "endRowIndex": 500,
+              "sheetId": 1395071234,
+              "startColumnIndex": 0,
+              "startRowIndex": 0
+            },
+            "rowProperties": {
+              "firstBandColorStyle": {
+                "rgbColor": {
+                  "blue": 1,
+                  "green": 1,
+                  "red": 1
+                }
+              },
+              "headerColorStyle": {
+                "rgbColor": {
+                  "blue": 0.96,
+                  "green": 0.52,
+                  "red": 0.26
+                }
+              },
+              "secondBandColorStyle": {
+                "rgbColor": {
+                  "blue": 0.99,
+                  "green": 0.94,
+                  "red": 0.91
+                }
+              }
+            }
+          }
+        ],
+        "data": [
+          {
+            "columnMetadata": [
+              {
+                "pixelSize": 100
+              },
+              {
+                "pixelSize": 180
+              },
+              {
+                "pixelSize": 100
+              }
+            ],
+            "rowData": [
+              {
+                "values": [
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "LEFT",
+                      "textFormat": {
+                        "bold": true,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "stringValue": "Date"
+                    },
+                    "formattedValue": "Date",
+                    "userEnteredFormat": {
+                      "backgroundColorStyle": {
+                        "rgbColor": {
+                          "blue": 0.83,
+                          "green": 0.92,
+                          "red": 0.85
+                        }
+                      },
+                      "textFormat": {
+                        "bold": true
+                      }
+                    },
+                    "userEnteredValue": {
+                      "stringValue": "Date"
+                    }
+                  },
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "LEFT",
+                      "textFormat": {
+                        "bold": true,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "stringValue": "Item"
+                    },
+                    "formattedValue": "Item",
+                    "userEnteredFormat": {
+                      "backgroundColorStyle": {
+                        "rgbColor": {
+                          "blue": 0.83,
+                          "green": 0.92,
+                          "red": 0.85
+                        }
+                      },
+                      "textFormat": {
+                        "bold": true
+                      }
+                    },
+                    "userEnteredValue": {
+                      "stringValue": "Item"
+                    }
+                  },
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "LEFT",
+                      "textFormat": {
+                        "bold": true,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "stringValue": "Amount"
+                    },
+                    "formattedValue": "Amount",
+                    "userEnteredFormat": {
+                      "backgroundColorStyle": {
+                        "rgbColor": {
+                          "blue": 0.83,
+                          "green": 0.92,
+                          "red": 0.85
+                        }
+                      },
+                      "textFormat": {
+                        "bold": true
+                      }
+                    },
+                    "userEnteredValue": {
+                      "stringValue": "Amount"
+                    }
+                  }
+                ]
+              },
+              {
+                "values": [
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "LEFT",
+                      "textFormat": {
+                        "bold": false,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "stringValue": "2027-01-04"
+                    },
+                    "formattedValue": "2027-01-04",
+                    "userEnteredFormat": {
+                      "textFormat": {
+                        "bold": false
+                      }
+                    },
+                    "userEnteredValue": {
+                      "stringValue": "2027-01-04"
+                    }
+                  },
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "LEFT",
+                      "textFormat": {
+                        "bold": false,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "stringValue": "Rent"
+                    },
+                    "formattedValue": "Rent",
+                    "userEnteredFormat": {
+                      "textFormat": {
+                        "bold": false
+                      }
+                    },
+                    "userEnteredValue": {
+                      "stringValue": "Rent"
+                    }
+                  },
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "RIGHT",
+                      "numberFormat": {
+                        "pattern": "\"R$\" #,##0.00",
+                        "type": "CURRENCY"
+                      },
+                      "textFormat": {
+                        "bold": false,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "numberValue": 3200
+                    },
+                    "formattedValue": "R$ 3,200.00",
+                    "userEnteredFormat": {
+                      "numberFormat": {
+                        "pattern": "\"R$\" #,##0.00",
+                        "type": "CURRENCY"
+                      },
+                      "textFormat": {
+                        "bold": false
+                      }
+                    },
+                    "userEnteredValue": {
+                      "numberValue": 3200
+                    }
+                  }
+                ]
+              },
+              {
+                "values": [
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "LEFT",
+                      "textFormat": {
+                        "bold": false,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "stringValue": "2027-01-05"
+                    },
+                    "formattedValue": "2027-01-05",
+                    "userEnteredFormat": {
+                      "textFormat": {
+                        "bold": false
+                      }
+                    },
+                    "userEnteredValue": {
+                      "stringValue": "2027-01-05"
+                    }
+                  },
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "LEFT",
+                      "textFormat": {
+                        "bold": false,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "stringValue": "Groceries"
+                    },
+                    "formattedValue": "Groceries",
+                    "userEnteredFormat": {
+                      "textFormat": {
+                        "bold": false
+                      }
+                    },
+                    "userEnteredValue": {
+                      "stringValue": "Groceries"
+                    }
+                  },
+                  {
+                    "effectiveFormat": {
+                      "backgroundColor": {
+                        "blue": 1,
+                        "green": 1,
+                        "red": 1
+                      },
+                      "horizontalAlignment": "RIGHT",
+                      "numberFormat": {
+                        "pattern": "\"R$\" #,##0.00",
+                        "type": "CURRENCY"
+                      },
+                      "textFormat": {
+                        "bold": false,
+                        "fontFamily": "Arial",
+                        "fontSize": 10,
+                        "foregroundColor": {}
+                      },
+                      "verticalAlignment": "BOTTOM",
+                      "wrapStrategy": "OVERFLOW_CELL"
+                    },
+                    "effectiveValue": {
+                      "numberValue": 412.37
+                    },
+                    "formattedValue": "R$ 412.37",
+                    "userEnteredFormat": {
+                      "numberFormat": {
+                        "pattern": "\"R$\" #,##0.00",
+                        "type": "CURRENCY"
+                      },
+                      "textFormat": {
+                        "bold": false
+                      }
+                    },
+                    "userEnteredValue": {
+                      "numberValue": 412.37
+                    }
+                  }
+                ]
+              }
+            ],
+            "rowMetadata": [
+              {
+                "pixelSize": 21
+              },
+              {
+                "pixelSize": 21
+              },
+              {
+                "pixelSize": 21
+              }
+            ],
+            "startColumn": 0,
+            "startRow": 0
+          }
+        ],
+        "properties": {
+          "gridProperties": {
+            "columnCount": 8,
+            "frozenColumnCount": 1,
+            "frozenRowCount": 1,
+            "rowCount": 500
+          },
+          "index": 1,
+          "sheetId": 1395071234,
+          "sheetType": "GRID",
+          "title": "Ledger"
+        },
+        "protectedRanges": [
+          {
+            "description": "Header row",
+            "editors": {
+              "users": [
+                "owner@example.com"
+              ]
+            },
+            "protectedRangeId": 1730947214,
+            "range": {
+              "endRowIndex": 1,
+              "sheetId": 1395071234,
+              "startRowIndex": 0
+            },
+            "requestingUserCanEdit": true,
+            "warningOnly": false
+          }
+        ]
+      }
+    ],
+    "spreadsheetId": "1RawFmtSheet0123456789abcdefghijklmnopqrstuvw",
+    "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1RawFmtSheet0123456789abcdefghijklmnopqrstuvw/edit"
+  },
+  "spreadsheet_id": "1RawFmtSheet0123456789abcdefghijklmnopqrstuvw",
+  "title": "Budget 2027",
+  "truncated": false,
+  "url": "https://docs.google.com/spreadsheets/d/1RawFmtSheet0123456789abcdefghijklmnopqrstuvw/edit"
+}

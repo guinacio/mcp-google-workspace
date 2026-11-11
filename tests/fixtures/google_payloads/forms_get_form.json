@@ -1,0 +1,263 @@
+{
+  "formId": "1FAIpQLSdExampleFormIdentifier0123456789abcdefghijklmnop",
+  "info": {
+    "title": "Customer feedback",
+    "description": "Two minutes, five questions.",
+    "documentTitle": "Customer feedback (June 2026)"
+  },
+  "settings": {
+    "quizSettings": {
+      "isQuiz": false
+    },
+    "emailCollectionType": "DO_NOT_COLLECT"
+  },
+  "revisionId": "00000014",
+  "responderUri": "https://docs.google.com/forms/d/e/1FAIpQLSdExampleFormIdentifier0123456789abcdefghijklmnop/viewform?usp=forms_api",
+  "items": [
+    {
+      "itemId": "2f1a8c3e",
+      "title": "How satisfied are you with the product?",
+      "questionItem": {
+        "question": {
+          "questionId": "7b2d9e10",
+          "required": true,
+          "scaleQuestion": {
+            "low": 1,
+            "high": 5,
+            "lowLabel": "Not at all",
+            "highLabel": "Very"
+          }
+        }
+      }
+    },
+    {
+      "itemId": "5c0e2b4a",
+      "title": "Would you recommend it to a colleague?",
+      "questionItem": {
+        "question": {
+          "questionId": "1e4f6a8c",
+          "required": true,
+          "choiceQuestion": {
+            "type": "RADIO",
+            "options": [
+              {
+                "value": "Yes"
+              },
+              {
+                "value": "No",
+                "goToAction": "SUBMIT_FORM"
+              },
+              {
+                "value": "Not sure"
+              }
+            ],
+            "shuffle": false
+          },
+          "grading": {
+            "pointValue": 0
+          }
+        }
+      }
+    },
+    {
+      "itemId": "9d3b7f1e",
+      "title": "Which features do you use?",
+      "questionItem": {
+        "question": {
+          "questionId": "3a5c7e9b",
+          "choiceQuestion": {
+            "type": "CHECKBOX",
+            "options": [
+              {
+                "value": "Reports"
+              },
+              {
+                "value": "Alerts"
+              },
+              {
+                "value": "Exports"
+              },
+              {
+                "isOther": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "itemId": "4e8a2c6d",
+      "title": "Anything else?",
+      "description": "Optional.",
+      "questionItem": {
+        "question": {
+          "questionId": "8c1e3a5f",
+          "textQuestion": {
+            "paragraph": true
+          }
+        }
+      }
+    },
+    {
+      "itemId": "7a1c3e5b",
+      "title": "About your team",
+      "description": "A few details for context.",
+      "pageBreakItem": {}
+    },
+    {
+      "itemId": "0f2e4d6c",
+      "title": "Rate each area",
+      "questionGroupItem": {
+        "questions": [
+          {
+            "questionId": "4b6d8f0a",
+            "required": true,
+            "rowQuestion": {
+              "title": "Speed"
+            }
+          },
+          {
+            "questionId": "5c7e9a1b",
+            "required": true,
+            "rowQuestion": {
+              "title": "Reliability"
+            }
+          }
+        ],
+        "grid": {
+          "columns": {
+            "type": "RADIO",
+            "options": [
+              {
+                "value": "Poor"
+              },
+              {
+                "value": "Fine"
+              },
+              {
+                "value": "Great"
+              }
+            ]
+          },
+          "shuffleQuestions": false
+        }
+      }
+    },
+    {
+      "itemId": "1d3f5b7e",
+      "title": "Team size",
+      "questionItem": {
+        "question": {
+          "questionId": "6d8f0b2c",
+          "choiceQuestion": {
+            "type": "DROP_DOWN",
+            "options": [
+              {
+                "value": "1-10"
+              },
+              {
+                "value": "11-50"
+              },
+              {
+                "value": "51+"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "itemId": "2e4a6c8f",
+      "title": "When did you start using it?",
+      "questionItem": {
+        "question": {
+          "questionId": "7e9a1c3d",
+          "dateQuestion": {
+            "includeYear": true
+          }
+        }
+      }
+    },
+    {
+      "itemId": "3f5b7d9a",
+      "title": "Your name",
+      "questionItem": {
+        "question": {
+          "questionId": "8f0b2d4e",
+          "required": true,
+          "textQuestion": {}
+        }
+      }
+    },
+    {
+      "itemId": "4a6c8e0b",
+      "title": "Overall rating",
+      "questionItem": {
+        "question": {
+          "questionId": "9a1c3e5f",
+          "ratingQuestion": {
+            "ratingScaleLevel": 5,
+            "iconType": "STAR"
+          }
+        }
+      }
+    },
+    {
+      "itemId": "5b7d9f1c",
+      "title": "Attach a screenshot",
+      "questionItem": {
+        "question": {
+          "questionId": "0b2d4f6a",
+          "fileUploadQuestion": {
+            "folderId": "0BexampleUploadFolderId",
+            "types": [
+              "IMAGE"
+            ],
+            "maxFiles": 1,
+            "maxFileSize": "10485760"
+          }
+        }
+      }
+    },
+    {
+      "itemId": "6c8e0a2d",
+      "title": "Product tour",
+      "videoItem": {
+        "video": {
+          "youtubeUri": "https://www.youtube.com/watch?v=exampleVid0",
+          "properties": {
+            "alignment": "LEFT",
+            "width": 320
+          }
+        },
+        "caption": "Two-minute tour"
+      }
+    },
+    {
+      "itemId": "7d9f1b3e",
+      "title": "Our logo",
+      "imageItem": {
+        "image": {
+          "contentUri": "https://lh7-rt.googleusercontent.com/formsz/AGV_exampleImage",
+          "altText": "Logo",
+          "properties": {
+            "alignment": "CENTER",
+            "width": 200
+          }
+        }
+      }
+    },
+    {
+      "itemId": "6b0d4f2a",
+      "title": "Thank you",
+      "textItem": {}
+    }
+  ],
+  "linkedSheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "publishSettings": {
+    "publishState": {
+      "isPublished": true,
+      "isAcceptingResponses": true
+    }
+  }
+}

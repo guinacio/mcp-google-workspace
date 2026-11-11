@@ -72,3 +72,44 @@ def test_search_results_can_be_called_through_the_proxy(monkeypatch) -> None:
     matches, called = anyio.run(_search_and_call, server)
     assert "alpha_lookup" in matches.content[0].text
     assert called.structured_content == {"query": "needle"}
+
+
+def test_workspace_front_page_shows_service_entry_points_not_plumbing(monkeypatch) -> None:
+    """Pins what a client sees before its first search on the composed server."""
+    import importlib
+
+    import mcp_google_workspace.server as server_module
+
+    monkeypatch.setenv("MCP_TOOL_SEARCH", "on")
+    monkeypatch.delenv("ENABLE_APPS_DASHBOARD", raising=False)
+    tool_discovery._CONFIGURED_SERVERS.clear()
+    try:
+        server = importlib.reload(server_module).workspace_mcp
+        assert tool_discovery.configure_tool_search(server)
+        visible = anyio.run(_catalog, server)
+    finally:
+        monkeypatch.delenv("MCP_TOOL_SEARCH", raising=False)
+        importlib.reload(server_module)
+
+    assert visible == {
+        "call_tool",
+        "search_tools",
+        "connect_google_workspace",
+        "get_google_connection_status",
+        "disconnect_google_workspace",
+        "search_workspace",
+        "resolve_workspace_resource",
+        "prepare_workspace_action",
+        "commit_workspace_action",
+        "gmail_search_emails",
+        "gmail_get_mail_digest",
+        "calendar_search_events",
+        "calendar_get_calendar_digest",
+        "drive_list_files",
+        "tasks_tasks_digest",
+    }
+    assert not visible & {
+        "uploads_file_manager",
+        "uploads_list_files",
+        "get_mcp_apps_diagnostics",
+    }

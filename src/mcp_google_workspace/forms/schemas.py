@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -11,6 +11,8 @@ from ..common.request_model import ToolRequestModel
 
 class GetFormRequest(ToolRequestModel):
     form_id: str = Field(description="Google Form file ID.")
+    format: Literal["normalized", "raw"] = Field(default="normalized")
+    offset: int = Field(default=0, ge=0)
 
 
 class CreateFormRequest(ToolRequestModel):

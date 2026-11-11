@@ -1,0 +1,123 @@
+{
+  "resourceName": "people/c5566778899001122334",
+  "etag": "%EgoBAj0DCQ4/QDcuGgQBAgUHIgxDb250YWN0RXRhZzE=",
+  "metadata": {
+    "sources": [
+      {
+        "type": "CONTACT",
+        "id": "5566778899001122334",
+        "etag": "#Q2hhbmdlZA==",
+        "updateTime": "2026-10-21T16:03:44.118Z"
+      }
+    ],
+    "objectType": "PERSON"
+  },
+  "names": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "displayName": "Katherine Johnson",
+      "familyName": "Johnson",
+      "givenName": "Katherine",
+      "displayNameLastFirst": "Johnson, Katherine",
+      "unstructuredName": "Katherine Johnson"
+    }
+  ],
+  "emailAddresses": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "value": "katherine@example.com",
+      "type": "work",
+      "formattedType": "Work"
+    },
+    {
+      "metadata": {
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        }
+      },
+      "value": "kjohnson@example.org",
+      "type": "home",
+      "formattedType": "Home"
+    },
+    {
+      "metadata": {
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        }
+      },
+      "value": "Katherine@Example.com"
+    }
+  ],
+  "phoneNumbers": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "value": "+1 650-555-0142",
+      "canonicalForm": "+16505550142",
+      "type": "work",
+      "formattedType": "Work"
+    },
+    {
+      "metadata": {
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        }
+      },
+      "value": "(650) 555-0199",
+      "canonicalForm": "+16505550199",
+      "type": "mobile",
+      "formattedType": "Mobile"
+    }
+  ],
+  "organizations": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "name": "Orbital Mechanics Group",
+      "title": "Lead Mathematician"
+    }
+  ],
+  "biographies": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "5566778899001122334"
+        },
+        "sourcePrimary": true
+      },
+      "value": "Met at the 2026 navigation conference. Prefers email over calls.",
+      "contentType": "TEXT_PLAIN"
+    }
+  ]
+}

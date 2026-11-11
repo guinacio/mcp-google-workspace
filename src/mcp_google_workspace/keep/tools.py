@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import logging
-
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import execute_google_request
-from ..common.confirmation import confirm_destructive_action
 from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
 from .client import keep_service, normalize_note_name
@@ -28,6 +26,24 @@ from .schemas import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+CreateNoteArg = Annotated[CreateNoteRequest, "Title, a plain-text or checklist body, optional collaborators and a confirmation flag for a new note."]
+GetNoteArg = Annotated[GetNoteRequest, "Identifies the Keep note to fetch."]
+ListNotesArg = Annotated[ListNotesRequest, "Filter and paging options for listing Keep notes."]
+DeleteNoteArg = Annotated[DeleteNoteRequest, "Identifies the Keep note to delete and whether to ask the user to confirm first."]
+UpdateNoteArg = Annotated[UpdateNoteRequest, "Replacement note content; accepted for compatibility, but Keep cannot edit notes so nothing is changed."]
+AppendNoteArg = Annotated[AppendNoteRequest, "The note to extend, the text or checklist items to add, and whether to create the replacement note."]
+PatchChecklistArg = Annotated[PatchChecklistItemRequest, "The note, the checklist edit to make and its arguments, and whether to create the replacement note."]
+ShareNoteArg = Annotated[ShareNoteRequest, "The note and the email addresses to grant writer access."]
+UnshareNoteArg = Annotated[UnshareNoteRequest, "The note and the permission names to remove from it."]
+
+NoteNameArg = Annotated[
+    str,
+    (
+        "Keep note resource name 'notes/ABC123' or the bare note ID. Accepted for compatibility; "
+        "the tool does nothing with it and always reports that the operation is unsupported."
+    ),
+]
 
 
 def _build_note_body(request: CreateNoteRequest | UpdateNoteRequest) -> dict[str, Any]:
@@ -88,21 +104,15 @@ def _build_replacement_note(title: str | None, text_body: str | None, checklist:
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="create_note")
-    async def create_note(request: CreateNoteRequest, ctx: Context) -> dict[str, Any]:
-        """Create a text or checklist note, optionally adding writer collaborators.
+    async def create_note(request: CreateNoteArg, ctx: Context) -> dict[str, Any]:
+        """Create a Keep note with a plain-text or checklist body, optionally shared with collaborators.
 
-        The request supplies the title, one body format, optional collaborator emails,
-        and confirmation behavior. Returns the created note with ``status=ok``, a
-        cancellation status, or a structured provider error.
+        Keep cannot edit notes afterwards, so to change content use keep_append_note_content or
+        keep_patch_note_checklist. Returns status 'ok' with the created note, whose name field
+        ('notes/...') identifies it for later calls. Collaborators are given writer access; sharing with
+        collaborators asks the user to confirm first, and the call returns status 'cancelled' if declined.
         """
         service = keep_service()
-        if request.confirm_create:
-            if not await confirm_destructive_action(
-                ctx,
-                "create_note",
-                f"Create Keep note titled '{request.title or '(untitled)'}'?",
-            ):
-                return {"status": "cancelled"}
 
         note = _build_note_body(request)
         LOGGER.debug("Creating Google Keep note.")
@@ -130,11 +140,12 @@ def register_tools(server: FastMCP) -> None:
         return {"status": "ok", "note": created}
 
     @server.tool(name="get_note")
-    async def get_note(request: GetNoteRequest, ctx: Context) -> dict[str, Any]:
-        """Get one Keep note by bare ID or canonical ``notes/...`` name.
+    async def get_note(request: GetNoteArg, ctx: Context) -> dict[str, Any]:
+        """Get one Keep note with its full text, by bare ID or canonical 'notes/...' name.
 
-        Note names come from ``create_note`` or ``list_notes``. Returns a normalized
-        note envelope with full text/checklist content, or a structured provider error.
+        Find the name with keep_list_notes or keep_create_note first. Returns id, title, text
+        (full, not truncated), checklist counts (total and completed), attachment_count,
+        created_at, updated_at and trashed_at in the account time zone.
         """
         service = keep_service()
         name = normalize_note_name(request.note_name)
@@ -150,11 +161,12 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, note_name=name) from exc
 
     @server.tool(name="list_notes")
-    async def list_notes(request: ListNotesRequest, ctx: Context) -> dict[str, Any]:
-        """List a page of Keep notes with optional API filter and pagination token.
+    async def list_notes(request: ListNotesArg, ctx: Context) -> dict[str, Any]:
+        """List a page of Keep notes, optionally filtered by creation, update or trash time.
 
-        Returns normalized note envelopes, count, account timezone, and the next page
-        token when more notes exist, or a structured provider error.
+        To read one note in full use keep_get_note. Returns notes (id, title, text cut to 500
+        characters with text_truncated, checklist counts, attachment_count and timestamps),
+        count, next_page_token when more notes exist, and account_timezone.
         """
         service = keep_service()
         LOGGER.debug("Listing Keep notes.")
@@ -180,21 +192,14 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="delete_note")
-    async def delete_note(request: DeleteNoteRequest, ctx: Context) -> dict[str, Any]:
-        """Permanently delete a Keep note after optional interactive confirmation.
+    async def delete_note(request: DeleteNoteArg, ctx: Context) -> dict[str, Any]:
+        """Permanently delete a Keep note; this cannot be undone.
 
-        The note name comes from ``create_note`` or ``list_notes``. Returns ``status=ok``
-        with the canonical note name, a cancellation status, or a provider error.
+        Find the note name with keep_list_notes. Returns status 'ok' with the note_name. The user
+        is asked to confirm first, and the call returns status 'cancelled' if declined.
         """
         service = keep_service()
         name = normalize_note_name(request.note_name)
-        if request.confirm_delete:
-            if not await confirm_destructive_action(
-                ctx,
-                "delete_note",
-                f"Permanently delete Keep note {name}? This cannot be undone.",
-            ):
-                return {"status": "cancelled"}
         try:
             await execute_google_request(service.notes().delete(name=name))
         except HttpError as exc:
@@ -202,11 +207,12 @@ def register_tools(server: FastMCP) -> None:
         return {"status": "ok", "note_name": name}
 
     @server.tool(name="update_note")
-    async def update_note(request: UpdateNoteRequest, ctx: Context) -> dict[str, Any]:
-        """Explain that direct note updates are unavailable in Google Keep API v1.
+    async def update_note(request: UpdateNoteArg, ctx: Context) -> dict[str, Any]:
+        """Report that editing a note in place is not possible, because Google Keep API v1 has no update call.
 
-        Accepts the desired replacement content for compatibility and returns an
-        ``unsupported`` response pointing callers to the create/delete workflow.
+        Instead create a replacement with keep_create_note and delete the original with
+        keep_delete_note, or use keep_append_note_content or keep_patch_note_checklist. Returns
+        status 'unsupported' with a reason and suggested_workflow; nothing is changed.
         """
         _ = request
         LOGGER.debug(
@@ -219,10 +225,10 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="archive_note")
-    async def archive_note(note_name: str, ctx: Context) -> dict[str, Any]:
-        """Report that archiving ``note_name`` is unavailable in Google Keep API v1.
+    async def archive_note(note_name: NoteNameArg, ctx: Context) -> dict[str, Any]:
+        """Report that archiving a note is not possible, because Google Keep API v1 has no archive call.
 
-        Returns a stable ``unsupported`` response with the API limitation.
+        Returns status 'unsupported' with a reason; nothing is changed.
         """
         _ = note_name
         LOGGER.debug("Archive action is not exposed by Google Keep API v1.")
@@ -232,10 +238,10 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="unarchive_note")
-    async def unarchive_note(note_name: str, ctx: Context) -> dict[str, Any]:
-        """Report that unarchiving ``note_name`` is unavailable in Google Keep API v1.
+    async def unarchive_note(note_name: NoteNameArg, ctx: Context) -> dict[str, Any]:
+        """Report that unarchiving a note is not possible, because Google Keep API v1 has no archive call.
 
-        Returns a stable ``unsupported`` response with the API limitation.
+        Returns status 'unsupported' with a reason; nothing is changed.
         """
         _ = note_name
         LOGGER.debug("Unarchive action is not exposed by Google Keep API v1.")
@@ -246,9 +252,9 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="list_keep_labels")
     async def list_keep_labels(ctx: Context) -> dict[str, Any]:
-        """Report that listing labels is unavailable in Google Keep API v1.
+        """Report that listing labels is not possible, because Google Keep API v1 has no labels resource.
 
-        Returns a stable ``unsupported`` response with the API limitation.
+        Returns status 'unsupported' with a reason; nothing is changed.
         """
         LOGGER.debug("Google Keep API v1 does not provide a labels resource.")
         return {
@@ -257,10 +263,16 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="create_keep_label")
-    async def create_keep_label(label_name: str, ctx: Context) -> dict[str, Any]:
-        """Report that creating ``label_name`` is unavailable in Google Keep API v1.
+    async def create_keep_label(
+        label_name: Annotated[
+            str,
+            "Name of the label to create. Accepted for compatibility; no label is created.",
+        ],
+        ctx: Context,
+    ) -> dict[str, Any]:
+        """Report that creating a label is not possible, because Google Keep API v1 has no labels resource.
 
-        Returns a stable ``unsupported`` response with the API limitation.
+        Returns status 'unsupported' with a reason; no label is created.
         """
         _ = label_name
         LOGGER.debug("Google Keep API v1 does not provide label creation endpoints.")
@@ -270,10 +282,16 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="delete_keep_label")
-    async def delete_keep_label(label_name: str, ctx: Context) -> dict[str, Any]:
-        """Report that deleting ``label_name`` is unavailable in Google Keep API v1.
+    async def delete_keep_label(
+        label_name: Annotated[
+            str,
+            "Name of the label to delete. Accepted for compatibility; no label is deleted.",
+        ],
+        ctx: Context,
+    ) -> dict[str, Any]:
+        """Report that deleting a label is not possible, because Google Keep API v1 has no labels resource.
 
-        Returns a stable ``unsupported`` response with the API limitation.
+        Returns status 'unsupported' with a reason; no label is deleted.
         """
         _ = label_name
         LOGGER.debug("Google Keep API v1 does not provide label deletion endpoints.")
@@ -283,11 +301,16 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="add_checklist_item")
-    async def add_checklist_item(note_name: str, text: str, ctx: Context) -> dict[str, Any]:
-        """Explain how to add ``text`` to ``note_name`` through a replacement note.
+    async def add_checklist_item(
+        note_name: NoteNameArg,
+        text: Annotated[str, "Text of the checklist item to add. Accepted for compatibility and not used."],
+        ctx: Context,
+    ) -> dict[str, Any]:
+        """Report that adding a checklist item in place is not possible, because Google Keep API v1 has no update call.
 
-        Returns ``unsupported`` for direct mutation and points to
-        ``patch_note_checklist`` as the supported preview/apply workflow.
+        Use keep_patch_note_checklist with operation 'add' instead, which previews or creates a
+        replacement note. Returns status 'unsupported' with a reason and suggested_tool; nothing
+        is changed.
         """
         _ = (note_name, text)
         LOGGER.debug("Checklist mutation requires update API, which Keep API v1 does not expose.")
@@ -298,11 +321,17 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="toggle_checklist_item")
-    async def toggle_checklist_item(note_name: str, index: int, checked: bool, ctx: Context) -> dict[str, Any]:
-        """Explain how to set a checklist item's checked state via a replacement note.
+    async def toggle_checklist_item(
+        note_name: NoteNameArg,
+        index: Annotated[int, "Zero-based position of the checklist item. Accepted for compatibility and not used."],
+        checked: Annotated[bool, "Checked state to set on the item. Accepted for compatibility and not used."],
+        ctx: Context,
+    ) -> dict[str, Any]:
+        """Report that ticking or unticking a checklist item in place is not possible, because Google Keep API v1 has no update call.
 
-        ``index`` is zero-based. Returns ``unsupported`` for direct mutation and points
-        to ``patch_note_checklist`` as the supported preview/apply workflow.
+        Use keep_patch_note_checklist with operation 'set_checked' instead, which previews or
+        creates a replacement note. Returns status 'unsupported' with a reason and suggested_tool;
+        nothing is changed.
         """
         _ = (note_name, index, checked)
         LOGGER.debug("Checklist mutation requires update API, which Keep API v1 does not expose.")
@@ -313,11 +342,16 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="remove_checklist_item")
-    async def remove_checklist_item(note_name: str, index: int, ctx: Context) -> dict[str, Any]:
-        """Explain how to remove a zero-based checklist item via a replacement note.
+    async def remove_checklist_item(
+        note_name: NoteNameArg,
+        index: Annotated[int, "Zero-based position of the checklist item to remove. Accepted for compatibility and not used."],
+        ctx: Context,
+    ) -> dict[str, Any]:
+        """Report that removing a checklist item in place is not possible, because Google Keep API v1 has no update call.
 
-        Returns ``unsupported`` for direct mutation and points to
-        ``patch_note_checklist`` as the supported preview/apply workflow.
+        Use keep_patch_note_checklist with operation 'remove' instead, which previews or creates a
+        replacement note. Returns status 'unsupported' with a reason and suggested_tool; nothing
+        is changed.
         """
         _ = (note_name, index)
         LOGGER.debug("Checklist mutation requires update API, which Keep API v1 does not expose.")
@@ -328,12 +362,13 @@ def register_tools(server: FastMCP) -> None:
         }
 
     @server.tool(name="append_note_content")
-    async def append_note_content(request: AppendNoteRequest, ctx: Context) -> dict[str, Any]:
-        """Preview or apply appending content through a replacement-note workflow.
+    async def append_note_content(request: AppendNoteArg, ctx: Context) -> dict[str, Any]:
+        """Append text or checklist items to a Keep note by building a replacement note, since Keep cannot edit in place.
 
-        The request identifies the note and text/checklist additions, whether to apply,
-        and whether to delete the original. Returns a preview, applied replacement, or
-        structured provider error.
+        By default only a preview is returned; set apply_via_replacement to create the new note.
+        Returns status 'preview' with source_note and replacement_note_payload, or status
+        'applied' with replacement_note (and original_deleted when the original was removed).
+        Only the title and text or checklist are carried over.
         """
         service = keep_service()
         source_name = normalize_note_name(request.note_name)
@@ -387,11 +422,13 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, note_name=source_name) from exc
 
     @server.tool(name="patch_note_checklist")
-    async def patch_note_checklist(request: PatchChecklistItemRequest, ctx: Context) -> dict[str, Any]:
-        """Preview or apply a checklist edit through a replacement-note workflow.
+    async def patch_note_checklist(request: PatchChecklistArg, ctx: Context) -> dict[str, Any]:
+        """Add, remove, tick or retitle one checklist item by building a replacement note, since Keep cannot edit in place.
 
-        Supports add, remove, set_checked, and set_text operations; indexes are
-        zero-based. Returns a preview, applied replacement, or structured provider error.
+        By default only a preview is returned; set apply_via_replacement to create the new note.
+        Returns status 'preview' with source_note and replacement_note_payload, or status
+        'applied' with replacement_note (and original_deleted when the original was removed).
+        Only the title and checklist are carried over.
         """
         service = keep_service()
         source_name = normalize_note_name(request.note_name)
@@ -451,11 +488,13 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, note_name=source_name, operation=request.operation) from exc
 
     @server.tool(name="share_note")
-    async def share_note(request: ShareNoteRequest, ctx: Context) -> dict[str, Any]:
-        """Grant writer access to one or more collaborators on a Keep note.
+    async def share_note(request: ShareNoteArg, ctx: Context) -> dict[str, Any]:
+        """Give people writer access to a Keep note.
 
-        The note name comes from ``create_note`` or ``list_notes`` and the request lists
-        collaborator emails. Returns the batch permission result or a provider error.
+        To revoke access use keep_unshare_note. Returns status 'ok' and result, the Keep batch
+        response whose permissions list holds one entry per collaborator with the permission
+        name needed for keep_unshare_note. The user is asked to confirm first, and the call returns
+        status 'cancelled' if declined.
         """
         service = keep_service()
         note_name = normalize_note_name(request.note_name)
@@ -478,11 +517,12 @@ def register_tools(server: FastMCP) -> None:
         return {"status": "ok", "result": result}
 
     @server.tool(name="unshare_note")
-    async def unshare_note(request: UnshareNoteRequest, ctx: Context) -> dict[str, Any]:
-        """Remove named collaborator permissions from a Keep note.
+    async def unshare_note(request: UnshareNoteArg, ctx: Context) -> dict[str, Any]:
+        """Remove collaborators' access to a Keep note by permission name.
 
-        Permission names come from the Keep API permission resources. Returns the names
-        removed with ``status=ok``, or a structured provider error.
+        Permission names come from keep_share_note results. Returns status 'ok' and
+        removed_permissions, the names that were removed. The owner's permission cannot be removed.
+        The user is asked to confirm first, and the call returns status 'cancelled' if declined.
         """
         service = keep_service()
         note_name = normalize_note_name(request.note_name)

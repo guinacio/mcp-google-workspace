@@ -150,7 +150,7 @@ class _Backends:
             RedisAppStateStore(self.state_redis, keyring=self.keyring), ttl_seconds=3600
         )
         server.mount(create_apps_server(views), namespace="apps")
-        server.add_provider(WorkspaceFileUpload(remote_store=self.upload_store()), namespace="files")
+        server.add_provider(WorkspaceFileUpload(remote_store=self.upload_store()), namespace="uploads")
         return server
 
 
@@ -339,20 +339,20 @@ def test_uploads_survive_independent_requests_across_replicas_and_stay_principal
     upload_id = entry["upload_id"]
     assert upload_id.startswith("upl_") and entry["display_name"] == "notes.txt"
 
-    listed = b.call("alice-token", "files_list_files")["structuredContent"]["result"]
+    listed = b.call("alice-token", "uploads_list_files")["structuredContent"]["files"]
     assert [item["upload_id"] for item in listed] == [upload_id]
-    read = b.call("alice-token", "files_read_file", {"name": upload_id})["structuredContent"]["result"]
+    read = b.call("alice-token", "uploads_read_file", {"name": upload_id})["structuredContent"]["result"]
     assert read["content"] == "alice data"
 
-    assert b.call("bob-token", "files_list_files")["structuredContent"]["result"] == []
-    bob_read = b.call("bob-token", "files_read_file", {"name": upload_id})
+    assert b.call("bob-token", "uploads_list_files")["structuredContent"]["files"] == []
+    bob_read = b.call("bob-token", "uploads_read_file", {"name": upload_id})
     assert bob_read["isError"] is True
-    bob_delete = a.call("bob-token", "files_delete_file", {"name": upload_id})
+    bob_delete = a.call("bob-token", "uploads_delete_file", {"name": upload_id})
     assert bob_delete["structuredContent"] == {"status": "not_found", "name": upload_id}
 
-    deleted = a.call("alice-token", "files_delete_file", {"name": upload_id})
+    deleted = a.call("alice-token", "uploads_delete_file", {"name": upload_id})
     assert deleted["structuredContent"] == {"status": "deleted", "name": upload_id}
-    assert b.call("alice-token", "files_list_files")["structuredContent"]["result"] == []
+    assert b.call("alice-token", "uploads_list_files")["structuredContent"]["files"] == []
 
 
 def _local_replica() -> FastMCP:
@@ -361,7 +361,7 @@ def _local_replica() -> FastMCP:
         create_apps_server(DashboardViewService(MemoryAppStateStore(), ttl_seconds=3600)),
         namespace="apps",
     )
-    server.add_provider(WorkspaceFileUpload(local_store=LocalUploadStore()), namespace="files")
+    server.add_provider(WorkspaceFileUpload(local_store=LocalUploadStore()), namespace="uploads")
     return server
 
 
@@ -382,16 +382,16 @@ def test_trusted_local_dashboard_and_picker_work_on_both_protocol_eras(mode: str
         state = await call("apps_get_state", {"view_handle": handle})
         stored = await call(STORE_FILES, _upload("local.txt", b"local bytes"))
         upload_id = stored.structured_content["result"][0]["upload_id"]
-        listed = await call("files_list_files")
-        read = await call("files_read_file", {"name": upload_id})
-        deleted = await call("files_delete_file", {"name": upload_id})
-        after = await call("files_list_files")
+        listed = await call("uploads_list_files")
+        read = await call("uploads_read_file", {"name": upload_id})
+        deleted = await call("uploads_delete_file", {"name": upload_id})
+        after = await call("uploads_list_files")
         return state, upload_id, listed, read, deleted, after
 
     state, upload_id, listed, read, deleted, after = anyio.run(scenario)
     assert state.structured_content["state"]["view"] == "day"
     assert state.structured_content["view"]["revision"] == 2
-    assert [item["upload_id"] for item in listed.structured_content["result"]] == [upload_id]
+    assert [item["upload_id"] for item in listed.structured_content["files"]] == [upload_id]
     assert read.structured_content["result"]["content"] == "local bytes"
     assert deleted.structured_content == {"status": "deleted", "name": upload_id}
-    assert after.structured_content["result"] == []
+    assert after.structured_content["files"] == []

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
 
@@ -27,6 +27,54 @@ from .storage import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+OutputFilenameArg = Annotated[
+    str | None,
+    "File name to save the image as. A missing extension is added from the image type, and an existing "
+    "file is never overwritten (a random suffix is added instead). Omit for a generated name.",
+]
+OutputDirArg = Annotated[
+    str | None,
+    "Directory on the server's machine to save the image in, created if missing; omit to use the "
+    "server's configured output directory (GEMINI_OUTPUT_DIR). Rejected when the server is reached over "
+    "remote HTTP, where only the configured directory is used.",
+]
+InputPathArg = Annotated[
+    str | None,
+    "Path of the input file on the machine running the server. Rejected when the server is reached over "
+    "remote HTTP; use uploaded_file or drive_file_id there. Give exactly one of input_path, "
+    "drive_file_id or uploaded_file.",
+]
+DriveFileIdArg = Annotated[
+    str | None,
+    "Drive file ID of the input file, from drive_list_files or search_workspace. Google Docs, Sheets and "
+    "Slides files are not supported. Give exactly one of input_path, drive_file_id or uploaded_file.",
+]
+
+
+def _upload_text(kind: str) -> str:
+    return (
+        f"Upload handle (upl_...) returned by uploads_file_manager after the user picks a {kind} file; "
+        f"the file must have a {kind}/* type. Give exactly one of input_path, drive_file_id or "
+        "uploaded_file."
+    )
+
+
+def _model_text(purpose: str, example: str) -> str:
+    return (
+        f"Gemini model ID to use for {purpose}, e.g. '{example}'. Only the models the server allows "
+        "for this tool are accepted (others are rejected with the allowed list); omit for the "
+        "configured default."
+    )
+
+
+ImageUploadArg = Annotated[str | None, _upload_text("image")]
+VideoUploadArg = Annotated[str | None, _upload_text("video")]
+AudioUploadArg = Annotated[str | None, _upload_text("audio")]
+GenerateModelArg = Annotated[str | None, _model_text("image generation", "gemini-2.5-flash-image")]
+EditModelArg = Annotated[str | None, _model_text("the image edit", "gemini-2.5-flash-image")]
+VideoModelArg = Annotated[str | None, _model_text("the video analysis", "gemini-3-flash-preview")]
+AudioModelArg = Annotated[str | None, _model_text("the audio analysis", "gemini-3-flash-preview")]
 
 
 def _stage_drive_file(file_id: str) -> tuple[Path, str, str]:
@@ -254,14 +302,21 @@ async def _report_tool_progress(ctx: Context | None, current: int, total: int, m
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="generate_image", task=True)
     async def gemini_generate_image(
-        prompt: str,
-        aspect_ratio: str | None = None,
-        model: str | None = None,
-        output_filename: str | None = None,
-        output_dir: str | None = None,
+        prompt: Annotated[str, "Text description of the image to generate: subject, style, composition."],
+        aspect_ratio: Annotated[
+            str | None,
+            "Width-to-height ratio of the image, e.g. '1:1', '4:3', '3:4', '16:9' or '9:16'; the value is "
+            "passed to Gemini unchanged. Omit to let the model choose.",
+        ] = None,
+        model: GenerateModelArg = None,
+        output_filename: OutputFilenameArg = None,
+        output_dir: OutputDirArg = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Generate an image locally using Gemini image-capable models."""
+        """Generate an image from a text prompt with a Gemini image model and save it as a file on the server's machine.
+
+        To change an existing image use gemini_edit_image. Returns status 'ok' with output_path, mime_type, bytes_written, model and model_version. Can run as a background task and requires GEMINI_API_KEY.
+        """
         request = GenerateImageRequest(
             prompt=prompt,
             aspect_ratio=aspect_ratio,
@@ -284,16 +339,19 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="edit_image", task=True)
     async def gemini_edit_image(
-        prompt: str,
-        input_path: str | None = None,
-        drive_file_id: str | None = None,
-        uploaded_file: str | None = None,
-        model: str | None = None,
-        output_filename: str | None = None,
-        output_dir: str | None = None,
+        prompt: Annotated[str, "Instruction describing the edit to make to the input image."],
+        input_path: InputPathArg = None,
+        drive_file_id: DriveFileIdArg = None,
+        uploaded_file: ImageUploadArg = None,
+        model: EditModelArg = None,
+        output_filename: OutputFilenameArg = None,
+        output_dir: OutputDirArg = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Edit an existing image from a local path or Drive file using Gemini image-capable models."""
+        """Edit an existing image with a text instruction using a Gemini image model and save the result as a new file on the server's machine.
+
+        The input is exactly one of a local path, a Drive file or an uploaded file, and the original is not modified. Returns status 'ok' with output_path, mime_type, bytes_written, model, model_version and source (type, file_name and the input given). Can run as a background task and requires GEMINI_API_KEY.
+        """
         request = EditImageRequest(
             prompt=prompt,
             input_path=input_path,
@@ -328,14 +386,21 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="describe_video", task=True)
     async def gemini_describe_video(
-        input_path: str | None = None,
-        drive_file_id: str | None = None,
-        uploaded_file: str | None = None,
-        prompt: str | None = None,
-        model: str | None = None,
+        input_path: InputPathArg = None,
+        drive_file_id: DriveFileIdArg = None,
+        uploaded_file: VideoUploadArg = None,
+        prompt: Annotated[
+            str | None,
+            "Question or instruction about the video; omit for a general description of its events, "
+            "scenes and notable details.",
+        ] = None,
+        model: VideoModelArg = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Describe or analyze an existing video file using Gemini multimodal models."""
+        """Describe or analyze a video with a Gemini multimodal model.
+
+        The input is exactly one of a local path, a Drive file or an uploaded file; for audio use gemini_analyze_audio. Returns status 'ok' with description (the model's text), mime_type, model, model_version and source. Can run as a background task, requires GEMINI_API_KEY, and the file is sent to the Gemini API.
+        """
         request = DescribeVideoRequest(
             input_path=input_path,
             drive_file_id=drive_file_id,
@@ -365,14 +430,21 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="analyze_audio", task=True)
     async def gemini_analyze_audio(
-        input_path: str | None = None,
-        drive_file_id: str | None = None,
-        uploaded_file: str | None = None,
-        prompt: str | None = None,
-        model: str | None = None,
+        input_path: InputPathArg = None,
+        drive_file_id: DriveFileIdArg = None,
+        uploaded_file: AudioUploadArg = None,
+        prompt: Annotated[
+            str | None,
+            "Question or instruction about the audio; omit for a summary of the main content, speakers "
+            "and notable moments.",
+        ] = None,
+        model: AudioModelArg = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Analyze an existing audio file using Gemini multimodal models."""
+        """Analyze an audio file with a Gemini multimodal model, for example to summarize speech or identify speakers.
+
+        The input is exactly one of a local path, a Drive file or an uploaded file; for video use gemini_describe_video. Returns status 'ok' with analysis (the model's text), mime_type, model, model_version and source. Can run as a background task, requires GEMINI_API_KEY, and the file is sent to the Gemini API.
+        """
         request = AnalyzeAudioRequest(
             input_path=input_path,
             drive_file_id=drive_file_id,

@@ -1,0 +1,22 @@
+{
+  "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "tableRange": "Summary!A1:D5",
+  "updates": {
+    "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+    "updatedRange": "Summary!A6:C6",
+    "updatedRows": 1,
+    "updatedColumns": 3,
+    "updatedCells": 3,
+    "updatedData": {
+      "range": "Summary!A6:C6",
+      "majorDimension": "ROWS",
+      "values": [
+        [
+          "Utilities",
+          "$180.00",
+          "$164.75"
+        ]
+      ]
+    }
+  }
+}

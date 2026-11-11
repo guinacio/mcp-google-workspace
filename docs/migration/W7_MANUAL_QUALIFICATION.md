@@ -57,17 +57,18 @@ How to fill each column (all derived from what you directly observe, not
 assumed):
 
 - **Modern core MCP** — does the host negotiate `2026-07-28` (check
-  `get_mcp_apps_diagnostics`/`get_workspace_capabilities` responds, and that
+  `get_google_connection_status` (or, with `MCP_TOOL_TIER=extended`,
+  `get_mcp_apps_diagnostics`) responds, and that
   the host's own devtools/logs show no `initialize` request for this
   connection), or does it fall back to a handshake-era version? Record the
   exact negotiated version string.
 - **Stable Apps** — does the dashboard (`apps_get_dashboard`, when
   `ENABLE_APPS_DASHBOARD=true`) or the Workspace Files picker
-  (`files_file_manager`) render inline, or does the host show only the text
+  (`uploads_file_manager`) render inline, or does the host show only the text
   fallback content?
-- **Elicitation** — trigger any confirmation-gated tool (e.g.
-  `gmail_delete_email` with `permanent=true`, or just accept the default
-  `confirm_send=true` on `gmail_send_email`) and record whether the host
+- **Elicitation** — trigger any call in the consent table
+  (`docs/CONSENT.md`; e.g. `gmail_delete` with `mode="permanent"`, or
+  `gmail_send_email`, which always asks) and record whether the host
   presents the confirmation prompt at all, and whether it's a native
   form/dialog or a chat message.
 - **Tasks** — call a `task=True` tool (e.g. `gemini_generate_image` if
@@ -94,8 +95,8 @@ capability `gmail`); a running server you can restart or reconfigure
 ### 2a. Message-ID retention on a normal send
 
 1. Call `gmail_send_email` with `to=[<your test account's own address>]`,
-   `subject="W7 QA retention check"`, `body="..."`, `confirm_send=false`
-   (skips the confirmation round for this check).
+   `subject="W7 QA retention check"`, `text_body="..."`, and accept the
+   consent prompt (or run this check with `MCP_CONSENT=off`).
 2. **Expected:** the tool result's `structuredContent` includes a
    `message_id` (Gmail's internal id). Open the sent message in Gmail's web
    UI ("Show original") and confirm it carries an RFC 822 `Message-ID:`
@@ -121,7 +122,9 @@ a Gemini call, use `MCP_EXPENSIVE_DEADLINE_SECONDS` the same way.)
    side — exactly the "timeout while the non-idempotent call may have been
    applied" scenario `common/repeat_safety.py` guards.
 2. Call `gmail_send_email` again with a **new, distinguishable** subject
-   (e.g. `"W7 QA outcome_unknown check <timestamp>"`), `confirm_send=false`.
+   (e.g. `"W7 QA outcome_unknown check <timestamp>"`), and accept the consent
+   prompt (with `MCP_CONSENT=off` nothing is asked, so the deadline covers
+   only the send).
 3. **Expected:** the tool result is an `isError: true` tool result (not a
    JSON-RPC error) with `structuredContent.code == "outcome_unknown"`, and
    `structuredContent.required_action.verify` contains one step shaped like:
@@ -195,8 +198,8 @@ noting host-specific differences.
 ### 4b. MRTR confirmation in chat
 
 1. Ask the assistant, in normal chat, to do something confirmation-gated —
-   e.g. "send a test email to myself" (`gmail_send_email`, default
-   `confirm_send=true`) or "delete this test contact"
+   e.g. "send a test email to myself" (`gmail_send_email`, which always
+   asks) or "delete this test contact"
    (`people_delete_contact`).
 2. **Expected:** the host presents a native confirmation UI (not raw JSON)
    before anything happens; declining performs no mutation; accepting
@@ -215,15 +218,18 @@ Requires `ENABLE_APPS_DASHBOARD=true` and a host with Stable Apps support
    event's detail view.
 2. Click the delete action. This calls `calendar_delete_event` through the
    app's `callServerTool` (`apps/ui/src/mcp-app.ts`'s `deleteEvent`
-   operation), which is one of the 24 confirmation-gated tools — the same
-   MRTR adapter as any model-initiated call.
+   operation), which always asks for consent (`docs/CONSENT.md`) — the same
+   gate as any model-initiated call.
 3. **Expected:** either (a) the host completes the `input_required` round on
    the app's behalf — typically by surfacing a confirmation prompt somewhere
    in its UI (in-app or in the surrounding chat) — and the event is deleted
    only after you confirm, or (b) if the host doesn't support completing an
    app-initiated MRTR round, the app receives a typed `SdkError` ("unsupported
-   result type") and shows an explicit failure — **never** a silent no-op
-   and never an optimistic "deleted" message with the event still present.
+   result type") or the server's `confirmation_required` error and shows an
+   explicit failure (for `confirmation_required`, the server's preview text,
+   "Nothing was changed" and a pointer to the chat) — **never** a silent
+   no-op and never an optimistic "deleted" message with the event still
+   present.
 4. **Record** which of (a)/(b) happened, and if (a), whether the dashboard's
    own state (the event list) updated correctly afterward.
 5. **Cleanup:** if the event was actually deleted, no cleanup needed;
@@ -260,7 +266,7 @@ Requires the dashboard and a test email with an attachment.
 
 1. Ask the assistant (in chat, i.e. as the *model*) to call an app-only tool
    directly by name — e.g. "call `apps_set_state`" or "call
-   `files_store_files`".
+   `uploads_store_files`".
 2. **Expected:** the host either doesn't offer these tools to the model at
    all (since `_meta.ui.visibility` excludes `"model"`), or if it does list
    them despite the hint, the call is still authorized server-side the same
@@ -282,7 +288,7 @@ Requires the dashboard and a test email with an attachment.
 
 ### 4h. Picker under the host CSP
 
-1. Open `files_file_manager` (the Workspace Files picker) in the host and,
+1. Open `uploads_file_manager` (the Workspace Files picker) in the host and,
    if the host exposes any console/network inspection, confirm no requests
    go to `cdn.jsdelivr.net` or any other external origin (the picker serves
    prefab-ui's bundled renderer, `PREFAB_BUNDLED_RENDERER=1`, with no CSP
@@ -335,14 +341,14 @@ that has **not yet** connected any Google capability.
    `auth/google_oauth.py`'s `_cumulative_authorization_scopes`); and
    `get_google_connection_status({"capability": "calendar"})` — now
    granted.
-8. Call `refresh_workspace_catalog`, then `tools/list` again — Calendar
-   tools should now be authorized alongside Gmail's.
+8. Call `tools/list` again (every request reads the current grant) —
+   Calendar tools should now be authorized alongside Gmail's.
 9. **Record:** whether both consent screens correctly scoped their
    requested permissions (Google's own consent screen shows the exact scopes
    being requested — confirm Gmail's second screen did **not** re-request
    Gmail scopes), and whether the cumulative grant behaved as described.
-10. **Cleanup:** call `disconnect_google_workspace({"confirm": true})` to
-    remove the test grant, or leave it connected if you'll reuse this test
+10. **Cleanup:** call `disconnect_google_workspace` (it asks for consent;
+    accept) to remove the test grant, or leave it connected if you'll reuse this test
     account for section 6.
 
 ---
@@ -356,17 +362,17 @@ need no flag.
 
 | Service | Read | Mutation | Provider error (how to force it) |
 | --- | --- | --- | --- |
-| Gmail | `gmail_search_emails` (any query) | `gmail_send_email` to self, `confirm_send=false` | `gmail_read_emails` with a made-up `message_ids` value → expect `missing_message_ids` in the result, not a crash |
+| Gmail | `gmail_search_emails` (any query) | `gmail_send_email` to self (accept the consent prompt) | `gmail_read_emails` with a made-up `message_ids` value → expect `missing_message_ids` in the result, not a crash |
 | Calendar | `calendar_search_events` (primary, next 7 days) | `calendar_create_event` ("W7 QA event", +1h), then `calendar_delete_event` cleanup | `calendar_search_events` with `calendar_id="does-not-exist@group.calendar.google.com"` → expect a structured `not_found`/`provider_tool_error` result |
 | Drive | `drive_list_files` (`page_size=5`) | `drive_create_folder` ("W7 QA Folder"), then `drive_delete_file` cleanup | `drive_get_file` with a bogus `file_id` → expect a structured 404 error result |
 | Sheets | `sheets_get_spreadsheet` on a test sheet | one `sheets_batch_update_spreadsheet` request (e.g. `addSheet`), then delete the added sheet in a follow-up batch update | `sheets_get_spreadsheet` with a bogus `spreadsheet_id` → expect a structured error |
-| Docs | `docs_get_document` on a test doc | `docs_batch_update_document` (`insertText`), then a follow-up batch update to remove it | `docs_get_document` with a bogus `document_id` → expect a structured error |
+| Docs | `docs_read_document` on a test doc | `docs_batch_update_document` (`insertText`), then a follow-up batch update to remove it | `docs_read_document` with a bogus `document_id` → expect a structured error |
 | Forms | `forms_get_form` on a test form | `forms_batch_update_form` (e.g. add a text question), then remove it | `forms_get_form` with a bogus `form_id` → expect a structured error |
-| Slides | `slides_get_presentation` on a test deck | `slides_batch_update_presentation` (e.g. `createSlide`), then delete the added slide | `slides_get_presentation` with a bogus `presentation_id` → expect a structured error |
+| Slides | `slides_read_presentation` on a test deck | `slides_batch_update_presentation` (e.g. `createSlide`), then delete the added slide | `slides_read_presentation` with a bogus `presentation_id` → expect a structured error |
 | Google Tasks | `tasks_list_tasklists` | create a task, then `tasks_delete_task` cleanup | an operation on a bogus `task_id`/`tasklist_id` → expect a structured error |
-| People | `people_list_contacts` | create a test contact, then `people_delete_contact` cleanup (confirmation-gated — accept it) | `people_delete_contact` on a bogus `person_name` → expect a structured error |
-| Keep (`ENABLE_KEEP`) | `keep_list_notes` | `keep_create_note` ("W7 QA note", `confirm_create=false`), then `keep_delete_note` cleanup (`confirm_delete=false`) | `keep_get_note` with a bogus `note_name` → expect a structured 404 (`docs/migration/W4_CATALOG_DIFF.md`'s `provider_tool_error` conversion) |
-| Chat (`ENABLE_CHAT`) | `chat_list_spaces` | `chat_create_message` in a test space, `notify=false`, then `chat_delete_message` cleanup (accept the confirmation) | `chat_get_space` with a bogus space name → expect a structured error |
+| People | `people_search_contacts` | create a test contact, then `people_delete_contact` cleanup (confirmation-gated — accept it) | `people_delete_contact` on a bogus `person_name` → expect a structured error |
+| Keep (`ENABLE_KEEP`) | `keep_list_notes` | `keep_create_note` ("W7 QA note", no collaborators, so nothing is asked), then `keep_delete_note` cleanup (it asks for consent; accept) | `keep_get_note` with a bogus `note_name` → expect a structured 404 (`docs/migration/W4_CATALOG_DIFF.md`'s `provider_tool_error` conversion) |
+| Chat (`ENABLE_CHAT`) | `chat_list_spaces` | `chat_create_message` in a test space (it asks for consent; accept), then `chat_delete_message` cleanup (accept the confirmation) | `chat_get_space` with a bogus space name → expect a structured error |
 | Meet (`ENABLE_MEET`) | `meet_list_conference_records` | `meet_create_space`, then note the created space is not independently deletable via the Meet API — record any cleanup limitation you find | `meet_get_space` with a bogus space name → expect a structured error, and confirm the response actually matches the resource schema (a latent bug meant this previously returned a schema-violating closed object — see `docs/migration/W5_CATALOG_DIFF.md` §2) |
 | Gemini (`ENABLE_GEMINI`) | none (no read-only Gemini tool exists) — instead run `gemini_generate_image` with a trivial prompt and note it as the representative call | `gemini_generate_image` (a mutation in the sense that it costs money/quota and writes a local output file); delete the local output file afterward | call any Gemini tool with `GEMINI_API_KEY` temporarily unset/invalid → expect a structured provider error, not a crash; also verify a long-running Gemini call surfaces as a background task if your host supports Tasks (section 1) |
 

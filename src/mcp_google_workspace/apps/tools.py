@@ -23,7 +23,7 @@ from ..common.errors import ProviderToolError, provider_tool_error, render_error
 from ..common.output_schemas import VIEW_DESCRIPTOR_SCHEMA
 from ..common.timezone import resolve_user_timezone, user_now
 from ..gmail.mime_utils import decode_rfc2047, flatten_parts
-from ..gmail.presentation import envelope as gmail_envelope
+from ..gmail.presentation import envelope as gmail_envelope, header_map
 from .addressing import dashboard_ui_meta
 from .operations import DashboardOperationCatalog, operation_catalog
 from .schemas import (
@@ -180,7 +180,7 @@ def _fetch_inbox_summary(
                 "subject": decode_rfc2047(headers.get("subject")),
                 "from": decode_rfc2047(headers.get("from")),
                 "date": message_envelope["date"],
-                "date_timezone": message_envelope["date_timezone"],
+                "date_timezone": state.timezone if message_envelope["date"] else None,
                 "snippet": full.get("snippet"),
                 "label_ids": full.get("labelIds", []),
                 "is_unread": "UNREAD" in (full.get("labelIds", []) or []),
@@ -211,8 +211,10 @@ def _fetch_email_detail(message_id: str, account_timezone: str) -> dict[str, Any
     payload = build_email_detail_view_model(message).model_dump(mode="json")
     normalized = gmail_envelope(message, account_timezone=account_timezone)
     payload["date"] = normalized["date"]
-    payload["date_timezone"] = normalized["date_timezone"]
-    payload["source_date"] = normalized["source_date"]
+    # The dashboard view keeps its own fields: the zone the date was rendered in
+    # and the raw Date header (the tools' envelope no longer repeats either).
+    payload["date_timezone"] = account_timezone if normalized["date"] else None
+    payload["source_date"] = header_map(message.get("payload", {})).get("date")
     return payload
 
 
@@ -469,6 +471,25 @@ ExpectedRevisionArg = Annotated[
     int | None, Field(description=EXPECTED_REVISION_DESCRIPTION, ge=1)
 ]
 
+_VIEW_TEXT = "Calendar range the view shows: 'agenda' or 'day' for a single day, 'week', or 'month'."
+_ANCHOR_DATE_TEXT = (
+    "Date (YYYY-MM-DD) the shown range is built around: the day for 'agenda' and 'day', the week "
+    "containing it for 'week', its month for 'month'."
+)
+_TIMEZONE_TEXT = "IANA time zone name, e.g. 'Europe/Berlin', used for the range boundaries and shown times."
+_SELECTED_CALENDARS_TEXT = (
+    "Calendar IDs whose events the view shows, from calendar_get_calendar_context; 'primary' is the "
+    "user's main calendar."
+)
+_INBOX_QUERY_TEXT = (
+    "Gmail search terms added to the inbox summary query, which always covers the inbox, "
+    "e.g. 'from:alice@example.com'."
+)
+_INCLUDE_WEEKEND_TEXT = "When true, week views span Sunday to Saturday; when false, Monday to Friday only."
+
+ViewKind = Literal["agenda", "day", "week", "month"]
+
+
 DASHBOARD_STATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": "Persisted state of one dashboard view.",
@@ -647,12 +668,16 @@ def register_tools(
     async def apps_set_state(
         view_handle: ViewHandleArg,
         expected_revision: ExpectedRevisionArg = None,
-        view: Literal["agenda", "day", "week", "month"] | None = None,
-        anchor_date: date | None = None,
-        timezone: str | None = None,
-        selected_calendars: list[str] | None = None,
-        inbox_query: str | None = None,
-        include_weekend: bool | None = None,
+        view: Annotated[ViewKind | None, _VIEW_TEXT + " Omit to reset to 'week'."] = None,
+        anchor_date: Annotated[
+            date | None, _ANCHOR_DATE_TEXT + " Omit to reset to today in the view's time zone."
+        ] = None,
+        timezone: Annotated[str | None, _TIMEZONE_TEXT + " Omit to keep the view's current time zone."] = None,
+        selected_calendars: Annotated[
+            list[str] | None, _SELECTED_CALENDARS_TEXT + " Omit to reset to ['primary']."
+        ] = None,
+        inbox_query: Annotated[str | None, _INBOX_QUERY_TEXT + " Omit to clear it."] = None,
+        include_weekend: Annotated[bool | None, _INCLUDE_WEEKEND_TEXT + " Omit to reset to true."] = None,
     ) -> ToolResult:
         """Replace the state of one dashboard view; omitted fields reset to defaults."""
 
@@ -686,12 +711,14 @@ def register_tools(
     async def apps_patch_state(
         view_handle: ViewHandleArg,
         expected_revision: ExpectedRevisionArg = None,
-        view: Literal["agenda", "day", "week", "month"] | None = None,
-        anchor_date: date | None = None,
-        timezone: str | None = None,
-        selected_calendars: list[str] | None = None,
-        inbox_query: str | None = None,
-        include_weekend: bool | None = None,
+        view: Annotated[ViewKind | None, _VIEW_TEXT + " Omit to leave it unchanged."] = None,
+        anchor_date: Annotated[date | None, _ANCHOR_DATE_TEXT + " Omit to leave it unchanged."] = None,
+        timezone: Annotated[str | None, _TIMEZONE_TEXT + " Omit to leave it unchanged."] = None,
+        selected_calendars: Annotated[
+            list[str] | None, _SELECTED_CALENDARS_TEXT + " Omit to leave them unchanged."
+        ] = None,
+        inbox_query: Annotated[str | None, _INBOX_QUERY_TEXT + " Omit to leave it unchanged."] = None,
+        include_weekend: Annotated[bool | None, _INCLUDE_WEEKEND_TEXT + " Omit to leave it unchanged."] = None,
     ) -> ToolResult:
         """Patch selected state fields of one dashboard view."""
         request = DashboardStatePatch(
@@ -765,7 +792,11 @@ def register_tools(
     @server.tool(name="get_dashboard", meta=dashboard_ui_meta())
     async def apps_get_dashboard(
         view_handle: LaunchHandleArg = None,
-        date_override: date | None = None,
+        date_override: Annotated[
+            date | None,
+            "Date (YYYY-MM-DD) to anchor the dashboard on for this call only; the view's saved anchor "
+            "date is not changed. Omit to use the view's anchor date.",
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any] | ToolResult:
         """Open (or refresh) a workspace dashboard view from calendar and inbox data."""
@@ -786,8 +817,16 @@ def register_tools(
     @server.tool(name="get_weekly_calendar_view", meta=dashboard_ui_meta())
     async def apps_get_weekly_calendar_view(
         view_handle: LaunchHandleArg = None,
-        date_override: date | None = None,
-        include_weekend: bool | None = None,
+        date_override: Annotated[
+            date | None,
+            "Date (YYYY-MM-DD) whose week to show, for this call only; the view's saved anchor date is "
+            "not changed. Omit to use the view's anchor date.",
+        ] = None,
+        include_weekend: Annotated[
+            bool | None,
+            "For this call only: true shows Sunday to Saturday, false shows Monday to Friday. Omit to "
+            "use the view's saved setting.",
+        ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any] | ToolResult:
         """Open (or refresh) a Google Calendar-like weekly view (columns per day)."""

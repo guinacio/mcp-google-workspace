@@ -1,0 +1,19 @@
+{
+  "presentationId": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq",
+  "replies": [
+    {
+      "createSlide": {
+        "objectId": "SLIDES_API1849302756_0"
+      }
+    },
+    {
+      "createShape": {
+        "objectId": "SLIDES_API1849302756_1"
+      }
+    },
+    {}
+  ],
+  "writeControl": {
+    "requiredRevisionId": "ALm37BVq0c3mDHq3kVw0Jrj9dWZEXAMPLE"
+  }
+}

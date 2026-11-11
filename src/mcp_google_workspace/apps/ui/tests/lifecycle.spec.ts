@@ -18,8 +18,10 @@ let external: string[] = [];
 test.beforeEach(async ({ page }) => {
   external = await blockExternalNetwork(page);
 });
-test.afterEach(() => {
+test.afterEach(async ({ page }) => {
   expect(external).toEqual([]);
+  // Every call the view made passed the real server's input schema check.
+  expect(await hostValue<unknown[]>(page, "invalidCalls")).toEqual([]);
 });
 
 test.describe("invocation timing", () => {
@@ -158,7 +160,7 @@ test.describe("operation manifest", () => {
     await expect(app.getByRole("button", { name: "Next week" })).toBeDisabled();
     await expect(app.getByRole("button", { name: "Create" })).toHaveCount(0);
     const names = (await callLog(page)).map((call) => call.name);
-    expect(names.every((name) => /get_dashboard|get_weekly_calendar_view|get_event_detail|get_email_detail|list_calendars/.test(name))).toBe(true);
+    expect(names.every((name) => /get_dashboard|get_weekly_calendar_view|get_event_detail|get_email_detail|get_calendar_context/.test(name))).toBe(true);
   });
 
   test("a principal without the Gmail grant gets no mail actions", async ({ page }) => {
@@ -167,6 +169,67 @@ test.describe("operation manifest", () => {
     await expect(app.getByRole("button", { name: "Create" })).toBeVisible();
     await app.getByRole("button", { name: "Open email: Quarterly plan" }).click();
     await expect(app.getByText("This action is not available for your account here.", { exact: false })).toBeVisible();
+  });
+});
+
+test.describe("event editor", () => {
+  test("creating an event sends only the arguments calendar_create_event publishes", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported");
+    const app = appFrame(page);
+    await app.getByRole("button", { name: EVENT, exact: true }).waitFor();
+    await app.locator('.create-event-btn[data-open-event-editor="create"]').click();
+    await app.locator('input[name="summary"]').fill("Planning");
+    await app.getByRole("button", { name: "Create event", exact: true }).click();
+    await expect(app.getByText("Event created.")).toBeVisible();
+    const create = (await callLog(page)).find((call) => call.name === "calendar_create_event");
+    expect(create?.arguments).toMatchObject({ summary: "Planning", add_meet_link: true, on_conflict: "suggest_next_slot" });
+    expect(create?.arguments).not.toHaveProperty("conference_data");
+  });
+
+  test("editing an event without Meet adds a link only when the box is checked", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported");
+    const app = appFrame(page);
+    // The event's detail stays open after a save, so its Edit button reopens the editor.
+    const edit = () => app.locator('[data-open-event-editor="edit"]').click();
+    await app.getByRole("button", { name: EVENT, exact: true }).click();
+    await edit();
+    const meet = app.getByRole("checkbox", { name: "Add Google Meet conference" });
+    await expect(meet).not.toBeChecked();
+    await app.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(app.getByText("Event updated.")).toBeVisible();
+    await edit();
+    await app.getByRole("checkbox", { name: "Add Google Meet conference" }).check();
+    await app.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(app.getByText("Event updated.")).toBeVisible();
+    const updates = (await callLog(page)).filter((call) => call.name === "calendar_update_event");
+    expect(updates).toHaveLength(2);
+    expect(updates[0].arguments).not.toHaveProperty("add_meet_link");
+    expect(updates[1].arguments).toMatchObject({ add_meet_link: true, event_id: updates[0].arguments.event_id });
+  });
+
+  test("editing an event that has a Meet link never asks for another", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported&meet");
+    const app = appFrame(page);
+    await app.getByRole("button", { name: EVENT, exact: true }).click();
+    await app.locator('[data-open-event-editor="edit"]').click();
+    const meet = app.getByRole("checkbox", { name: "Google Meet link already added" });
+    await expect(meet).toBeChecked();
+    await expect(meet).toBeDisabled();
+    await app.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(app.getByText("Event updated.")).toBeVisible();
+    const update = (await callLog(page)).find((call) => call.name === "calendar_update_event");
+    expect(update?.arguments).not.toHaveProperty("add_meet_link");
+  });
+
+  test("Enter in a field saves even where the sandbox blocks form submission", async ({ page }) => {
+    await page.goto("/tests/host.html?discovery=unsupported");
+    const app = appFrame(page);
+    await app.getByRole("button", { name: EVENT, exact: true }).waitFor();
+    await app.locator('.create-event-btn[data-open-event-editor="create"]').click();
+    await app.locator('input[name="summary"]').fill("Standup");
+    await app.locator('input[name="summary"]').press("Enter");
+    await expect(app.getByText("Event created.")).toBeVisible();
+    expect((await callLog(page)).filter((call) => call.name === "calendar_create_event")).toHaveLength(1);
   });
 });
 
@@ -183,26 +246,35 @@ test.describe("errors", () => {
   }
 
   test("an isError result is a failure: no success notice, optimistic state restored", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "fail=move_email:iserror:provider_error");
-    await expect(app.getByText("Failed to archive email: The server could not run gmail_move_email.")).toBeVisible();
+    const { app, panel } = await openAndArchive(page, "fail=modify_messages:iserror:provider_error");
+    await expect(app.getByText("Failed to archive email: The server could not run gmail_modify_messages.")).toBeVisible();
     await expect(app.getByText("Email archived.")).toHaveCount(0);
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
   });
 
   test("a rejected call is a failure with the server's typed error message", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "fail=move_email:reject:quota_exceeded");
-    await expect(app.getByText("Failed to archive email: Server rejected gmail_move_email [quota_exceeded]")).toBeVisible();
+    const { app, panel } = await openAndArchive(page, "fail=modify_messages:reject:quota_exceeded");
+    await expect(app.getByText("Failed to archive email: Server rejected gmail_modify_messages [quota_exceeded]")).toBeVisible();
     await expect(app.getByText("Email archived.")).toHaveCount(0);
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
   });
 
-  test("a typed confirmation error asks the user to use the chat", async ({ page }) => {
-    const { app } = await openAndArchive(page, "fail=move_email:iserror:confirmation_required");
-    await expect(app.getByText(/Failed to archive email: The server needs your confirmation/)).toBeVisible();
+  test("a confirmation error shows the server's preview and sends the user to the chat", async ({ page }) => {
+    const { app, panel } = await openAndArchive(page, "fail=modify_messages:iserror:confirmation_required");
+    await expect(
+      app.getByText(
+        'Failed to archive email: This needs your confirmation: "Archive 1 message? (gmail_modify_messages)" Nothing was changed. Ask the assistant in chat to do it',
+        { exact: false },
+      ),
+    ).toBeVisible();
+    await expect(app.getByText("Email archived.")).toHaveCount(0);
+    await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
+    // The view never runs the prepare/commit step itself.
+    expect(await hostValue<string[]>(page, "calls")).not.toContain("prepare_workspace_action");
   });
 
   test("success is reported only after the server confirmed the action", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "delay=move_email:1000");
+    const { app, panel } = await openAndArchive(page, "delay=modify_messages:1000");
     await expect(app.getByText("Email archived.")).toHaveCount(0);
     await expect(app.getByText("Email archived.")).toBeVisible();
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toHaveCount(0);
@@ -217,9 +289,9 @@ test.describe("errors", () => {
   });
 
   test("the host's visibility rejection is shown and the optimistic change undone", async ({ page }) => {
-    const { app, panel } = await openAndArchive(page, "modelOnly=move_email");
+    const { app, panel } = await openAndArchive(page, "modelOnly=modify_messages");
     await expect(app.getByText(/Failed to archive email: .*not available to apps/)).toBeVisible();
-    expect(await hostValue<string[]>(page, "rejectedCalls")).toEqual(["gmail_move_email"]);
+    expect(await hostValue<string[]>(page, "rejectedCalls")).toEqual(["gmail_modify_messages"]);
     await expect(panel.locator(".status-chip", { hasText: "Inbox" })).toBeVisible();
   });
 });

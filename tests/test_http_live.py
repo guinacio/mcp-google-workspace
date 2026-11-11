@@ -26,16 +26,14 @@ from cryptography.fernet import Fernet
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 
+from consent_testing import WRITE, asks, classify_tools
 from http_harness import LiveServers, SigningKeys, mcp_body, mcp_headers, mint, reserve_sockets
 
 from mcp_google_workspace.auth.identity import current_principal
 from mcp_google_workspace.auth.remote_auth import build_jwt_verifier, build_remote_auth
 from mcp_google_workspace.common.admission import AdmissionController, AdmissionLimits
 from mcp_google_workspace.common.component_annotations import apply_default_tool_annotations
-from mcp_google_workspace.common.confirmation import (
-    build_request_state_security,
-    confirm_destructive_action,
-)
+from mcp_google_workspace.common.confirmation import build_request_state_security
 from mcp_google_workspace.common.errors import StructuredToolErrorMiddleware
 from mcp_google_workspace.common.production import (
     CapabilityCatalogMiddleware,
@@ -94,9 +92,7 @@ def _server(recorder: Recorder) -> FastMCP:
 
     @server.tool
     async def forget_thing(thing_id: str, ctx: Context) -> dict[str, str]:
-        """Confirmed destructive action."""
-        if not await confirm_destructive_action(ctx, "forget_thing", f"Forget {thing_id}?"):
-            return {"status": "cancelled"}
+        """Confirmed destructive action (the consent gate asks first)."""
         recorder.calls.append(f"forget:{thing_id}")
         return {"status": "forgotten"}
 
@@ -156,6 +152,15 @@ def live(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Live]:
             jwt_jwks_uri=f"{jwks_url}/jwks",
             token_encryption_key="unused",
             user_token_dir=tokens,
+        )
+        classify_tools(
+            patch,
+            {
+                "probe": WRITE,
+                "slow": WRITE,
+                "progress": WRITE,
+                "forget_thing": asks("forget_thing", lambda arguments: f"Forget {arguments['thing_id']}?"),
+            },
         )
         server = _server(recorder)
         server.auth = build_remote_auth(settings, verifier=build_jwt_verifier(settings))

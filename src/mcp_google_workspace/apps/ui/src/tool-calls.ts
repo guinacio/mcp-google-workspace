@@ -112,17 +112,36 @@ export function isUnknownToolError(error: ToolCallError): boolean {
 }
 
 const FRIENDLY_CODES: Record<string, string> = {
-  confirmation_required: "The server needs your confirmation for this action. Ask the assistant in chat to do it.",
-  prepare_required: "This action needs a preview before it can run. Ask the assistant in chat to do it.",
   input_required: "The server asked for more input that this view cannot provide. Ask the assistant in chat to do it.",
   UNSUPPORTED_RESULT_TYPE: "The server asked for more input that this view cannot provide. Ask the assistant in chat to do it.",
   REQUEST_TIMEOUT: "The host did not answer in time.",
   CONNECTION_CLOSED: "The connection to the host was closed.",
 };
 
+const CONFIRMATION_NEXT_STEP =
+  "Nothing was changed. Ask the assistant in chat to do it: it shows you this preview and asks before anything runs.";
+
+/**
+ * The server's `confirmation_required` envelope (no consent could be asked on
+ * this request) carries the exact consent text in `details.preview`; its
+ * `required_action` (prepare_workspace_action, then commit_workspace_action) is
+ * the assistant's path, where the host's permission prompt is the user's gate.
+ * The view never prepares or commits on the user's behalf.
+ */
+function describeConfirmationRequired(error: ToolCallError): string {
+  const result = asRecord(error.result);
+  const envelope = asRecord(result?.structuredContent) ?? result;
+  const preview = asRecord(envelope?.details)?.preview;
+  if (typeof preview === "string" && preview.trim()) {
+    return `This needs your confirmation: "${preview.trim()}" ${CONFIRMATION_NEXT_STEP}`;
+  }
+  return `This needs your confirmation. ${CONFIRMATION_NEXT_STEP}`;
+}
+
 /** Message shown to the user for a failure. */
 export function describeFailure(error: unknown): string {
   if (error instanceof ToolCallError) {
+    if (error.code === "confirmation_required") return describeConfirmationRequired(error);
     const friendly = error.code ? FRIENDLY_CODES[error.code] : undefined;
     return friendly ?? error.message;
   }

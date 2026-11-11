@@ -22,6 +22,7 @@ from googleapiclient.http import HttpRequest
 
 from ..runtime import RuntimeSettings, get_runtime_settings
 from ..runtime import get_token_storage_settings
+from ..tool_tiers import optional_namespaces_default_on
 from .identity import Principal, current_principal
 from .token_store import (
     EncryptedTokenStore,
@@ -177,29 +178,37 @@ def _env_truthy(value: str | None) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _integration_flag(name: str, *, prerequisite: bool = True) -> bool:
+    """An optional integration's ENABLE_* flag; unset means on in the complete tier."""
+    value = os.getenv(name)
+    if value is not None and value.strip():
+        return _env_truthy(value)
+    return prerequisite and optional_namespaces_default_on()
+
+
 def is_keep_enabled() -> bool:
     """Feature flag for Keep integration."""
-    return _env_truthy(os.getenv("ENABLE_KEEP"))
+    return _integration_flag("ENABLE_KEEP")
 
 
 def is_chat_enabled() -> bool:
     """Feature flag for Chat integration."""
-    return _env_truthy(os.getenv("ENABLE_CHAT"))
+    return _integration_flag("ENABLE_CHAT")
 
 
 def is_apps_dashboard_enabled() -> bool:
     """Feature flag for MCP app-layer dashboard namespace."""
-    return _env_truthy(os.getenv("ENABLE_APPS_DASHBOARD"))
+    return _integration_flag("ENABLE_APPS_DASHBOARD")
 
 
 def is_meet_enabled() -> bool:
     """Feature flag for Google Meet integration."""
-    return _env_truthy(os.getenv("ENABLE_MEET"))
+    return _integration_flag("ENABLE_MEET")
 
 
 def is_gemini_enabled() -> bool:
-    """Feature flag for Gemini media integration."""
-    return _env_truthy(os.getenv("ENABLE_GEMINI"))
+    """Feature flag for Gemini media integration (complete tier: only with an API key)."""
+    return _integration_flag("ENABLE_GEMINI", prerequisite=bool(os.getenv("GEMINI_API_KEY", "").strip()))
 
 
 def get_google_scopes(capabilities: list[str] | None = None) -> list[str]:

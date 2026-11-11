@@ -1,0 +1,91 @@
+{
+  "kind": "calendar#events",
+  "etag": "\"p33d9g7bd2k1e20o\"",
+  "summary": "ana@example.com",
+  "description": "",
+  "updated": "2026-11-03T12:01:44.512Z",
+  "timeZone": "America/Sao_Paulo",
+  "accessRole": "owner",
+  "defaultReminders": [{"method": "popup", "minutes": 10}],
+  "nextSyncToken": "CPjv3Jq2_5ADEPjv3Jq2_5ADGAUg8u_2kQI=",
+  "items": [
+    {
+      "kind": "calendar#event",
+      "etag": "\"3517469287024000\"",
+      "id": "4m2k9qexample0review",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=NG0yazlxZXhhbXBsZTByZXZpZXcgYW5hQGV4YW1wbGUuY29t",
+      "created": "2026-10-28T19:20:11.000Z",
+      "updated": "2026-11-02T09:14:03.512Z",
+      "summary": "Quarterly review",
+      "description": "Budget, hiring plan, launch dates.",
+      "location": "Room 4",
+      "colorId": "5",
+      "creator": {"email": "bruno@example.com"},
+      "organizer": {"email": "bruno@example.com", "displayName": "Bruno Costa"},
+      "start": {"dateTime": "2026-11-05T10:00:00-03:00", "timeZone": "America/Sao_Paulo"},
+      "end": {"dateTime": "2026-11-05T11:00:00-03:00", "timeZone": "America/Sao_Paulo"},
+      "iCalUID": "4m2k9qexample0review@google.com",
+      "sequence": 1,
+      "attendees": [
+        {"email": "bruno@example.com", "displayName": "Bruno Costa", "organizer": true, "responseStatus": "accepted"},
+        {"email": "ana@example.com", "self": true, "responseStatus": "needsAction"},
+        {"email": "carla@example.org", "responseStatus": "tentative", "optional": true}
+      ],
+      "hangoutLink": "https://meet.google.com/abc-defg-hij",
+      "conferenceData": {
+        "entryPoints": [
+          {"entryPointType": "video", "uri": "https://meet.google.com/abc-defg-hij", "label": "meet.google.com/abc-defg-hij"},
+          {"entryPointType": "phone", "uri": "tel:+55-11-4000-0000", "label": "+55 11 4000-0000", "pin": "123456789"}
+        ],
+        "conferenceSolution": {"key": {"type": "hangoutsMeet"}, "name": "Google Meet", "iconUri": "https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-512dp/logo_meet_2020q4_color_2x_web_512dp.png"},
+        "conferenceId": "abc-defg-hij"
+      },
+      "reminders": {"useDefault": true},
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3517469287024001\"",
+      "id": "holiday20261115_republic",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=aG9saWRheTIwMjYxMTE1X3JlcHVibGlj",
+      "created": "2025-12-01T00:00:00.000Z",
+      "updated": "2025-12-01T00:00:00.000Z",
+      "summary": "Out of office",
+      "creator": {"email": "ana@example.com", "self": true},
+      "organizer": {"email": "ana@example.com", "self": true},
+      "start": {"date": "2026-11-14"},
+      "end": {"date": "2026-11-16"},
+      "transparency": "transparent",
+      "iCalUID": "holiday20261115_republic@google.com",
+      "sequence": 0,
+      "reminders": {"useDefault": false},
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3517469287024002\"",
+      "id": "7standup0example_20261104T120000Z",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=N3N0YW5kdXAwZXhhbXBsZV8yMDI2MTEwNFQxMjAwMDBa",
+      "created": "2026-01-10T12:00:00.000Z",
+      "updated": "2026-10-01T08:00:00.000Z",
+      "summary": "Team standup",
+      "creator": {"email": "ana@example.com", "self": true},
+      "organizer": {"email": "c_team0123456789abcdef@group.calendar.google.com", "displayName": "Team"},
+      "start": {"dateTime": "2026-11-04T12:00:00Z", "timeZone": "UTC"},
+      "end": {"dateTime": "2026-11-04T12:15:00Z", "timeZone": "UTC"},
+      "recurringEventId": "7standup0example",
+      "originalStartTime": {"dateTime": "2026-11-04T12:00:00Z", "timeZone": "UTC"},
+      "iCalUID": "7standup0example@google.com",
+      "sequence": 0,
+      "attendees": [
+        {"email": "ana@example.com", "self": true, "responseStatus": "accepted"},
+        {"email": "bruno@example.com", "responseStatus": "accepted"}
+      ],
+      "reminders": {"useDefault": true},
+      "eventType": "default"
+    }
+  ]
+}

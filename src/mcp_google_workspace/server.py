@@ -6,8 +6,9 @@ import anyio
 import base64
 import os
 import secrets
-from typing import Annotated
+from typing import Annotated, Any, Literal
 from fastmcp import FastMCP
+from googleapiclient.errors import HttpError
 from fastmcp.tools import InputRequiredToolResult, ToolResult
 import mcp_types
 from fastmcp.server.providers.addressing import hash_tool, hashed_resource_uri
@@ -16,6 +17,7 @@ from starlette.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import __version__
 from .apps import apps_mcp, mount_apps_dashboard
 from .common.component_annotations import apply_default_tool_annotations
 from .common.confirmation import REQUEST_STATE_AUDIENCE, build_request_state_security
@@ -23,7 +25,6 @@ from .common.errors import RecoverableToolError, StructuredToolErrorMiddleware
 from .common.task_backend import install_tasks_extension
 from .common.production import (
     CapabilityCatalogMiddleware,
-    ConsequentialActionMiddleware,
     RUNTIME_STATE,
     ProductionControlMiddleware,
     build_version_payload,
@@ -40,19 +41,23 @@ from .auth import (
 from .auth.google_oauth import register_connection_tools
 from .auth.identity import current_principal
 from .auth.google_auth import (
-    CAPABILITY_SCOPES,
     build_drive_service,
     build_gmail_service,
     build_people_service,
 )
 from .common.async_ops import execute_google_request
-from .common.resources import ResourceHandleMiddleware, parse_resource_uri, resource_handle
-from .common.approvals import (
-    COMMIT_ACTIVE,
-    CONSEQUENTIAL_TOOLS,
-    INVALID_COMMIT,
-    prepare_action,
+from .common.resources import (
+    ResourceHandleMiddleware,
+    clean_web_url,
+    parse_resource_uri,
+    resource_handle,
 )
+from .common.timezone import in_account_timezone, resolve_user_timezone
+from .drive.presentation import file_kind
+from .gmail.helpers import gather_in_order
+from .gmail.presentation import envelope as gmail_envelope
+from .common.approvals import INVALID_COMMIT, prepare_action
+from .common.consent import TaskConsentMiddleware, committing, consent_mode
 from .common.operations import (
     OperationOutcomeMiddleware,
     get_operation_store,
@@ -75,9 +80,12 @@ from .people import people_mcp
 from .sheets import sheets_mcp
 from .slides import slides_mcp
 from .tasks import tasks_mcp
+from .tool_tiers import hidden_tools, tool_tier
 
 workspace_mcp = FastMCP(
     name="google-workspace-mcp",
+    # serverInfo.version on the wire is this package's release, not FastMCP's.
+    version=__version__,
     instructions=(
         "Unified Google Workspace MCP server with Gmail, Calendar, Drive, Docs, Sheets, "
         "Tasks, People, Forms, Slides, and optional Meet/Keep/Chat/Gemini integrations."
@@ -97,7 +105,7 @@ workspace_mcp.add_middleware(StructuredToolErrorMiddleware())
 workspace_mcp.add_middleware(OperationOutcomeMiddleware())
 workspace_mcp.add_middleware(ProductionControlMiddleware())
 workspace_mcp.add_middleware(CapabilityCatalogMiddleware())
-workspace_mcp.add_middleware(ConsequentialActionMiddleware())
+workspace_mcp.add_middleware(TaskConsentMiddleware())
 workspace_mcp.add_middleware(ResourceHandleMiddleware())
 
 
@@ -124,7 +132,7 @@ async def version_info(_: Request) -> Response:
 async def metrics(_: Request) -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-workspace_mcp.add_provider(workspace_file_upload, namespace="files")
+workspace_mcp.add_provider(workspace_file_upload, namespace="uploads")
 
 workspace_mcp.mount(gmail_mcp, namespace="gmail")
 workspace_mcp.mount(calendar_mcp, namespace="calendar")
@@ -187,10 +195,21 @@ class McpAppsDiagnostics(BaseModel):
 
 @workspace_mcp.tool(name="get_mcp_apps_diagnostics")
 async def get_mcp_apps_diagnostics(
-    run_self_test: bool = False,
+    run_self_test: Annotated[
+        bool,
+        (
+            "When true, stores an empty mcp-app-self-test-<random>.txt upload in the caller's upload area "
+            "through the hidden store_files callback, then deletes it through delete_file, and reports "
+            "self_test status 'passed' with the handle and delete result. False (the default) touches no "
+            "storage and reports self_test status 'not_run'."
+        ),
+    ] = False,
 ) -> McpAppsDiagnostics:
-    """Describe the file-picker MCP Apps contract and optionally verify callbacks."""
-    picker_name = "files_file_manager"
+    """Report how the Workspace Files upload picker (uploads_file_manager) is wired for MCP Apps hosts, to
+    troubleshoot uploads that never arrive. Returns picker_tool, resource_uri, resource_mime_type, renderer_mode,
+    hidden_callbacks (the hashed addresses of the store_files and delete_file callbacks), max_file_bytes and self_test.
+    With run_self_test the call fails if the store callback returns no usable file handle."""
+    picker_name = "uploads_file_manager"
     store_address = f"{hash_tool('Workspace Files', 'store_files')}_store_files"
     delete_address = f"{hash_tool('Workspace Files', 'delete_file')}_delete_file"
     resource_uri = str(hashed_resource_uri("Workspace Files", "file_manager"))
@@ -261,59 +280,41 @@ async def get_mcp_apps_diagnostics(
     return McpAppsDiagnostics.model_validate(result)
 
 
-@workspace_mcp.tool(name="get_workspace_capabilities")
-def get_workspace_capabilities() -> dict[str, object]:
-    """Describe available namespaces, consent capabilities, and file-transfer choices."""
-    enabled = [
-        "gmail",
-        "calendar",
-        "drive",
-        "sheets",
-        "docs",
-        "tasks",
-        "people",
-        "forms",
-        "slides",
-    ]
-    optional = {
-        "apps": is_apps_dashboard_enabled(),
-        "chat": is_chat_enabled(),
-        "gemini": is_gemini_enabled(),
-        "keep": is_keep_enabled(),
-        "meet": is_meet_enabled(),
-    }
-    enabled.extend(name for name, active in optional.items() if active)
-    return {
-        "status": "ok",
-        "enabled_namespaces": sorted(enabled),
-        "optional_namespaces": optional,
-        "oauth_capabilities": sorted(CAPABILITY_SCOPES),
-        "file_inputs": {
-            "remote": "Call files_file_manager, then pass uploaded_file.",
-            "local": "Trusted stdio clients may pass local filesystem paths.",
-            "drive": "Gemini media tools also accept drive_file_id.",
-        },
-        "discovery": (
-            "FastMCP BM25 Tool Search is enabled by default for HTTP and stdio. "
-            "Set MCP_CLIENT_MODEL=claude to disable it automatically in auto mode, "
-            "or use MCP_TOOL_SEARCH=on|off explicitly."
-        ),
-    }
+# Metadata the search hit needs from each Gmail message; no body is fetched.
+_GMAIL_HIT_FIELDS = "id,threadId,labelIds,snippet,internalDate,payload/headers"
+
+
+def _escape_drive_query(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
 @workspace_mcp.tool(name="search_workspace")
 async def search_workspace(
-    query: str,
-    services: Annotated[
-        list[str] | None,
+    query: Annotated[
+        str,
         (
-            "Subset of services to search: any of 'drive', 'people', 'gmail'; "
+            "Search text, must not be blank. Drive matches it against file names and content (fullText "
+            "contains, plus name contains for name prefixes), contacts by prefix of names, emails, phone "
+            "numbers or organizations, and Gmail treats it as a Gmail search query, e.g. 'from:alice invoice'."
+        ),
+    ],
+    services: Annotated[
+        list[Literal["drive", "people", "gmail"]] | None,
+        (
+            "Services to search: any of 'drive', 'people' (the user's saved contacts) and 'gmail'; "
             "omit to search all three."
         ),
     ] = None,
-    max_results_per_service: int = 5,
+    max_results_per_service: Annotated[
+        int, "Maximum hits from each searched service, 1 to 25."
+    ] = 5,
 ) -> dict[str, object]:
-    """Search Drive files, contacts, and Gmail IDs through one normalized entry point."""
+    """Search Drive, the user's saved contacts and Gmail with one query, for a first look when the right service is
+    unclear. Drive matches names and content (name matches first, no shared drives); Gmail takes Gmail query syntax and
+    each hit is read in one metadata request. For full queries and paging use drive_list_files, people_search_contacts
+    or gmail_search_emails. Returns matches (service, id, kind, resource; Drive name, mime_type, modified_at, web_url;
+    contact name, email; Gmail thread_id, subject, from, date, snippet, unread), count, account_timezone and errors per
+    failed service; the call fails only when every service fails."""
     selected = services or ["drive", "people", "gmail"]
     unknown = sorted(set(selected) - {"drive", "people", "gmail"})
     if unknown:
@@ -322,114 +323,146 @@ async def search_workspace(
         raise ValueError("query must not be empty")
     if not 1 <= max_results_per_service <= 25:
         raise ValueError("max_results_per_service must be between 1 and 25")
-    matches: list[dict[str, object]] = []
+    found: dict[str, list[dict[str, object]]] = {}
     errors: dict[str, str] = {}
+    resolved_timezone: list[str] = []
+    timezone_lock = anyio.Lock()
 
-    async def search_drive() -> None:
-        escaped = query.replace("'", "\\'")
-        try:
-            result = await execute_google_request(
-                build_drive_service()
-                .files()
-                .list(
-                    q=f"name contains '{escaped}' and trashed = false",
-                    pageSize=max_results_per_service,
-                    fields="files(id,name,mimeType,webViewLink,modifiedTime)",
-                )
+    async def account_timezone() -> str:
+        async with timezone_lock:
+            if not resolved_timezone:
+                resolved_timezone.append(await resolve_user_timezone())
+        return resolved_timezone[0]
+
+    async def search_drive() -> list[dict[str, object]]:
+        escaped = _escape_drive_query(query)
+        result = await execute_google_request(
+            build_drive_service()
+            .files()
+            .list(
+                q=f"(fullText contains '{escaped}' or name contains '{escaped}') and trashed = false",
+                pageSize=max_results_per_service,
+                fields="files(id,name,mimeType,webViewLink,modifiedTime)",
             )
-            matches.extend(
+        )
+        zone = await account_timezone()
+        needle = query.strip().casefold()
+        files = result.get("files", [])
+        # Drive orders fullText results by relevance; a name match ranks first.
+        files = sorted(files, key=lambda item: needle not in str(item.get("name") or "").casefold())
+        return [
+            {
+                "service": "drive",
+                "id": item.get("id"),
+                "kind": file_kind(item.get("mimeType")),
+                "name": item.get("name"),
+                "mime_type": item.get("mimeType"),
+                "modified_at": in_account_timezone(item.get("modifiedTime"), zone),
+                "web_url": clean_web_url(item.get("webViewLink")),
+                "resource": resource_handle("drive_file", str(item.get("id"))),
+            }
+            for item in files
+        ]
+
+    async def search_people() -> list[dict[str, object]]:
+        service = build_people_service()
+        await execute_google_request(
+            service.people().searchContacts(
+                query="", readMask="names,emailAddresses", pageSize=1
+            )
+        )
+        result = await execute_google_request(
+            service.people().searchContacts(
+                query=query,
+                readMask="names,emailAddresses,phoneNumbers,organizations",
+                pageSize=max_results_per_service,
+            )
+        )
+        hits: list[dict[str, object]] = []
+        for result_item in result.get("results", []):
+            person = result_item.get("person", {})
+            names = person.get("names", [])
+            emails = person.get("emailAddresses", [])
+            hits.append(
                 {
-                    "service": "drive",
-                    "id": item.get("id"),
-                    "name": item.get("name"),
-                    "kind": item.get("mimeType"),
-                    "url": item.get("webViewLink"),
-                    "modified_at": item.get("modifiedTime"),
-                    "resource": resource_handle(
-                        "drive_file",
-                        str(item.get("id")),
-                        name=item.get("name"),
-                        mime_type=item.get("mimeType"),
-                        modified_at=item.get("modifiedTime"),
-                        web_url=item.get("webViewLink"),
-                    ),
+                    "service": "people",
+                    "id": person.get("resourceName"),
+                    "kind": "contact",
+                    "name": names[0].get("displayName") if names else None,
+                    "email": emails[0].get("value") if emails else None,
+                    "resource": resource_handle("contact", str(person.get("resourceName"))),
                 }
-                for item in result.get("files", [])
             )
-        except Exception as exc:
-            errors["drive"] = str(exc)
+        return hits
 
-    async def search_people() -> None:
-        try:
-            service = build_people_service()
-            await execute_google_request(
-                service.people().searchContacts(
-                    query="", readMask="names,emailAddresses", pageSize=1
-                )
-            )
-            result = await execute_google_request(
-                service.people().searchContacts(
-                    query=query,
-                    readMask="names,emailAddresses,phoneNumbers,organizations",
-                    pageSize=max_results_per_service,
-                )
-            )
-            for result_item in result.get("results", []):
-                person = result_item.get("person", {})
-                names = person.get("names", [])
-                emails = person.get("emailAddresses", [])
-                matches.append(
-                    {
-                        "service": "people",
-                        "id": person.get("resourceName"),
-                        "name": names[0].get("displayName") if names else None,
-                        "kind": "contact",
-                        "email": emails[0].get("value") if emails else None,
-                        "resource": resource_handle(
-                            "contact",
-                            str(person.get("resourceName")),
-                            name=names[0].get("displayName") if names else None,
-                        ),
-                    }
-                )
-        except Exception as exc:
-            errors["people"] = str(exc)
+    async def search_gmail() -> list[dict[str, object]]:
+        service = build_gmail_service()
+        listed = await execute_google_request(
+            service.users()
+            .messages()
+            .list(userId="me", q=query, maxResults=max_results_per_service)
+        )
+        zone = await account_timezone()
 
-    async def search_gmail() -> None:
-        try:
-            result = await execute_google_request(
-                build_gmail_service()
-                .users()
-                .messages()
-                .list(userId="me", q=query, maxResults=max_results_per_service)
-            )
-            matches.extend(
+        async def metadata(message_id: str) -> dict[str, Any] | None:
+            try:
+                return await execute_google_request(
+                    service.users().messages().get(
+                        userId="me",
+                        id=message_id,
+                        format="metadata",
+                        metadataHeaders=["From", "Subject", "Date"],
+                        fields=_GMAIL_HIT_FIELDS,
+                    )
+                )
+            except HttpError as exc:
+                if getattr(exc.resp, "status", None) != 404:
+                    raise
+                return None  # deleted between the search and the read
+
+        messages = await gather_in_order(
+            [str(item.get("id")) for item in listed.get("messages", [])], metadata
+        )
+        hits: list[dict[str, object]] = []
+        for message in messages:
+            if message is None:
+                continue
+            item = gmail_envelope(message, account_timezone=zone)
+            hits.append(
                 {
                     "service": "gmail",
-                    "id": item.get("id"),
-                    "name": item.get("threadId"),
+                    "id": item["id"],
                     "kind": "message",
-                    "resource": resource_handle(
-                        "gmail_message", str(item.get("id")), name=item.get("threadId")
-                    ),
+                    "thread_id": item["thread_id"],
+                    "subject": item["subject"],
+                    "from": item["from"],
+                    "date": item["date"],
+                    "snippet": item["snippet"],
+                    "unread": item["unread"],
+                    "resource": resource_handle("gmail_message", str(item["id"])),
                 }
-                for item in result.get("messages", [])
             )
-        except Exception as exc:
-            errors["gmail"] = str(exc)
+        return hits
 
     searchers = {
         "drive": search_drive,
         "people": search_people,
         "gmail": search_gmail,
     }
+
+    async def run(service_name: str) -> None:
+        try:
+            found[service_name] = await searchers[service_name]()
+        except Exception as exc:
+            errors[service_name] = str(exc)
+
     async with anyio.create_task_group() as task_group:
         for service_name in selected:
-            task_group.start_soon(searchers[service_name])
+            task_group.start_soon(run, service_name)
     if errors and len(errors) == len(set(selected)):
         # Partial-success policy: some services answered -> a successful
-        # "partial" result listing per-service errors; none answered -> a tool
-        # execution error, never an empty "ok"-shaped success.
+        # result listing per-service errors; none answered -> a tool
+        # execution error, never an empty success.
         raise RecoverableToolError(
             "provider_unavailable",
             "No Workspace service could be searched.",
@@ -438,12 +471,14 @@ async def search_workspace(
             retry_after=5,
             details={"errors": dict(sorted(errors.items()))},
         )
+    # Services in the order the caller listed them, hits in each service's order.
+    matches = [hit for service_name in dict.fromkeys(selected) for hit in found.get(service_name, [])]
     return {
-        "status": "ok" if not errors else "partial",
         "query": query,
         "services": selected,
         "matches": matches,
         "count": len(matches),
+        "account_timezone": resolved_timezone[0] if resolved_timezone else None,
         "errors": errors,
     }
 
@@ -452,10 +487,17 @@ async def search_workspace(
 async def resolve_workspace_resource(
     uri: Annotated[
         str,
-        "Stable Workspace resource URI previously returned in a tool response's 'resource' field.",
+        (
+            "The uri of a resource handle from an earlier result, e.g. 'gdrive:///<file_id>' or "
+            "'gmail-message:///<message_id>'; other schemes are rejected."
+        ),
     ],
 ) -> dict[str, object]:
-    """Resolve a stable Workspace URI to fresh compact metadata."""
+    """Turn a resource URI from an earlier result's resource handle back into a handle with current metadata. Drive
+    files are re-read for a fresh name, mime_type, modified_at (account time zone), web_url and etag, and Gmail messages
+    are checked to still exist; threads, events, contacts and tasks are only parsed, without a Google call. Returns
+    resource and verified (true when Google confirmed the resource exists); pass resource.id to the matching service
+    tool for content."""
     kind, resource_id = parse_resource_uri(uri)
     if kind == "drive_file":
         item = await execute_google_request(
@@ -465,32 +507,25 @@ async def resolve_workspace_resource(
             )
         )
         return {
-            "status": "ok",
             "resource": resource_handle(
                 kind,
                 resource_id,
                 name=item.get("name"),
                 mime_type=item.get("mimeType"),
-                modified_at=item.get("modifiedTime"),
+                modified_at=in_account_timezone(item.get("modifiedTime"), await resolve_user_timezone()),
                 web_url=item.get("webViewLink"),
                 etag=item.get("etag"),
             ),
+            "verified": True,
         }
     if kind == "gmail_message":
-        item = await execute_google_request(
+        await execute_google_request(
             build_gmail_service().users().messages().get(
-                userId="me", id=resource_id, format="metadata"
+                userId="me", id=resource_id, format="minimal", fields="id"
             )
         )
-        return {
-            "status": "ok",
-            "resource": resource_handle(kind, resource_id, name=item.get("threadId")),
-        }
-    return {
-        "status": "resolved",
-        "resource": resource_handle(kind, resource_id),
-        "next_actions": ["Use the matching namespace tool with resource.id."],
-    }
+        return {"resource": resource_handle(kind, resource_id), "verified": True}
+    return {"resource": resource_handle(kind, resource_id), "verified": False}
 
 
 @workspace_mcp.tool(name="prepare_workspace_action")
@@ -498,17 +533,27 @@ async def prepare_workspace_action(
     tool_name: Annotated[
         str,
         (
-            "Full name of the consequential tool to prepare; must be one of "
-            f"{sorted(CONSEQUENTIAL_TOOLS)}. Other tools do not use the prepare/commit protocol."
+            "Published name of the tool to run, as in the required_action of its confirmation_required "
+            "error, e.g. 'gmail_send_email'."
         ),
     ],
     arguments: Annotated[
         dict[str, object],
-        "Exact keyword arguments to bind and later execute unchanged for tool_name.",
+        (
+            "The arguments for tool_name exactly as in a direct call, as in that required_action. They are "
+            "validated now and bound to the token; they cannot be edited afterwards."
+        ),
     ],
-) -> dict[str, object]:
-    """Preview and bind one consequential action to a short-lived one-time commit token."""
-    return await prepare_action(tool_name, arguments)
+) -> dict[str, object] | ToolResult:
+    """Preview a consequential call (sending mail, sharing, permanent deletion, forwarding, a bulk change) and
+    bind it to a one-time commit token, for clients that cannot ask the user directly: a direct call of such a
+    tool fails with confirmation_required and names this tool as the next step. Nothing runs here. Returns
+    status 'prepared', action, preview (the exact text to show the user before committing), commit_token,
+    expires_at (epoch seconds, 10 minutes ahead by default) and next_action; a call that needs no consent fails
+    with invalid_input naming the direct call."""
+    if tool_name in hidden_tools():
+        raise ValueError(f"{tool_name} is not available in the {tool_tier()} tool tier (MCP_TOOL_TIER).")
+    return await prepare_action(tool_name, dict(arguments), server=workspace_mcp)  # type: ignore[no-any-return]
 
 
 @workspace_mcp.tool(name="commit_workspace_action")
@@ -524,7 +569,11 @@ async def commit_workspace_action(
         ),
     ],
 ) -> dict[str, object] | ToolResult | mcp_types.InputRequiredResult:
-    """Claim a prepared action token and execute its exact bound arguments once."""
+    """Run the call prepared with prepare_workspace_action, with exactly the bound arguments, at most once; this is
+    the step that carries out a consequential action, so call it only after the user has seen the preview and
+    agreed. A client that can ask the user directly is still asked here. A token that is invalid, expired or
+    another user's is rejected. Returns status 'committed' with tool and the bound tool's result, that tool's
+    error result if it failed, or its confirmation question if it asks one."""
     store = get_operation_store()
     ref = operation_ref(commit_token)
     outcome = await store.claim(
@@ -542,17 +591,15 @@ async def commit_workspace_action(
         tracker.operation = outcome.handle
     tool = str(outcome.record["tool"])
     arguments = outcome.record.get("arguments")
-    if not isinstance(arguments, dict):
+    digest = outcome.record.get("args_digest")
+    if not isinstance(arguments, dict) or not isinstance(digest, str):
         raise ValueError(INVALID_COMMIT)
-    active_token = COMMIT_ACTIVE.set(True)
-    try:
-        # Re-enter the complete middleware chain so revocation, admission,
-        # deadlines, input limits, handle resolution, telemetry, and structured
-        # errors still apply at commit time. COMMIT_ACTIVE bypasses only the
-        # consequential-action gate for this exact bound invocation.
+    # Re-enter the complete middleware chain so revocation, admission,
+    # deadlines, input limits, handle resolution, telemetry, and structured
+    # errors still apply at commit time. The grant is consent for this exact
+    # bound call only: the gate checks the tool and the validated-argument digest.
+    with committing(tool, digest):
         result = await workspace_mcp.call_tool(tool, arguments)
-    finally:
-        COMMIT_ACTIVE.reset(active_token)
     if isinstance(result, InputRequiredToolResult):
         # The bound tool asked a confirmation question: nothing ran yet. The
         # guard parks the operation (awaiting_input) for the answering call.
@@ -567,3 +614,16 @@ async def commit_workspace_action(
         },
     }
 apply_default_tool_annotations(workspace_mcp)
+
+
+def _apply_tool_tier(server: FastMCP) -> None:
+    """Leave out the tools above the active tier (tool_tiers.py)."""
+    hidden = hidden_tools()
+    if not hidden:
+        return
+    server.disable(names=set(hidden), components={"tool"})
+
+
+_apply_tool_tier(workspace_mcp)
+# An unknown MCP_CONSENT fails at startup, like an unknown MCP_TOOL_TIER.
+consent_mode()

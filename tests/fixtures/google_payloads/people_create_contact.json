@@ -1,0 +1,72 @@
+{
+  "resourceName": "people/c7788990011223344556",
+  "etag": "%EgcBAj0JPjcuGgQBAgUHIgxOZXdDb250YWN0",
+  "metadata": {
+    "sources": [
+      {
+        "type": "CONTACT",
+        "id": "7788990011223344556",
+        "etag": "#Q2hhbmdlZA==",
+        "updateTime": "2026-11-03T14:56:12.402118Z"
+      }
+    ],
+    "objectType": "PERSON"
+  },
+  "names": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "7788990011223344556"
+        },
+        "sourcePrimary": true
+      },
+      "displayName": "Mary Jackson",
+      "familyName": "Jackson",
+      "givenName": "Mary",
+      "displayNameLastFirst": "Jackson, Mary",
+      "unstructuredName": "Mary Jackson"
+    }
+  ],
+  "emailAddresses": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "7788990011223344556"
+        },
+        "sourcePrimary": true
+      },
+      "value": "mary.jackson@example.com"
+    }
+  ],
+  "phoneNumbers": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "7788990011223344556"
+        },
+        "sourcePrimary": true
+      },
+      "value": "+1 757 555 0100",
+      "canonicalForm": "+17575550100"
+    }
+  ],
+  "organizations": [
+    {
+      "metadata": {
+        "primary": true,
+        "source": {
+          "type": "CONTACT",
+          "id": "7788990011223344556"
+        },
+        "sourcePrimary": true
+      },
+      "name": "Wind Tunnel Labs"
+    }
+  ]
+}

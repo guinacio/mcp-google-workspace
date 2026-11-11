@@ -29,6 +29,7 @@ const OPERATIONS_META_KEY = "mcp-google-workspace/operations";
 
 interface ServerFixture {
   tools: Record<string, string[]>;
+  inputs: Record<string, { properties: string[]; required: string[] }>;
   dashboard: { uri: string; mimeType: string; ui: { csp?: McpUiResourceCsp } };
   picker: {
     uri: string;
@@ -50,6 +51,8 @@ const localNames = discovery === "supported" || discovery === "partial" || param
 const calls: string[] = [];
 const callLog: Array<{ name: string; arguments: Record<string, unknown> }> = [];
 const rejectedCalls: string[] = [];
+/** Calls whose arguments the real server's input schema rejects. */
+const invalidCalls: Array<{ name: string; unknown: string[]; missing: string[] }> = [];
 const cursors: Array<string | undefined> = [];
 const openedLinks: string[] = [];
 const downloads: unknown[] = [];
@@ -163,7 +166,7 @@ if (discovery !== "unsupported") {
     }
     if (discovery === "partial") throw new Error("Second page unavailable");
     return {
-      tools: [toolName("get_weekly_calendar_view"), "calendar_list_calendars", toolName("next_range")].map((name) => ({
+      tools: [toolName("get_weekly_calendar_view"), "calendar_get_calendar_context", toolName("next_range")].map((name) => ({
         name,
         inputSchema: { type: "object" as const },
       })),
@@ -189,7 +192,7 @@ const OPERATIONS: Record<string, { namespace: string; tool: string; mutates: boo
   getEventDetail: { namespace: "apps", tool: "get_event_detail", mutates: false, capability: "calendar" },
   getEmailDetail: { namespace: "apps", tool: "get_email_detail", mutates: false, capability: "gmail" },
   getEmailAttachment: { namespace: "apps", tool: "get_email_attachment", mutates: false, capability: "gmail" },
-  listCalendars: { namespace: "calendar", tool: "list_calendars", mutates: false, capability: "calendar" },
+  listCalendars: { namespace: "calendar", tool: "get_calendar_context", mutates: false, capability: "calendar" },
   patchState: { namespace: "apps", tool: "patch_state", mutates: true },
   nextRange: { namespace: "apps", tool: "next_range", mutates: true },
   prevRange: { namespace: "apps", tool: "prev_range", mutates: true },
@@ -198,13 +201,13 @@ const OPERATIONS: Record<string, { namespace: string; tool: string; mutates: boo
   createEvent: { namespace: "calendar", tool: "create_event", mutates: true, capability: "calendar" },
   updateEvent: { namespace: "calendar", tool: "update_event", mutates: true, capability: "calendar" },
   deleteEvent: { namespace: "calendar", tool: "delete_event", mutates: true, capability: "calendar" },
-  markEmailRead: { namespace: "gmail", tool: "mark_as_read", mutates: true, capability: "gmail" },
-  markEmailUnread: { namespace: "gmail", tool: "mark_as_unread", mutates: true, capability: "gmail" },
-  moveEmail: { namespace: "gmail", tool: "move_email", mutates: true, capability: "gmail" },
-  deleteEmail: { namespace: "gmail", tool: "delete_email", mutates: true, capability: "gmail" },
-  untrashEmail: { namespace: "gmail", tool: "untrash_email", mutates: true, capability: "gmail" },
-  markEmailSpam: { namespace: "gmail", tool: "mark_as_spam", mutates: true, capability: "gmail" },
-  markEmailNotSpam: { namespace: "gmail", tool: "mark_as_not_spam", mutates: true, capability: "gmail" },
+  markEmailRead: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  markEmailUnread: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  moveEmail: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  deleteEmail: { namespace: "gmail", tool: "delete", mutates: true, capability: "gmail" },
+  untrashEmail: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  markEmailSpam: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
+  markEmailNotSpam: { namespace: "gmail", tool: "modify_messages", mutates: true, capability: "gmail" },
 };
 
 /** Operation manifest as the server would issue it for this composition and grant. */
@@ -363,7 +366,7 @@ function stateCall(name: string, args: Record<string, unknown>): CallToolResult 
 
 function adversarialResult(name: string): Record<string, unknown> {
   if (name.endsWith("get_dashboard")) return { dashboard: adversarial.dashboard, weekly_calendar: weekly };
-  if (name.endsWith("list_calendars")) return adversarial.calendarCatalog;
+  if (name.endsWith("get_calendar_context")) return adversarial.calendarCatalog;
   if (name.endsWith("get_event_detail")) {
     return params.has("safeConference") ? adversarial.safeConferenceEventDetail : adversarial.eventDetail;
   }
@@ -383,7 +386,7 @@ function delayFor(name: string, args: Record<string, unknown>): number {
 }
 
 /** `fail=<tool suffix>:<iserror|reject|embedded>[:<code>]`. */
-function failureFor(name: string): CallToolResult | null {
+function failureFor(name: string, rawArgs: Record<string, unknown> = {}): CallToolResult | null {
   for (const spec of params.getAll("fail")) {
     const [suffix, kind, code = "provider_error"] = spec.split(":");
     if (!name.endsWith(suffix)) continue;
@@ -393,9 +396,31 @@ function failureFor(name: string): CallToolResult | null {
     if (kind === "embedded") {
       return { content: [], structuredContent: { error: { code: "PROVIDER_ERROR", message: "Provider exploded", retryable: false } } };
     }
+    if (code === "confirmation_required") {
+      // The server's real envelope (common/errors.py ConfirmationRequiredError).
+      return toolError(code, `${name} needs the user's consent, which this request cannot ask for.`, {
+        required_action: { tool: "prepare_workspace_action", arguments: { tool_name: name, arguments: rawArgs } },
+        details: { action: name, preview: `Archive 1 message? (${name})` },
+      });
+    }
     return toolError(code, `The server could not run ${name}.`);
   }
   return null;
+}
+
+/**
+ * The server's real input schema check (`additionalProperties: false`):
+ * an unknown or missing argument is the server's `invalid_input` error.
+ */
+function invalidArguments(name: string, args: Record<string, unknown>): CallToolResult | null {
+  const schema = serverFixture.inputs[name] ?? serverFixture.inputs[`apps_${name}`];
+  if (!schema) return null; // A name the server does not publish (read fallbacks under test).
+  const present = Object.keys(args).filter((key) => args[key] !== undefined);
+  const unknown = present.filter((key) => !schema.properties.includes(key));
+  const missing = schema.required.filter((key) => !present.includes(key));
+  if (!unknown.length && !missing.length) return null;
+  invalidCalls.push({ name, unknown, missing });
+  return toolError("invalid_input", `The tool arguments are invalid: ${[...unknown, ...missing].join(", ")}`);
 }
 
 /** The server's real visibility, keyed by composed tool name. */
@@ -415,9 +440,11 @@ bridge.oncalltool = async ({ name, arguments: rawArgs }) => {
   }
   calls.push(name);
   callLog.push({ name, arguments: args });
+  const invalid = invalidArguments(name, args);
+  if (invalid) return invalid;
   const delay = delayFor(name, args);
   if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-  const failure = failureFor(name);
+  const failure = failureFor(name, args);
   if (failure) return failure;
   if (fixture === "adversarial") {
     const operations = manifest();
@@ -428,8 +455,8 @@ bridge.oncalltool = async ({ name, arguments: rawArgs }) => {
       ...(launch && operations ? { _meta: { [OPERATIONS_META_KEY]: operations } } : {}),
     };
   }
-  if (name.endsWith("list_calendars")) {
-    return { content: [], structuredContent: { items: [{ id: "primary", summary: "Test calendar", primary: true }] } };
+  if (name.endsWith("get_calendar_context")) {
+    return { content: [], structuredContent: { calendars: [{ id: "primary", name: "Test calendar", primary: true }] } };
   }
   if (name.endsWith("get_dashboard") || name.endsWith("get_weekly_calendar_view")) {
     const handle = openView(args);
@@ -454,6 +481,8 @@ bridge.oncalltool = async ({ name, arguments: rawArgs }) => {
       structuredContent: {
         event_id: String(args.event_id), calendar_id: String(args.calendar_id), title: `Detail of ${args.event_id}`,
         start: "2026-09-21T10:00:00Z", end: "2026-09-21T11:00:00Z", status: "confirmed", attendees: [], attachments: [],
+        // `meet`: the event already has a Google Meet link.
+        ...(params.has("meet") ? { conference_link: "https://meet.google.com/abc-defg-hij", conference_provider: "Google Meet" } : {}),
       },
     };
   }
@@ -556,6 +585,7 @@ Object.assign(window, {
   calls,
   callLog,
   rejectedCalls,
+  invalidCalls,
   cursors,
   openedLinks,
   downloads,

@@ -62,7 +62,6 @@ def message_envelope(
         "text_truncated": max_text is not None and len(text) > max_text,
         "created_at": in_account_timezone(message.get("createTime"), account_timezone),
         "updated_at": in_account_timezone(message.get("lastUpdateTime"), account_timezone),
-        "timezone": account_timezone,
         "thread_id": thread_name,
         "has_attachments": bool(message.get("attachment")),
         "attachment_count": len(message.get("attachment", [])),

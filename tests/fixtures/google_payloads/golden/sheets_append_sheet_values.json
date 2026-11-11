@@ -1,0 +1,16 @@
+{
+  "spreadsheet_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk",
+  "status": "ok",
+  "table_range": "Summary!A1:D5",
+  "updated_cells": 3,
+  "updated_columns": 3,
+  "updated_range": "Summary!A6:C6",
+  "updated_rows": 1,
+  "updated_values": [
+    [
+      "Utilities",
+      "$180.00",
+      "$164.75"
+    ]
+  ]
+}

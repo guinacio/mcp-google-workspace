@@ -13,6 +13,15 @@ from ..auth.google_auth import materialize_google_request
 from ..common.downloads import max_download_bytes
 
 
+# Format a Google-native file is exported to when the caller names none.
+GOOGLE_EXPORT_MIME_DEFAULTS = {
+    "application/vnd.google-apps.document": "application/pdf",
+    "application/vnd.google-apps.spreadsheet": "application/pdf",
+    "application/vnd.google-apps.presentation": "application/pdf",
+    "application/vnd.google-apps.drawing": "image/png",
+}
+
+
 def drive_service() -> Any:
     return build_drive_service()
 

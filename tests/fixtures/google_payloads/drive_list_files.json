@@ -1,0 +1,55 @@
+{
+  "nextPageToken": "~!!~AI9FV7Q2b3Zt0exampleNextPageToken",
+  "files": [
+    {
+      "id": "1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg",
+      "name": "Launch plan",
+      "mimeType": "application/vnd.google-apps.document",
+      "parents": ["0AFolderExample0123456789"],
+      "createdTime": "2026-09-14T13:02:11.412Z",
+      "modifiedTime": "2026-11-02T18:45:03.120Z",
+      "webViewLink": "https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdefg/edit?usp=drivesdk",
+      "description": "Plan for the Q1 launch",
+      "shared": true,
+      "starred": false,
+      "trashed": false,
+      "ownedByMe": true,
+      "owners": [{"displayName": "Ana Lima", "emailAddress": "ana@example.com"}],
+      "lastModifyingUser": {"displayName": "Bruno Costa", "emailAddress": "bruno@example.com"},
+      "capabilities": {"canEdit": true, "canDownload": true}
+    },
+    {
+      "id": "1PdfFileExample0123456789abcdefghijk",
+      "name": "Invoice 2026-10.pdf",
+      "mimeType": "application/pdf",
+      "parents": ["0ASharedDriveRoot0123"],
+      "createdTime": "2026-10-31T10:00:00.000Z",
+      "modifiedTime": "2026-10-31T10:00:00.000Z",
+      "size": "184213",
+      "driveId": "0ASharedDriveRoot0123",
+      "webViewLink": "https://drive.google.com/file/d/1PdfFileExample0123456789abcdefghijk/view?usp=drivesdk&ouid=104857600000000000000&rtpof=true&sd=true",
+      "shared": true,
+      "starred": true,
+      "trashed": false,
+      "ownedByMe": false,
+      "lastModifyingUser": {"displayName": "Finance Bot", "emailAddress": "finance@example.org"},
+      "capabilities": {"canEdit": false, "canDownload": true}
+    },
+    {
+      "id": "0AFolderExample0123456789",
+      "name": "Projects",
+      "mimeType": "application/vnd.google-apps.folder",
+      "parents": ["0AMyDriveRootExample"],
+      "createdTime": "2025-02-03T09:15:00.000Z",
+      "modifiedTime": "2026-08-20T21:30:00.000Z",
+      "webViewLink": "https://drive.google.com/drive/folders/0AFolderExample0123456789",
+      "shared": false,
+      "starred": false,
+      "trashed": false,
+      "ownedByMe": true,
+      "owners": [{"displayName": "Ana Lima", "emailAddress": "ana@example.com"}],
+      "lastModifyingUser": {"displayName": "Ana Lima", "emailAddress": "ana@example.com"},
+      "capabilities": {"canEdit": true, "canDownload": false}
+    }
+  ]
+}

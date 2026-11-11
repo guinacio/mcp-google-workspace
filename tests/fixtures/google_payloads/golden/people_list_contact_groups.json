@@ -1,0 +1,37 @@
+{
+  "contact_groups": [
+    {
+      "group_type": "system",
+      "member_count": 412,
+      "name": "My Contacts",
+      "resource_name": "contactGroups/myContacts"
+    },
+    {
+      "group_type": "system",
+      "member_count": 9,
+      "name": "Starred",
+      "resource_name": "contactGroups/starred"
+    },
+    {
+      "group_type": "system",
+      "member_count": 0,
+      "name": "Friends",
+      "resource_name": "contactGroups/friends"
+    },
+    {
+      "group_type": "user",
+      "member_count": 7,
+      "name": "Book club",
+      "resource_name": "contactGroups/4f1d2c3b0a9e8d7c"
+    },
+    {
+      "group_type": "user",
+      "member_count": 0,
+      "name": "Conference 2026",
+      "resource_name": "contactGroups/9a8b7c6d5e4f3a2b"
+    }
+  ],
+  "count": 5,
+  "next_page_token": "EgYIARICCAE",
+  "total": 5
+}

@@ -1,0 +1,136 @@
+{
+  "formId": "1FAIpQLRawQuizForm0123456789abcdefghijklmnopq",
+  "info": {
+    "title": "Safety quiz",
+    "documentTitle": "Safety quiz (2027)",
+    "description": "Answer every question before your first shift."
+  },
+  "settings": {
+    "quizSettings": {
+      "isQuiz": true
+    },
+    "emailCollectionType": "VERIFIED"
+  },
+  "revisionId": "00000041",
+  "responderUri": "https://docs.google.com/forms/d/e/1FAIpQLRawQuizResponder0123456789/viewform?usp=sharing",
+  "items": [
+    {
+      "itemId": "1a2b3c4d",
+      "title": "Where is the nearest fire exit?",
+      "questionItem": {
+        "question": {
+          "questionId": "5e6f7a8b",
+          "required": true,
+          "grading": {
+            "pointValue": 2,
+            "correctAnswers": {
+              "answers": [
+                {
+                  "value": "Next to the lifts"
+                }
+              ]
+            },
+            "whenRight": {
+              "text": "Correct."
+            },
+            "whenWrong": {
+              "text": "Check the floor plan.",
+              "material": [
+                {
+                  "link": {
+                    "uri": "https://example.com/floor-plan",
+                    "displayText": "Floor plan"
+                  }
+                }
+              ]
+            }
+          },
+          "choiceQuestion": {
+            "type": "RADIO",
+            "options": [
+              {
+                "value": "Next to the lifts",
+                "image": {
+                  "contentUri": "https://lh3.googleusercontent.com/raw-option-image",
+                  "altText": "Lift lobby",
+                  "properties": {
+                    "alignment": "LEFT",
+                    "width": 260
+                  }
+                }
+              },
+              {
+                "value": "Through the kitchen"
+              },
+              {
+                "isOther": true
+              }
+            ],
+            "shuffle": true
+          }
+        },
+        "image": {
+          "contentUri": "https://lh3.googleusercontent.com/raw-question-image",
+          "altText": "Floor plan",
+          "properties": {
+            "alignment": "CENTER",
+            "width": 640
+          }
+        }
+      }
+    },
+    {
+      "itemId": "2b3c4d5e",
+      "title": "Upload your signed checklist",
+      "questionItem": {
+        "question": {
+          "questionId": "6f7a8b9c",
+          "required": true,
+          "fileUploadQuestion": {
+            "folderId": "0BRawUploadFolder",
+            "types": [
+              "PDF",
+              "IMAGE"
+            ],
+            "maxFiles": 1,
+            "maxFileSize": "10485760"
+          }
+        }
+      }
+    },
+    {
+      "itemId": "3c4d5e6f",
+      "title": "Safety briefing",
+      "videoItem": {
+        "video": {
+          "youtubeUri": "https://www.youtube.com/watch?v=raw-video",
+          "properties": {
+            "alignment": "CENTER",
+            "width": 640
+          }
+        },
+        "caption": "Watch before answering"
+      }
+    },
+    {
+      "itemId": "4d5e6f7a",
+      "title": "Site map",
+      "imageItem": {
+        "image": {
+          "contentUri": "https://lh3.googleusercontent.com/raw-site-map",
+          "altText": "Site map",
+          "properties": {
+            "alignment": "CENTER"
+          }
+        }
+      }
+    }
+  ],
+  "linkedSheetId": "1RawLinkedResponses0123456789abcdefghijk",
+  "publishSettings": {
+    "publishState": {
+      "isPublished": true,
+      "isAcceptingResponses": true
+    }
+  }
+}

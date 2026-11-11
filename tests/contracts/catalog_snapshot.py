@@ -17,10 +17,10 @@ the existing regression test that startup/listing never touches
 Two catalogs are captured, matching docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md
 section 2:
 
-* ``catalog_default.json`` -- no optional integrations enabled.
-* ``catalog_all_optional.json`` -- Apps dashboard, Chat, Gemini, Keep, and
-  Meet all enabled (mirrors ``tests/test_composition.py``'s
-  ``test_composition_mounts_optional_namespaces_when_enabled``).
+* ``catalog_default.json`` -- the default (``core``) tool tier, no optional
+  integrations enabled.
+* ``catalog_all_optional.json`` -- ``MCP_TOOL_TIER=complete``: the extended
+  tools plus the Apps dashboard, Chat, Gemini, Keep, and Meet.
 
 FastMCP's BM25 ``search_tools``/``call_tool`` progressive-discovery
 transform (``mcp_google_workspace.tool_discovery``) is never installed on
@@ -85,19 +85,18 @@ _ENV_VARS = [
     "GEMINI_API_KEY",
     "MCP_TOOL_SEARCH",
     "MCP_CLIENT_MODEL",
+    "MCP_TOOL_TIER",
 ]
 
 # Filenames double as the config's identity; write_snapshot() writes each
 # dict to SNAPSHOT_DIR / <filename>.
 CONFIGS: dict[str, dict[str, str]] = {
     "catalog_default.json": {},
+    # The complete tool tier: extended tools plus every optional integration
+    # (Gemini needs an API key to be switched on by the tier).
     "catalog_all_optional.json": {
-        "ENABLE_APPS_DASHBOARD": "true",
-        "ENABLE_CHAT": "true",
-        "ENABLE_GEMINI": "true",
+        "MCP_TOOL_TIER": "complete",
         "GEMINI_API_KEY": "test-key",
-        "ENABLE_KEEP": "true",
-        "ENABLE_MEET": "true",
     },
 }
 

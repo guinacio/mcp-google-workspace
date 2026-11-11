@@ -45,7 +45,6 @@ from .admission import (
     AdmissionLimits,
     tool_cost,
 )
-from .approvals import COMMIT_ACTIVE, requires_prepare
 from .async_ops import run_blocking
 from .confirmation import shared_request_state_keys_configured
 from .fastmcp_compat import resolve_called_tool
@@ -63,7 +62,6 @@ CORRELATION_ID: ContextVar[str | None] = ContextVar("mcp_correlation_id", defaul
 __all__ = [
     "AdmissionError",
     "CapabilityCatalogMiddleware",
-    "ConsequentialActionMiddleware",
     "METRICS",
     "ProductionControlMiddleware",
     "RUNTIME_STATE",
@@ -596,9 +594,7 @@ class ProductionControlMiddleware(Middleware):
 _REMOTE_HIDDEN: Final[frozenset[str]] = frozenset(
     {
         "gmail_download_attachment",
-        "calendar_download_event_attachment",
         "drive_download_file",
-        "drive_export_google_file",
     }
 )
 
@@ -632,8 +628,6 @@ class CapabilityCatalogMiddleware(Middleware):
         "connect_google_workspace",
         "get_google_connection_status",
         "disconnect_google_workspace",
-        "refresh_workspace_catalog",
-        "get_workspace_capabilities",
         "get_mcp_apps_diagnostics",
         "search_workspace",
         "resolve_workspace_resource",
@@ -741,27 +735,6 @@ class CapabilityCatalogMiddleware(Middleware):
         call_next: CallNext[mt.ListPromptsRequest, Sequence[Prompt]],
     ) -> Sequence[Prompt]:
         return sorted(await call_next(context), key=lambda prompt: prompt.name)
-
-
-class ConsequentialActionMiddleware(Middleware):
-    """Require prepare/commit for high-impact otherwise-reversible writes."""
-
-    async def on_call_tool(
-        self,
-        context: MiddlewareContext[mt.CallToolRequestParams],
-        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
-    ) -> ToolResult:
-        arguments = dict(context.message.arguments or {})
-        if not COMMIT_ACTIVE.get() and requires_prepare(context.message.name, arguments):
-            raise RecoverableToolError(
-                "prepare_required",
-                "This consequential action requires a short-lived impact preview before commit.",
-                required_action={
-                    "tool": "prepare_workspace_action",
-                    "arguments": {"tool_name": context.message.name, "arguments": arguments},
-                },
-            )
-        return await call_next(context)
 
 
 # ---------------------------------------------------------------------------
@@ -1035,6 +1008,10 @@ def shutdown_grace_seconds() -> int:
 @asynccontextmanager
 async def production_lifespan(_: Any):
     """Drain in-flight requests and task executions for a bounded interval."""
+    from .consent import log_consent_mode
+
+    # A disabled consent gate is logged as a warning on every start.
+    log_consent_mode()
     RUNTIME_STATE.draining = False
     try:
         yield

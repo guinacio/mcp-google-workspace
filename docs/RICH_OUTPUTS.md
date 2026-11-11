@@ -19,7 +19,7 @@ All compact representations preserve stable provider IDs for follow-up tools.
 
 Two tools render MCP Apps UIs: the Workspace dashboard (`apps_get_dashboard`,
 `apps_get_weekly_calendar_view`, behind `ENABLE_APPS_DASHBOARD`) and the Workspace Files picker
-(`files_file_manager`). Both use the stable Apps protocol (2026-01-26) and nested
+(`uploads_file_manager`). Both use the stable Apps protocol (2026-01-26) and nested
 `_meta.ui.resourceUri` only; the flat `ui/resourceUri` key and the old dashboard URIs are gone.
 Launch results still carry text `content` for hosts without Apps support.
 
@@ -44,10 +44,10 @@ the same way regardless of who makes it.
 | `apps_set_state`, `apps_patch_state`, `apps_next_range`, `apps_prev_range`, `apps_today` | app | UI state writes (compare-and-set on `expected_revision`). No model use case: the model re-launches with `date_override`/`include_weekend` instead. |
 | `apps_get_event_detail`, `apps_get_email_detail` | app | UI-shaped view models duplicating the canonical `calendar_*`/`gmail_*` reads the model should use. |
 | `apps_get_email_attachment` | app | Returns base64 bytes for host downloads; never belongs in model context. |
-| `files_file_manager` | model | Launches the picker; the picker never calls it. |
-| `files_store_files` | app | The picker's upload callback; file bytes must not pass through the model. |
-| `files_delete_file` | model + app | The model cleans up uploads; `get_mcp_apps_diagnostics` exercises its app callback address. |
-| `files_list_files`, `files_list_files_page`, `files_read_file` | model | Model tools for using uploads; the picker does not call them. |
+| `uploads_file_manager` | model | Launches the picker; the picker never calls it. |
+| `uploads_store_files` | app | The picker's upload callback; file bytes must not pass through the model. |
+| `uploads_delete_file` | app | Frees an upload before it expires; `get_mcp_apps_diagnostics` exercises its app callback address. |
+| `uploads_list_files`, `uploads_read_file` | model | Model tools for using uploads; the picker does not call them. |
 
 ### Operation manifest
 
@@ -63,7 +63,7 @@ guesses tool names for anything that writes:
       "getDashboard": {"tool": "apps_get_dashboard", "mutates": false},
       "nextRange": {"tool": "apps_next_range", "mutates": true},
       "createEvent": {"tool": "calendar_create_event", "mutates": true},
-      "markEmailRead": {"tool": "gmail_mark_as_read", "mutates": true}
+      "markEmailRead": {"tool": "gmail_modify_messages", "mutates": true}
     }
   }
 }

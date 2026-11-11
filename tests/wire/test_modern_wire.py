@@ -15,13 +15,20 @@ plan's instruction not to embed the full catalog.
 from __future__ import annotations
 
 from collections.abc import Iterator
+import json
+from pathlib import Path
+import tomllib
 from typing import Any
 
 import anyio
+import fastmcp
 import pytest
 from fastmcp import Client, FastMCP
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 from starlette.testclient import TestClient
 
+from mcp_google_workspace import __version__
 import mcp_google_workspace.auth.google_auth as google_auth
 from mcp_google_workspace.server import workspace_mcp
 
@@ -135,11 +142,11 @@ def test_tools_list_shape_and_named_tools(client: TestClient) -> None:
         "resultType": result["resultType"],
         "ttlMs": result["ttlMs"],
         "cacheScope": result["cacheScope"],
-        "tool_count_at_least": 100,
-        "actual_tool_count_over_100": len(result["tools"]) >= 100,
+        "tool_count_at_least": 60,
+        "actual_tool_count_at_least_60": len(result["tools"]) >= 60,
         "named_tools": {
-            "get_workspace_capabilities": by_name["get_workspace_capabilities"],
-            "files_file_manager": by_name["files_file_manager"],
+            "get_google_connection_status": by_name["get_google_connection_status"],
+            "uploads_file_manager": by_name["uploads_file_manager"],
         },
     }
     assert_matches_fixture("modern_tools_list_shape", normalize(payload))
@@ -150,8 +157,8 @@ def test_safe_tool_call_with_result_type(client: TestClient) -> None:
         client,
         2,
         "tools/call",
-        {"name": "get_workspace_capabilities", "arguments": {}},
-        name="get_workspace_capabilities",
+        {"name": "resolve_workspace_resource", "arguments": {"uri": "gcal-event:///evt-1"}},
+        name="resolve_workspace_resource",
     )
     assert response.status_code == 200, response.text
     payload = {"status_code": response.status_code, "result": response.json()["result"]}
@@ -246,14 +253,82 @@ def test_is_error_tool_result_envelope(client: TestClient) -> None:
         client,
         24,
         "tools/call",
-        {"name": "files_read_file", "arguments": {"name": "upl_does_not_exist"}},
-        name="files_read_file",
+        {"name": "uploads_read_file", "arguments": {"name": "upl_does_not_exist"}},
+        name="uploads_read_file",
     )
     assert response.status_code == 200, response.text
     result = response.json()["result"]
     assert result["isError"] is True
     payload = {"status_code": response.status_code, "result": result}
     assert_matches_fixture("modern_is_error_result", normalize(payload))
+
+
+class _GoogleFailure(_GoogleRecorder):
+    """The recorder, but every ``execute()`` fails like the real client would."""
+
+    def __init__(self, error: HttpError) -> None:
+        super().__init__([])
+        self._error = error
+
+    def __getattr__(self, name: str) -> "_GoogleFailure":
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return self
+
+    def execute(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise self._error
+
+
+def test_is_error_result_for_a_raw_provider_403(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issue #51: a Gmail 403 for a missing scope names the reconnect step."""
+    body = json.dumps(
+        {
+            "error": {
+                "code": 403,
+                "message": "Request had insufficient authentication scopes.",
+                "errors": [{"message": "Insufficient Permission", "domain": "global", "reason": "insufficientPermissions"}],
+                "status": "PERMISSION_DENIED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                        "domain": "googleapis.com",
+                        "metadata": {"service": "gmail.googleapis.com", "method": "google.gmail.v1.GmailApi.ListLabels"},
+                    }
+                ],
+            }
+        }
+    ).encode()
+    error = HttpError(
+        Response({"status": "403"}), body, uri="https://gmail.googleapis.com/gmail/v1/users/me/labels?alt=json"
+    )
+    monkeypatch.setattr(google_auth, "_build_service_now", lambda *_a, **_k: _GoogleFailure(error))
+
+    response = modern_request(
+        client, 27, "tools/call", {"name": "gmail_list_labels", "arguments": {}}, name="gmail_list_labels"
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result["isError"] is True
+    assert result["structuredContent"]["code"] == "missing_capability"
+    payload = {"status_code": response.status_code, "result": result}
+    assert_matches_fixture("modern_is_error_provider_403", normalize(payload))
+
+
+def test_server_info_version_is_the_package_release(client: TestClient) -> None:
+    """``serverInfo.version`` is this package's version, not FastMCP's."""
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8"))
+    released = pyproject["project"]["version"]
+    assert __version__ == released, "installed metadata is stale: run `uv sync` after changing pyproject.toml"
+    assert workspace_mcp.version == released
+    assert released != fastmcp.__version__
+
+    response = modern_request(
+        client, 28, "tools/call", {"name": "resolve_workspace_resource", "arguments": {"uri": "gcal-event:///evt-1"}}, name="resolve_workspace_resource"
+    )
+    assert response.status_code == 200, response.text
+    info = response.json()["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]
+    assert info == {"name": "google-workspace-mcp", "version": released}
 
 
 def test_listing_cache_hints(client: TestClient) -> None:
@@ -278,7 +353,7 @@ async def _stdio_discover_and_safe_call() -> dict[str, Any]:
     async with Client(workspace_mcp, mode="auto") as fastmcp_client:
         assert fastmcp_client.protocol_version == MODERN
         result = await fastmcp_client.session.call_tool(
-            "get_workspace_capabilities", {}, allow_input_required=True
+            "resolve_workspace_resource", {"uri": "gcal-event:///evt-1"}, allow_input_required=True
         )
         protocol_version = fastmcp_client.protocol_version
     return {

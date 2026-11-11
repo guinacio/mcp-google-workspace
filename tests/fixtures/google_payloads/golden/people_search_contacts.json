@@ -1,0 +1,67 @@
+{
+  "contacts": [
+    {
+      "biography": "Met at the 2026 navigation conference. Prefers email over calls.",
+      "emails": [
+        {
+          "type": "work",
+          "value": "katherine@example.com"
+        },
+        {
+          "type": "home",
+          "value": "kjohnson@example.org"
+        }
+      ],
+      "etag": "%EgoBAj0DCQ4/QDcuGgQBAgUHIgxDb250YWN0RXRhZzE=",
+      "family_name": "Johnson",
+      "given_name": "Katherine",
+      "id": "people/c5566778899001122334",
+      "name": "Katherine Johnson",
+      "organizations": [
+        {
+          "name": "Orbital Mechanics Group",
+          "title": "Lead Mathematician"
+        }
+      ],
+      "phones": [
+        {
+          "type": "work",
+          "value": "+1 650-555-0142"
+        },
+        {
+          "type": "mobile",
+          "value": "(650) 555-0199"
+        }
+      ],
+      "resource": {
+        "id": "people/c5566778899001122334",
+        "kind": "contact",
+        "uri": "gcontact:///people%2Fc5566778899001122334"
+      },
+      "resource_name": "people/c5566778899001122334"
+    },
+    {
+      "biography": null,
+      "emails": [
+        {
+          "type": "other",
+          "value": "katie@example.org"
+        }
+      ],
+      "etag": "%EgoBAj0DCQ4/QDcuGgQBAgUHIgxLYXRpZUJvdW1hbg==",
+      "family_name": "Bouman",
+      "given_name": "Katie",
+      "id": "people/c6677889900112233445",
+      "name": "Katie Bouman",
+      "organizations": [],
+      "phones": [],
+      "resource": {
+        "id": "people/c6677889900112233445",
+        "kind": "contact",
+        "uri": "gcontact:///people%2Fc6677889900112233445"
+      },
+      "resource_name": "people/c6677889900112233445"
+    }
+  ],
+  "count": 2
+}

@@ -4,14 +4,23 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
 from ..common.errors import provider_tool_error
 from ..common.timezone import resolve_user_timezone
+from ..tool_tiers import require_extended_tier
 from .client import forms_service
-from .presentation import question_titles, response_envelope
+from .presentation import (
+    batch_update_form_envelope,
+    created_form_envelope,
+    form_envelope,
+    form_responses_envelope,
+    publish_settings_envelope,
+    question_titles,
+    raw_form_view,
+)
 from .schemas import (
     BatchUpdateFormRequest,
     CreateFormRequest,
@@ -112,37 +121,67 @@ def get_form_response_payload(request: GetFormResponseRequest) -> dict[str, Any]
     return service.forms().responses().get(formId=request.form_id, responseId=request.response_id).execute()
 
 
+_ENRICH_QUESTIONS = (
+    "Label each answer with its question title, which costs one extra read of the form; when false, "
+    "question repeats the question_id."
+)
+
+
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_form")
-    def get_form(form_id: str) -> dict[str, Any]:
-        """Fetch a form's full structure: info, settings, and question items.
-
-        form_id is the form's Drive file ID — there is no Forms-side lookup
-        tool, so obtain it via drive_list_files or search_workspace first.
-        Returns the Form resource, or {"error": ...} on API failure.
-        """
+    def get_form(
+        form_id: str,
+        format: Annotated[
+            Literal["normalized", "raw"],
+            (
+                "'normalized' (the default) returns the structure described above. 'raw' returns Google's "
+                "Form resource unchanged in form (every setting, grading, feedback, image, video and "
+                "file-upload limit included), for forms_batch_update_form edits; it needs the extended "
+                "tool tier and fails with invalid_input under MCP_TOOL_TIER=core."
+            ),
+        ] = "normalized",
+        offset: Annotated[
+            int,
+            (
+                "Raw only (normalized ignores it): the next_offset of a truncated raw result. Raw pages "
+                "hold about 32,000 characters of JSON and are cut between whole items, the first page "
+                "holding every other field; joining items across pages gives Google's resource. 0 starts "
+                "at the beginning."
+            ),
+        ] = 0,
+    ) -> dict[str, Any]:
+        """Read a Google Form's structure: title, description, publish state and every item with its question. The form_id comes from drive_list_files, search_workspace or forms_create_form; for submitted answers use forms_list_form_responses. Returns form_id, title, document_title, description, responder_url, revision_id, linked_spreadsheet_id, is_quiz, published and accepting_responses (both null for legacy forms), count and items, each with item_id, title, description, kind, question_id (for a grid, a list of question_id and row_title), required, question_type and options (choices, or scale bounds and labels). Format raw returns Google's Form instead, paged."""
+        request = GetFormRequest(form_id=form_id, format=format, offset=offset)
+        if request.format == "raw":
+            require_extended_tier("format", "raw", instead="Omit format for the normalized structure.")
         try:
-            return get_form_payload(GetFormRequest(form_id=form_id))
+            payload = get_form_payload(request)
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
+        if request.format == "raw":
+            return raw_form_view(payload, offset=request.offset)
+        return form_envelope(payload)
 
     @server.tool(name="create_form")
     def create_form(
-        title: str,
+        title: Annotated[str, "Form title shown to respondents at the top of the form."],
         document_title: Annotated[
             str | None, "Name for the form's underlying Drive file; defaults to title when omitted."
         ] = None,
-        unpublished: bool = False,
+        unpublished: Annotated[
+            bool,
+            (
+                "Create the form unpublished, so it accepts no responses until it is published with "
+                "forms_set_form_publish_settings. By default the new form is published and accepts responses."
+            ),
+        ] = False,
     ) -> dict[str, Any]:
-        """Create a new (initially empty) form; add questions with batch_update_form.
-
-        Set unpublished=true to create the form without publishing it. Returns
-        the created Form resource (including its 'formId' and responderUri),
-        or {"error": ...} on API failure.
-        """
+        """Create a new Google Form with a title and no questions; add questions afterwards with forms_batch_update_form (extended tool tier). Returns status ok, form_id (the ID every other forms_ tool takes), title, document_title, responder_url (the link to share with respondents) and revision_id. Unless unpublished is true, the form is published and accepting responses as soon as it exists."""
         try:
-            return create_form_payload(
-                CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
+            return created_form_envelope(
+                create_form_payload(
+                    CreateFormRequest(title=title, document_title=document_title, unpublished=unpublished)
+                )
             )
         except HttpError as exc:
             raise provider_tool_error(exc, title=title) from exc
@@ -153,29 +192,38 @@ def register_tools(server: FastMCP) -> None:
         requests: Annotated[
             list[dict[str, Any]],
             (
-                "Raw Forms API batchUpdate request objects, e.g. "
+                "Forms API batchUpdate request objects, applied in order, e.g. "
                 '[{"createItem": {"item": {"title": "Q1", "questionItem": {"question": '
                 '{"textQuestion": {}}}}, "location": {"index": 0}}}] or updateFormInfo/'
-                "updateItem/deleteItem/moveItem requests."
+                "updateSettings/updateItem/deleteItem/moveItem requests."
             ),
         ],
-        include_form_in_response: bool = False,
+        include_form_in_response: Annotated[
+            bool, "Also return the updated form, in the forms_get_form shape, in the form field of the result."
+        ] = False,
+        dry_run: Annotated[
+            bool,
+            (
+                "True returns the impact preview (status 'dry_run', preview with the request count by "
+                "kind, consent_required, action) without sending anything to Google."
+            ),
+        ] = False,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply raw Forms API batchUpdate requests (add/edit/delete/move questions, update info).
-
-        form_id must come from create_form or Drive discovery
-        (drive_list_files / search_workspace). Returns the batchUpdate replies
-        (plus the updated form when include_form_in_response=true), or
-        {"error": ...} on API failure.
-        """
+        """Apply raw Google Forms API batchUpdate requests to a form's questions and info: add, update, move or delete items, or change the title, description and quiz settings. Publishing and whether the form accepts responses are not set here; forms_set_form_publish_settings covers those. Ten or more requests, or any delete* request, ask the user to confirm first; dry_run only previews. Returns status ok, form_id, revision_id (the revision after the update), replies (Google's, one per request in order; createItem gives itemId and questionId), count and form (the forms_get_form shape with include_form_in_response, else null)."""
+        if dry_run:
+            raise RuntimeError("dry_run is answered by the consent gate before the tool body runs.")
         try:
-            return await run_blocking(
-                batch_update_form_payload,
-                BatchUpdateFormRequest(
-                    form_id=form_id,
-                    requests=requests,
-                    include_form_in_response=include_form_in_response,
-                )
+            return batch_update_form_envelope(
+                await run_blocking(
+                    batch_update_form_payload,
+                    BatchUpdateFormRequest(
+                        form_id=form_id,
+                        requests=requests,
+                        include_form_in_response=include_form_in_response,
+                    ),
+                ),
+                form_id=form_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
@@ -186,28 +234,27 @@ def register_tools(server: FastMCP) -> None:
         publish_settings: Annotated[
             dict[str, Any],
             (
-                "Forms API publishSettings payload, e.g. {\"publishState\": "
-                '{"isPublished": true, "isAcceptingResponses": true}}.'
+                "Forms API publishSettings object, e.g. {\"publishState\": "
+                '{"isPublished": true, "isAcceptingResponses": true}}. Set both fields of publishState; '
+                "isAcceptingResponses true with isPublished false is rejected."
             ),
         ],
         update_mask: Annotated[
             str,
-            "Comma-separated field mask of publishSettings paths to update; default '*' updates all fields.",
+            "Which publishSettings fields to write: 'publishState' or '*' (all fields, the default).",
         ] = "*",
     ) -> dict[str, Any]:
-        """Publish/unpublish a form or toggle whether it accepts responses.
-
-        form_id is the form's Drive file ID (from create_form or Drive
-        discovery). Returns the applied publish settings, or {"error": ...} on
-        API failure.
-        """
+        """Publish or unpublish a Google Form, or open and close it for responses. For questions and form info use forms_batch_update_form (extended tool tier); the form_id comes from drive_list_files, search_workspace or forms_create_form. Returns status ok, form_id, published and accepting_responses as they stand after the call. Legacy forms, whose forms_get_form result has null published, do not support this."""
         try:
-            return set_form_publish_settings_payload(
-                SetFormPublishSettingsRequest(
-                    form_id=form_id,
-                    publish_settings=publish_settings,
-                    update_mask=update_mask,
-                )
+            return publish_settings_envelope(
+                set_form_publish_settings_payload(
+                    SetFormPublishSettingsRequest(
+                        form_id=form_id,
+                        publish_settings=publish_settings,
+                        update_mask=update_mask,
+                    )
+                ),
+                form_id=form_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, form_id=form_id) from exc
@@ -215,31 +262,42 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="list_form_responses")
     async def list_form_responses(
         form_id: str,
-        page_size: int = 50,
+        response_id: Annotated[
+            str | None,
+            (
+                "ID of one response to read, the id of a response in an earlier result. When given, "
+                "responses holds just that response and page_size, page_token and filter are ignored."
+            ),
+        ] = None,
+        page_size: Annotated[int, "Responses per page, 1 to 5000."] = 50,
         page_token: str | None = None,
         filter: Annotated[
             str | None,
-            "Forms API response filter query, e.g. \"timestamp >= '2026-01-01T00:00:00Z'\".",
+            (
+                "Only responses submitted after a time, in the only syntax the Forms API supports: "
+                "'timestamp > 2026-01-01T00:00:00Z' or 'timestamp >= ...' with an RFC3339 time."
+            ),
         ] = None,
-        enrich_questions: bool = True,
+        enrich_questions: Annotated[bool, _ENRICH_QUESTIONS] = True,
     ) -> dict[str, Any]:
-        """List submitted responses for a form, newest layout first.
-
-        form_id is the form's Drive file ID (obtain via drive_list_files or
-        search_workspace). When enrich_questions is true, each answer is
-        labeled with its question title. Returns {"responses": [...],
-        "next_page_token", "count"}, or {"error": ...} on API failure.
-        """
+        """List the submitted responses of a Google Form one page at a time, or read one of them by response_id. The form_id comes from drive_list_files, search_workspace or forms_create_form; for the questions themselves use forms_get_form. Returns form_id, count, next_page_token, account_timezone and responses, each with id (the response_id), created_at and submitted_at in the account time zone, respondent_email (only when the form collects emails) and answers as question_id, question and values (answer text, or Drive file IDs for uploads). With response_id, responses holds that one response and next_page_token is null."""
         try:
-            result = await run_blocking(
-                list_form_responses_payload,
-                ListFormResponsesRequest(
-                    form_id=form_id,
-                    page_size=page_size,
-                    page_token=page_token,
-                    filter=filter,
+            if response_id is not None:
+                response = await run_blocking(
+                    get_form_response_payload,
+                    GetFormResponseRequest(form_id=form_id, response_id=response_id),
                 )
-            )
+                result: dict[str, Any] = {"responses": [response]}
+            else:
+                result = await run_blocking(
+                    list_form_responses_payload,
+                    ListFormResponsesRequest(
+                        form_id=form_id,
+                        page_size=page_size,
+                        page_token=page_token,
+                        filter=filter,
+                    ),
+                )
             account_timezone = await resolve_user_timezone()
             titles = (
                 question_titles(await run_blocking(get_form_payload, GetFormRequest(form_id=form_id)))
@@ -247,38 +305,6 @@ def register_tools(server: FastMCP) -> None:
                 else {}
             )
         except HttpError as exc:
-            raise provider_tool_error(exc, form_id=form_id) from exc
-        responses = result.get("responses", [])
-        return {
-            "form_id": form_id,
-            "responses": [
-                response_envelope(response, titles, account_timezone=account_timezone)
-                for response in responses
-            ],
-            "next_page_token": result.get("nextPageToken"),
-            "count": len(responses),
-            "account_timezone": account_timezone,
-        }
-
-    @server.tool(name="get_form_response")
-    async def get_form_response(form_id: str, response_id: str, enrich_questions: bool = True) -> dict[str, Any]:
-        """Fetch one submitted form response by its response ID.
-
-        response_id comes from list_form_responses. When enrich_questions is
-        true, answers are labeled with question titles. Returns the response
-        envelope, or {"error": ...} on API failure.
-        """
-        try:
-            response = await run_blocking(
-                get_form_response_payload,
-                GetFormResponseRequest(form_id=form_id, response_id=response_id),
-            )
-            account_timezone = await resolve_user_timezone()
-            titles = (
-                question_titles(await run_blocking(get_form_payload, GetFormRequest(form_id=form_id)))
-                if enrich_questions
-                else {}
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, form_id=form_id, response_id=response_id) from exc
-        return response_envelope(response, titles, account_timezone=account_timezone)
+            context = {"form_id": form_id} if response_id is None else {"form_id": form_id, "response_id": response_id}
+            raise provider_tool_error(exc, **context) from exc
+        return form_responses_envelope(result, titles, form_id=form_id, account_timezone=account_timezone)

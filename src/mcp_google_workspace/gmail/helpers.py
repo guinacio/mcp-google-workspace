@@ -12,6 +12,18 @@ from .schemas import RecipientSet
 _S = TypeVar("_S")
 _T = TypeVar("_T")
 
+# Parameter descriptions shared by the Gmail compose tools.
+TEXT_BODY_DESCRIPTION = "Plain-text body. Pass it together with html_body to send both versions; with neither, the body is empty."
+HTML_BODY_DESCRIPTION = (
+    "HTML body, sent as an alternative to text_body; without text_body the plain-text part is the "
+    "placeholder 'This message contains HTML content.'"
+)
+ATTACHMENTS_DESCRIPTION = (
+    "Files to attach, each with exactly one source: uploaded_file (an upload handle from "
+    "uploads_file_manager) or file_path (local stdio servers only)."
+)
+
+
 # Cap concurrent per-message fetches so a large heartbeat/digest cannot open a
 # burst of connections against the Gmail API.
 DEFAULT_FETCH_CONCURRENCY = 8
@@ -44,10 +56,13 @@ async def gather_in_order(
             for index, item in enumerate(items):
                 task_group.start_soon(run, index, item)
     except BaseExceptionGroup as group:
-        # Surface a lone worker failure as itself so the error middleware can
-        # keep mapping exception types (reauth, recoverable) to envelopes.
-        if len(group.exceptions) == 1 and not isinstance(
-            group.exceptions[0], BaseExceptionGroup
+        # Surface a worker failure as itself so the error middleware can keep
+        # mapping exception types (reauth, rate limit, recoverable) to
+        # envelopes. Concurrent fetches tend to fail together (several 429s
+        # at once); a group of them would be classified as an internal error.
+        if all(
+            isinstance(exc, Exception) and not isinstance(exc, BaseExceptionGroup)
+            for exc in group.exceptions
         ):
             raise group.exceptions[0]
         raise

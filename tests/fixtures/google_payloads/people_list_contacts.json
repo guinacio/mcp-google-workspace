@@ -1,0 +1,117 @@
+{
+  "connections": [
+    {
+      "resourceName": "people/c1234567890123456789",
+      "etag": "%EgcBAj0JPjcuGgQBAgUHIgxhYmNkZWZnaGlqa2w=",
+      "metadata": {
+        "sources": [{"type": "CONTACT", "id": "1234567890123456789", "etag": "#abcdef012345", "updateTime": "2026-05-14T18:21:07.123456Z"}],
+        "objectType": "PERSON"
+      },
+      "names": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890123456789"}, "sourcePrimary": true},
+          "displayName": "Ada Lovelace",
+          "familyName": "Lovelace",
+          "givenName": "Ada",
+          "displayNameLastFirst": "Lovelace, Ada",
+          "unstructuredName": "Ada Lovelace"
+        }
+      ],
+      "emailAddresses": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890123456789"}, "sourcePrimary": true},
+          "value": "ada@example.com",
+          "type": "work",
+          "formattedType": "Work"
+        }
+      ],
+      "phoneNumbers": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890123456789"}, "sourcePrimary": true},
+          "value": "+1 555-0100",
+          "canonicalForm": "+15550100",
+          "type": "mobile",
+          "formattedType": "Mobile"
+        }
+      ],
+      "organizations": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890123456789"}},
+          "name": "Analytical Engines Ltd",
+          "title": "Principal Engineer"
+        }
+      ],
+      "photos": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "1234567890123456789"}},
+          "url": "https://lh3.googleusercontent.com/contacts/example=s100",
+          "default": true
+        }
+      ],
+      "memberships": [
+        {
+          "metadata": {"source": {"type": "CONTACT", "id": "1234567890123456789"}},
+          "contactGroupMembership": {"contactGroupId": "myContacts", "contactGroupResourceName": "contactGroups/myContacts"}
+        }
+      ]
+    },
+    {
+      "resourceName": "people/c9876543210987654321",
+      "etag": "%EgcBAj0JPjcuGgQBAgUHIgx6eXh3dnV0c3JxcG8=",
+      "metadata": {
+        "sources": [{"type": "CONTACT", "id": "9876543210987654321", "etag": "#fedcba987654", "updateTime": "2026-02-02T09:00:00.000000Z"}],
+        "objectType": "PERSON"
+      },
+      "names": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "9876543210987654321"}, "sourcePrimary": true},
+          "displayName": "Grace Hopper",
+          "familyName": "Hopper",
+          "givenName": "Grace",
+          "displayNameLastFirst": "Hopper, Grace",
+          "unstructuredName": "Grace Hopper"
+        }
+      ],
+      "emailAddresses": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "9876543210987654321"}, "sourcePrimary": true},
+          "value": "grace@example.org"
+        }
+      ],
+      "memberships": [
+        {
+          "metadata": {"source": {"type": "CONTACT", "id": "9876543210987654321"}},
+          "contactGroupMembership": {"contactGroupId": "myContacts", "contactGroupResourceName": "contactGroups/myContacts"}
+        }
+      ]
+    },
+    {
+      "resourceName": "people/c3141592653589793238",
+      "etag": "%EgcBAj0JPjcuGgQBAgUHIgxQbHVtYmVyT25seQ==",
+      "metadata": {
+        "sources": [{"type": "CONTACT", "id": "3141592653589793238", "etag": "#0a1b2c3d4e5f", "updateTime": "2025-08-19T12:30:00.000000Z"}],
+        "objectType": "PERSON"
+      },
+      "phoneNumbers": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "3141592653589793238"}, "sourcePrimary": true},
+          "value": "+1 555-0199",
+          "canonicalForm": "+15550199",
+          "type": "Plumber",
+          "formattedType": "Plumber"
+        }
+      ],
+      "biographies": [
+        {
+          "metadata": {"primary": true, "source": {"type": "CONTACT", "id": "3141592653589793238"}},
+          "value": "Emergency plumber, available weekends.",
+          "contentType": "TEXT_PLAIN"
+        }
+      ]
+    }
+  ],
+  "nextPageToken": "GgYKAggBEAIaBgoCCAEQAioCCAE",
+  "nextSyncToken": "EgsI_9n8jQYQgJ3cAxoHCAESAwgBGAI",
+  "totalPeople": 412,
+  "totalItems": 412
+}

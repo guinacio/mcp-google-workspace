@@ -28,7 +28,7 @@ from google.oauth2.credentials import Credentials
 from .identity import Principal, current_principal
 
 #: Namespaces whose tools need no Google capability (local infrastructure).
-INFRASTRUCTURE_NAMESPACES: Final[frozenset[str]] = frozenset({"files", "apps"})
+INFRASTRUCTURE_NAMESPACES: Final[frozenset[str]] = frozenset({"uploads", "apps"})
 
 #: Root tools that are always listed and callable regardless of grants.
 ALWAYS_AVAILABLE_TOOLS: Final[frozenset[str]] = frozenset(
@@ -36,8 +36,6 @@ ALWAYS_AVAILABLE_TOOLS: Final[frozenset[str]] = frozenset(
         "connect_google_workspace",
         "get_google_connection_status",
         "disconnect_google_workspace",
-        "refresh_workspace_catalog",
-        "get_workspace_capabilities",
         "get_mcp_apps_diagnostics",
         "search_workspace",
         "resolve_workspace_resource",

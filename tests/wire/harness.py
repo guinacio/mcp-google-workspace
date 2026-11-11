@@ -63,6 +63,11 @@ _VOLATILE_KEYS: dict[str, str] = {
 }
 _VOLATILE_HEADER_KEYS = {"mcp-session-id"}
 
+# ``serverInfo.version`` is this package's release (asserted exactly by
+# ``test_server_info_version_is_the_package_release``); masking it here keeps
+# every fixture valid across releases without a regeneration per version bump.
+_SERVER_INFO_KEYS = {"serverInfo", "io.modelcontextprotocol/serverInfo"}
+
 
 def normalize(value: Any) -> Any:
     """Recursively replace nondeterministic fields with stable placeholders."""
@@ -71,6 +76,8 @@ def normalize(value: Any) -> Any:
         for key, item in value.items():
             if key in _VOLATILE_KEYS and item is not None:
                 out[key] = _VOLATILE_KEYS[key]
+            elif key in _SERVER_INFO_KEYS and isinstance(item, dict) and "version" in item:
+                out[key] = {**normalize(item), "version": "<SERVER_VERSION>"}
             else:
                 out[key] = normalize(item)
         return out

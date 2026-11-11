@@ -49,10 +49,10 @@ from mcp_google_workspace.common.operations import (
 )
 from mcp_google_workspace.common.production import (
     CapabilityCatalogMiddleware,
-    ConsequentialActionMiddleware,
     ProductionControlMiddleware,
     production_lifespan,
 )
+from mcp_google_workspace.common.consent import TaskConsentMiddleware
 from mcp_google_workspace.people import people_mcp
 from mcp_google_workspace.runtime import RemoteSecuritySettings
 from mcp_google_workspace.server_http import HttpServingPolicy, build_http_app
@@ -218,7 +218,7 @@ def fleet(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fleet]:
             )
         )
         server.add_middleware(CapabilityCatalogMiddleware())
-        server.add_middleware(ConsequentialActionMiddleware())
+        server.add_middleware(TaskConsentMiddleware())
         views = DashboardViewService(RedisAppStateStore(shared_redis, keyring=keyring), ttl_seconds=3600)
         server.mount(create_apps_server(views), namespace="apps")
         server.mount(people_mcp, namespace="people")
@@ -315,7 +315,7 @@ def test_stale_catalog_cannot_execute_after_grant_revocation(fleet: Fleet) -> No
     )
 
     # A client still holding the old catalog calls the tool on another replica.
-    _, rejected = fleet.tool("alice", "people_list_contacts", {}, replica=1)
+    _, rejected = fleet.tool("alice", "people_search_contacts", {}, replica=1)
     result = rejected["result"]
     assert result["isError"] is True
     assert result["structuredContent"]["code"] == "missing_capability"

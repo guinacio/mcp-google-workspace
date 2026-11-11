@@ -2,11 +2,34 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import EmailStr, Field
+from pydantic import EmailStr, Field, model_validator
 
 from ..common.request_model import ToolRequestModel
+
+# Calendar API events.* sendUpdates values.
+SendUpdates = Literal["all", "externalOnly", "none"]
+
+# Google Calendar accepts reminders from 0 minutes to 4 weeks before the start
+# and at most 5 reminder overrides per event.
+ReminderMinutes = Annotated[int, Field(ge=0, le=40320)]
+MAX_REMINDERS = 5
+
+
+class EventReminderInput(ToolRequestModel):
+    minutes: ReminderMinutes = Field(description="Minutes before the event's start, 0 to 40320 (4 weeks).")
+    method: Literal["popup", "email"] = Field(
+        description="'popup' alerts on the user's devices; 'email' emails the user (the calendar's owner)."
+    )
+
+
+def _check_one_reminder_form(request: "CreateEventRequest | UpdateEventRequest") -> None:
+    if request.reminder_minutes is not None and request.reminders is not None:
+        raise ValueError(
+            "Pass reminders or reminder_minutes, not both: reminder_minutes sets popup reminders only, "
+            "reminders sets each reminder's method."
+        )
 
 
 class ListEventsRequest(ToolRequestModel):
@@ -17,20 +40,21 @@ class ListEventsRequest(ToolRequestModel):
     time_min: str | None = Field(
         default=None,
         description=(
-            "RFC3339 lower bound for event start time. Example: "
+            "RFC3339 lower bound for an event's end time (events ending after it). Example: "
             "'2026-03-01T00:00:00Z'."
         ),
     )
     time_max: str | None = Field(
         default=None,
         description=(
-            "RFC3339 upper bound for event start time. Example: "
+            "RFC3339 upper bound for an event's start time (events starting before it). Example: "
             "'2026-03-08T00:00:00Z'."
         ),
     )
     max_results: int = Field(default=25, ge=1, le=2500, description="Maximum events to return.")
     single_events: bool = Field(default=True, description="Expand recurring events into single instances.")
-    order_by: str = Field(default="startTime", description="Sort order, typically 'startTime'.")
+    order_by: Literal["startTime", "updated"] = Field(default="startTime", description="Sort order.")
+    page_token: str | None = Field(default=None, description="next_page_token of the previous page.")
     range_preset: Literal["today", "tomorrow", "this_week", "next_7_days"] | None = Field(
         default=None,
         description=(
@@ -72,18 +96,33 @@ class RespondToEventRequest(ToolRequestModel):
     response_status: Literal["accepted", "tentative", "declined"] = Field(
         description="Response to set for the authenticated attendee."
     )
-    send_updates: Literal["all", "externalOnly", "none"] | None = Field(
+    send_updates: SendUpdates | None = Field(
         default="all",
         description="Guest notification mode.",
     )
 
 
 class EventAttachmentInput(ToolRequestModel):
-    file_url: str = Field(description="Attachment file URL (for Drive use file alternateLink format).")
-    title: str | None = Field(default=None, description="Display title of the attachment.")
-    mime_type: str | None = Field(default=None, description="Attachment MIME type.")
-    icon_link: str | None = Field(default=None, description="Optional icon URL for the attachment.")
-    file_id: str | None = Field(default=None, description="Drive file ID if available.")
+    file_url: str = Field(
+        description=(
+            "Link to the file; for a Drive file use the same form as its Drive alternateLink, "
+            "e.g. 'https://drive.google.com/file/d/<file_id>/view'."
+        )
+    )
+    title: str | None = Field(default=None, description="Name shown for the attachment on the event.")
+    mime_type: str | None = Field(
+        default=None, description="MIME type of the file, e.g. 'application/pdf'."
+    )
+    icon_link: str | None = Field(
+        default=None, description="URL of an icon shown next to the attachment."
+    )
+    file_id: str | None = Field(
+        default=None,
+        description=(
+            "Drive file ID of the file; lets calendar_set_event_attachments remove it by file_id "
+            "and drive_download_file save it."
+        ),
+    )
 
     def to_api(self) -> dict[str, str]:
         payload: dict[str, str] = {"fileUrl": self.file_url}
@@ -121,10 +160,7 @@ class CreateEventRequest(ToolRequestModel):
         default="opaque",
         description="Whether the event blocks time on the calendar.",
     )
-    conference_data: dict[str, Any] | None = Field(
-        default=None,
-        description="Optional Google conference data payload (for Meet links).",
-    )
+    add_meet_link: bool = Field(default=False, description="Request a new Google Meet link for the event.")
     attendees: list["EventAttendeeInput"] | None = Field(default=None, description="Event attendees.")
     attachments: list[EventAttachmentInput] | None = Field(
         default=None,
@@ -135,16 +171,30 @@ class CreateEventRequest(ToolRequestModel):
         default=True,
         description="Whether client supports event attachments (sets supportsAttachments query param).",
     )
-    send_updates: str | None = Field(
+    send_updates: SendUpdates | None = Field(
         default=None,
         description="Guest notification mode for create (all, externalOnly, none).",
     )
-    reminders: dict[str, Any] | None = Field(default=None, description="Reminder override configuration.")
+    reminder_minutes: list[ReminderMinutes] | None = Field(
+        default=None,
+        max_length=MAX_REMINDERS,
+        description="Popup reminders, in minutes before the start; empty means none, omitted means calendar defaults.",
+    )
+    reminders: list[EventReminderInput] | None = Field(
+        default=None,
+        max_length=MAX_REMINDERS,
+        description="Reminders with their method; empty means none, omitted means calendar defaults.",
+    )
     recurrence: list[str] | None = Field(default=None, description="Recurrence rules (RRULE strings).")
     on_conflict: Literal["fail", "suggest_next_slot"] = Field(
         default="fail",
         description="Conflict strategy when requested time overlaps existing events.",
     )
+
+    @model_validator(mode="after")
+    def _one_reminder_form(self) -> "CreateEventRequest":
+        _check_one_reminder_form(self)
+        return self
 
 
 class UpdateEventRequest(ToolRequestModel):
@@ -165,10 +215,7 @@ class UpdateEventRequest(ToolRequestModel):
         default=None,
         description="Whether the event blocks time on the calendar.",
     )
-    conference_data: dict[str, Any] | None = Field(
-        default=None,
-        description="Optional Google conference data payload (for Meet links).",
-    )
+    add_meet_link: bool = Field(default=False, description="Request a new Google Meet link for the event.")
     attendees: list["EventAttendeeInput"] | None = Field(default=None, description="Replacement attendee list.")
     attachments: list[EventAttachmentInput] | None = Field(
         default=None,
@@ -179,40 +226,50 @@ class UpdateEventRequest(ToolRequestModel):
         default=True,
         description="Whether client supports event attachments (sets supportsAttachments query param).",
     )
-    reminders: dict[str, Any] | None = Field(default=None, description="Updated reminder configuration.")
+    reminder_minutes: list[ReminderMinutes] | None = Field(
+        default=None,
+        max_length=MAX_REMINDERS,
+        description="Replacement popup reminders, in minutes before the start; empty removes all, omitted keeps them.",
+    )
+    reminders: list[EventReminderInput] | None = Field(
+        default=None,
+        max_length=MAX_REMINDERS,
+        description="Replacement reminders with their method; empty removes all, omitted keeps them.",
+    )
     recurrence: list[str] | None = Field(default=None, description="Updated recurrence rules.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for update.")
+    send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for update.")
     on_conflict: Literal["fail", "suggest_next_slot"] = Field(
         default="fail",
         description="Conflict strategy when updated time overlaps existing events.",
     )
 
+    @model_validator(mode="after")
+    def _one_reminder_form(self) -> "UpdateEventRequest":
+        _check_one_reminder_form(self)
+        return self
+
 
 class DeleteEventRequest(ToolRequestModel):
     calendar_id: str = Field(default="primary", description="Target calendar ID.")
     event_id: str = Field(description="Calendar event ID to delete.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for deletion.")
-    force: bool = Field(
-        default=False,
-        description=(
-            "Skip the interactive confirmation when true. Default false: the deletion "
-            "is confirmed with the user first (clients that cannot confirm get a "
-            "confirmation_required result and nothing is deleted)."
-        ),
-    )
-
-
-class CalendarIdInput(ToolRequestModel):
-    id: str = Field(min_length=1, description="Calendar ID or attendee email address.")
+    send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for deletion.")
 
 
 class EventAttendeeInput(ToolRequestModel):
-    email: EmailStr = Field(description="Attendee email address.")
-    display_name: str | None = Field(default=None, alias="displayName", description="Attendee display name.")
-    optional: bool = Field(default=False, description="Whether attendance is optional.")
-    comment: str | None = Field(default=None, description="Attendee response comment.")
+    email: EmailStr = Field(description="Guest's email address; the invitation goes here.")
+    display_name: str | None = Field(
+        default=None, alias="displayName", description="Name shown for the guest on the event."
+    )
+    optional: bool = Field(
+        default=False, description="True marks the guest as optional rather than required."
+    )
+    comment: str | None = Field(default=None, description="The guest's note accompanying their response.")
     additional_guests: int = Field(
-        default=0, alias="additionalGuests", ge=0, le=100, description="Additional unnamed guests."
+        default=0,
+        alias="additionalGuests",
+        ge=0,
+        le=100,
+        description="Number of extra people the guest brings, 0 to 100.",
     )
 
 
@@ -220,25 +277,18 @@ CreateEventRequest.model_rebuild()
 UpdateEventRequest.model_rebuild()
 
 
-class FreeBusyRequest(ToolRequestModel):
-    timeMin: str = Field(description="RFC3339 start of availability window.")
-    timeMax: str = Field(description="RFC3339 end of availability window.")
-    items: list[CalendarIdInput] = Field(
-        min_length=1, max_length=50, description="Calendars to query."
-    )
-    timeZone: str | None = Field(default=None, description="Timezone for response rendering.")
-
-
-class FindCommonFreeSlotsRequest(ToolRequestModel):
+class FindFreeTimeRequest(ToolRequestModel):
     participants: list[str] = Field(
         min_length=1,
-        description=(
-            "List of participant calendar IDs/emails to include in availability search. "
-            "Prefer a JSON array of strings."
-        ),
+        max_length=50,
+        description="Calendar IDs or attendee email addresses whose busy times are checked.",
     )
-    time_min: str = Field(description="RFC3339 start time for the scheduling window.")
-    time_max: str = Field(description="RFC3339 end time for the scheduling window.")
+    time_min: str = Field(description="Start of the window: RFC3339, naive local datetime or date.")
+    time_max: str = Field(description="End of the window, same formats as time_min.")
+    time_zone: str | None = Field(
+        default=None,
+        description="IANA time zone for naive inputs, working hours and returned times.",
+    )
     slot_duration_minutes: int = Field(
         default=30,
         ge=5,
@@ -257,10 +307,6 @@ class FindCommonFreeSlotsRequest(ToolRequestModel):
         le=100,
         description="Maximum number of slot suggestions returned.",
     )
-    time_zone: str | None = Field(
-        default=None,
-        description="Optional timezone for freebusy query response rendering.",
-    )
     working_hours_start: str = Field(
         default="08:00",
         pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
@@ -272,29 +318,37 @@ class FindCommonFreeSlotsRequest(ToolRequestModel):
         description="Daily working-hours end in HH:MM (24h). Default is 17:00.",
     )
 
-class AddEventAttachmentRequest(ToolRequestModel):
-    calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
-    event_id: str = Field(description="Event ID to mutate.")
-    attachment: EventAttachmentInput = Field(description="Attachment metadata to add.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
 
-
-class RemoveEventAttachmentRequest(ToolRequestModel):
-    calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
-    event_id: str = Field(description="Event ID to mutate.")
-    file_url: str | None = Field(default=None, description="Attachment fileUrl to remove.")
-    file_id: str | None = Field(default=None, description="Attachment fileId to remove.")
-    send_updates: str | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
-
-
-class DownloadEventAttachmentRequest(ToolRequestModel):
-    calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
-    event_id: str = Field(description="Event ID that contains the attachment.")
-    file_url: str | None = Field(default=None, description="Attachment fileUrl to download (preferred selector).")
-    file_id: str | None = Field(default=None, description="Drive file ID to download.")
-    output_path: str = Field(description="Destination path for downloaded/exported content.")
-    export_mime_type: str | None = Field(
+class EventAttachmentSelector(ToolRequestModel):
+    file_url: str | None = Field(
         default=None,
-        description="Export MIME type for Google-native docs (defaults to PDF where supported).",
+        description="Match attachments whose file_url equals this, as listed by calendar_read_events.",
     )
-    overwrite: bool = Field(default=False, description="Overwrite output file if it already exists.")
+    file_id: str | None = Field(
+        default=None,
+        description="Match attachments whose Drive file_id equals this, as listed by calendar_read_events.",
+    )
+
+    @model_validator(mode="after")
+    def _require_a_selector(self) -> "EventAttachmentSelector":
+        if not self.file_url and not self.file_id:
+            raise ValueError("Each remove entry needs file_url, file_id or both.")
+        return self
+
+
+class SetEventAttachmentsRequest(ToolRequestModel):
+    calendar_id: str = Field(default="primary", description="Calendar ID containing the event.")
+    event_id: str = Field(description="Event ID to mutate.")
+    add: list[EventAttachmentInput] | None = Field(
+        default=None, max_length=25, description="Attachments to add (deduplicated by file_url)."
+    )
+    remove: list[EventAttachmentSelector] | None = Field(
+        default=None, description="Selectors of attachments to remove."
+    )
+    send_updates: SendUpdates | None = Field(default=None, description="Guest notification mode for update (all, externalOnly, none).")
+
+    @model_validator(mode="after")
+    def _require_a_change(self) -> "SetEventAttachmentsRequest":
+        if not self.add and not self.remove:
+            raise ValueError("Provide at least one attachment in add or remove.")
+        return self

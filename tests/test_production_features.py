@@ -14,12 +14,9 @@ from fastmcp.server.middleware import MiddlewareContext
 from fastmcp.tools import ToolResult
 
 import mcp_google_workspace
-from mcp_google_workspace.common.approvals import (
-    COMMIT_ACTIVE,
-    impact_preview,
-    prepare_action,
-    requires_prepare,
-)
+from mcp_google_workspace.common import consent
+from mcp_google_workspace.common.approvals import prepare_action
+from mcp_google_workspace.common.consent import classify, committing
 from mcp_google_workspace.common.crypto import FernetKeyring
 from mcp_google_workspace.common.resources import parse_resource_uri, resource_handle
 from mcp_google_workspace.common.errors import (
@@ -85,19 +82,16 @@ def test_resource_handles_round_trip_without_provider_specific_guessing() -> Non
     assert parse_resource_uri(handle["uri"]) == ("drive_file", "file/id with spaces")
 
 
-def test_consequential_action_policy_is_cost_and_impact_aware() -> None:
-    arguments = {
-        "subject": "Announcement",
-        "to": [f"person-{index}@example.com" for index in range(10)],
-    }
-    assert requires_prepare("gmail_send_email", arguments)
-    preview = impact_preview("gmail_send_email", arguments)
-    assert preview["counts"]["to"] == 10
-    assert "body" not in preview
+_TEN = [f"m{index}" for index in range(10)]
 
+
+def test_consequential_action_policy_is_cost_and_impact_aware() -> None:
+    one = {"subject": "Hi", "to": ["person@example.com"]}
+    assert classify("gmail_send_email", one).risk == "consequential"
     batch = {"message_ids": [f"message-{index}" for index in range(10)]}
-    assert requires_prepare("gmail_batch_modify", batch)
-    assert impact_preview("gmail_batch_modify", batch)["counts"] == {"messages": 10}
+    assert classify("gmail_modify_messages", batch).risk == "consequential"
+    assert classify("gmail_modify_messages", {"message_ids": batch["message_ids"][:9]}).risk == "write"
+    assert classify("gmail_list_labels", {}).risk == "read"
 
 
 def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
@@ -113,11 +107,14 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
     observed: dict[str, object] = {}
     store = memory_operation_store()
     set_operation_store(store)
+    # prepare_action runs its call through the root server, whose admission
+    # refuses work while an earlier in-process client left it draining.
+    monkeypatch.setattr(RUNTIME_STATE, "draining", False)
 
     async def exercise() -> tuple[dict[str, object], object]:
         tool = await workspace_mcp.get_tool("commit_workspace_action")
         assert tool is not None
-        prepared = await prepare_action("gmail_batch_modify", {"message_ids": ["m"] * 10})
+        prepared = await prepare_action("gmail_modify_messages", {"message_ids": _TEN, "mark_read": True})
         token = str(prepared["commit_token"])
 
         async def dispatch(name, arguments, **kwargs):
@@ -125,7 +122,7 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
                 name=name,
                 arguments=arguments,
                 kwargs=kwargs,
-                commit_active=COMMIT_ACTIVE.get(),
+                grant=consent._COMMIT.get(),
             )
             return ToolResult(structured_content={"ok": True})
 
@@ -141,16 +138,18 @@ def test_approved_commit_reenters_middleware_with_only_prepare_gate_bypassed(
         result, state = anyio.run(exercise)
     finally:
         set_operation_store(None)
+    grant = observed.pop("grant")
     assert observed == {
-        "name": "gmail_batch_modify",
-        "arguments": {"message_ids": ["m"] * 10},
+        "name": "gmail_modify_messages",
+        "arguments": {"message_ids": _TEN, "mark_read": True},
         "kwargs": {},
-        "commit_active": True,
     }
+    # The commit carries consent for exactly the prepared tool and arguments.
+    assert isinstance(grant, consent.CommitGrant) and grant.tool == "gmail_modify_messages"
     assert result["status"] == "committed"
     # W4b: the operation record finishes as succeeded (was: token consumed).
     assert state == "succeeded"
-    assert COMMIT_ACTIVE.get() is False
+    assert consent._COMMIT.get() is None
 
 
 def test_commit_context_does_not_bypass_revocation_admission(monkeypatch) -> None:
@@ -163,7 +162,7 @@ def test_commit_context_does_not_bypass_revocation_admission(monkeypatch) -> Non
         )
         context = MiddlewareContext(
             message=mt.CallToolRequestParams(
-                name="gmail_batch_modify",
+                name="gmail_modify_messages",
                 arguments={"message_ids": ["m"] * 10},
             ),
             method="tools/call",
@@ -172,12 +171,9 @@ def test_commit_context_does_not_bypass_revocation_admission(monkeypatch) -> Non
         async def call_next(_context):  # pragma: no cover - must never run
             raise AssertionError("revoked commit reached the provider")
 
-        token = COMMIT_ACTIVE.set(True)
-        try:
+        with committing("gmail_modify_messages", "digest"):
             with pytest.raises(RecoverableToolError, match="invalidated"):
                 await middleware.on_call_tool(context, call_next)
-        finally:
-            COMMIT_ACTIVE.reset(token)
 
     anyio.run(exercise)
 
@@ -226,6 +222,42 @@ def test_structural_admission_limits_are_enforced() -> None:
         assert "10,000" in str(exc)
     else:  # pragma: no cover - policy invariant
         raise AssertionError("Oversized input was accepted")
+
+
+def test_unpublished_structural_limits_still_reject_oversized_calls(monkeypatch) -> None:
+    """2.0.0 stopped publishing maxLength/maxItems/maxProperties; the middleware
+    still rejects an over-limit argument before the tool (or Google) runs."""
+    from fastmcp import Client
+
+    import mcp_google_workspace.auth.google_auth as google_auth
+
+    def no_google(*_args, **_kwargs):
+        raise AssertionError("an over-limit call must not reach Google")
+
+    monkeypatch.setattr(google_auth, "_build_service_now", no_google)
+
+    async def exercise():
+        async with Client(workspace_mcp) as client:
+            listed = {tool.name: tool for tool in await client.list_tools()}
+            query_schema = listed["gmail_search_emails"].input_schema["properties"]["query"]
+            assert "maxLength" not in query_schema
+            outcomes = []
+            for arguments in (
+                {"query": "a" * 1_000_001},
+                {"label_ids": ["INBOX"] * 10_001},
+            ):
+                try:
+                    result = await client.call_tool("gmail_search_emails", arguments, raise_on_error=False)
+                except McpError as exc:
+                    outcomes.append(str(exc))
+                else:
+                    assert result.is_error
+                    outcomes.append(" ".join(getattr(block, "text", "") for block in result.content))
+            return outcomes
+
+    string_outcome, array_outcome = anyio.run(exercise)
+    assert "1,000,000 character limit" in string_outcome
+    assert "10,000 item limit" in array_outcome
 
 
 def test_string_limit_is_raised_only_where_the_tool_declares_it() -> None:
@@ -429,7 +461,7 @@ def test_remote_catalog_is_capability_and_transport_aware(monkeypatch) -> None:
     assert "gmail_send_email" in names
     assert "drive_list_files" not in names
     assert "gmail_download_attachment" not in names
-    attachment_items = parameters["properties"]["attachments"]["anyOf"][0]["items"]
+    attachment_items = parameters["properties"]["attachments"]["items"]
     assert "file_path" not in attachment_items["properties"]
 
 
@@ -476,7 +508,7 @@ def test_framework_wrapped_errors_keep_their_recovery_envelope() -> None:
     cause = RecoverableToolError(
         "picker_required",
         "Use the Workspace Files picker.",
-        required_action={"tool": "files_file_manager", "arguments": {}},
+        required_action={"tool": "uploads_file_manager", "arguments": {}},
     )
     try:
         raise ToolError("Error calling tool 'upload_file': Use the picker") from cause
@@ -486,12 +518,19 @@ def test_framework_wrapped_errors_keep_their_recovery_envelope() -> None:
     result = _run_error_middleware(error)
     assert isinstance(result, ToolResult) and result.is_error is True
     assert result.structured_content["code"] == "picker_required"
-    assert result.structured_content["required_action"] == {"tool": "files_file_manager", "arguments": {}}
+    assert result.structured_content["required_action"] == {"tool": "uploads_file_manager", "arguments": {}}
 
 
 def test_confirmation_required_is_an_error_tool_result_not_a_protocol_error() -> None:
-    result = _run_error_middleware(ConfirmationRequiredError("delete_task", "Delete task t1?"))
+    prepare = {
+        "tool": "prepare_workspace_action",
+        "arguments": {"tool_name": "tasks_delete_task", "arguments": {"task_id": "t1"}},
+    }
+    result = _run_error_middleware(
+        ConfirmationRequiredError("delete_task", "Delete task t1?", required_action=prepare)
+    )
     assert isinstance(result, ToolResult)
     assert result.is_error is True
     assert result.structured_content["code"] == "confirmation_required"
-    assert result.structured_content["required_action"]["prompt"] == "Delete task t1?"
+    assert result.structured_content["required_action"] == prepare
+    assert result.structured_content["details"] == {"action": "delete_task", "preview": "Delete task t1?"}

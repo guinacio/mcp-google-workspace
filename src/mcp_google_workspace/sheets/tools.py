@@ -4,20 +4,29 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
 from ..common.errors import provider_tool_error
+from ..tool_tiers import require_extended_tier
 from .client import sheets_service
+from .presentation import (
+    append_values_envelope,
+    batch_sheet_values_envelope,
+    batch_update_spreadsheet_envelope,
+    created_spreadsheet_envelope,
+    raw_spreadsheet_view,
+    spreadsheet_envelope,
+    update_values_envelope,
+)
 from .schemas import (
     AppendSheetValuesRequest,
-    BatchGetSheetValuesRequest,
     BatchUpdateSpreadsheetRequest,
     CreateSpreadsheetRequest,
     DateTimeRenderOption,
-    GetSheetValuesRequest,
     GetSpreadsheetRequest,
+    ReadSheetValuesRequest,
     UpdateSheetValuesRequest,
     ValueRenderOption,
 )
@@ -40,18 +49,7 @@ def create_spreadsheet_payload(request: CreateSpreadsheetRequest) -> dict[str, A
     return service.spreadsheets().create(body=body).execute()
 
 
-def get_sheet_values_payload(request: GetSheetValuesRequest) -> dict[str, Any]:
-    service = sheets_service()
-    return service.spreadsheets().values().get(
-        spreadsheetId=request.spreadsheet_id,
-        range=request.range_a1,
-        majorDimension=request.major_dimension,
-        valueRenderOption=request.value_render_option,
-        dateTimeRenderOption=request.date_time_render_option,
-    ).execute()
-
-
-def batch_get_sheet_values_payload(request: BatchGetSheetValuesRequest) -> dict[str, Any]:
+def read_sheet_values_payload(request: ReadSheetValuesRequest) -> dict[str, Any]:
     service = sheets_service()
     return service.spreadsheets().values().batchGet(
         spreadsheetId=request.spreadsheet_id,
@@ -96,151 +94,163 @@ def batch_update_spreadsheet_payload(request: BatchUpdateSpreadsheetRequest) -> 
     ).execute()
 
 
+_RANGE_RULES = (
+    "Basic A1 notation with an optional sheet prefix: 'Sheet1!A1:C10', 'A1', 'A:C' (whole columns) or "
+    "'1:5' (whole rows); quote sheet names that contain spaces ('My Sheet'!A1:B2). A bare sheet name or "
+    "an open-ended range such as A2:C is rejected, and without a prefix the first sheet is used."
+)
+
+
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="get_spreadsheet")
     def get_spreadsheet(
         spreadsheet_id: str,
-        include_grid_data: bool = False,
-        ranges: list[str] | None = None,
+        include_grid_data: Annotated[
+            bool,
+            (
+                "Also return each sheet's cell values, as displayed, in sheets[].values (raw: Google's "
+                "data with every cell's formatting); this can be very large, so limit it with ranges. "
+                "For values alone use sheets_read_sheet_values."
+            ),
+        ] = False,
+        ranges: Annotated[
+            list[str] | None,
+            (
+                "A1 ranges that limit the response to the sheets (and, with include_grid_data, the "
+                "cells) they cover, e.g. ['Sheet1!A1:C10']; basic A1 notation as in sheets_read_sheet_values, so a "
+                "bare sheet name is rejected. Omitted, every sheet is returned."
+            ),
+        ] = None,
+        format: Annotated[
+            Literal["normalized", "raw"],
+            (
+                "'normalized' (the default) returns the summary described above. 'raw' returns Google's "
+                "Spreadsheet resource unchanged in spreadsheet, with the formats, conditional formats, "
+                "charts, merges, filters, protected and banded ranges and data sources the summary leaves "
+                "out, for sheets_batch_update_spreadsheet edits; it needs the extended tool tier and fails "
+                "with invalid_input under MCP_TOOL_TIER=core."
+            ),
+        ] = "normalized",
+        offset: Annotated[
+            int,
+            (
+                "Raw only (normalized ignores it): the next_offset of a truncated raw result. Raw pages "
+                "hold about 32,000 characters of JSON and are cut between whole sheets, the first page "
+                "holding every other field; joining each list across pages gives Google's resource. "
+                "raw_chars and raw_sha256 describe the whole resource. 0 starts at the beginning."
+            ),
+        ] = 0,
     ) -> dict[str, Any]:
-        """Fetch spreadsheet metadata: properties plus each sheet/tab's title and sheetId.
-
-        spreadsheet_id is the file's Drive ID — there is no Sheets-side lookup
-        tool, so obtain it via drive_list_files or search_workspace first. Set
-        include_grid_data=true (optionally limited by A1 'ranges') to include
-        cell data. Returns the Spreadsheet resource, or {"error": ...} on API
-        failure.
-        """
+        """Read a spreadsheet's structure: its title, locale and every sheet (tab) with its ID and grid size. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for cell values use sheets_read_sheet_values. Returns spreadsheet_id, title, locale, spreadsheet_time_zone (the file's own setting), url, named_ranges (name, named_range_id, A1 range) and sheets, each with sheet_id, title, index, type, row_count, column_count, frozen_row_count, frozen_column_count and hidden. With include_grid_data each sheet also has values (displayed cell text) and values_start (the cell of values[0][0]), else both are null; format raw returns Google's JSON instead, paged."""
+        request = GetSpreadsheetRequest(
+            spreadsheet_id=spreadsheet_id,
+            include_grid_data=include_grid_data,
+            ranges=ranges or [],
+            format=format,
+            offset=offset,
+        )
+        if request.format == "raw":
+            require_extended_tier("format", "raw", instead="Omit format for the normalized structure.")
         try:
-            return get_spreadsheet_payload(
-                GetSpreadsheetRequest(
-                    spreadsheet_id=spreadsheet_id,
-                    include_grid_data=include_grid_data,
-                    ranges=ranges or [],
-                )
-            )
+            payload = get_spreadsheet_payload(request)
         except HttpError as exc:
             raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id) from exc
+        if request.format == "raw":
+            return raw_spreadsheet_view(payload, offset=request.offset)
+        return spreadsheet_envelope(payload, include_grid_data=include_grid_data)
 
     @server.tool(name="create_spreadsheet")
     def create_spreadsheet(
-        title: str,
+        title: Annotated[str, "Title of the new spreadsheet, also used as its Drive file name."],
         sheet_titles: Annotated[
-            list[str] | None, "Optional titles for initial sheets/tabs to create in the spreadsheet."
+            list[str] | None,
+            (
+                "Titles of the sheets (tabs) to create, in order. Omitted, the spreadsheet starts with "
+                "one sheet that Google names (Sheet1 in English)."
+            ),
         ] = None,
     ) -> dict[str, Any]:
-        """Create a new spreadsheet, optionally with named initial sheets/tabs.
-
-        Returns the created Spreadsheet resource (including its
-        'spreadsheetId' for the other sheets tools), or {"error": ...} on API
-        failure.
-        """
+        """Create a new Google Sheets spreadsheet in the root of the user's My Drive, optionally with named sheets (tabs). Fill it afterwards with sheets_update_sheet_values or sheets_append_sheet_values. Returns status ok, spreadsheet_id (the ID every other sheets_ tool takes), title, url and sheets, each with sheet_id, title and index."""
         try:
-            return create_spreadsheet_payload(
-                CreateSpreadsheetRequest(title=title, sheet_titles=sheet_titles or [])
+            return created_spreadsheet_envelope(
+                create_spreadsheet_payload(
+                    CreateSpreadsheetRequest(title=title, sheet_titles=sheet_titles or [])
+                )
             )
         except HttpError as exc:
             raise provider_tool_error(exc, title=title) from exc
 
-    @server.tool(name="get_sheet_values")
-    def get_sheet_values(
-        spreadsheet_id: str,
-        range_a1: Annotated[
-            str, "A1 range to read, e.g. Sheet1!A1:C10, A:C (whole columns), or 1:5 (whole rows)."
-        ],
-        major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS",
-        value_render_option: Annotated[
-            ValueRenderOption | None,
-            "How cell values are rendered: FORMATTED_VALUE (default), UNFORMATTED_VALUE, or FORMULA.",
-        ] = None,
-        date_time_render_option: Annotated[
-            DateTimeRenderOption | None,
-            "How dates/times are rendered: SERIAL_NUMBER (default) or FORMATTED_STRING.",
-        ] = None,
-    ) -> dict[str, Any]:
-        """Read cell values from one A1 range of a spreadsheet.
-
-        spreadsheet_id comes from create_spreadsheet or Drive discovery
-        (drive_list_files / search_workspace). Returns the ValueRange payload
-        ('values' as a list of rows), or {"error": ...} on API failure.
-        """
-        try:
-            return get_sheet_values_payload(
-                GetSheetValuesRequest(
-                    spreadsheet_id=spreadsheet_id,
-                    range_a1=range_a1,
-                    major_dimension=major_dimension,
-                    value_render_option=value_render_option,
-                    date_time_render_option=date_time_render_option,
-                )
-            )
-        except HttpError as exc:
-            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1) from exc
-
-    @server.tool(name="batch_get_sheet_values")
-    def batch_get_sheet_values(
+    @server.tool(name="read_sheet_values")
+    def read_sheet_values(
         spreadsheet_id: str,
         ranges: Annotated[
-            list[str], "A1 ranges to read in one call, e.g. [\"Sheet1!A1:C10\", \"Sheet2!A:B\"]."
+            list[str],
+            (
+                "One or more ranges to read, e.g. ['Sheet1!A1:C10'] or ['Sheet1!A1:C10', 'Sheet2!A:B']. "
+                + _RANGE_RULES
+            ),
         ],
+        value_render_option: ValueRenderOption | None = None,
+        date_time_render_option: DateTimeRenderOption | None = None,
         major_dimension: Literal["ROWS", "COLUMNS"] = "ROWS",
-        value_render_option: Annotated[
-            ValueRenderOption | None,
-            "How cell values are rendered: FORMATTED_VALUE (default), UNFORMATTED_VALUE, or FORMULA.",
-        ] = None,
-        date_time_render_option: Annotated[
-            DateTimeRenderOption | None,
-            "How dates/times are rendered: SERIAL_NUMBER (default) or FORMATTED_STRING.",
-        ] = None,
     ) -> dict[str, Any]:
-        """Read cell values from multiple A1 ranges of one spreadsheet in a single call.
-
-        spreadsheet_id comes from create_spreadsheet or Drive discovery
-        (drive_list_files / search_workspace). Returns the batchGet payload
-        ('valueRanges' list, one per requested range), or {"error": ...} on
-        API failure.
-        """
+        """Read the cell values of one or more A1 ranges of a Google Sheets spreadsheet in a single call. The spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet; for the sheet (tab) names and sizes use sheets_get_spreadsheet, and to write cells sheets_update_sheet_values. Returns spreadsheet_id, count and value_ranges, one per requested range in request order (a list even for one range), each with range (the A1 range actually read), major_dimension, values (rows, or columns with major_dimension COLUMNS, without trailing empty rows and cells; [] when the range is empty) and row_count."""
         try:
-            return batch_get_sheet_values_payload(
-                BatchGetSheetValuesRequest(
-                    spreadsheet_id=spreadsheet_id,
-                    ranges=ranges,
-                    major_dimension=major_dimension,
-                    value_render_option=value_render_option,
-                    date_time_render_option=date_time_render_option,
-                )
+            return batch_sheet_values_envelope(
+                read_sheet_values_payload(
+                    ReadSheetValuesRequest(
+                        spreadsheet_id=spreadsheet_id,
+                        ranges=ranges,
+                        value_render_option=value_render_option,
+                        date_time_render_option=date_time_render_option,
+                        major_dimension=major_dimension,
+                    )
+                ),
+                spreadsheet_id=spreadsheet_id,
             )
         except HttpError as exc:
-            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id) from exc
+            raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id, ranges=ranges) from exc
 
     @server.tool(name="append_sheet_values")
     def append_sheet_values(
         spreadsheet_id: str,
-        range_a1: str,
-        values: Annotated[list[list[Any]], "Tabular row-major values to append after the range's last row."],
+        range_a1: Annotated[
+            str,
+            (
+                "Range that locates the table to append to, e.g. 'Sheet1!A1' or 'Sheet1!A:D'; rows are "
+                "written after the last row of that table, starting in its first column. " + _RANGE_RULES
+            ),
+        ],
+        values: Annotated[
+            list[list[Any]],
+            "Rows to append, each a list of cell values (strings, numbers, booleans), e.g. [['2026-11-03', 'Lunch', 12.5]].",
+        ],
         value_input_option: Literal["RAW", "USER_ENTERED"] = "RAW",
         insert_data_option: Annotated[
             Literal["OVERWRITE", "INSERT_ROWS"],
-            "How appended data interacts with existing rows: OVERWRITE existing cells or INSERT_ROWS to shift them down.",
+            (
+                "INSERT_ROWS inserts new rows for the data, shifting any cells below it down; OVERWRITE "
+                "writes into the cells after the table, replacing whatever is there."
+            ),
         ] = "INSERT_ROWS",
-        include_values_in_response: bool = False,
+        include_values_in_response: Annotated[
+            bool, "Also return the written cells, as stored after parsing, in updated_values."
+        ] = False,
     ) -> dict[str, Any]:
-        """Append rows after the last data row of the table that range_a1 anchors.
-
-        value_input_option USER_ENTERED parses values like typed input
-        (formulas, dates); RAW stores them verbatim. Returns the append reply
-        (including the 'updates' summary), or {"error": ...} on API failure.
-        """
+        """Append rows below the existing data of a table in a Google Sheets spreadsheet, leaving the current rows in place. To overwrite a known range use sheets_update_sheet_values; the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, table_range (the table that was found, null on an empty sheet), updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null)."""
         try:
-            return append_sheet_values_payload(
-                AppendSheetValuesRequest(
-                    spreadsheet_id=spreadsheet_id,
-                    range_a1=range_a1,
-                    values=values,
-                    value_input_option=value_input_option,
-                    insert_data_option=insert_data_option,
-                    include_values_in_response=include_values_in_response,
-                )
+            return append_values_envelope(
+                append_sheet_values_payload(
+                    AppendSheetValuesRequest(
+                        spreadsheet_id=spreadsheet_id,
+                        range_a1=range_a1,
+                        values=values,
+                        value_input_option=value_input_option,
+                        insert_data_option=insert_data_option,
+                        include_values_in_response=include_values_in_response,
+                    )
+                ),
+                spreadsheet_id=spreadsheet_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1) from exc
@@ -248,26 +258,33 @@ def register_tools(server: FastMCP) -> None:
     @server.tool(name="update_sheet_values")
     def update_sheet_values(
         spreadsheet_id: str,
-        range_a1: str,
-        values: Annotated[list[list[Any]], "Replacement tabular row-major values for the given range."],
+        range_a1: Annotated[str, "Range to write. " + _RANGE_RULES],
+        values: Annotated[
+            list[list[Any]],
+            (
+                "Rows written from the range's top-left cell, each a list of cell values, e.g. "
+                "[['Name', 'Total'], ['Ana', 42]]; they must fit inside range_a1, a null skips a cell and "
+                "an empty string clears it."
+            ),
+        ],
         value_input_option: Literal["RAW", "USER_ENTERED"] = "RAW",
-        include_values_in_response: bool = False,
+        include_values_in_response: Annotated[
+            bool, "Also return the written cells, as stored after parsing, in updated_values."
+        ] = False,
     ) -> dict[str, Any]:
-        """Overwrite the cells in range_a1 with the given row-major values.
-
-        value_input_option USER_ENTERED parses values like typed input
-        (formulas, dates); RAW stores them verbatim. Returns the update reply
-        (updatedRows/updatedCells counts), or {"error": ...} on API failure.
-        """
+        """Write values into one A1 range of a Google Sheets spreadsheet, overwriting the cells it covers. To add rows below existing data use sheets_append_sheet_values, and for formatting or tab changes use sheets_batch_update_spreadsheet (extended tool tier); the spreadsheet_id comes from drive_list_files, search_workspace or sheets_create_spreadsheet. Returns status ok, spreadsheet_id, updated_range, updated_rows, updated_columns, updated_cells and updated_values (the written cells with include_values_in_response, else null)."""
         try:
-            return update_sheet_values_payload(
-                UpdateSheetValuesRequest(
-                    spreadsheet_id=spreadsheet_id,
-                    range_a1=range_a1,
-                    values=values,
-                    value_input_option=value_input_option,
-                    include_values_in_response=include_values_in_response,
-                )
+            return update_values_envelope(
+                update_sheet_values_payload(
+                    UpdateSheetValuesRequest(
+                        spreadsheet_id=spreadsheet_id,
+                        range_a1=range_a1,
+                        values=values,
+                        value_input_option=value_input_option,
+                        include_values_in_response=include_values_in_response,
+                    )
+                ),
+                spreadsheet_id=spreadsheet_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id, range_a1=range_a1) from exc
@@ -278,29 +295,37 @@ def register_tools(server: FastMCP) -> None:
         requests: Annotated[
             list[dict[str, Any]],
             (
-                "Raw Sheets API batchUpdate request objects, e.g. "
+                "Sheets API batchUpdate request objects, applied in order, e.g. "
                 '[{"addSheet": {"properties": {"title": "New tab"}}}] or '
                 "updateSheetProperties/deleteSheet/repeatCell/updateCells requests."
             ),
         ],
-        include_spreadsheet_in_response: bool = False,
+        include_spreadsheet_in_response: Annotated[
+            bool, "Also return the spreadsheet after the update, without cell values, in spreadsheet."
+        ] = False,
+        dry_run: Annotated[
+            bool,
+            (
+                "True returns the impact preview (status 'dry_run', preview with the request count by "
+                "kind, consent_required, action) without sending anything to Google."
+            ),
+        ] = False,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Apply raw Sheets API batchUpdate requests (structural/formatting changes).
-
-        Use this for anything beyond cell values: adding/deleting sheets,
-        formatting, merges, charts. spreadsheet_id comes from
-        create_spreadsheet or Drive discovery (drive_list_files /
-        search_workspace). Returns the batchUpdate replies, or {"error": ...}
-        on API failure.
-        """
+        """Apply raw Google Sheets API batchUpdate requests for structure and formatting: adding, renaming or deleting sheets, formatting, merges, charts. To write cell values use sheets_update_sheet_values or sheets_append_sheet_values instead. Ten or more requests, or any delete* request, ask the user to confirm first; dry_run previews without changing anything. Requests apply atomically: if one is invalid, none is applied. Returns status 'ok', spreadsheet_id, replies (Google's, one per request in order, e.g. addSheet.properties.sheetId), count and spreadsheet (the sheets_get_spreadsheet shape when requested, else null)."""
+        if dry_run:
+            raise RuntimeError("dry_run is answered by the consent gate before the tool body runs.")
         try:
-            return await run_blocking(
-                batch_update_spreadsheet_payload,
-                BatchUpdateSpreadsheetRequest(
-                    spreadsheet_id=spreadsheet_id,
-                    requests=requests,
-                    include_spreadsheet_in_response=include_spreadsheet_in_response,
-                )
+            return batch_update_spreadsheet_envelope(
+                await run_blocking(
+                    batch_update_spreadsheet_payload,
+                    BatchUpdateSpreadsheetRequest(
+                        spreadsheet_id=spreadsheet_id,
+                        requests=requests,
+                        include_spreadsheet_in_response=include_spreadsheet_in_response,
+                    ),
+                ),
+                spreadsheet_id=spreadsheet_id,
             )
         except HttpError as exc:
             raise provider_tool_error(exc, spreadsheet_id=spreadsheet_id) from exc

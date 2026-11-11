@@ -36,8 +36,8 @@ import {
   requireSuccess,
   toolResultErrorMessage,
 } from "./tool-calls";
-import { OperationRegistry, isReadOperation } from "./operations";
-import type { Operation } from "./operations";
+import { OperationRegistry, isReadOperation, pickOperationArgs } from "./operations";
+import type { Operation, OperationArgs } from "./operations";
 import {
   MAX_INLINE_DOWNLOAD_BYTES,
   NO_HOST_SUPPORT,
@@ -110,11 +110,26 @@ const NO_TOOL_CAPABILITIES: UiToolCapabilities = Object.freeze({
   can_fetch_email_attachment: false,
 });
 
-type ViewCaller = (
-  operation: ViewOperation,
-  args?: Record<string, unknown>,
+type ViewCaller = <O extends ViewOperation>(
+  operation: O,
+  args?: OperationArgs<O>,
   signal?: AbortSignal,
 ) => Promise<CallToolResult>;
+
+/** One email action: its operation, the tool arguments and the optimistic label patch. */
+interface EmailMutation<O extends Operation = Operation> {
+  operation: O;
+  /** Arguments besides `message_ids`, which is always the one message acted on. */
+  args: OperationArgs<O>;
+  successNotice: string;
+  failureLabel: string;
+  patch: { addLabels?: string[]; removeLabels?: string[]; isUnread?: boolean };
+}
+
+/** Checks `args` against its own operation's arguments before the table erases `O`. */
+function emailMutation<O extends Operation>(spec: EmailMutation<O>): EmailMutation {
+  return spec as unknown as EmailMutation;
+}
 
 /** Raised after a stale state write; the view has already been refreshed. */
 class ViewRefreshedAfterConflict extends Error {
@@ -436,9 +451,9 @@ async function initMcpMode() {
   // --- Server tool calls -------------------------------------------------------
 
   /** Call the tool implementing `operation`; resolves with the raw result. */
-  const invokeTool = async (
-    operation: Operation,
-    args: Record<string, unknown>,
+  const invokeTool = async <O extends Operation>(
+    operation: O,
+    args: OperationArgs<O>,
     signal?: AbortSignal,
   ): Promise<CallToolResult> => {
     if (!support.serverTools) {
@@ -464,12 +479,12 @@ async function initMcpMode() {
   };
 
   /** Call a non-view tool and require success (isError and embedded errors throw). */
-  const callTool = async (operation: Operation, args: Record<string, unknown>, signal?: AbortSignal) =>
+  const callTool = async <O extends Operation>(operation: O, args: OperationArgs<O>, signal?: AbortSignal) =>
     requireSuccess(await invokeTool(operation, args, signal));
 
-  const invokeView = async (
-    operation: ViewOperation,
-    args: Record<string, unknown>,
+  const invokeView = async <O extends ViewOperation>(
+    operation: O,
+    args: OperationArgs<O>,
     signal?: AbortSignal,
   ): Promise<CallToolResult> => {
     const withHandle: Record<string, unknown> = { ...args };
@@ -481,7 +496,7 @@ async function initMcpMode() {
     } else if (CONDITIONAL_OPERATIONS.has(operation)) {
       throw new ToolCallError("The dashboard view is not open yet.", "tool", VIEW_HANDLE_INVALID);
     }
-    const result = await invokeTool(operation, withHandle, signal);
+    const result = await invokeTool(operation, withHandle as OperationArgs<O>, signal);
     if (signal?.aborted || lifecycle.disposed) {
       throw new ToolCallError("The request was cancelled.", "cancelled", "cancelled");
     }
@@ -549,7 +564,8 @@ async function initMcpMode() {
     const ticket = lifecycle.begin("data");
     try {
       const weekly = mode === "weekly" && registry.available("getWeeklyCalendar");
-      const result = await callView(weekly ? "getWeeklyCalendar" : "getDashboard", launchArgs, ticket.signal);
+      const operation = weekly ? "getWeeklyCalendar" : "getDashboard";
+      const result = await callView(operation, pickOperationArgs(operation, launchArgs), ticket.signal);
       if (!ticket.current) return false;
       const parsed = extractDashboardData(result);
       const next: DashboardData = { ...currentData, ui_error: undefined, ui_notice: undefined };
@@ -913,9 +929,9 @@ async function initMcpMode() {
    * any failure (isError result, embedded error, or rejected call); the success
    * notice is shown only after the server confirmed the action.
    */
-  const runMutation = async (params: {
-    operation: Operation;
-    args: Record<string, unknown>;
+  const runMutation = async <O extends Operation>(params: {
+    operation: O;
+    args: OperationArgs<O>;
     optimistic?: (data: DashboardData) => DashboardData;
     failureLabel: string;
     successNotice: string;
@@ -972,7 +988,8 @@ async function initMcpMode() {
           location: detail.location || "",
           description: detail.description || "",
           attendees_csv: detail.attendees.map((item) => item.email).join(", "),
-          create_conference: !!detail.conference_link,
+          create_conference: false,
+          has_conference: !!detail.conference_link,
         },
         ui_notice: undefined,
         ui_error: undefined,
@@ -1014,48 +1031,47 @@ async function initMcpMode() {
       renderCurrent();
       return;
     }
-    const idempotencyKey = makeIdempotencyKey("create");
-    const args: Record<string, unknown> = create
-      ? {
-          calendar_id: draft.calendar_id,
-          idempotency_key: idempotencyKey,
-          summary: draft.summary,
-          start_datetime: startIso,
-          end_datetime: endIso,
-          timezone: draft.timezone,
-          description: draft.description || undefined,
-          location: draft.location || undefined,
-          attendees: attendees.map((email) => ({ email })),
-          conference_data: draft.create_conference
-            ? { createRequest: { requestId: idempotencyKey, conferenceSolutionKey: { type: "hangoutsMeet" } } }
-            : undefined,
-          send_updates: "all",
-          on_conflict: "suggest_next_slot",
-        }
-      : {
-          event_id: draft.event_id,
-          calendar_id: draft.calendar_id,
-          summary: draft.summary,
-          start_datetime: startIso,
-          end_datetime: endIso,
-          timezone: draft.timezone,
-          description: draft.description || undefined,
-          location: draft.location || undefined,
-          attendees: attendees.map((email) => ({ email })),
-          send_updates: "all",
-          on_conflict: "suggest_next_slot",
-        };
+    const common = {
+      calendar_id: draft.calendar_id,
+      summary: draft.summary,
+      start_datetime: startIso,
+      end_datetime: endIso,
+      timezone: draft.timezone,
+      description: draft.description || undefined,
+      location: draft.location || undefined,
+      attendees: attendees.map((email) => ({ email })),
+      send_updates: "all",
+      on_conflict: "suggest_next_slot",
+    } satisfies OperationArgs<"createEvent"> & OperationArgs<"updateEvent">;
     // Keep the typed draft: a failure re-renders the open editor with it.
     currentData = { ...currentData, event_editor: draft };
+    const after = async () => {
+      currentData = { ...currentData, event_editor: undefined };
+      await refresh("weekly");
+    };
+    if (create) {
+      await runMutation({
+        operation: "createEvent",
+        args: {
+          ...common,
+          idempotency_key: makeIdempotencyKey("create"),
+          add_meet_link: draft.create_conference,
+        },
+        failureLabel: "Failed to save event",
+        successNotice: "Event created.",
+        after,
+      });
+      return;
+    }
+    // calendar_update_event's add_meet_link replaces any conference the event has, so it is
+    // sent only to add a first Meet link; the editor offers the box only then.
+    const addMeet = draft.create_conference && !draft.has_conference;
     await runMutation({
-      operation: create ? "createEvent" : "updateEvent",
-      args,
+      operation: "updateEvent",
+      args: { ...common, event_id: draft.event_id, ...(addMeet ? { add_meet_link: true } : {}) },
       failureLabel: "Failed to save event",
-      successNotice: create ? "Event created." : "Event updated.",
-      after: async () => {
-        currentData = { ...currentData, event_editor: undefined };
-        await refresh("weekly");
-      },
+      successNotice: "Event updated.",
+      after,
     });
   };
 
@@ -1077,10 +1093,10 @@ async function initMcpMode() {
     }
   };
 
-  const runEmailMutation = (params: {
-    operation: Operation;
+  const runEmailMutation = <O extends Operation>(params: {
+    operation: O;
     messageId: string;
-    args: Record<string, unknown>;
+    args: OperationArgs<O>;
     successNotice: string;
     failureLabel: string;
     patch: { addLabels?: string[]; removeLabels?: string[]; isUnread?: boolean };
@@ -1147,62 +1163,56 @@ async function initMcpMode() {
     renderCurrent();
   };
 
-  const emailMutations: Partial<Record<UiAction["type"], {
-    operation: Operation;
-    args: (messageId: string) => Record<string, unknown>;
-    successNotice: string;
-    failureLabel: string;
-    patch: { addLabels?: string[]; removeLabels?: string[]; isUnread?: boolean };
-  }>> = {
-    email_mark_read: {
+  const emailMutations: Partial<Record<UiAction["type"], EmailMutation>> = {
+    email_mark_read: emailMutation({
       operation: "markEmailRead",
-      args: (id) => ({ message_id: id }),
+      args: { mark_read: true },
       successNotice: "Email marked as read.",
       failureLabel: "Failed to mark as read",
       patch: { removeLabels: ["UNREAD"], isUnread: false },
-    },
-    email_mark_unread: {
+    }),
+    email_mark_unread: emailMutation({
       operation: "markEmailUnread",
-      args: (id) => ({ message_id: id }),
+      args: { mark_read: false },
       successNotice: "Email marked as unread.",
       failureLabel: "Failed to mark as unread",
       patch: { addLabels: ["UNREAD"], isUnread: true },
-    },
-    email_archive: {
+    }),
+    email_archive: emailMutation({
       operation: "moveEmail",
-      args: (id) => ({ message_id: id, remove_label_ids: ["INBOX"] }),
+      args: { archive: true },
       successNotice: "Email archived.",
       failureLabel: "Failed to archive email",
       patch: { removeLabels: ["INBOX"] },
-    },
-    email_trash: {
+    }),
+    email_trash: emailMutation({
       operation: "deleteEmail",
-      args: (id) => ({ message_id: id, permanent: false }),
+      args: { mode: "trash" },
       successNotice: "Email moved to trash.",
       failureLabel: "Failed to move email to trash",
       patch: { addLabels: ["TRASH"], removeLabels: ["INBOX"] },
-    },
-    email_untrash: {
+    }),
+    email_untrash: emailMutation({
       operation: "untrashEmail",
-      args: (id) => ({ message_id: id }),
+      args: { untrash: true },
       successNotice: "Email restored from trash.",
       failureLabel: "Failed to restore email",
       patch: { removeLabels: ["TRASH"], addLabels: ["INBOX"] },
-    },
-    email_mark_spam: {
+    }),
+    email_mark_spam: emailMutation({
       operation: "markEmailSpam",
-      args: (id) => ({ message_id: id }),
+      args: { spam: true },
       successNotice: "Email marked as spam.",
       failureLabel: "Failed to mark email as spam",
       patch: { addLabels: ["SPAM"], removeLabels: ["INBOX"] },
-    },
-    email_mark_not_spam: {
+    }),
+    email_mark_not_spam: emailMutation({
       operation: "markEmailNotSpam",
-      args: (id) => ({ message_id: id, add_to_inbox: true }),
+      args: { spam: false },
       successNotice: "Email marked as not spam.",
       failureLabel: "Failed to mark email as not spam",
       patch: { removeLabels: ["SPAM"], addLabels: ["INBOX"] },
-    },
+    }),
   };
 
   setActionHandler((action: UiAction) => {
@@ -1306,7 +1316,7 @@ async function initMcpMode() {
         runEmailMutation({
           operation: emailMutation.operation,
           messageId,
-          args: emailMutation.args(messageId),
+          args: { message_ids: [messageId], ...emailMutation.args },
           successNotice: emailMutation.successNotice,
           failureLabel: emailMutation.failureLabel,
           patch: emailMutation.patch,
@@ -1362,7 +1372,7 @@ async function initMcpMode() {
       void withUiPending(() =>
         runMutation({
           operation: "deleteEvent",
-          args: { calendar_id: action.calendarId, event_id: action.eventId, force: true, send_updates: "all" },
+          args: { calendar_id: action.calendarId, event_id: action.eventId, send_updates: "all" },
           optimistic: (data) => optimisticCancelEvent(data, action.calendarId, action.eventId),
           failureLabel: "Failed to cancel event",
           successNotice: "Event cancelled.",
@@ -1947,7 +1957,8 @@ function extractCalendarCatalog(result: unknown): CalendarCatalogItem[] {
   if (!payload) {
     return [];
   }
-  const itemsRaw = payload.items;
+  // calendar_get_calendar_context: calendars [{id, name, primary, access_role, ...}].
+  const itemsRaw = payload.calendars;
   if (!Array.isArray(itemsRaw)) {
     return [];
   }
@@ -1957,16 +1968,14 @@ function extractCalendarCatalog(result: unknown): CalendarCatalogItem[] {
       continue;
     }
     const item = entry as Record<string, unknown>;
-    if (typeof item.id !== "string" || typeof item.summary !== "string") {
+    if (typeof item.id !== "string" || typeof item.name !== "string") {
       continue;
     }
     normalized.push({
       id: item.id,
-      summary: item.summary,
+      summary: item.name,
       primary: item.primary === true,
-      access_role: typeof item.accessRole === "string" ? item.accessRole : undefined,
-      background_color: typeof item.backgroundColor === "string" ? item.backgroundColor : undefined,
-      foreground_color: typeof item.foregroundColor === "string" ? item.foregroundColor : undefined,
+      access_role: typeof item.access_role === "string" ? item.access_role : undefined,
     });
   }
   return normalized;

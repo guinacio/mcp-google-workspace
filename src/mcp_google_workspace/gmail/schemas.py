@@ -18,7 +18,7 @@ class AttachmentInput(ToolRequestModel):
         "json_schema_extra": {
             "description": (
                 "Email attachment. Provide exactly one source: uploaded_file for a file "
-                "selected with the Workspace Files MCP App, or file_path for local stdio use."
+                "selected with the Workspace Files MCP App (uploads_file_manager), or file_path for local stdio use."
             ),
             "oneOf": [
                 {
@@ -37,14 +37,23 @@ class AttachmentInput(ToolRequestModel):
 
     file_path: str | None = Field(
         default=None,
-        description="Local filesystem path (stdio/local use only).",
+        description="Path to a file on the server's machine; only for a local (stdio) server, refused over remote MCP.",
     )
     uploaded_file: str | None = Field(
         default=None,
-        description="Filename returned by the Workspace Files MCP App picker.",
+        description="Upload handle (upl_...) of a file the user picked in uploads_file_manager, as listed by uploads_list_files.",
     )
-    mime_type: str | None = Field(default=None, description="Optional MIME type override.")
-    filename: str | None = Field(default=None, description="Optional filename override in email.")
+    mime_type: str | None = Field(
+        default=None,
+        description=(
+            "MIME type to attach the file as, e.g. 'application/pdf'; defaults to the uploaded file's "
+            "type, or application/octet-stream for a file_path."
+        ),
+    )
+    filename: str | None = Field(
+        default=None,
+        description="File name recipients see; defaults to the uploaded file's original name or the file_path's base name.",
+    )
 
     @model_validator(mode="after")
     def _validate_source(self) -> "AttachmentInput":
@@ -65,7 +74,6 @@ class SendEmailRequest(ToolRequestModel):
     text_body: str | None = Field(default=None, description="Plain text email body.")
     html_body: str | None = Field(default=None, description="HTML email body.")
     attachments: list[AttachmentInput] = Field(default_factory=list, description="Optional file attachments.")
-    confirm_send: bool = Field(default=False, description="Prompt user confirmation before sending when true.")
 
 
 class ReadEmailsRequest(ToolRequestModel):
@@ -83,9 +91,16 @@ class ReadEmailsRequest(ToolRequestModel):
     )
     format: Literal["metadata", "preview", "clean", "full"] = Field(
         default="clean",
-        description="Detail level. clean is hygienic text capped near 2k tokens; full includes raw text/html.",
+        description=(
+            "Detail level. preview is the first 1,000 characters of the cleaned body; clean is the "
+            "cleaned body paged near 2k tokens; full is the whole cleaned body plus the raw text part."
+        ),
     )
     offset: int = Field(default=0, ge=0, description="Character offset for continuing a truncated clean body.")
+    include_html: bool = Field(
+        default=False,
+        description="With format=full, also return the original HTML part as html_body (null otherwise).",
+    )
 
 
 class DigestRequest(ToolRequestModel):
@@ -113,26 +128,8 @@ class SearchEmailRequest(ToolRequestModel):
     )
 
 
-class ModifyMessageRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID to modify.")
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove.")
 
 
-class BatchModifyRequest(ToolRequestModel):
-    message_ids: list[str] = Field(description="Message IDs to modify.")
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add to all messages.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove from all messages.")
-
-
-class DeleteMessageRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID to delete.")
-    permanent: bool = Field(default=False, description="Permanently delete instead of moving to trash.")
-
-
-class BatchDeleteRequest(ToolRequestModel):
-    message_ids: list[str] = Field(description="Message IDs to delete.")
-    permanent: bool = Field(default=False, description="Permanently delete instead of moving to trash.")
 
 
 class LabelCreateRequest(ToolRequestModel):
@@ -156,26 +153,41 @@ class LabelDeleteRequest(ToolRequestModel):
     label_id: str = Field(description="Label ID to delete.")
 
 
-class ListAttachmentsRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID to inspect for attachments.")
-
 
 class DownloadAttachmentRequest(ToolRequestModel):
     message_id: str = Field(description="Message ID that contains the attachment.")
-    attachment_id: str = Field(description="Attachment ID returned by list_attachments.")
+    attachment_id: str = Field(description="Attachment download_id returned by read_emails.")
     output_path: str = Field(description="Local output path where bytes will be saved.")
 
 
 class FilterCriteriaInput(ToolRequestModel):
-    from_: str | None = Field(default=None, alias="from", description="Match sender address/name.")
-    to: str | None = Field(default=None, description="Match recipient address/name.")
-    subject: str | None = Field(default=None, description="Match phrase in subject.")
-    query: str | None = Field(default=None, description="Gmail advanced query expression.")
-    negated_query: str | None = Field(default=None, description="Query expression to exclude.")
-    has_attachment: bool | None = Field(default=None, description="Match only messages with attachments.")
-    exclude_chats: bool | None = Field(default=None, description="Exclude chat messages from matching.")
-    size: int | None = Field(default=None, ge=0, description="Message size in bytes for size matching.")
-    size_comparison: Literal["smaller", "larger"] | None = Field(default=None, description="Size comparison operator.")
+    from_: str | None = Field(
+        default=None, alias="from", description="Sender email address or display name to match, e.g. 'ana@example.com'."
+    )
+    to: str | None = Field(
+        default=None,
+        description="Recipient email address or display name to match, in the To, Cc or Bcc headers.",
+    )
+    subject: str | None = Field(default=None, description="Case-insensitive phrase that must appear in the subject.")
+    query: str | None = Field(
+        default=None,
+        description="Gmail search-box query the message must match, e.g. 'has:attachment larger:5M'.",
+    )
+    negated_query: str | None = Field(
+        default=None, description="Gmail search-box query the message must not match, e.g. 'from:boss@example.com'."
+    )
+    has_attachment: bool | None = Field(
+        default=None, description="When true, only messages with attachments match; omit to ignore attachments."
+    )
+    exclude_chats: bool | None = Field(default=None, description="When true, chat messages never match the filter.")
+    size: int | None = Field(
+        default=None,
+        ge=0,
+        description="Message size in bytes (whole message, headers and attachments included), compared using size_comparison.",
+    )
+    size_comparison: Literal["smaller", "larger"] | None = Field(
+        default=None, description="Whether matching messages are 'smaller' or 'larger' than size."
+    )
 
     model_config = {
         "populate_by_name": True,
@@ -205,16 +217,29 @@ class FilterCriteriaInput(ToolRequestModel):
 
 
 class FilterActionInput(ToolRequestModel):
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add when criteria match.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove when criteria match.")
-    forward: str | None = Field(default=None, description="Forwarding email destination.")
+    add_labels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Labels to add to matching mail, by name as shown in Gmail or by ID; system labels such as "
+            "STARRED or IMPORTANT match case-insensitively."
+        ),
+    )
+    remove_labels: list[str] = Field(
+        default_factory=list,
+        description="Labels to remove from matching mail, by name or ID, e.g. INBOX to archive it or UNREAD to mark it read.",
+    )
+    forward: str | None = Field(
+        default=None,
+        description="Email address to forward matching mail to; it must be an 'accepted' address from gmail_manage_forwarding.",
+    )
 
-    def to_api(self) -> dict[str, object]:
+    def to_api(self, *, add_label_ids: list[str], remove_label_ids: list[str]) -> dict[str, object]:
+        """The Gmail filter action, with label names already resolved to IDs."""
         payload: dict[str, object] = {}
-        if self.add_label_ids:
-            payload["addLabelIds"] = self.add_label_ids
-        if self.remove_label_ids:
-            payload["removeLabelIds"] = self.remove_label_ids
+        if add_label_ids:
+            payload["addLabelIds"] = add_label_ids
+        if remove_label_ids:
+            payload["removeLabelIds"] = remove_label_ids
         if self.forward is not None:
             payload["forward"] = self.forward
         return payload
@@ -238,7 +263,6 @@ class ListDraftsRequest(ToolRequestModel):
 class GetDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to fetch.")
     format: Literal["full", "metadata", "minimal", "raw"] = Field(default="full", description="Message format in draft payload.")
-    metadata_headers: list[str] = Field(default_factory=list, description="Headers to include when format is metadata.")
 
 
 class CreateDraftRequest(ToolRequestModel):
@@ -268,37 +292,17 @@ class SendDraftRequest(ToolRequestModel):
     draft_id: str = Field(description="Draft ID to send.")
 
 
-class ListThreadsRequest(ToolRequestModel):
-    query: str | None = Field(default=None, description="Optional Gmail query to filter threads.")
-    label_ids: list[str] = Field(default_factory=list, description="Optional label IDs filter for thread list.")
-    max_results: int = Field(default=25, ge=1, le=500, description="Maximum threads to return.")
-    page_token: str | None = Field(default=None, description="Pagination token from previous response.")
-    include_spam_trash: bool = Field(default=False, description="Include spam/trash in thread listing.")
-
 
 class GetThreadRequest(ToolRequestModel):
     thread_id: str = Field(description="Thread ID to fetch.")
     format: Literal["full", "metadata", "minimal"] = Field(default="full", description="Gmail API message format for thread payload.")
-    metadata_headers: list[str] = Field(default_factory=list, description="Headers to include when format is metadata.")
 
 
-class ModifyThreadRequest(ToolRequestModel):
-    thread_id: str = Field(description="Thread ID to modify.")
-    add_label_ids: list[str] = Field(default_factory=list, description="Label IDs to add to all thread messages.")
-    remove_label_ids: list[str] = Field(default_factory=list, description="Label IDs to remove from all thread messages.")
-
-
-class ThreadIdRequest(ToolRequestModel):
-    thread_id: str = Field(description="Thread ID.")
 
 
 class ForwardingAddressRequest(ToolRequestModel):
     forwarding_email: EmailStr = Field(description="Forwarding email address.")
 
-
-class GetVacationSettingsRequest(ToolRequestModel):
-    # No args currently needed; request model kept for consistency.
-    include_placeholder: bool = Field(default=False, description="Placeholder field; ignored by API call.")
 
 
 class UpdateVacationSettingsRequest(ToolRequestModel):
@@ -310,12 +314,3 @@ class UpdateVacationSettingsRequest(ToolRequestModel):
     restrict_to_domain: bool = Field(default=False, description="Send auto-replies only within workspace domain.")
     start_time: int | None = Field(default=None, ge=0, description="Start time as epoch milliseconds.")
     end_time: int | None = Field(default=None, ge=0, description="End time as epoch milliseconds.")
-
-
-class MessageIdRequest(ToolRequestModel):
-    message_id: str = Field(description="Gmail message ID.")
-
-
-class MarkNotSpamRequest(ToolRequestModel):
-    message_id: str = Field(description="Message ID currently in spam.")
-    add_to_inbox: bool = Field(default=True, description="Add INBOX label while removing SPAM.")

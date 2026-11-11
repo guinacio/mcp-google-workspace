@@ -87,14 +87,16 @@ async def _run_lifecycle(bundle_dir: Path) -> None:
         names = {tool.name for tool in tools}
         # The bundle entrypoint enables progressive (BM25) tool discovery, so
         # `tools/list` only advertises the always-visible subset (matching
-        # tests/test_bundle_runtime.py); hashed app-callback tools like
-        # store_tool/delete_tool are still directly callable by name below,
-        # just not listed.
-        for required in ("get_workspace_capabilities", "files_file_manager", "search_tools", "call_tool"):
+        # tests/test_bundle_runtime.py). The picker tools and hashed
+        # app-callback tools like store_tool/delete_tool are not listed but
+        # stay directly callable by name below.
+        for required in ("get_google_connection_status", "gmail_search_emails", "search_tools", "call_tool"):
             assert required in names, f"missing tool {required!r} in extracted bundle catalog"
 
-        _log("Calling a safe tool (get_workspace_capabilities) ...")
-        safe = await client.call_tool("get_workspace_capabilities", {}, raise_on_error=False)
+        _log("Calling a safe tool (resolve_workspace_resource, parse only) ...")
+        safe = await client.call_tool(
+            "resolve_workspace_resource", {"uri": "gcal-event:///bundle-check"}, raise_on_error=False
+        )
         assert safe.is_error is False, safe.content
 
         _log("Exercising the picker store/list/read/delete lifecycle ...")
@@ -114,27 +116,29 @@ async def _run_lifecycle(bundle_dir: Path) -> None:
         assert stored.is_error is False, stored.content
         upload_id = stored.structured_content["result"][0]["upload_id"]
 
-        listed = await client.call_tool("files_list_files", {})
-        assert [item["upload_id"] for item in listed.structured_content["result"]] == [upload_id]
+        listed = await client.call_tool("uploads_list_files", {})
+        assert [item["upload_id"] for item in listed.structured_content["files"]] == [upload_id]
 
-        read = await client.call_tool("files_read_file", {"name": upload_id})
+        read = await client.call_tool("uploads_read_file", {"name": upload_id})
         assert "bundle lifecycle check" in str(read.structured_content)
 
         deleted = await client.call_tool(delete_tool, {"name": upload_id})
         assert deleted.structured_content == {"status": "deleted", "name": upload_id}
 
-        after = await client.call_tool("files_list_files", {})
-        assert after.structured_content["result"] == []
+        after = await client.call_tool("uploads_list_files", {})
+        assert after.structured_content["files"] == []
 
     _log("Client closed. Reconnecting to the same kept-alive subprocess ...")
     async with Client(transport) as client:
         assert client.protocol_version == "2026-07-28", client.protocol_version
-        again = await client.call_tool("get_workspace_capabilities", {}, raise_on_error=False)
+        again = await client.call_tool(
+            "resolve_workspace_resource", {"uri": "gcal-event:///bundle-check"}, raise_on_error=False
+        )
         assert again.is_error is False, again.content
         # The picker store above was already deleted; reconnecting must not
         # resurrect it (no connection-scoped state, no accidental replay).
-        still_empty = await client.call_tool("files_list_files", {})
-        assert still_empty.structured_content["result"] == []
+        still_empty = await client.call_tool("uploads_list_files", {})
+        assert still_empty.structured_content["files"] == []
 
     await transport.disconnect()
     _log("MCPB bundle lifecycle check passed: start, list, safe call, "

@@ -1,0 +1,35 @@
+{
+  "contact": {
+    "biography": null,
+    "emails": [
+      {
+        "type": null,
+        "value": "mary.jackson@example.com"
+      }
+    ],
+    "etag": "%EgcBAj0JPjcuGgQBAgUHIgxOZXdDb250YWN0",
+    "family_name": "Jackson",
+    "given_name": "Mary",
+    "id": "people/c7788990011223344556",
+    "name": "Mary Jackson",
+    "organizations": [
+      {
+        "name": "Wind Tunnel Labs",
+        "title": null
+      }
+    ],
+    "phones": [
+      {
+        "type": null,
+        "value": "+1 757 555 0100"
+      }
+    ],
+    "resource": {
+      "id": "people/c7788990011223344556",
+      "kind": "contact",
+      "uri": "gcontact:///people%2Fc7788990011223344556"
+    },
+    "resource_name": "people/c7788990011223344556"
+  },
+  "status": "ok"
+}

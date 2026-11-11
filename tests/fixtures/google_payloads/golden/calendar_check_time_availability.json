@@ -1,0 +1,37 @@
+{
+  "account_timezone": "America/Sao_Paulo",
+  "all_free": false,
+  "calendars": [
+    {
+      "busy": [
+        {
+          "end": "2026-11-05T12:00:00-03:00",
+          "start": "2026-11-05T11:00:00-03:00"
+        },
+        {
+          "end": "2026-11-05T16:00:00-03:00",
+          "start": "2026-11-05T15:30:00-03:00"
+        }
+      ],
+      "errors": [],
+      "free": false,
+      "id": "ana@example.com"
+    },
+    {
+      "busy": [],
+      "errors": [],
+      "free": true,
+      "id": "bruno@example.com"
+    },
+    {
+      "busy": [],
+      "errors": [
+        "notFound"
+      ],
+      "free": null,
+      "id": "room-4@resource.calendar.example.com"
+    }
+  ],
+  "time_max": "2026-11-05T18:00:00-03:00",
+  "time_min": "2026-11-05T10:00:00-03:00"
+}

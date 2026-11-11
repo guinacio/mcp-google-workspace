@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from googleapiclient.errors import HttpError
 
 from ..common.async_ops import run_blocking
@@ -22,6 +22,22 @@ from .schemas import (
     ListConferenceRecordsRequest,
     ListConferenceTranscriptsRequest,
     UpdateSpaceRequest,
+)
+
+SpaceNameArg = Annotated[
+    str,
+    "Meet space resource name 'spaces/abc123' or the bare space ID, from meet_create_space (the name field of the result).",
+]
+RecordNameArg = Annotated[
+    str,
+    "Conference record resource name 'conferenceRecords/abc123' or the bare ID, from meet_list_conference_records (the id field of a record).",
+]
+PageSizeArg = Annotated[int, "Maximum number of results to return in one page, from 1 to 100."]
+SPACE_CONFIG_FIELDS = (
+    "Meet API SpaceConfig object, passed through unchanged. Its fields include accessType "
+    "(OPEN, TRUSTED or RESTRICTED: who can join without knocking), entryPointAccess (ALL or "
+    "CREATOR_APP_ONLY), moderation (OFF or ON) and attendanceReportGenerationType "
+    "(GENERATE_REPORT or DO_NOT_GENERATE)."
 )
 
 
@@ -95,11 +111,17 @@ def list_conference_transcripts_payload(request: ListConferenceTranscriptsReques
 
 def register_tools(server: FastMCP) -> None:
     @server.tool(name="create_space")
-    def create_space(config: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Create a Google Meet space with an optional Meet API configuration.
+    def create_space(
+        config: Annotated[
+            dict[str, Any] | None,
+            SPACE_CONFIG_FIELDS + " Omit to create the space with the account's default settings.",
+        ] = None,
+    ) -> dict[str, Any]:
+        """Create a Google Meet space, the persistent meeting room behind a join link.
 
-        ``config`` accepts Meet SpaceConfig fields. Returns the created Space resource,
-        including its name and meeting URI, or a structured provider error.
+        Use meet_update_space to change its settings later. Returns the created Space resource:
+        name ('spaces/...', the identifier the other space tools take), meetingUri, meetingCode
+        and config.
         """
         try:
             return create_space_payload(CreateSpaceRequest(config=config))
@@ -107,11 +129,11 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, operation="create_space") from exc
 
     @server.tool(name="get_space")
-    def get_space(space_name: str) -> dict[str, Any]:
-        """Get a Meet space by bare code or canonical ``spaces/...`` name.
+    def get_space(space_name: SpaceNameArg) -> dict[str, Any]:
+        """Get a Meet space by its ID or 'spaces/...' name.
 
-        Space names come from ``create_space``. Returns the Space resource or a
-        structured provider error.
+        Space names come from meet_create_space. Returns the Space resource: name, meetingUri,
+        meetingCode, config and activeConference when a meeting is in progress.
         """
         try:
             return get_space_payload(GetSpaceRequest(space_name=space_name))
@@ -119,47 +141,63 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="update_space")
-    def update_space(space_name: str, config: dict[str, Any], update_mask: str | None = None) -> dict[str, Any]:
-        """Update selected configuration fields on an existing Meet space.
+    async def update_space(
+        space_name: SpaceNameArg,
+        config: Annotated[
+            dict[str, Any],
+            SPACE_CONFIG_FIELDS + " Only the fields named by update_mask are applied.",
+        ],
+        update_mask: Annotated[
+            str | None,
+            "Comma-separated Space field paths to update, e.g. 'config.accessType,config.moderation'; omit to use 'config'.",
+        ] = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Change the configuration of an existing Meet space, such as who can join without knocking.
 
-        ``space_name`` comes from ``create_space``; ``config`` contains replacement
-        values and ``update_mask`` selects fields (default ``config``). Returns the
-        updated Space resource or a structured provider error.
+        To read the current settings first use meet_get_space. Returns the updated Space
+        resource, including its config. Opening a space to anyone with the link (accessType OPEN)
+        asks the user to confirm first.
         """
         try:
-            return update_space_payload(
+            return await run_blocking(
+                update_space_payload,
                 UpdateSpaceRequest(
                     space_name=space_name,
                     config=config,
                     update_mask=update_mask,
-                )
+                ),
             )
         except HttpError as exc:
             raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="end_active_conference")
-    def end_active_conference(space_name: str) -> dict[str, Any]:
-        """End the active conference in a Meet space, disconnecting participants.
+    async def end_active_conference(space_name: SpaceNameArg, ctx: Context | None = None) -> dict[str, Any]:
+        """End the conference currently running in a Meet space, disconnecting every participant.
 
-        ``space_name`` comes from ``create_space``. Returns the Meet API operation
-        response or a structured provider error.
+        The space itself remains and can host a new conference. The user is asked to confirm
+        first. Returns the Meet API's empty response once the conference has ended.
         """
         try:
-            return end_active_conference_payload(EndActiveConferenceRequest(space_name=space_name))
+            return await run_blocking(end_active_conference_payload, EndActiveConferenceRequest(space_name=space_name))
         except HttpError as exc:
             raise provider_tool_error(exc, space_name=normalize_space_name(space_name)) from exc
 
     @server.tool(name="list_conference_records")
     async def list_conference_records(
-        page_size: int = 50,
+        page_size: PageSizeArg = 50,
         page_token: str | None = None,
-        filter: str | None = None,
+        filter: Annotated[
+            str | None,
+            "Meet API filter on space.meeting_code, space.name, start_time or end_time, e.g. 'space.meeting_code = \"abc-mnop-xyz\"' or 'end_time IS NULL' for ongoing conferences; omit for no filter.",
+        ] = None,
     ) -> dict[str, Any]:
-        """List conference records with optional Meet API filtering and pagination.
+        """List Meet conference records, one per meeting held in a space, with optional filtering.
 
-        Returns normalized records, count, account timezone, and the next page token;
-        record names feed the participant, recording, and transcript tools. API failures
-        return a structured provider error.
+        Use the id of a record with meet_get_conference_record, meet_list_conference_participants,
+        meet_list_conference_recordings or meet_list_conference_transcripts. Returns
+        conference_records (id, space_id, started_at, ended_at, expires_at), count,
+        next_page_token and account_timezone.
         """
         try:
             result = await run_blocking(
@@ -185,11 +223,11 @@ def register_tools(server: FastMCP) -> None:
             raise provider_tool_error(exc, filter=filter, page_token=page_token) from exc
 
     @server.tool(name="get_conference_record")
-    async def get_conference_record(conference_record_name: str) -> dict[str, Any]:
-        """Get one completed conference record by bare ID or canonical name.
+    async def get_conference_record(conference_record_name: RecordNameArg) -> dict[str, Any]:
+        """Get one conference record by its ID or 'conferenceRecords/...' name.
 
-        The name comes from ``list_conference_records``. Returns a normalized conference
-        envelope with timezone-aware timestamps, or a structured provider error.
+        Find the name with meet_list_conference_records. Returns id, space_id, started_at,
+        ended_at and expires_at, with timestamps in the account time zone.
         """
         record_name = normalize_conference_record_name(conference_record_name)
         try:
@@ -206,16 +244,19 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="list_conference_participants")
     async def list_conference_participants(
-        conference_record_name: str,
-        page_size: int = 50,
+        conference_record_name: RecordNameArg,
+        page_size: PageSizeArg = 50,
         page_token: str | None = None,
-        filter: str | None = None,
+        filter: Annotated[
+            str | None,
+            "Meet API filter on earliest_start_time or latest_end_time, e.g. 'latest_end_time IS NULL' for participants still in the conference; omit for no filter.",
+        ] = None,
     ) -> dict[str, Any]:
-        """List participants for a conference record with optional filtering.
+        """List the participants of one conference record, with optional filtering.
 
-        The record name comes from ``list_conference_records``; page size/token control
-        pagination. Returns normalized participants, count, timezone, next token, or a
-        structured provider error.
+        Find the record with meet_list_conference_records. Returns participants (id, name, user_id,
+        identity_type of signed_in, anonymous or phone, joined_at, left_at), count,
+        next_page_token and account_timezone.
         """
         record_name = normalize_conference_record_name(conference_record_name)
         try:
@@ -244,15 +285,15 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="list_conference_recordings")
     async def list_conference_recordings(
-        conference_record_name: str,
-        page_size: int = 50,
+        conference_record_name: RecordNameArg,
+        page_size: PageSizeArg = 50,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        """List recording artifacts attached to a conference record.
+        """List the recordings of one conference record.
 
-        The record name comes from ``list_conference_records``; page size/token control
-        pagination. Returns normalized recordings, count, timezone, next token, or a
-        structured provider error.
+        Find the record with meet_list_conference_records. Returns recordings (id, started_at,
+        ended_at, drive_file_id, export_uri), count, next_page_token and account_timezone; get the
+        video with drive_download_file using drive_file_id.
         """
         record_name = normalize_conference_record_name(conference_record_name)
         try:
@@ -280,15 +321,15 @@ def register_tools(server: FastMCP) -> None:
 
     @server.tool(name="list_conference_transcripts")
     async def list_conference_transcripts(
-        conference_record_name: str,
-        page_size: int = 50,
+        conference_record_name: RecordNameArg,
+        page_size: PageSizeArg = 50,
         page_token: str | None = None,
     ) -> dict[str, Any]:
-        """List transcript artifacts attached to a conference record.
+        """List the transcripts of one conference record.
 
-        The record name comes from ``list_conference_records``; page size/token control
-        pagination. Returns normalized transcripts, count, timezone, next token, or a
-        structured provider error.
+        Find the record with meet_list_conference_records. Returns transcripts (id, started_at,
+        ended_at, document_id, export_uri), count, next_page_token and account_timezone; read the
+        text with docs_read_document using document_id.
         """
         record_name = normalize_conference_record_name(conference_record_name)
         try:

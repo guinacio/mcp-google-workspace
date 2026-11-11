@@ -37,6 +37,7 @@ from mcp.shared.exceptions import MCPError
 
 import mcp_google_workspace.auth.google_auth as google_auth
 import mcp_google_workspace.server as server_module
+from mcp_google_workspace.common.production import RUNTIME_STATE
 from mcp_google_workspace.auth.identity import current_principal
 from mcp_google_workspace.common import confirmation, operations
 from mcp_google_workspace.common.app_state import RedisAppStateStore
@@ -185,6 +186,9 @@ def workspace_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[pytest.MonkeyPatc
     for name in OPTIONAL_FLAGS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("MCP_RATE_LIMIT_PER_MINUTE", "100000")
+    # prepare_action runs its call through the root server, whose admission
+    # refuses work while an earlier in-process client left it draining.
+    monkeypatch.setattr(RUNTIME_STATE, "draining", False)
     try:
         yield monkeypatch
     finally:
@@ -209,7 +213,10 @@ async def _acall(
     responses: dict[str, Any] | None = None,
     state: str | None = None,
 ) -> Any:
-    async with Client(server, elicitation_handler=_never) as client:
+    # A commit from a client that can elicit is asked again (the user's own
+    # answer is primary); commit-lifecycle tests use a client that cannot.
+    handler: dict[str, Any] = {} if tool == "commit_workspace_action" else {"elicitation_handler": _never}
+    async with Client(server, **handler) as client:
         try:
             return await client.session.call_tool(
                 tool, arguments, allow_input_required=True, input_responses=responses, request_state=state
@@ -239,7 +246,7 @@ def _socket_timeout_after_recording(_kwargs: dict[str, Any]) -> Any:
     raise socket.timeout("The read operation timed out")
 
 
-SEND = {"to": ["bob@example.com"], "subject": "Quarterly numbers", "text_body": "Attached.", "confirm_send": True}
+SEND = {"to": ["bob@example.com"], "subject": "Quarterly numbers", "text_body": "Attached."}
 BULK = {
     "subject": "Announcement",
     "to": [f"person-{index}@example.com" for index in range(10)],
@@ -253,6 +260,9 @@ def _state(store: OperationStore, raw_id: str) -> str | None:
 
 
 def _prepare(tool: str, arguments: dict[str, Any]) -> str:
+    # prepare_action runs outside a client session (no lifespan), so undo the
+    # draining flag an earlier in-process client left behind.
+    RUNTIME_STATE.draining = False
     return str(anyio.run(lambda: prepare_action(tool, arguments))["commit_token"])
 
 
@@ -322,7 +332,7 @@ def test_oversized_results_are_not_retained_and_replay_says_so(monkeypatch: pyte
 
 
 def test_simultaneous_claims_have_exactly_one_winner(store) -> None:
-    token = _prepare("gmail_batch_modify", {"message_ids": ["m"] * 10})
+    token = _prepare("gmail_modify_messages", {"message_ids": [f"m{index}" for index in range(10)], "mark_read": True})
     key = operation_key(current_principal().storage_key, token)
 
     async def race() -> list[str]:
@@ -396,7 +406,9 @@ def test_deadline_while_a_send_executes_reports_outcome_unknown(workspace_env, s
         return {"id": "late-1", "threadId": "thr-late"}
 
     google.behaviors["users.messages.send"] = stuck_send
-    plain = {**SEND, "confirm_send": False}
+    # A plain call, without any consent record: consent off for this test.
+    workspace_env.setenv("MCP_CONSENT", "off")
+    plain = SEND
     try:
         result = _call(server, "gmail_send_email", plain)
     finally:
@@ -648,7 +660,7 @@ def test_expired_operations_cannot_be_claimed(backend, store, clock, monkeypatch
     monkeypatch.setattr(confirmation.time, "time", real_time)
 
     # Commit tokens and awaiting_input records: expired records are gone.
-    token = _prepare("gmail_batch_modify", {"message_ids": ["m"] * 10})
+    token = _prepare("gmail_modify_messages", {"message_ids": [f"m{index}" for index in range(10)], "mark_read": True})
     key = operation_key(current_principal().storage_key, token)
     if backend == "memory":
         clock.advance(operations.pending_ttl_seconds() + 1)
@@ -722,7 +734,8 @@ def test_gmail_send_with_unknown_outcome_is_reconciled_by_message_id(workspace_e
 
 def test_every_outgoing_email_carries_a_fresh_message_id(workspace_env, store, google) -> None:
     server = _reload()
-    plain = {**SEND, "confirm_send": False}
+    workspace_env.setenv("MCP_CONSENT", "off")
+    plain = SEND
     google.behaviors["users.messages.send"] = lambda _k: {"id": "x"}
     _call(server, "gmail_send_email", plain)
     _call(server, "gmail_send_email", plain)

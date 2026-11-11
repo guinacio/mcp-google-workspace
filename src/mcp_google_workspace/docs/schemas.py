@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from ..common.request_model import ToolRequestModel
 
 
-class GetDocumentRequest(ToolRequestModel):
+SuggestionsViewMode = Literal[
+    "DEFAULT_FOR_CURRENT_ACCESS",
+    "SUGGESTIONS_INLINE",
+    "PREVIEW_SUGGESTIONS_ACCEPTED",
+    "PREVIEW_WITHOUT_SUGGESTIONS",
+]
+
+
+class ReadDocumentRequest(ToolRequestModel):
     document_id: str = Field(description="Google Docs document file ID.")
-    include_tabs_content: bool = Field(default=False)
-    suggestions_view_mode: str | None = Field(default=None)
+    format: Literal["text", "markdown", "outline", "raw"] = Field(default="text")
+    offset: int = Field(default=0, ge=0)
+    include_tabs_content: bool = Field(default=True)
+    suggestions_view_mode: SuggestionsViewMode | None = Field(default=None)
 
 
 class CreateDocumentRequest(ToolRequestModel):

@@ -22,7 +22,7 @@
       "protocolVersion": "2025-11-25",
       "serverInfo": {
         "name": "google-workspace-mcp",
-        "version": "4.1.6"
+        "version": "<SERVER_VERSION>"
       }
     },
     "status_code": 200
@@ -31,67 +31,35 @@
     "result": {
       "content": [
         {
-          "text": "{\"status\":\"ok\",\"enabled_namespaces\":[\"calendar\",\"docs\",\"drive\",\"forms\",\"gmail\",\"people\",\"sheets\",\"slides\",\"tasks\"],\"optional_namespaces\":{\"apps\":false,\"chat\":false,\"gemini\":false,\"keep\":false,\"meet\":false},\"oauth_capabilities\":[\"calendar\",\"chat\",\"docs\",\"drive\",\"forms\",\"gmail\",\"keep\",\"meet\",\"people\",\"sheets\",\"slides\",\"tasks\"],\"file_inputs\":{\"remote\":\"Call files_file_manager, then pass uploaded_file.\",\"local\":\"Trusted stdio clients may pass local filesystem paths.\",\"drive\":\"Gemini media tools also accept drive_file_id.\"},\"discovery\":\"FastMCP BM25 Tool Search is enabled by default for HTTP and stdio. Set MCP_CLIENT_MODEL=claude to disable it automatically in auto mode, or use MCP_TOOL_SEARCH=on|off explicitly.\"}",
+          "text": "{\"resource\":{\"kind\":\"calendar_event\",\"id\":\"evt-1\",\"uri\":\"gcal-event:///evt-1\"},\"verified\":false}",
           "type": "text"
         }
       ],
       "isError": false,
       "structuredContent": {
-        "discovery": "FastMCP BM25 Tool Search is enabled by default for HTTP and stdio. Set MCP_CLIENT_MODEL=claude to disable it automatically in auto mode, or use MCP_TOOL_SEARCH=on|off explicitly.",
-        "enabled_namespaces": [
-          "calendar",
-          "docs",
-          "drive",
-          "forms",
-          "gmail",
-          "people",
-          "sheets",
-          "slides",
-          "tasks"
-        ],
-        "file_inputs": {
-          "drive": "Gemini media tools also accept drive_file_id.",
-          "local": "Trusted stdio clients may pass local filesystem paths.",
-          "remote": "Call files_file_manager, then pass uploaded_file."
+        "resource": {
+          "id": "evt-1",
+          "kind": "calendar_event",
+          "uri": "gcal-event:///evt-1"
         },
-        "oauth_capabilities": [
-          "calendar",
-          "chat",
-          "docs",
-          "drive",
-          "forms",
-          "gmail",
-          "keep",
-          "meet",
-          "people",
-          "sheets",
-          "slides",
-          "tasks"
-        ],
-        "optional_namespaces": {
-          "apps": false,
-          "chat": false,
-          "gemini": false,
-          "keep": false,
-          "meet": false
-        },
-        "status": "ok"
+        "verified": false
       }
     },
     "status_code": 200
   },
   "tools_list": {
-    "actual_tool_count_over_100": true,
+    "actual_tool_count_over_100": false,
     "named_tools": {
-      "get_workspace_capabilities": {
+      "get_google_connection_status": {
         "_meta": {
           "fastmcp": {
             "tags": [
-              "capabilities",
+              "connection",
               "get",
-              "get-workspace-capabilities",
+              "get-google-connection-status",
+              "google",
               "google-workspace",
-              "workspace"
+              "status"
             ]
           }
         },
@@ -101,150 +69,140 @@
           "openWorldHint": true,
           "readOnlyHint": true
         },
-        "description": "Describe available namespaces, consent capabilities, and file-transfer choices.",
+        "description": "Check whether the calling user has a stored Google connection and which services it grants, and what this server offers, without calling Google. Use it before connect_google_workspace, after a consent finishes, or to learn the active tool tier; for remote users tools/list already reflects the current grants, so list tools again after consent. Returns state (connected, refresh_required, missing_scopes, reauth_required, not_connected or error), connected, granted_capabilities, granted_scopes, expires_at, an action hint when the user must reconnect, and server (tool_tier, enabled_namespaces, optional_namespaces, oauth_capabilities, file_inputs, tool_search).",
         "inputSchema": {
           "additionalProperties": false,
-          "maxProperties": 10000,
-          "properties": {},
-          "required": [],
-          "type": "object"
-        },
-        "name": "get_workspace_capabilities",
-        "outputSchema": {
-          "additionalProperties": false,
-          "description": "Structured response returned by this MCP tool.",
           "properties": {
-            "discovery": {
-              "description": "Response field: discovery.",
-              "type": "string"
-            },
-            "enabled_namespaces": {
-              "description": "Response field: enabled namespaces.",
-              "items": {},
-              "type": "array"
-            },
-            "file_inputs": {
-              "additionalProperties": false,
-              "description": "Response field: file inputs.",
-              "properties": {
-                "drive": {
-                  "description": "Response field: drive.",
-                  "type": "string"
-                },
-                "local": {
-                  "description": "Response field: local.",
-                  "type": "string"
-                },
-                "remote": {
-                  "description": "Response field: remote.",
-                  "type": "string"
-                }
-              },
-              "required": [],
-              "type": "object"
-            },
-            "oauth_capabilities": {
-              "description": "Response field: oauth capabilities.",
-              "items": {},
-              "type": "array"
-            },
-            "optional_namespaces": {
-              "additionalProperties": false,
-              "description": "Response field: optional namespaces.",
-              "properties": {
-                "apps": {
-                  "description": "Response field: apps.",
-                  "type": "boolean"
-                },
-                "chat": {
-                  "description": "Response field: chat.",
-                  "type": "boolean"
-                },
-                "gemini": {
-                  "description": "Response field: gemini.",
-                  "type": "boolean"
-                },
-                "keep": {
-                  "description": "Response field: keep.",
-                  "type": "boolean"
-                },
-                "meet": {
-                  "description": "Response field: meet.",
-                  "type": "boolean"
-                }
-              },
-              "required": [],
-              "type": "object"
-            },
-            "resource": {
-              "additionalProperties": false,
-              "description": "Stable cross-tool Workspace resource handle when applicable.",
-              "properties": {
-                "etag": {
-                  "description": "Provider entity tag.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "id": {
-                  "description": "Provider resource identifier.",
-                  "type": "string"
-                },
-                "kind": {
-                  "description": "Workspace resource kind.",
-                  "type": "string"
-                },
-                "mime_type": {
-                  "description": "MIME type when applicable.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "modified_at": {
-                  "description": "Last modification time.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "name": {
-                  "description": "Human-readable name.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "uri": {
-                  "description": "Stable Workspace resource URI.",
-                  "type": "string"
-                },
-                "web_url": {
-                  "description": "Provider web URL.",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "kind",
-                "id",
-                "uri"
+            "capability": {
+              "description": "One service to verify, e.g. 'calendar'; if the grant lacks its scopes, state is missing_scopes. Omit to report the overall connection only.",
+              "enum": [
+                "calendar",
+                "chat",
+                "docs",
+                "drive",
+                "forms",
+                "gmail",
+                "keep",
+                "meet",
+                "people",
+                "sheets",
+                "slides",
+                "tasks"
               ],
-              "type": "object"
-            },
-            "status": {
-              "description": "Machine-readable operation status.",
               "type": "string"
             }
           },
           "required": [],
-          "title": "Get Workspace Capabilities response",
           "type": "object"
         },
-        "title": "Get Workspace Capabilities"
+        "name": "get_google_connection_status",
+        "outputSchema": {
+          "additionalProperties": true,
+          "properties": {
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "checked_capability": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "connected": {
+              "type": "boolean"
+            },
+            "expires_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "granted_capabilities": {
+              "items": {},
+              "type": "array"
+            },
+            "granted_scopes": {
+              "items": {},
+              "type": "array"
+            },
+            "required_scopes": {
+              "items": {},
+              "type": "array"
+            },
+            "server": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled_namespaces": {
+                  "items": {},
+                  "type": "array"
+                },
+                "file_inputs": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "drive": {
+                      "type": "string"
+                    },
+                    "local": {
+                      "type": "string"
+                    },
+                    "remote": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "oauth_capabilities": {
+                  "items": {},
+                  "type": "array"
+                },
+                "optional_namespaces": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "apps": {
+                      "type": "boolean"
+                    },
+                    "chat": {
+                      "type": "boolean"
+                    },
+                    "gemini": {
+                      "type": "boolean"
+                    },
+                    "keep": {
+                      "type": "boolean"
+                    },
+                    "meet": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "tool_search": {
+                  "type": "boolean"
+                },
+                "tool_tier": {
+                  "type": "string"
+                },
+                "tool_tiers": {
+                  "items": {},
+                  "type": "array"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "state": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "title": "Get Google Connection Status"
       }
     },
     "status_code": 200

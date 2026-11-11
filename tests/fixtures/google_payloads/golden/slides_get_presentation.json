@@ -1,0 +1,121 @@
+{
+  "count": 3,
+  "page_size": {
+    "height_pt": 405.0,
+    "width_pt": 720.0
+  },
+  "presentation_id": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq",
+  "revision_id": "_8hYOO4nrhdhV2A",
+  "slides": [
+    {
+      "elements": [
+        {
+          "object_id": "i0",
+          "placeholder": "CENTERED_TITLE",
+          "text": "Quarterly review",
+          "type": "shape"
+        },
+        {
+          "object_id": "i1",
+          "placeholder": "SUBTITLE",
+          "text": "June 2026",
+          "type": "shape"
+        }
+      ],
+      "index": 0,
+      "layout": "Title slide",
+      "notes": "Open with the win.",
+      "object_id": "p",
+      "text": "Quarterly review\nJune 2026",
+      "title": "Quarterly review"
+    },
+    {
+      "elements": [
+        {
+          "object_id": "g2a0b1c2d3e_0_9",
+          "placeholder": "TITLE",
+          "text": "Highlights",
+          "type": "shape"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_10",
+          "placeholder": "BODY",
+          "text": "Revenue up 18% year over year\nNew markets: Chile and Peru\nChurn down to 2.1%",
+          "type": "shape"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_12",
+          "placeholder": null,
+          "text": null,
+          "type": "image"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_13",
+          "placeholder": null,
+          "text": null,
+          "type": "group"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_14",
+          "placeholder": null,
+          "text": "Owner: Ana Example",
+          "type": "shape"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_15",
+          "placeholder": null,
+          "text": "Due: Q3",
+          "type": "shape"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_11",
+          "placeholder": null,
+          "text": "Region | Q1 | Q2\nLATAM | 1.2M |",
+          "type": "table"
+        }
+      ],
+      "index": 1,
+      "layout": "Title and body",
+      "notes": "Mention the Peru launch date.",
+      "object_id": "g2a0b1c2d3e_0_8",
+      "text": "Highlights\nRevenue up 18% year over year\nNew markets: Chile and Peru\nChurn down to 2.1%\nOwner: Ana Example\nDue: Q3\nRegion | Q1 | Q2\nLATAM | 1.2M |",
+      "title": "Highlights"
+    },
+    {
+      "elements": [
+        {
+          "object_id": "g2a0b1c2d3e_0_22",
+          "placeholder": null,
+          "text": "Thank you",
+          "type": "word_art"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_23",
+          "placeholder": null,
+          "text": null,
+          "type": "line"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_21",
+          "placeholder": null,
+          "text": null,
+          "type": "sheets_chart"
+        },
+        {
+          "object_id": "g2a0b1c2d3e_0_24",
+          "placeholder": null,
+          "text": null,
+          "type": "video"
+        }
+      ],
+      "index": 2,
+      "layout": null,
+      "notes": null,
+      "object_id": "g2a0b1c2d3e_0_20",
+      "text": "Thank you",
+      "title": null
+    }
+  ],
+  "title": "Quarterly review",
+  "url": "https://docs.google.com/presentation/d/1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq/edit"
+}

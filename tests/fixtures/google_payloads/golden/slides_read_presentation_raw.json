@@ -1,0 +1,1587 @@
+{
+  "element_count": 6,
+  "format": "raw",
+  "next_offset": null,
+  "presentation": {
+    "layouts": [
+      {
+        "layoutProperties": {
+          "displayName": "Title slide",
+          "masterObjectId": "simple-light-2",
+          "name": "TITLE"
+        },
+        "objectId": "p1",
+        "pageElements": [],
+        "pageProperties": {
+          "pageBackgroundFill": {
+            "propertyState": "INHERIT"
+          }
+        },
+        "pageType": "LAYOUT"
+      },
+      {
+        "layoutProperties": {
+          "displayName": "Title and body",
+          "masterObjectId": "simple-light-2",
+          "name": "TITLE_AND_BODY"
+        },
+        "objectId": "p2",
+        "pageElements": [],
+        "pageProperties": {
+          "pageBackgroundFill": {
+            "propertyState": "INHERIT"
+          }
+        },
+        "pageType": "LAYOUT"
+      }
+    ],
+    "locale": "en",
+    "masters": [
+      {
+        "masterProperties": {
+          "displayName": "Simple Light"
+        },
+        "objectId": "simple-light-2",
+        "pageElements": [],
+        "pageProperties": {
+          "colorScheme": {
+            "colors": [
+              {
+                "color": {},
+                "type": "DARK1"
+              },
+              {
+                "color": {
+                  "blue": 1,
+                  "green": 1,
+                  "red": 1
+                },
+                "type": "LIGHT1"
+              }
+            ]
+          },
+          "pageBackgroundFill": {
+            "solidFill": {
+              "alpha": 1,
+              "color": {
+                "rgbColor": {
+                  "blue": 1,
+                  "green": 1,
+                  "red": 1
+                }
+              }
+            }
+          }
+        },
+        "pageType": "MASTER"
+      }
+    ],
+    "notesMaster": {
+      "objectId": "n",
+      "pageElements": [],
+      "pageProperties": {
+        "pageBackgroundFill": {
+          "solidFill": {
+            "alpha": 1,
+            "color": {
+              "rgbColor": {
+                "blue": 1,
+                "green": 1,
+                "red": 1
+              }
+            }
+          }
+        }
+      },
+      "pageType": "NOTES_MASTER"
+    },
+    "pageSize": {
+      "height": {
+        "magnitude": 5143500,
+        "unit": "EMU"
+      },
+      "width": {
+        "magnitude": 9144000,
+        "unit": "EMU"
+      }
+    },
+    "presentationId": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq",
+    "revisionId": "_8hYOO4nrhdhV2A",
+    "slides": [
+      {
+        "objectId": "p",
+        "pageElements": [
+          {
+            "objectId": "i0",
+            "shape": {
+              "placeholder": {
+                "parentObjectId": "p1_i0",
+                "type": "CENTERED_TITLE"
+              },
+              "shapeProperties": {
+                "autofit": {
+                  "autofitType": "NONE"
+                },
+                "outline": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shadow": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shapeBackgroundFill": {
+                  "propertyState": "NOT_RENDERED"
+                }
+              },
+              "shapeType": "TEXT_BOX",
+              "text": {
+                "textElements": [
+                  {
+                    "endIndex": 16,
+                    "paragraphMarker": {
+                      "style": {
+                        "direction": "LEFT_TO_RIGHT"
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 16,
+                    "textRun": {
+                      "content": "Quarterly review\n",
+                      "style": {
+                        "bold": true,
+                        "fontSize": {
+                          "magnitude": 48,
+                          "unit": "PT"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "size": {
+              "height": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 2.8402,
+              "scaleY": 0.5833,
+              "translateX": 311700,
+              "translateY": 744575,
+              "unit": "EMU"
+            }
+          },
+          {
+            "objectId": "i1",
+            "shape": {
+              "placeholder": {
+                "parentObjectId": "p1_i1",
+                "type": "SUBTITLE"
+              },
+              "shapeProperties": {
+                "outline": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shadow": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shapeBackgroundFill": {
+                  "propertyState": "NOT_RENDERED"
+                }
+              },
+              "shapeType": "TEXT_BOX",
+              "text": {
+                "textElements": [
+                  {
+                    "endIndex": 10,
+                    "paragraphMarker": {
+                      "style": {
+                        "direction": "LEFT_TO_RIGHT"
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 10,
+                    "textRun": {
+                      "content": "June 2026\n",
+                      "style": {}
+                    }
+                  }
+                ]
+              }
+            },
+            "size": {
+              "height": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 2.8402,
+              "scaleY": 0.3333,
+              "translateX": 311700,
+              "translateY": 2300000,
+              "unit": "EMU"
+            }
+          }
+        ],
+        "pageProperties": {
+          "pageBackgroundFill": {
+            "propertyState": "INHERIT"
+          }
+        },
+        "slideProperties": {
+          "layoutObjectId": "p1",
+          "masterObjectId": "simple-light-2",
+          "notesPage": {
+            "notesProperties": {
+              "speakerNotesObjectId": "p:notes:text"
+            },
+            "objectId": "p:notes",
+            "pageElements": [
+              {
+                "objectId": "p:notes:slide",
+                "shape": {
+                  "placeholder": {
+                    "parentObjectId": "n:slide",
+                    "type": "SLIDE_IMAGE"
+                  },
+                  "shapeType": "TEXT_BOX"
+                },
+                "size": {
+                  "height": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  },
+                  "width": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1.1,
+                  "scaleY": 0.6,
+                  "translateX": 380000,
+                  "translateY": 680000,
+                  "unit": "EMU"
+                }
+              },
+              {
+                "objectId": "p:notes:text",
+                "shape": {
+                  "placeholder": {
+                    "parentObjectId": "n:text",
+                    "type": "BODY"
+                  },
+                  "shapeType": "TEXT_BOX",
+                  "text": {
+                    "textElements": [
+                      {
+                        "endIndex": 20,
+                        "paragraphMarker": {
+                          "style": {}
+                        }
+                      },
+                      {
+                        "endIndex": 20,
+                        "textRun": {
+                          "content": "Open with the win.\n",
+                          "style": {}
+                        }
+                      }
+                    ]
+                  }
+                },
+                "size": {
+                  "height": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  },
+                  "width": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1.8,
+                  "scaleY": 1.3,
+                  "translateX": 680000,
+                  "translateY": 4650000,
+                  "unit": "EMU"
+                }
+              }
+            ],
+            "pageProperties": {
+              "pageBackgroundFill": {
+                "propertyState": "INHERIT"
+              }
+            },
+            "pageType": "NOTES"
+          }
+        }
+      },
+      {
+        "objectId": "g2a0b1c2d3e_0_8",
+        "pageElements": [
+          {
+            "objectId": "g2a0b1c2d3e_0_10",
+            "shape": {
+              "placeholder": {
+                "parentObjectId": "p2_i1",
+                "type": "BODY"
+              },
+              "shapeProperties": {
+                "autofit": {
+                  "fontScale": 1
+                },
+                "outline": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shadow": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shapeBackgroundFill": {
+                  "propertyState": "NOT_RENDERED"
+                }
+              },
+              "shapeType": "TEXT_BOX",
+              "text": {
+                "lists": {
+                  "kix.list1": {
+                    "listId": "kix.list1",
+                    "nestingLevel": {
+                      "0": {
+                        "bulletStyle": {
+                          "fontSize": {
+                            "magnitude": 18,
+                            "unit": "PT"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "textElements": [
+                  {
+                    "endIndex": 30,
+                    "paragraphMarker": {
+                      "style": {
+                        "direction": "LEFT_TO_RIGHT"
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 30,
+                    "startIndex": 0,
+                    "textRun": {
+                      "content": "Revenue up 18% year over year\n",
+                      "style": {
+                        "fontFamily": "Arial",
+                        "fontSize": {
+                          "magnitude": 18,
+                          "unit": "PT"
+                        },
+                        "foregroundColor": {
+                          "opaqueColor": {
+                            "themeColor": "DARK1"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 60,
+                    "paragraphMarker": {
+                      "bullet": {
+                        "glyph": "●",
+                        "listId": "kix.list1"
+                      },
+                      "style": {
+                        "direction": "LEFT_TO_RIGHT",
+                        "indentStart": {
+                          "unit": "PT"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 60,
+                    "startIndex": 30,
+                    "textRun": {
+                      "content": "New markets: Chile and Peru\n",
+                      "style": {
+                        "fontFamily": "Arial",
+                        "fontSize": {
+                          "magnitude": 18,
+                          "unit": "PT"
+                        },
+                        "foregroundColor": {
+                          "opaqueColor": {
+                            "themeColor": "DARK1"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 81,
+                    "paragraphMarker": {
+                      "bullet": {
+                        "glyph": "●",
+                        "listId": "kix.list1"
+                      },
+                      "style": {
+                        "direction": "LEFT_TO_RIGHT",
+                        "indentStart": {
+                          "unit": "PT"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 81,
+                    "startIndex": 60,
+                    "textRun": {
+                      "content": "Churn down to 2.1%\n",
+                      "style": {
+                        "fontFamily": "Arial",
+                        "fontSize": {
+                          "magnitude": 18,
+                          "unit": "PT"
+                        },
+                        "foregroundColor": {
+                          "opaqueColor": {
+                            "themeColor": "DARK1"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "size": {
+              "height": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 2.8402,
+              "scaleY": 1.1,
+              "translateX": 311700,
+              "translateY": 1152475,
+              "unit": "EMU"
+            }
+          },
+          {
+            "objectId": "g2a0b1c2d3e_0_9",
+            "shape": {
+              "placeholder": {
+                "parentObjectId": "p2_i0",
+                "type": "TITLE"
+              },
+              "shapeProperties": {
+                "autofit": {
+                  "fontScale": 1
+                },
+                "outline": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shadow": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shapeBackgroundFill": {
+                  "propertyState": "NOT_RENDERED"
+                }
+              },
+              "shapeType": "TEXT_BOX",
+              "text": {
+                "lists": {
+                  "kix.list1": {
+                    "listId": "kix.list1",
+                    "nestingLevel": {
+                      "0": {
+                        "bulletStyle": {
+                          "fontSize": {
+                            "magnitude": 18,
+                            "unit": "PT"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "textElements": [
+                  {
+                    "endIndex": 11,
+                    "paragraphMarker": {
+                      "style": {
+                        "direction": "LEFT_TO_RIGHT"
+                      }
+                    }
+                  },
+                  {
+                    "endIndex": 11,
+                    "startIndex": 0,
+                    "textRun": {
+                      "content": "Highlights\n",
+                      "style": {
+                        "fontFamily": "Arial",
+                        "fontSize": {
+                          "magnitude": 18,
+                          "unit": "PT"
+                        },
+                        "foregroundColor": {
+                          "opaqueColor": {
+                            "themeColor": "DARK1"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "size": {
+              "height": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 2.8402,
+              "scaleY": 0.19,
+              "translateX": 311700,
+              "translateY": 445025,
+              "unit": "EMU"
+            }
+          },
+          {
+            "objectId": "g2a0b1c2d3e_0_11",
+            "size": {
+              "height": {
+                "magnitude": 1000000,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "table": {
+              "columns": 3,
+              "horizontalBorderRows": [
+                {
+                  "tableBorderCells": [
+                    {
+                      "location": {},
+                      "tableBorderProperties": {
+                        "dashStyle": "SOLID",
+                        "tableBorderFill": {
+                          "solidFill": {
+                            "color": {
+                              "rgbColor": {}
+                            }
+                          }
+                        },
+                        "weight": {
+                          "magnitude": 12700,
+                          "unit": "EMU"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "rows": 2,
+              "tableColumns": [
+                {
+                  "columnWidth": {
+                    "magnitude": 1000000,
+                    "unit": "EMU"
+                  }
+                },
+                {
+                  "columnWidth": {
+                    "magnitude": 1000000,
+                    "unit": "EMU"
+                  }
+                },
+                {
+                  "columnWidth": {
+                    "magnitude": 1000000,
+                    "unit": "EMU"
+                  }
+                }
+              ],
+              "tableRows": [
+                {
+                  "rowHeight": {
+                    "magnitude": 371475,
+                    "unit": "EMU"
+                  },
+                  "tableCells": [
+                    {
+                      "columnSpan": 1,
+                      "location": {},
+                      "rowSpan": 1,
+                      "tableCellProperties": {
+                        "contentAlignment": "TOP",
+                        "tableCellBackgroundFill": {
+                          "propertyState": "NOT_RENDERED"
+                        }
+                      },
+                      "text": {
+                        "lists": {
+                          "kix.list1": {
+                            "listId": "kix.list1",
+                            "nestingLevel": {
+                              "0": {
+                                "bulletStyle": {
+                                  "fontSize": {
+                                    "magnitude": 18,
+                                    "unit": "PT"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "textElements": [
+                          {
+                            "endIndex": 7,
+                            "paragraphMarker": {
+                              "style": {
+                                "direction": "LEFT_TO_RIGHT"
+                              }
+                            }
+                          },
+                          {
+                            "endIndex": 7,
+                            "startIndex": 0,
+                            "textRun": {
+                              "content": "Region\n",
+                              "style": {
+                                "fontFamily": "Arial",
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                },
+                                "foregroundColor": {
+                                  "opaqueColor": {
+                                    "themeColor": "DARK1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "columnSpan": 1,
+                      "location": {
+                        "columnIndex": 1,
+                        "rowIndex": 0
+                      },
+                      "rowSpan": 1,
+                      "tableCellProperties": {
+                        "contentAlignment": "TOP",
+                        "tableCellBackgroundFill": {
+                          "propertyState": "NOT_RENDERED"
+                        }
+                      },
+                      "text": {
+                        "lists": {
+                          "kix.list1": {
+                            "listId": "kix.list1",
+                            "nestingLevel": {
+                              "0": {
+                                "bulletStyle": {
+                                  "fontSize": {
+                                    "magnitude": 18,
+                                    "unit": "PT"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "textElements": [
+                          {
+                            "endIndex": 3,
+                            "paragraphMarker": {
+                              "style": {
+                                "direction": "LEFT_TO_RIGHT"
+                              }
+                            }
+                          },
+                          {
+                            "endIndex": 3,
+                            "startIndex": 0,
+                            "textRun": {
+                              "content": "Q1\n",
+                              "style": {
+                                "fontFamily": "Arial",
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                },
+                                "foregroundColor": {
+                                  "opaqueColor": {
+                                    "themeColor": "DARK1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "columnSpan": 1,
+                      "location": {
+                        "columnIndex": 2,
+                        "rowIndex": 0
+                      },
+                      "rowSpan": 1,
+                      "tableCellProperties": {
+                        "contentAlignment": "TOP",
+                        "tableCellBackgroundFill": {
+                          "propertyState": "NOT_RENDERED"
+                        }
+                      },
+                      "text": {
+                        "lists": {
+                          "kix.list1": {
+                            "listId": "kix.list1",
+                            "nestingLevel": {
+                              "0": {
+                                "bulletStyle": {
+                                  "fontSize": {
+                                    "magnitude": 18,
+                                    "unit": "PT"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "textElements": [
+                          {
+                            "endIndex": 3,
+                            "paragraphMarker": {
+                              "style": {
+                                "direction": "LEFT_TO_RIGHT"
+                              }
+                            }
+                          },
+                          {
+                            "endIndex": 3,
+                            "startIndex": 0,
+                            "textRun": {
+                              "content": "Q2\n",
+                              "style": {
+                                "fontFamily": "Arial",
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                },
+                                "foregroundColor": {
+                                  "opaqueColor": {
+                                    "themeColor": "DARK1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "tableRowProperties": {
+                    "minRowHeight": {
+                      "magnitude": 371475,
+                      "unit": "EMU"
+                    }
+                  }
+                },
+                {
+                  "rowHeight": {
+                    "magnitude": 371475,
+                    "unit": "EMU"
+                  },
+                  "tableCells": [
+                    {
+                      "columnSpan": 1,
+                      "location": {
+                        "columnIndex": 0,
+                        "rowIndex": 1
+                      },
+                      "rowSpan": 1,
+                      "tableCellProperties": {
+                        "contentAlignment": "TOP",
+                        "tableCellBackgroundFill": {
+                          "propertyState": "NOT_RENDERED"
+                        }
+                      },
+                      "text": {
+                        "lists": {
+                          "kix.list1": {
+                            "listId": "kix.list1",
+                            "nestingLevel": {
+                              "0": {
+                                "bulletStyle": {
+                                  "fontSize": {
+                                    "magnitude": 18,
+                                    "unit": "PT"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "textElements": [
+                          {
+                            "endIndex": 6,
+                            "paragraphMarker": {
+                              "style": {
+                                "direction": "LEFT_TO_RIGHT"
+                              }
+                            }
+                          },
+                          {
+                            "endIndex": 6,
+                            "startIndex": 0,
+                            "textRun": {
+                              "content": "LATAM\n",
+                              "style": {
+                                "fontFamily": "Arial",
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                },
+                                "foregroundColor": {
+                                  "opaqueColor": {
+                                    "themeColor": "DARK1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "columnSpan": 1,
+                      "location": {
+                        "columnIndex": 1,
+                        "rowIndex": 1
+                      },
+                      "rowSpan": 1,
+                      "tableCellProperties": {
+                        "contentAlignment": "TOP",
+                        "tableCellBackgroundFill": {
+                          "propertyState": "NOT_RENDERED"
+                        }
+                      },
+                      "text": {
+                        "lists": {
+                          "kix.list1": {
+                            "listId": "kix.list1",
+                            "nestingLevel": {
+                              "0": {
+                                "bulletStyle": {
+                                  "fontSize": {
+                                    "magnitude": 18,
+                                    "unit": "PT"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "textElements": [
+                          {
+                            "endIndex": 5,
+                            "paragraphMarker": {
+                              "style": {
+                                "direction": "LEFT_TO_RIGHT"
+                              }
+                            }
+                          },
+                          {
+                            "endIndex": 5,
+                            "startIndex": 0,
+                            "textRun": {
+                              "content": "1.2M\n",
+                              "style": {
+                                "fontFamily": "Arial",
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                },
+                                "foregroundColor": {
+                                  "opaqueColor": {
+                                    "themeColor": "DARK1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "columnSpan": 1,
+                      "location": {
+                        "columnIndex": 2,
+                        "rowIndex": 1
+                      },
+                      "rowSpan": 1,
+                      "tableCellProperties": {
+                        "contentAlignment": "TOP",
+                        "tableCellBackgroundFill": {
+                          "propertyState": "NOT_RENDERED"
+                        }
+                      },
+                      "text": {}
+                    }
+                  ],
+                  "tableRowProperties": {
+                    "minRowHeight": {
+                      "magnitude": 371475,
+                      "unit": "EMU"
+                    }
+                  }
+                }
+              ]
+            },
+            "transform": {
+              "scaleX": 1,
+              "scaleY": 1,
+              "translateX": 5100000,
+              "translateY": 3300000,
+              "unit": "EMU"
+            }
+          },
+          {
+            "description": "The regional team at the offsite",
+            "image": {
+              "contentUrl": "https://lh7-rt.googleusercontent.com/slidesz/AGV_vUexampleImageToken0123456789",
+              "imageProperties": {
+                "outline": {
+                  "propertyState": "NOT_RENDERED"
+                },
+                "shadow": {
+                  "propertyState": "NOT_RENDERED"
+                }
+              },
+              "sourceUrl": "https://images.example.org/team.jpg"
+            },
+            "objectId": "g2a0b1c2d3e_0_12",
+            "size": {
+              "height": {
+                "magnitude": 1371600,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 1828800,
+                "unit": "EMU"
+              }
+            },
+            "title": "Team photo",
+            "transform": {
+              "scaleX": 1,
+              "scaleY": 1,
+              "translateX": 311700,
+              "translateY": 3300000,
+              "unit": "EMU"
+            }
+          },
+          {
+            "elementGroup": {
+              "children": [
+                {
+                  "objectId": "g2a0b1c2d3e_0_14",
+                  "shape": {
+                    "shapeProperties": {
+                      "autofit": {
+                        "fontScale": 1
+                      },
+                      "outline": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "shadow": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "shapeBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      }
+                    },
+                    "shapeType": "RECTANGLE",
+                    "text": {
+                      "lists": {
+                        "kix.list1": {
+                          "listId": "kix.list1",
+                          "nestingLevel": {
+                            "0": {
+                              "bulletStyle": {
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "textElements": [
+                        {
+                          "endIndex": 19,
+                          "paragraphMarker": {
+                            "style": {
+                              "direction": "LEFT_TO_RIGHT"
+                            }
+                          }
+                        },
+                        {
+                          "endIndex": 19,
+                          "startIndex": 0,
+                          "textRun": {
+                            "content": "Owner: Ana Example\n",
+                            "style": {
+                              "fontFamily": "Arial",
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              },
+                              "foregroundColor": {
+                                "opaqueColor": {
+                                  "themeColor": "DARK1"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "size": {
+                    "height": {
+                      "magnitude": 381000,
+                      "unit": "EMU"
+                    },
+                    "width": {
+                      "magnitude": 1270000,
+                      "unit": "EMU"
+                    }
+                  },
+                  "transform": {
+                    "scaleX": 1,
+                    "scaleY": 1,
+                    "translateX": 0,
+                    "translateY": 0,
+                    "unit": "EMU"
+                  }
+                },
+                {
+                  "objectId": "g2a0b1c2d3e_0_15",
+                  "shape": {
+                    "shapeProperties": {
+                      "autofit": {
+                        "fontScale": 1
+                      },
+                      "outline": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "shadow": {
+                        "propertyState": "NOT_RENDERED"
+                      },
+                      "shapeBackgroundFill": {
+                        "propertyState": "NOT_RENDERED"
+                      }
+                    },
+                    "shapeType": "RECTANGLE",
+                    "text": {
+                      "lists": {
+                        "kix.list1": {
+                          "listId": "kix.list1",
+                          "nestingLevel": {
+                            "0": {
+                              "bulletStyle": {
+                                "fontSize": {
+                                  "magnitude": 18,
+                                  "unit": "PT"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "textElements": [
+                        {
+                          "endIndex": 8,
+                          "paragraphMarker": {
+                            "style": {
+                              "direction": "LEFT_TO_RIGHT"
+                            }
+                          }
+                        },
+                        {
+                          "endIndex": 8,
+                          "startIndex": 0,
+                          "textRun": {
+                            "content": "Due: Q3\n",
+                            "style": {
+                              "fontFamily": "Arial",
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              },
+                              "foregroundColor": {
+                                "opaqueColor": {
+                                  "themeColor": "DARK1"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "size": {
+                    "height": {
+                      "magnitude": 381000,
+                      "unit": "EMU"
+                    },
+                    "width": {
+                      "magnitude": 1270000,
+                      "unit": "EMU"
+                    }
+                  },
+                  "transform": {
+                    "scaleX": 1,
+                    "scaleY": 1,
+                    "translateX": 0,
+                    "translateY": 508000,
+                    "unit": "EMU"
+                  }
+                }
+              ]
+            },
+            "objectId": "g2a0b1c2d3e_0_13",
+            "transform": {
+              "scaleX": 1,
+              "scaleY": 1,
+              "translateX": 2500000,
+              "translateY": 3300000,
+              "unit": "EMU"
+            }
+          }
+        ],
+        "pageProperties": {
+          "pageBackgroundFill": {
+            "propertyState": "INHERIT"
+          }
+        },
+        "slideProperties": {
+          "layoutObjectId": "p2",
+          "masterObjectId": "simple-light-2",
+          "notesPage": {
+            "notesProperties": {
+              "speakerNotesObjectId": "g2a0b1c2d3e_0_8:notes"
+            },
+            "objectId": "g2a0b1c2d3e_0_8:notes_page",
+            "pageElements": [
+              {
+                "objectId": "g2a0b1c2d3e_0_8:notes_image",
+                "shape": {
+                  "placeholder": {
+                    "parentObjectId": "n:slide",
+                    "type": "SLIDE_IMAGE"
+                  },
+                  "shapeProperties": {
+                    "autofit": {
+                      "fontScale": 1
+                    },
+                    "outline": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shadow": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shapeBackgroundFill": {
+                      "propertyState": "NOT_RENDERED"
+                    }
+                  },
+                  "shapeType": "TEXT_BOX"
+                },
+                "size": {
+                  "height": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  },
+                  "width": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1.1,
+                  "scaleY": 0.6,
+                  "translateX": 380000,
+                  "translateY": 680000,
+                  "unit": "EMU"
+                }
+              },
+              {
+                "objectId": "g2a0b1c2d3e_0_8:notes",
+                "shape": {
+                  "placeholder": {
+                    "parentObjectId": "n:text",
+                    "type": "BODY"
+                  },
+                  "shapeProperties": {
+                    "autofit": {
+                      "fontScale": 1
+                    },
+                    "outline": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shadow": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shapeBackgroundFill": {
+                      "propertyState": "NOT_RENDERED"
+                    }
+                  },
+                  "shapeType": "TEXT_BOX",
+                  "text": {
+                    "lists": {
+                      "kix.list1": {
+                        "listId": "kix.list1",
+                        "nestingLevel": {
+                          "0": {
+                            "bulletStyle": {
+                              "fontSize": {
+                                "magnitude": 18,
+                                "unit": "PT"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "textElements": [
+                      {
+                        "endIndex": 30,
+                        "paragraphMarker": {
+                          "style": {
+                            "direction": "LEFT_TO_RIGHT"
+                          }
+                        }
+                      },
+                      {
+                        "endIndex": 30,
+                        "startIndex": 0,
+                        "textRun": {
+                          "content": "Mention the Peru launch date.\n",
+                          "style": {
+                            "fontFamily": "Arial",
+                            "fontSize": {
+                              "magnitude": 18,
+                              "unit": "PT"
+                            },
+                            "foregroundColor": {
+                              "opaqueColor": {
+                                "themeColor": "DARK1"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "size": {
+                  "height": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  },
+                  "width": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1.8,
+                  "scaleY": 1.3,
+                  "translateX": 680000,
+                  "translateY": 4650000,
+                  "unit": "EMU"
+                }
+              }
+            ],
+            "pageProperties": {
+              "pageBackgroundFill": {
+                "propertyState": "INHERIT"
+              }
+            },
+            "pageType": "NOTES"
+          }
+        }
+      },
+      {
+        "objectId": "g2a0b1c2d3e_0_20",
+        "pageElements": [
+          {
+            "objectId": "g2a0b1c2d3e_0_21",
+            "sheetsChart": {
+              "chartId": 1122334455,
+              "contentUrl": "https://lh7-rt.googleusercontent.com/sheetsz/AGV_chartToken",
+              "sheetsChartProperties": {
+                "chartImageProperties": {}
+              },
+              "spreadsheetId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghijk"
+            },
+            "size": {
+              "height": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 1.2,
+              "scaleY": 1.2,
+              "translateX": 4000000,
+              "translateY": 1200000,
+              "unit": "EMU"
+            }
+          },
+          {
+            "objectId": "g2a0b1c2d3e_0_22",
+            "size": {
+              "height": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 1,
+              "scaleY": 0.2,
+              "translateX": 311700,
+              "translateY": 400000,
+              "unit": "EMU"
+            },
+            "wordArt": {
+              "renderedText": "Thank you"
+            }
+          },
+          {
+            "line": {
+              "lineCategory": "STRAIGHT",
+              "lineProperties": {
+                "dashStyle": "SOLID",
+                "weight": {
+                  "magnitude": 9525,
+                  "unit": "EMU"
+                }
+              },
+              "lineType": "STRAIGHT_CONNECTOR_1"
+            },
+            "objectId": "g2a0b1c2d3e_0_23",
+            "size": {
+              "height": {
+                "magnitude": 0,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 1,
+              "scaleY": 1,
+              "translateX": 311700,
+              "translateY": 1100000,
+              "unit": "EMU"
+            }
+          },
+          {
+            "objectId": "g2a0b1c2d3e_0_24",
+            "size": {
+              "height": {
+                "magnitude": 1687500,
+                "unit": "EMU"
+              },
+              "width": {
+                "magnitude": 3000000,
+                "unit": "EMU"
+              }
+            },
+            "transform": {
+              "scaleX": 1,
+              "scaleY": 1,
+              "translateX": 311700,
+              "translateY": 1300000,
+              "unit": "EMU"
+            },
+            "video": {
+              "id": "exampleVid0",
+              "source": "YOUTUBE",
+              "url": "https://www.youtube.com/watch?v=exampleVid0",
+              "videoProperties": {
+                "autoPlay": false,
+                "outline": {
+                  "propertyState": "NOT_RENDERED"
+                }
+              }
+            }
+          }
+        ],
+        "pageProperties": {
+          "pageBackgroundFill": {
+            "propertyState": "INHERIT"
+          }
+        },
+        "slideProperties": {
+          "layoutObjectId": "p3",
+          "masterObjectId": "simple-light-2",
+          "notesPage": {
+            "notesProperties": {
+              "speakerNotesObjectId": "g2a0b1c2d3e_0_20:notes"
+            },
+            "objectId": "g2a0b1c2d3e_0_20:notes_page",
+            "pageElements": [
+              {
+                "objectId": "g2a0b1c2d3e_0_20:notes_image",
+                "shape": {
+                  "placeholder": {
+                    "parentObjectId": "n:slide",
+                    "type": "SLIDE_IMAGE"
+                  },
+                  "shapeProperties": {
+                    "autofit": {
+                      "fontScale": 1
+                    },
+                    "outline": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shadow": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shapeBackgroundFill": {
+                      "propertyState": "NOT_RENDERED"
+                    }
+                  },
+                  "shapeType": "TEXT_BOX"
+                },
+                "size": {
+                  "height": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  },
+                  "width": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1.1,
+                  "scaleY": 0.6,
+                  "translateX": 380000,
+                  "translateY": 680000,
+                  "unit": "EMU"
+                }
+              },
+              {
+                "objectId": "g2a0b1c2d3e_0_20:notes",
+                "shape": {
+                  "placeholder": {
+                    "parentObjectId": "n:text",
+                    "type": "BODY"
+                  },
+                  "shapeProperties": {
+                    "autofit": {
+                      "fontScale": 1
+                    },
+                    "outline": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shadow": {
+                      "propertyState": "NOT_RENDERED"
+                    },
+                    "shapeBackgroundFill": {
+                      "propertyState": "NOT_RENDERED"
+                    }
+                  },
+                  "shapeType": "TEXT_BOX"
+                },
+                "size": {
+                  "height": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  },
+                  "width": {
+                    "magnitude": 3000000,
+                    "unit": "EMU"
+                  }
+                },
+                "transform": {
+                  "scaleX": 1.8,
+                  "scaleY": 1.3,
+                  "translateX": 680000,
+                  "translateY": 4650000,
+                  "unit": "EMU"
+                }
+              }
+            ],
+            "pageProperties": {
+              "pageBackgroundFill": {
+                "propertyState": "INHERIT"
+              }
+            },
+            "pageType": "NOTES"
+          }
+        }
+      }
+    ],
+    "title": "Quarterly review"
+  },
+  "presentation_id": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq",
+  "raw_chars": 17542,
+  "raw_sha256": "0dd516bc4721bf1ec1e5be200cc78e610f0278204f0ff84bdc53dbe5f7d0e3aa",
+  "revision_id": "_8hYOO4nrhdhV2A",
+  "title": "Quarterly review",
+  "truncated": false,
+  "url": "https://docs.google.com/presentation/d/1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210zyxwvutsrq/edit"
+}
