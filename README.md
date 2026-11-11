@@ -258,6 +258,11 @@ use relative imports, so do **not** point it at `src/mcp_google_workspace/server
   - optional `MCP_REDIS_URL` to keep the Google grant across redeploys; without it
     the grant is stored on the instance's disk and you reconnect after a redeploy.
 - Then call `connect_google_workspace`, open the returned URL and finish consent.
+  Horizon's gateway also guards `/google/oauth/callback`, so after consent the browser
+  shows `Bearer token required`. Copy that page's full URL from the address bar and call
+  `connect_google_workspace` with `authorization_response` set to it. The state in the
+  URL is one-time and bound to the caller, and the code only works with the server's
+  PKCE verifier.
 
 ### Docker / GHCR
 
