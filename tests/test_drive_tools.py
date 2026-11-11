@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -470,14 +471,15 @@ def _download(**arguments: Any) -> Any:
 def test_download_saves_a_stored_file_as_is(drive: _FakeDrive, saved: list[Any]) -> None:
     result = _download(file_id="pdf", output_path="/tmp/out.pdf", overwrite=True, acknowledge_abuse=True, export_mime_type="text/plain")
 
+    out = str(Path("/tmp/out.pdf"))  # the tool reports the OS-native path
     assert result == {
         "status": "ok", "file_id": "pdf", "name": "Pdf", "mode": "download", "mime_type": "application/pdf",
-        "export_mime_type": None, "saved_to": "/tmp/out.pdf", "bytes_written": 42,
+        "export_mime_type": None, "saved_to": out, "bytes_written": 42,
     }
     (media,) = drive.called("files.get_media")
     assert media == {"fileId": "pdf", "acknowledgeAbuse": True, "supportsAllDrives": True}
     assert drive.called("files.export_media") == []
-    assert saved == [{"path": "/tmp/out.pdf", "overwrite": True, "label": "Downloading Drive file"}]
+    assert saved == [{"path": out, "overwrite": True, "label": "Downloading Drive file"}]
 
 
 @pytest.mark.parametrize(

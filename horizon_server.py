@@ -1,4 +1,4 @@
-"""Prefect Horizon / FastMCP Cloud entrypoint: set Entrypoint to ``horizon_server.py:mcp``.
+"""Prefect Horizon / FastMCP Cloud entrypoint: set Entrypoint to ``horizon_server.py``.
 
 The package uses relative imports, so its modules cannot be the entrypoint
 file themselves (``src/mcp_google_workspace/server.py`` fails with "attempted

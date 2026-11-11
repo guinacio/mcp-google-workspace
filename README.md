@@ -241,7 +241,9 @@ Horizon imports a server object with `fastmcp run` semantics. Package modules
 use relative imports, so do **not** point it at `src/mcp_google_workspace/server.py`
 (that fails with "attempted relative import with no known parent package").
 
-- **Entrypoint:** `horizon_server.py:mcp`
+- **Entrypoint:** `horizon_server.py` (FastMCP finds the `mcp` object; Horizon's
+  settings form rejects the `file:object` form as "not found in repository").
+  Settings apply to the next deployment built from a new commit, not to *Redeploy*.
 - **Authentication:** keep Horizon's Authentication **enabled**. Horizon forwards
   no verifiable caller identity, so this entrypoint serves a single owner
   (`MCP_TRUSTED_GATEWAY_AUTH=true`): anyone who can reach `/mcp` acts with the
