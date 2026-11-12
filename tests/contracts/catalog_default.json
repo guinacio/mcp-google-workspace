@@ -199,6 +199,7 @@
         "fastmcp": {
           "tags": []
         },
+        "openai/widgetDescription": "Workspace Files picker: drop or choose files to upload and see or delete the user's uploads, which tools that take an uploaded_file (such as drive_upload_file) can then use.",
         "ui": {}
       },
       "mimeType": "text/html;profile=mcp-app",
@@ -9031,6 +9032,7 @@
         },
         "openai/toolInvocation/invoked": "Opened Workspace Files",
         "openai/toolInvocation/invoking": "Opening Workspace Files\u2026",
+        "openai/widgetDescription": "Workspace Files picker: drop or choose files to upload and see or delete the user's uploads, which tools that take an uploaded_file (such as drive_upload_file) can then use.",
         "ui": {
           "resourceUri": "ui://prefab/tool/872d2c9e20b2/renderer.html",
           "visibility": [

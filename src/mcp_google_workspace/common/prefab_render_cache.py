@@ -52,6 +52,11 @@ _LAYOUT_ERROR = (
     "mcp_google_workspace.common.prefab_render_cache before upgrading."
 )
 
+# OpenAI Apps SDK resource _meta key describing a view. FastMCP's synthesis
+# only carries _meta.ui facts from the tool to the renderer resource, so the
+# cache copies this one across as well.
+WIDGET_DESCRIPTION_KEY = "openai/widgetDescription"
+
 _lock = threading.Lock()
 _cache: dict[tuple[Any, ...], "Resource | None"] = {}
 _builds = 0
@@ -130,6 +135,9 @@ def install_prefab_resource_cache() -> None:
                     _hits += 1
                     return _cache[key]
             resource = original(tool)
+            description = (tool.meta or {}).get(WIDGET_DESCRIPTION_KEY)
+            if resource is not None and isinstance(description, str):
+                resource.meta = {**(resource.meta or {}), WIDGET_DESCRIPTION_KEY: description}
             with _lock:
                 _cache[key] = resource
                 _builds += 1

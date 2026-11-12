@@ -32,7 +32,7 @@ from .common.crypto import FernetKeyring
 from .common.errors import RecoverableToolError
 from .common.fastmcp_compat import local_tools, remove_local_tool
 from .common.component_annotations import consent_hints, flow_description, simplify_optional_properties
-from .common.prefab_render_cache import install_prefab_resource_cache
+from .common.prefab_render_cache import WIDGET_DESCRIPTION_KEY, install_prefab_resource_cache
 from .runtime import get_token_storage_settings, mcp_app_domain
 
 AUDIT_LOGGER = logging.getLogger("mcp_google_workspace.audit")
@@ -783,6 +783,13 @@ class WorkspaceFileUpload(FileUpload):
                 meta = dict(component.meta or {})
                 meta["openai/toolInvocation/invoking"] = "Opening Workspace Files…"
                 meta["openai/toolInvocation/invoked"] = "Opened Workspace Files"
+                # What the view shows, for ChatGPT (OpenAI Apps SDK). The
+                # render cache copies it onto the synthesized renderer
+                # resource, where ChatGPT reads it.
+                meta[WIDGET_DESCRIPTION_KEY] = (
+                    "Workspace Files picker: drop or choose files to upload and see or delete the user's "
+                    "uploads, which tools that take an uploaded_file (such as drive_upload_file) can then use."
+                )
                 component.meta = meta
             if component.name == "file_manager" and (domain := mcp_app_domain()):
                 # The synthesized renderer resource copies _meta.ui.domain from
