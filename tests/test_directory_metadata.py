@@ -133,3 +133,19 @@ def test_renderer_mode_defaults_to_bundled_and_cdn_is_opt_in(monkeypatch: pytest
 def test_picker_declares_openai_invocation_labels() -> None:
     meta = _tools(workspace_mcp)["uploads_file_manager"].meta or {}
     assert meta["openai/toolInvocation/invoking"] and meta["openai/toolInvocation/invoked"]
+
+
+def test_picker_view_carries_its_widget_description() -> None:
+    async def run() -> tuple[Any, Any]:
+        async with Client(workspace_mcp) as client:
+            resource = next(r for r in await client.list_resources() if str(r.uri).startswith("ui://prefab"))
+            contents = (await client.read_resource(str(resource.uri)))[0]
+            return resource, contents
+
+    resource, contents = anyio.run(run)
+    tool_meta = _tools(workspace_mcp)["uploads_file_manager"].meta or {}
+    description = tool_meta["openai/widgetDescription"]
+    assert description
+    # On the linked tool, the listed resource and the read contents alike.
+    assert (resource.meta or {})["openai/widgetDescription"] == description
+    assert (contents.meta or {})["openai/widgetDescription"] == description
