@@ -46,6 +46,7 @@ from .auth.google_auth import (
     build_people_service,
 )
 from .common.async_ops import execute_google_request
+from .common.server_card import register_server_card_route
 from .common.resources import (
     ResourceHandleMiddleware,
     clean_web_url,
@@ -151,6 +152,16 @@ async def health_ready(_: Request) -> Response:
 @workspace_mcp.custom_route("/version", methods=["GET"], include_in_schema=False)
 async def version_info(_: Request) -> Response:
     return JSONResponse(build_version_payload())
+
+
+# MCP Server Card (SEP-2127): public discovery metadata at /mcp/server-card.
+register_server_card_route(
+    workspace_mcp,
+    version=__version__,
+    title=SERVER_TITLE,
+    website_url=PROJECT_URL,
+    icons=[icon.model_dump(by_alias=True, exclude_none=True, mode="json") for icon in SERVER_ICONS],
+)
 
 
 @workspace_mcp.custom_route("/metrics", methods=["GET"], include_in_schema=False)

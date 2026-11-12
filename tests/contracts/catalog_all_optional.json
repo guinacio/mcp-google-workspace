@@ -6942,7 +6942,7 @@
             "type": "string"
           },
           "model": {
-            "description": "Gemini model ID to use for the image edit, e.g. 'gemini-2.5-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
+            "description": "Gemini model ID to use for the image edit, e.g. 'gemini-3.1-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
             "type": "string"
           },
           "output_dir": {
@@ -7043,7 +7043,7 @@
             "type": "string"
           },
           "model": {
-            "description": "Gemini model ID to use for image generation, e.g. 'gemini-2.5-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
+            "description": "Gemini model ID to use for image generation, e.g. 'gemini-3.1-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
             "type": "string"
           },
           "output_dir": {

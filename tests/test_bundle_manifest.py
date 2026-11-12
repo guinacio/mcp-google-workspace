@@ -52,7 +52,7 @@ def test_manifest_declares_gemini_bundle_config() -> None:
     user_config = manifest["user_config"]
 
     assert user_config["enable_gemini"]["default"] is False
-    assert user_config["gemini_image_generate_model"]["default"] == "gemini-3.1-flash-image-preview"
+    assert user_config["gemini_image_generate_model"]["default"] == "gemini-3.1-flash-image"
     assert user_config["gemini_video_understanding_model"]["default"] == "gemini-3-flash-preview"
     assert user_config["gemini_reasoning_model"]["default"] == "gemini-3.1-pro-preview"
 

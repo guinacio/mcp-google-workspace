@@ -139,13 +139,13 @@
       "type": "string",
       "title": "Gemini Image Generate Model",
       "description": "Default Gemini model for image generation tools.",
-      "default": "gemini-3.1-flash-image-preview"
+      "default": "gemini-3.1-flash-image"
     },
     "gemini_image_edit_model": {
       "type": "string",
       "title": "Gemini Image Edit Model",
       "description": "Default Gemini model for image editing tools.",
-      "default": "gemini-3.1-flash-image-preview"
+      "default": "gemini-3.1-flash-image"
     },
     "gemini_video_understanding_model": {
       "type": "string",

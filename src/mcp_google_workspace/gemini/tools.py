@@ -71,8 +71,8 @@ def _model_text(purpose: str, example: str) -> str:
 ImageUploadArg = Annotated[str | None, _upload_text("image")]
 VideoUploadArg = Annotated[str | None, _upload_text("video")]
 AudioUploadArg = Annotated[str | None, _upload_text("audio")]
-GenerateModelArg = Annotated[str | None, _model_text("image generation", "gemini-2.5-flash-image")]
-EditModelArg = Annotated[str | None, _model_text("the image edit", "gemini-2.5-flash-image")]
+GenerateModelArg = Annotated[str | None, _model_text("image generation", "gemini-3.1-flash-image")]
+EditModelArg = Annotated[str | None, _model_text("the image edit", "gemini-3.1-flash-image")]
 VideoModelArg = Annotated[str | None, _model_text("the video analysis", "gemini-3-flash-preview")]
 AudioModelArg = Annotated[str | None, _model_text("the audio analysis", "gemini-3-flash-preview")]
 

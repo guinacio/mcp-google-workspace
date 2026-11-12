@@ -15,10 +15,15 @@ from .schemas import GeminiCapability
 
 LOGGER = logging.getLogger(__name__)
 
+# Generally available image models (Google model list, 2026-11). The
+# *-preview IDs were shut down on 2026-06-25 and gemini-2.5-flash-image is
+# limited to earlier users, so none of them is offered by default; a
+# deployment can still configure any model explicitly as its default.
 IMAGE_MODEL_FALLBACKS = {
-    "gemini-3.1-flash-image-preview",
-    "gemini-3-pro-image-preview",
-    "gemini-2.5-flash-image",
+    "gemini-3.1-flash-image",
+    "gemini-nano-banana-2.1",
+    "gemini-3.1-flash-lite-image",
+    "gemini-3-pro-image",
 }
 UNDERSTANDING_MODEL_FALLBACKS = {
     "gemini-3-flash-preview",

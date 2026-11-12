@@ -55,7 +55,7 @@ class GenerateImageRequest(ToolRequestModel):
     )
     model: str | None = Field(
         default=None,
-        description="Gemini image model ID, e.g. gemini-2.5-flash-image; must be an allowed model, omit for the configured default.",
+        description="Gemini image model ID, e.g. gemini-3.1-flash-image; must be an allowed model, omit for the configured default.",
     )
     output_filename: str | None = Field(
         default=None,
@@ -74,7 +74,7 @@ class EditImageRequest(_OneInputSourceModel):
     prompt: str = Field(description="Instruction describing the edit to make to the input image.")
     model: str | None = Field(
         default=None,
-        description="Gemini image model ID, e.g. gemini-2.5-flash-image; must be an allowed model, omit for the configured default.",
+        description="Gemini image model ID, e.g. gemini-3.1-flash-image; must be an allowed model, omit for the configured default.",
     )
     output_filename: str | None = Field(
         default=None,
