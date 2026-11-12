@@ -98,3 +98,28 @@ def test_documented_result_fields_reach_the_published_schema() -> None:
             assert properties[field]["type"] == documented["type"], (tool, field)
             assert properties[field]["description"], (tool, field)
         assert tools[tool].output_schema["additionalProperties"] is True
+
+
+def test_renderer_mode_defaults_to_bundled_and_cdn_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    from mcp_google_workspace.file_uploads import configure_prefab_renderer
+
+    monkeypatch.delenv("PREFAB_RENDERER_URL", raising=False)
+    monkeypatch.delenv("MCP_PREFAB_RENDERER", raising=False)
+    monkeypatch.setenv("PREFAB_BUNDLED_RENDERER", "")
+    assert configure_prefab_renderer() == "bundled"
+    assert os.environ["PREFAB_BUNDLED_RENDERER"] == "1"
+
+    monkeypatch.setenv("MCP_PREFAB_RENDERER", "cdn")
+    assert configure_prefab_renderer() == "cdn"
+    assert "PREFAB_BUNDLED_RENDERER" not in os.environ
+
+    monkeypatch.setenv("MCP_PREFAB_RENDERER", "remote")
+    with pytest.raises(ValueError, match="bundled or cdn"):
+        configure_prefab_renderer()
+
+
+def test_picker_declares_openai_invocation_labels() -> None:
+    meta = _tools(workspace_mcp)["uploads_file_manager"].meta or {}
+    assert meta["openai/toolInvocation/invoking"] and meta["openai/toolInvocation/invoked"]

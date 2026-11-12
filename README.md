@@ -257,6 +257,10 @@ use relative imports, so do **not** point it at `src/mcp_google_workspace/server
     (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
   - optional `MCP_REDIS_URL` to keep the Google grant across redeploys; without it
     the grant is stored on the instance's disk and you reconnect after a redeploy.
+- optional `MCP_PREFAB_RENDERER=cdn`: Horizon's gateway fails on the ~6.6 MB bundled
+  upload-picker renderer (`resources/read` returns -32603). `cdn` serves prefab-ui's
+  0.5 KB loader for the same pinned version instead, at the cost of allowing
+  `https://cdn.jsdelivr.net` in the view's CSP. The default stays `bundled`.
 - Then call `connect_google_workspace`, open the returned URL and finish consent.
   Horizon's gateway also guards `/google/oauth/callback`, so after consent the browser
   shows `Bearer token required`. Copy that page's full URL from the address bar and call
