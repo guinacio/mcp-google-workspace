@@ -5279,7 +5279,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the shared drives the user is a member of, or look up one by drive_id. Use it to get a drive_id for drive_list_files; to search the files inside drives use drive_list_files. Returns drives (id, name, hidden, createdTime, orgUnitId, restrictions, capabilities, where capabilities says what the user may do in it), count and next_page_token.",
+      "description": "List the shared drives the user is a member of, or look up one by drive_id. Use it to get a drive_id for drive_list_files; to search the files inside drives use drive_list_files. Returns drives (id, name, hidden, created_at, org_unit_id; what the user may do: can_add_children, can_edit, can_share, can_manage_members, can_download, can_delete_drive; restrictions: admin_managed_restrictions, domain_users_only, drive_members_only, copy_requires_writer_permission), count and next_page_token.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5328,7 +5328,121 @@
             "description": "Number of items in this response.",
             "type": "integer"
           },
-          "drives": {},
+          "drives": {
+            "description": "Shared drives on this page.",
+            "items": {
+              "description": "Shared drive; a flag Google did not return is null.",
+              "properties": {
+                "admin_managed_restrictions": {
+                  "description": "Whether only administrators can change the restrictions.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "can_add_children": {
+                  "description": "Whether the user can add files and folders.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "can_delete_drive": {
+                  "description": "Whether the user can delete the drive.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "can_download": {
+                  "description": "Whether the user can download its files.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "can_edit": {
+                  "description": "Whether the user can edit its files.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "can_manage_members": {
+                  "description": "Whether the user can add and remove members.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "can_share": {
+                  "description": "Whether the user can share its files.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "copy_requires_writer_permission": {
+                  "description": "Whether copying, printing and downloading need writer access.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "created_at": {
+                  "description": "Creation time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "domain_users_only": {
+                  "description": "Whether access is limited to the drive's domain.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "drive_members_only": {
+                  "description": "Whether access is limited to drive members.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "hidden": {
+                  "description": "Whether the drive is hidden from the user's default view.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "Shared drive ID, the drive_id drive_list_files takes.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "description": "Shared drive name.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "org_unit_id": {
+                  "description": "Organizational unit the drive belongs to.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
           "fetched_at": {
             "description": "RFC3339 time when this response was fetched.",
             "format": "date-time",
@@ -5626,7 +5740,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List who has access to a Drive file or folder and at what level, or look up one grant by permission_id. Use it before drive_share_file (update mode) or drive_unshare_file to find the permission_id. Returns permissions (id, type, role, emailAddress, domain, displayName, allowFileDiscovery, pendingOwner, expirationTime, deleted), count and next_page_token.",
+      "description": "List who has access to a Drive file or folder and at what level, or look up one grant by permission_id. Use it before drive_share_file (update mode) or drive_unshare_file to find the permission_id. Returns permissions (id, type, role, email_address, domain, display_name, allow_file_discovery, pending_owner, expires_at in the account time zone, deleted), count and next_page_token.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5693,7 +5807,86 @@
               "null"
             ]
           },
-          "permissions": {}
+          "permissions": {
+            "description": "Grants on this page.",
+            "items": {
+              "description": "Sharing grant; a field Google did not return is null.",
+              "properties": {
+                "allow_file_discovery": {
+                  "description": "Whether a domain or anyone grant makes the file findable in search.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "deleted": {
+                  "description": "Whether the grantee's account was deleted.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "display_name": {
+                  "description": "Grantee display name.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "domain": {
+                  "description": "Grantee domain for a domain grant.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "email_address": {
+                  "description": "Grantee email for a user or group.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "expires_at": {
+                  "description": "When the grant ends, in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "Permission ID, the permission_id drive_share_file and drive_unshare_file take.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pending_owner": {
+                  "description": "Whether the grantee is the pending owner of an ownership transfer.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "role": {
+                  "description": "owner, organizer, fileOrganizer, writer, commenter or reader.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "description": "user, group, domain or anyone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
         },
         "required": [],
         "type": "object"
@@ -5860,7 +6053,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled' if the user declines. Every share or change asks the user to confirm first, shown who gets which access; Google emails new user and group grantees by default.",
+      "description": "Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, email_address, domain, display_name, allow_file_discovery, pending_owner, expires_at; deleted is null), or status 'cancelled' if the user declines. Every share or change asks the user to confirm first, shown who gets which access; Google emails new user and group grantees by default.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5956,7 +6149,82 @@
           "mode": {
             "type": "string"
           },
-          "permission": {},
+          "permission": {
+            "description": "Sharing grant; a field Google did not return is null.",
+            "properties": {
+              "allow_file_discovery": {
+                "description": "Whether a domain or anyone grant makes the file findable in search.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "deleted": {
+                "description": "Whether the grantee's account was deleted.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "display_name": {
+                "description": "Grantee display name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "domain": {
+                "description": "Grantee domain for a domain grant.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "email_address": {
+                "description": "Grantee email for a user or group.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expires_at": {
+                "description": "When the grant ends, in the account time zone.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "Permission ID, the permission_id drive_share_file and drive_unshare_file take.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pending_owner": {
+                "description": "Whether the grantee is the pending owner of an ownership transfer.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "role": {
+                "description": "owner, organizer, fileOrganizer, writer, commenter or reader.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "description": "user, group, domain or anyone.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "status": {
             "description": "Machine-readable operation status.",
             "type": "string"
@@ -6042,7 +6310,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Hide a shared drive from the user's default Drive view, or show a hidden one again; membership and content are unchanged. The change affects only this user; find drive IDs and the current hidden state with drive_list_drives. Returns status 'ok' and drive, the shared drive resource Google returns.",
+      "description": "Hide a shared drive from the user's default Drive view, or show a hidden one again; membership and content are unchanged. The change affects only this user; find drive IDs and the current hidden state with drive_list_drives. Returns status 'ok' and drive (id, name, hidden).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6080,7 +6348,33 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "drive": {},
+          "drive": {
+            "description": "The shared drive after the change.",
+            "properties": {
+              "hidden": {
+                "description": "Whether the drive is now hidden.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "Shared drive ID.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "Shared drive name.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "status": {
             "description": "Machine-readable operation status.",
             "type": "string"
@@ -6942,7 +7236,7 @@
             "type": "string"
           },
           "model": {
-            "description": "Gemini model ID to use for the image edit, e.g. 'gemini-2.5-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
+            "description": "Gemini model ID to use for the image edit, e.g. 'gemini-3.1-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
             "type": "string"
           },
           "output_dir": {
@@ -7043,7 +7337,7 @@
             "type": "string"
           },
           "model": {
-            "description": "Gemini model ID to use for image generation, e.g. 'gemini-2.5-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
+            "description": "Gemini model ID to use for image generation, e.g. 'gemini-3.1-flash-image'. Only the models the server allows for this tool are accepted (others are rejected with the allowed list); omit for the configured default.",
             "type": "string"
           },
           "output_dir": {
@@ -7984,7 +8278,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List the account's Gmail drafts a page at a time, or read one draft in full with draft_id. Change a draft with gmail_save_draft and send it with gmail_send_draft. Returns drafts and next_page_token: without draft_id each draft has id, message_id and thread_id only; with draft_id the one draft also has label_ids, snippet, Gmail's draft resource under draft and, with format 'full', the whole cleaned body text as body with body_chars.",
+      "description": "List the account's Gmail drafts a page at a time, or read one draft in full with draft_id. Change a draft with gmail_save_draft and send it with gmail_send_draft. Returns drafts and next_page_token: without draft_id each draft has id, message_id and thread_id only; with draft_id the one draft also has label_ids, date, from, to, cc, bcc, subject, snippet, attachments (with download_id) and, with format 'full', the whole cleaned body text as body with body_chars; fields a format does not read are null.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -7994,7 +8288,7 @@
           },
           "format": {
             "default": "full",
-            "description": "With draft_id only: Gmail API format of the draft's message under draft: 'full' (default) with headers and base64url-encoded body parts, and the cleaned body text added as body; 'metadata' with headers only; 'minimal' with IDs and labels only; 'raw' with the whole RFC 2822 message base64url-encoded in draft.message.raw.",
+            "description": "With draft_id only: how much of the draft to read: 'full' (default) adds the headers, attachments and the whole cleaned body text as body; 'metadata' the headers only; 'minimal' IDs, labels, date and snippet only; 'raw' also the whole RFC 2822 message base64url-encoded as raw.",
             "enum": [
               "full",
               "metadata",
@@ -8046,7 +8340,108 @@
             "type": "integer"
           },
           "drafts": {
-            "items": {},
+            "description": "Drafts on this page, or the one draft read.",
+            "items": {
+              "description": "Draft: IDs only in a list; read by draft_id it adds the fields below, null when the format did not read them.",
+              "properties": {
+                "attachments": {
+                  "description": "Attachments (filename, mime_type, size, download_id); format 'full' only.",
+                  "items": {},
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "bcc": {
+                  "description": "Decoded Bcc header.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cc": {
+                  "description": "Decoded Cc header.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "date": {
+                  "description": "Last save time in the account time zone.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "from": {
+                  "description": "Sender name and email.",
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "Draft ID, the draft_id the other draft tools take.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label_ids": {
+                  "description": "Label IDs on the draft message.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "message_id": {
+                  "description": "ID of the draft's current message.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "raw": {
+                  "description": "Format 'raw' only: the RFC 2822 message, base64url-encoded.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "snippet": {
+                  "description": "Short plain-text preview.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subject": {
+                  "description": "Decoded subject.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "thread_id": {
+                  "description": "Thread the draft belongs to.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "to": {
+                  "description": "Decoded To header.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
             "type": "array"
           },
           "fetched_at": {
@@ -8079,7 +8474,7 @@
         "openWorldHint": true,
         "readOnlyHint": true
       },
-      "description": "List every label in the mailbox: system labels (INBOX, SENT, DRAFT, SPAM, TRASH, UNREAD, STARRED, IMPORTANT, CATEGORY_*) and the user's own. The other Gmail tools accept label names directly; use this to see which labels exist, their IDs and types. Returns labels (Gmail label resources with id, name and type 'system' or 'user') and count.",
+      "description": "List every label in the mailbox: system labels (INBOX, SENT, DRAFT, SPAM, TRASH, UNREAD, STARRED, IMPORTANT, CATEGORY_*) and the user's own. The other Gmail tools accept label names directly; use this to see which labels exist, their IDs and types. Returns labels (id, name, type 'system' or 'user', message_list_visibility, label_list_visibility, background_color, text_color) and count.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -8119,7 +8514,65 @@
             "description": "Whether another page is available.",
             "type": "boolean"
           },
-          "labels": {},
+          "labels": {
+            "description": "Every label in the mailbox.",
+            "items": {
+              "description": "Gmail label.",
+              "properties": {
+                "background_color": {
+                  "description": "Background color hex, null when unset.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "Label ID (system name or Label_...).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label_list_visibility": {
+                  "description": "labelShow, labelShowIfUnread or labelHide.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "message_list_visibility": {
+                  "description": "show or hide.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "description": "Label name; '/' separates nested labels.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "text_color": {
+                  "description": "Text color hex, null when unset.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "description": "'system' or 'user'.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
           "next_page_token": {
             "description": "Opaque token for the next page, or null.",
             "type": [
@@ -8140,7 +8593,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "List, create or delete Gmail filters, the rules that label, archive, mark read or forward incoming mail as it arrives. A filter acts only on mail that arrives afterwards; to change existing messages use gmail_modify_messages. Returns action with filters and count for list, status 'ok' and filter (including its id) for create, or status 'ok' and filter_id for delete; status 'cancelled' if the user declines. Deleting, and creating a filter that forwards or trashes mail, asks the user to confirm first; mail a filter already labeled or moved stays as it is.",
+      "description": "List, create or delete Gmail filters, the rules that label, archive, mark read or forward incoming mail as it arrives. A filter acts only on mail that arrives afterwards; to change existing messages use gmail_modify_messages. Returns action with filters (id, criteria and action, each with only the fields set, named as the inputs, labels as add_label_ids and remove_label_ids) and count for list, status 'ok' and filter for create, or status 'ok' and filter_id for delete; status 'cancelled' if the user declines. Deleting, and creating a filter that forwards or trashes mail, asks the user to confirm first; mail a filter already labeled or moved stays as it is.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -8266,14 +8719,58 @@
             "description": "Number of items in this response.",
             "type": "integer"
           },
-          "filter": {},
+          "filter": {
+            "description": "Gmail filter.",
+            "properties": {
+              "action": {
+                "description": "Set actions only: add_label_ids, remove_label_ids (label IDs) and forward.",
+                "type": "object"
+              },
+              "criteria": {
+                "description": "Set criteria only, in the create names: from, to, subject, query, negated_query, has_attachment, exclude_chats, size, size_comparison.",
+                "type": "object"
+              },
+              "id": {
+                "description": "Filter ID, the filter_id delete takes.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "filter_id": {
             "type": [
               "string",
               "null"
             ]
           },
-          "filters": {},
+          "filters": {
+            "description": "Every filter (action 'list').",
+            "items": {
+              "description": "Gmail filter.",
+              "properties": {
+                "action": {
+                  "description": "Set actions only: add_label_ids, remove_label_ids (label IDs) and forward.",
+                  "type": "object"
+                },
+                "criteria": {
+                  "description": "Set criteria only, in the create names: from, to, subject, query, negated_query, has_attachment, exclude_chats, size, size_comparison.",
+                  "type": "object"
+                },
+                "id": {
+                  "description": "Filter ID, the filter_id delete takes.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
           "status": {
             "description": "Machine-readable operation status.",
             "type": "string"
@@ -8291,7 +8788,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "List, look up, register or remove the addresses this Gmail account may forward mail to, with their verification status. Actual forwarding is set up with a gmail_manage_filters filter whose forward address is 'accepted'; create and delete work only for service accounts with domain-wide delegation, so an ordinary user sign-in gets a permission error. Returns action with forwarding_addresses and count (list), or forwarding_address with forwardingEmail and verificationStatus ('accepted' or 'pending'); create and delete return status 'ok', or 'cancelled' if the user declines. Creating and deleting ask the user to confirm first; creating may email the address a verification link.",
+      "description": "List, look up, register or remove the addresses this Gmail account may forward mail to, with their verification status. Actual forwarding is set up with a gmail_manage_filters filter whose forward address is 'accepted'; create and delete work only for service accounts with domain-wide delegation, so an ordinary user sign-in gets a permission error. Returns action with forwarding_addresses and count (list), or forwarding_address; each has forwarding_email and verification_status ('accepted' or 'pending'); create and delete return status 'ok', or 'cancelled' if the user declines. Creating and deleting ask the user to confirm first; creating may email the address a verification link.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -8345,8 +8842,50 @@
             "description": "Number of items in this response.",
             "type": "integer"
           },
-          "forwarding_address": {},
-          "forwarding_addresses": {},
+          "forwarding_address": {
+            "description": "Forwarding address.",
+            "properties": {
+              "forwarding_email": {
+                "description": "The address.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "verification_status": {
+                "description": "'accepted' or 'pending'.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "forwarding_addresses": {
+            "description": "Every forwarding address (action 'list').",
+            "items": {
+              "description": "Forwarding address.",
+              "properties": {
+                "forwarding_email": {
+                  "description": "The address.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "verification_status": {
+                  "description": "'accepted' or 'pending'.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
           "forwarding_email": {
             "type": "string"
           },
@@ -8367,7 +8906,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Create, update or delete a Gmail user label. To put labels on mail or take them off use gmail_modify_messages, and to see existing labels gmail_list_labels. Returns status 'ok' and action with label (the Gmail label resource, including its id) for create and update, or label_id for delete; status 'cancelled' if the user declines a delete. Deleting asks the user to confirm and cannot be undone; Gmail removes the label from every message, but the messages are kept.",
+      "description": "Create, update or delete a Gmail user label. To put labels on mail or take them off use gmail_modify_messages, and to see existing labels gmail_list_labels. Returns status 'ok' and action with label (id, name, type, message_list_visibility, label_list_visibility, background_color, text_color) for create and update, or label_id for delete; status 'cancelled' if the user declines a delete. Deleting asks the user to confirm and cannot be undone; Gmail removes the label from every message, but the messages are kept.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -8445,7 +8984,61 @@
               "null"
             ]
           },
-          "label": {},
+          "label": {
+            "description": "Gmail label.",
+            "properties": {
+              "background_color": {
+                "description": "Background color hex, null when unset.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "Label ID (system name or Label_...).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "label_list_visibility": {
+                "description": "labelShow, labelShowIfUnread or labelHide.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "message_list_visibility": {
+                "description": "show or hide.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "Label name; '/' separates nested labels.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text_color": {
+                "description": "Text color hex, null when unset.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "description": "'system' or 'user'.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "label_id": {
             "type": [
               "string",
@@ -8469,7 +9062,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Read or change the Gmail vacation auto-reply: on or off, subject, body, audience and schedule. An update sends enable_auto_reply, restrict_to_contacts and restrict_to_domain on every call with default false, so read the current values with action 'get' first and pass again what should stay. Returns action and vacation with enableAutoReply, responseSubject, responseBodyPlainText, responseBodyHtml, restrictToContacts, restrictToDomain and startTime/endTime in epoch milliseconds, plus status 'ok' for update, or 'cancelled' if the user declines. Turning the auto-reply on asks the user to confirm first; while on, Gmail answers incoming mail automatically.",
+      "description": "Read or change the Gmail vacation auto-reply: on or off, subject, body, audience and schedule. An update sends enable_auto_reply, restrict_to_contacts and restrict_to_domain on every call with default false, so read the current values with action 'get' first and pass again what should stay. Returns action and vacation in the update parameter names (enable_auto_reply, response_subject, response_body_plain_text, response_body_html, restrict_to_contacts, restrict_to_domain, start_time, end_time in epoch milliseconds), plus status 'ok' for update, or 'cancelled' if the user declines. Turning the auto-reply on asks the user to confirm first; while on, Gmail answers incoming mail automatically.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -8552,7 +9145,68 @@
             "description": "Machine-readable operation status.",
             "type": "string"
           },
-          "vacation": {}
+          "vacation": {
+            "description": "Vacation auto-reply, in the update parameter names; a field Google did not return is null.",
+            "properties": {
+              "enable_auto_reply": {
+                "description": "Whether the auto-reply is on.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "end_time": {
+                "description": "End as epoch milliseconds.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "response_body_html": {
+                "description": "HTML body.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "response_body_plain_text": {
+                "description": "Plain-text body.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "response_subject": {
+                "description": "Auto-reply subject.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "restrict_to_contacts": {
+                "description": "Whether only contacts get the reply.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "restrict_to_domain": {
+                "description": "Whether only the account's domain gets the reply.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "start_time": {
+                "description": "Start as epoch milliseconds.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
         },
         "required": [],
         "type": "object"
@@ -8928,7 +9582,7 @@
         "openWorldHint": true,
         "readOnlyHint": false
       },
-      "description": "Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and gmail_reply replies in a thread right away with the reply recipients filled in. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId).",
+      "description": "Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and gmail_reply replies in a thread right away with the reply recipients filled in. Returns status 'ok', mode ('created' or 'updated') and draft: id (the draft_id the other draft tools take), message_id, thread_id and label_ids.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -9048,7 +9702,43 @@
       "outputSchema": {
         "additionalProperties": true,
         "properties": {
-          "draft": {},
+          "draft": {
+            "description": "The saved draft.",
+            "properties": {
+              "id": {
+                "description": "Draft ID, the draft_id the other draft tools take.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "label_ids": {
+                "description": "Label IDs on the draft message.",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "message_id": {
+                "description": "ID of the draft's current message.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "thread_id": {
+                "description": "Thread the draft belongs to.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "mode": {
             "type": "string"
           },

@@ -1,0 +1,10 @@
+{
+  "enableAutoReply": true,
+  "responseSubject": "Out of office until 2 January",
+  "responseBodyPlainText": "Hi, I'm away until 2 January with limited access to email. For urgent matters contact bruno@example.com.",
+  "responseBodyHtml": "<p>Hi, I'm away until 2 January with limited access to email.</p><p>For urgent matters contact <a href=\"mailto:bruno@example.com\">bruno@example.com</a>.</p>",
+  "restrictToContacts": false,
+  "restrictToDomain": false,
+  "startTime": "1766534400000",
+  "endTime": "1767312000000"
+}

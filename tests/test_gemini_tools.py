@@ -153,3 +153,23 @@ def test_analyze_audio_payload_supports_drive_input(tmp_path, monkeypatch):
     assert payload["source"]["file_name"] == "sample.mp3"
     assert payload["mime_type"] == "audio/mpeg"
     assert payload["analysis"]
+
+
+def test_image_models_default_to_a_generally_available_id(monkeypatch) -> None:
+    # Issue #46: the *-preview image IDs were shut down on 2026-06-25.
+    import pytest
+
+    from mcp_google_workspace.gemini import client as gemini_client
+    from mcp_google_workspace.runtime import get_runtime_settings
+
+    for name in ("GEMINI_IMAGE_GENERATE_MODEL", "GEMINI_IMAGE_EDIT_MODEL", "ENABLE_GEMINI"):
+        monkeypatch.delenv(name, raising=False)
+    resolver = object.__new__(gemini_client.GeminiMediaClient)
+    resolver.settings = get_runtime_settings()
+
+    assert resolver.resolve_model("image_generate") == "gemini-3.1-flash-image"
+    assert resolver.resolve_model("image_edit") == "gemini-3.1-flash-image"
+    assert resolver.resolve_model("image_edit", "gemini-3-pro-image") == "gemini-3-pro-image"
+    for retired in ("gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"):
+        with pytest.raises(ValueError, match="not allowed"):
+            resolver.resolve_model("image_generate", retired)

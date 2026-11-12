@@ -92,6 +92,11 @@ ITEM_CEILINGS = {
     "people_list_contacts": 120,
     "sheets_get_spreadsheet": 60,
     "slides_get_presentation": 160,
+    # Normalized in 2.1.x (#57), measured on their fixtures: a shared drive 99,
+    # a sharing grant 56, a Gmail label 40.
+    "drive_list_drives": 110,
+    "drive_list_permissions": 65,
+    "gmail_list_labels": 45,
 }
 # Tools that used to return Google's resource unchanged: the normalized
 # response must be well under the payload it replaces.

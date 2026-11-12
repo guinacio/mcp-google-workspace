@@ -118,6 +118,34 @@
       "response_tokens": 196
     },
     {
+      "name": "drive_list_drives",
+      "fixture": "drive_list_drives.json",
+      "payload_tokens": 406,
+      "response_tokens": 212,
+      "items": 2,
+      "tokens_per_item": 99
+    },
+    {
+      "name": "drive_update_drive",
+      "fixture": "drive_list_drives.json",
+      "payload_tokens": 406,
+      "response_tokens": 24
+    },
+    {
+      "name": "drive_list_permissions",
+      "fixture": "drive_list_permissions.json",
+      "payload_tokens": 187,
+      "response_tokens": 289,
+      "items": 5,
+      "tokens_per_item": 56
+    },
+    {
+      "name": "drive_share_file",
+      "fixture": "drive_list_permissions.json",
+      "payload_tokens": 187,
+      "response_tokens": 73
+    },
+    {
       "name": "forms_get_form",
       "fixture": "forms_get_form.json",
       "payload_tokens": 831,
@@ -192,6 +220,54 @@
       "response_tokens": 142,
       "items": 1,
       "tokens_per_item": 123
+    },
+    {
+      "name": "gmail_list_drafts_one_full",
+      "fixture": "gmail_get_draft.json",
+      "payload_tokens": 318,
+      "response_tokens": 214
+    },
+    {
+      "name": "gmail_list_drafts_one_minimal",
+      "fixture": "gmail_get_draft.json",
+      "payload_tokens": 318,
+      "response_tokens": 93
+    },
+    {
+      "name": "gmail_save_draft",
+      "fixture": "gmail_get_draft.json",
+      "payload_tokens": 318,
+      "response_tokens": 39
+    },
+    {
+      "name": "gmail_list_labels",
+      "fixture": "gmail_list_labels.json",
+      "payload_tokens": 266,
+      "response_tokens": 478,
+      "items": 12,
+      "tokens_per_item": 40
+    },
+    {
+      "name": "gmail_manage_filters",
+      "fixture": "gmail_list_filters.json",
+      "payload_tokens": 108,
+      "response_tokens": 117,
+      "items": 2,
+      "tokens_per_item": 54
+    },
+    {
+      "name": "gmail_manage_forwarding",
+      "fixture": "gmail_list_forwarding_addresses.json",
+      "payload_tokens": 44,
+      "response_tokens": 52,
+      "items": 2,
+      "tokens_per_item": 19
+    },
+    {
+      "name": "gmail_manage_vacation",
+      "fixture": "gmail_get_vacation.json",
+      "payload_tokens": 123,
+      "response_tokens": 133
     },
     {
       "name": "people_list_contacts",

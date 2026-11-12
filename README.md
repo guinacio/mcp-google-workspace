@@ -148,12 +148,14 @@ $env:GEMINI_API_KEY="your-api-key"
 Capability-specific Gemini model defaults:
 
 ```powershell
-$env:GEMINI_IMAGE_GENERATE_MODEL="gemini-3.1-flash-image-preview"
-$env:GEMINI_IMAGE_EDIT_MODEL="gemini-3.1-flash-image-preview"
+$env:GEMINI_IMAGE_GENERATE_MODEL="gemini-3.1-flash-image"
+$env:GEMINI_IMAGE_EDIT_MODEL="gemini-3.1-flash-image"
 $env:GEMINI_VIDEO_UNDERSTANDING_MODEL="gemini-3-flash-preview"
 $env:GEMINI_AUDIO_UNDERSTANDING_MODEL="gemini-3-flash-preview"
 $env:GEMINI_REASONING_MODEL="gemini-3.1-pro-preview"
 ```
+
+Image generation and editing default to the generally available `gemini-3.1-flash-image`. Without configuration, the other allowed image models are `gemini-nano-banana-2.1`, `gemini-3.1-flash-lite-image` and `gemini-3-pro-image`. The `*-image-preview` IDs were shut down by Google on 2026-06-25 and are no longer offered; any model set explicitly as a default is still accepted.
 
 Whenever you enable an optional integration or otherwise change scopes, reconnect each affected user.
 
@@ -267,6 +269,10 @@ use relative imports, so do **not** point it at `src/mcp_google_workspace/server
   `connect_google_workspace` with `authorization_response` set to it. The state in the
   URL is one-time and bound to the caller, and the code only works with the server's
   PKCE verifier.
+
+### Server Card (discovery)
+
+Every HTTP deployment serves an [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards) (experimental `ext-server-card` v1) at `GET /mcp/server-card`: public, read-only identity (name, version, title, description, icon, repository) and the Streamable HTTP endpoint with its supported protocol versions, as `application/mcp-server-card+json` with open CORS, `Cache-Control: public, max-age=3600` and an ETag for `If-None-Match` revalidation. The endpoint URL comes from `MCP_HTTP_BASE_URL`. It contains no tools, user data or secrets. Behind an authenticating gateway that guards every path (Prefect Horizon), the card is not publicly reachable.
 
 ### Docker / GHCR
 

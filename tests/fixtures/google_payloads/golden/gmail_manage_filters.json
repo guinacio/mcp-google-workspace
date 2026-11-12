@@ -1,0 +1,37 @@
+{
+  "action": "list",
+  "count": 2,
+  "filters": [
+    {
+      "action": {
+        "add_label_ids": [
+          "Label_2"
+        ],
+        "remove_label_ids": [
+          "INBOX"
+        ]
+      },
+      "criteria": {
+        "from": "billing@example.com",
+        "has_attachment": true
+      },
+      "id": "ANe1BmhvXy0aB2c3d4E5f6G7h8I9j0"
+    },
+    {
+      "action": {
+        "forward": "archive@example.com",
+        "remove_label_ids": [
+          "UNREAD",
+          "INBOX"
+        ]
+      },
+      "criteria": {
+        "negated_query": "from:boss@example.com",
+        "query": "list:newsletter.example.com",
+        "size": 5000000,
+        "size_comparison": "larger"
+      },
+      "id": "ANe1BmiKq9rS8tU7vW6xY5zA4bC3d2"
+    }
+  ]
+}

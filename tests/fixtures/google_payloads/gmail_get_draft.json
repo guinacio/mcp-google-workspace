@@ -1,0 +1,43 @@
+{
+  "id": "r-8392017465538291",
+  "message": {
+    "id": "19a40b7c8d9e0f12",
+    "threadId": "19a3f0c2d4e5b6a7",
+    "labelIds": ["DRAFT"],
+    "snippet": "Hi Bruno, Attached is the Q4 budget for Thursday&#39;s review. Ana",
+    "sizeEstimate": 48211,
+    "historyId": "2914802",
+    "internalDate": "1793718000000",
+    "payload": {
+      "partId": "",
+      "mimeType": "multipart/mixed",
+      "filename": "",
+      "headers": [
+        {"name": "MIME-Version", "value": "1.0"},
+        {"name": "From", "value": "Ana Souza <ana@example.com>"},
+        {"name": "To", "value": "Bruno Costa <bruno@example.com>"},
+        {"name": "Cc", "value": "=?UTF-8?Q?Jo=C3=A3o_Lima?= <joao@example.com>"},
+        {"name": "Subject", "value": "Re: Agenda for Thursday's review"},
+        {"name": "In-Reply-To", "value": "<CAB1234@mail.example.com>"},
+        {"name": "Content-Type", "value": "multipart/mixed; boundary=\"000000000000a1b2c3\""}
+      ],
+      "body": {"size": 0},
+      "parts": [
+        {
+          "partId": "0",
+          "mimeType": "text/plain",
+          "filename": "",
+          "headers": [{"name": "Content-Type", "value": "text/plain; charset=\"UTF-8\""}],
+          "body": {"size": 64, "data": "SGkgQnJ1bm8sCgpBdHRhY2hlZCBpcyB0aGUgUTQgYnVkZ2V0IGZvciBUaHVyc2RheSdzIHJldmlldy4KCkFuYQo="}
+        },
+        {
+          "partId": "1",
+          "mimeType": "application/pdf",
+          "filename": "q4-budget.pdf",
+          "headers": [{"name": "Content-Type", "value": "application/pdf; name=\"q4-budget.pdf\""}],
+          "body": {"attachmentId": "ANGjdJ8_q4budget_attachment_id", "size": 46120}
+        }
+      ]
+    }
+  }
+}

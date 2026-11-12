@@ -481,7 +481,7 @@ def test_list_drafts_one_draft_full_returns_the_cleaned_body(monkeypatch: pytest
     assert result["body"] == "Hi Jo,\nHere's the \"final\" agenda for Friday – R&D first, then sales & marketing.\nCheers,\nKai"
     assert result["snippet"] == "Hi Jo, Here's the \"final\" agenda for Friday – R&D first, then sales & marketing."
     assert result["body_chars"] == len(result["body"]) and len(result["body_sha256"]) == 64
-    assert result["draft"]["id"] == "r-1"
+    assert result["id"] == "r-1" and "draft" not in result
 
 
 def test_get_thread_clean_uses_the_same_cleaner(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -201,11 +201,11 @@ def get_runtime_settings() -> RuntimeSettings:
         gemini_enabled=gemini_enabled,
         gemini_image_edit_model=_parse_str_env(
             "GEMINI_IMAGE_EDIT_MODEL",
-            "gemini-3.1-flash-image-preview",
+            "gemini-3.1-flash-image",
         ),
         gemini_image_generate_model=_parse_str_env(
             "GEMINI_IMAGE_GENERATE_MODEL",
-            "gemini-3.1-flash-image-preview",
+            "gemini-3.1-flash-image",
         ),
         gemini_output_dir=_parse_str_env("GEMINI_OUTPUT_DIR", "tmp/gemini"),
         gemini_reasoning_model=_parse_str_env(

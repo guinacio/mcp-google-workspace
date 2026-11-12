@@ -1,0 +1,13 @@
+{
+  "action": "get",
+  "vacation": {
+    "enable_auto_reply": true,
+    "end_time": 1767312000000,
+    "response_body_html": "<p>Hi, I'm away until 2 January with limited access to email.</p><p>For urgent matters contact <a href=\"mailto:bruno@example.com\">bruno@example.com</a>.</p>",
+    "response_body_plain_text": "Hi, I'm away until 2 January with limited access to email. For urgent matters contact bruno@example.com.",
+    "response_subject": "Out of office until 2 January",
+    "restrict_to_contacts": false,
+    "restrict_to_domain": false,
+    "start_time": 1766534400000
+  }
+}
