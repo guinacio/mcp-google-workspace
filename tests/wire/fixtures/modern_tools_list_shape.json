@@ -183,6 +183,8 @@
           ],
           "tool_hash": "872d2c9e20b2"
         },
+        "openai/toolInvocation/invoked": "Opened Workspace Files",
+        "openai/toolInvocation/invoking": "Opening Workspace Files…",
         "ui": {
           "resourceUri": "ui://prefab/tool/872d2c9e20b2/renderer.html",
           "visibility": [

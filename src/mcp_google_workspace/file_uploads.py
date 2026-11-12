@@ -72,11 +72,23 @@ def configure_prefab_renderer() -> str:
     (``common/prefab_render_cache.py``) so the effect of this configuration —
     and the ~6.6 MB bundled HTML it selects — is computed once per process
     instead of on every listing/read.
+
+    ``MCP_PREFAB_RENDERER=cdn`` opts back into prefab-ui's CDN loader (a
+    ~0.5 KB stub that loads the pinned renderer from jsDelivr) for hosts whose
+    gateway cannot carry the ~6.6 MB bundled resource, such as Prefect
+    Horizon. It widens the view CSP to ``https://cdn.jsdelivr.net``, so it is
+    never the default.
     """
     global _prefab_renderer_configured
     with _prefab_renderer_lock:
+        requested = os.environ.get("MCP_PREFAB_RENDERER", "bundled").strip().lower() or "bundled"
+        if requested not in {"bundled", "cdn"}:
+            raise ValueError("MCP_PREFAB_RENDERER must be bundled or cdn.")
         if os.environ.get("PREFAB_RENDERER_URL", "").strip():
             mode = "external"
+        elif requested == "cdn":
+            os.environ.pop("PREFAB_BUNDLED_RENDERER", None)
+            mode = "cdn"
         else:
             os.environ["PREFAB_BUNDLED_RENDERER"] = "1"
             mode = "bundled"
@@ -764,6 +776,13 @@ class WorkspaceFileUpload(FileUpload):
                 # model's tools for using and cleaning up uploads.
                 meta = dict(component.meta or {})
                 meta["ui"] = {**(meta.get("ui") or {}), "visibility": ["model"]}
+                component.meta = meta
+            if component.name == "file_manager":
+                # Status labels ChatGPT shows while the picker opens and after
+                # (OpenAI Apps SDK tool _meta).
+                meta = dict(component.meta or {})
+                meta["openai/toolInvocation/invoking"] = "Opening Workspace Files…"
+                meta["openai/toolInvocation/invoked"] = "Opened Workspace Files"
                 component.meta = meta
             if component.name == "file_manager" and (domain := mcp_app_domain()):
                 # The synthesized renderer resource copies _meta.ui.domain from
