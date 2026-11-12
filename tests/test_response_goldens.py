@@ -96,7 +96,8 @@ ITEM_CEILINGS = {
 # Tools that used to return Google's resource unchanged: the normalized
 # response must be well under the payload it replaces.
 SHRINK_RATIO = {
-    "calendar_list_calendars": 0.4,
+    # 0.4 until 2.1.x added each calendar's selected flag (#68): 165 / 410.
+    "calendar_list_calendars": 0.45,
     "docs_get_document": 0.3,
     "docs_get_document_tabs": 0.35,
     "people_list_contacts": 0.5,
