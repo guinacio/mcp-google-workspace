@@ -1,0 +1,113 @@
+{
+  "count": 12,
+  "labels": [
+    {
+      "background_color": null,
+      "id": "CHAT",
+      "label_list_visibility": "labelHide",
+      "message_list_visibility": "hide",
+      "name": "CHAT",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "SENT",
+      "label_list_visibility": null,
+      "message_list_visibility": null,
+      "name": "SENT",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "INBOX",
+      "label_list_visibility": null,
+      "message_list_visibility": null,
+      "name": "INBOX",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "IMPORTANT",
+      "label_list_visibility": "labelHide",
+      "message_list_visibility": "hide",
+      "name": "IMPORTANT",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "TRASH",
+      "label_list_visibility": "labelHide",
+      "message_list_visibility": "hide",
+      "name": "TRASH",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "DRAFT",
+      "label_list_visibility": null,
+      "message_list_visibility": null,
+      "name": "DRAFT",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "SPAM",
+      "label_list_visibility": "labelHide",
+      "message_list_visibility": "hide",
+      "name": "SPAM",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "CATEGORY_UPDATES",
+      "label_list_visibility": null,
+      "message_list_visibility": null,
+      "name": "CATEGORY_UPDATES",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "STARRED",
+      "label_list_visibility": null,
+      "message_list_visibility": null,
+      "name": "STARRED",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": null,
+      "id": "UNREAD",
+      "label_list_visibility": null,
+      "message_list_visibility": null,
+      "name": "UNREAD",
+      "text_color": null,
+      "type": "system"
+    },
+    {
+      "background_color": "#16a766",
+      "id": "Label_2",
+      "label_list_visibility": "labelShow",
+      "message_list_visibility": "show",
+      "name": "Receipts",
+      "text_color": "#ffffff",
+      "type": "user"
+    },
+    {
+      "background_color": null,
+      "id": "Label_7",
+      "label_list_visibility": "labelShowIfUnread",
+      "message_list_visibility": "show",
+      "name": "Clients/Acme",
+      "text_color": null,
+      "type": "user"
+    }
+  ]
+}

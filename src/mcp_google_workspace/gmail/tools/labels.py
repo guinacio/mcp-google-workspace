@@ -11,6 +11,7 @@ from fastmcp import Context, FastMCP
 from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..label_resolver import LabelResolver
+from ..presentation import label_envelope
 from ..schemas import LabelCreateRequest, LabelDeleteRequest, LabelUpdateRequest
 
 LOGGER = logging.getLogger(__name__)
@@ -42,11 +43,11 @@ def _label_payload(
 def register(server: FastMCP) -> None:
     @server.tool(name="list_labels")
     async def list_labels(ctx: Context) -> dict[str, Any]:
-        """List every label in the mailbox: system labels (INBOX, SENT, DRAFT, SPAM, TRASH, UNREAD, STARRED, IMPORTANT, CATEGORY_*) and the user's own. The other Gmail tools accept label names directly; use this to see which labels exist, their IDs and types. Returns labels (Gmail label resources with id, name and type 'system' or 'user') and count."""
+        """List every label in the mailbox: system labels (INBOX, SENT, DRAFT, SPAM, TRASH, UNREAD, STARRED, IMPORTANT, CATEGORY_*) and the user's own. The other Gmail tools accept label names directly; use this to see which labels exist, their IDs and types. Returns labels (id, name, type 'system' or 'user', message_list_visibility, label_list_visibility, background_color, text_color) and count."""
         service = gmail_service()
         LOGGER.debug("Listing Gmail labels.")
         result = await execute_google_request(service.users().labels().list(userId="me"))
-        labels = result.get("labels", [])
+        labels = [label_envelope(item) for item in result.get("labels", [])]
         return {"labels": labels, "count": len(labels)}
 
     @server.tool(name="manage_labels")
@@ -90,7 +91,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create, update or delete a Gmail user label. To put labels on mail or take them off use gmail_modify_messages, and to see existing labels gmail_list_labels. Returns status 'ok' and action with label (the Gmail label resource, including its id) for create and update, or label_id for delete; status 'cancelled' if the user declines a delete. Deleting asks the user to confirm and cannot be undone; Gmail removes the label from every message, but the messages are kept."""
+        """Create, update or delete a Gmail user label. To put labels on mail or take them off use gmail_modify_messages, and to see existing labels gmail_list_labels. Returns status 'ok' and action with label (id, name, type, message_list_visibility, label_list_visibility, background_color, text_color) for create and update, or label_id for delete; status 'cancelled' if the user declines a delete. Deleting asks the user to confirm and cannot be undone; Gmail removes the label from every message, but the messages are kept."""
         service = gmail_service()
         if action == "create":
             if label is not None:
@@ -115,7 +116,7 @@ def register(server: FastMCP) -> None:
             created = await execute_google_request(
                 service.users().labels().create(userId="me", body=payload)
             )
-            return {"status": "ok", "action": action, "label": created}
+            return {"status": "ok", "action": action, "label": label_envelope(created)}
         if not label:
             raise ValueError(f"action '{action}' requires label (a label name or ID).")
         label_id = await LabelResolver(service, execute_google_request).resolve(label)
@@ -141,7 +142,7 @@ def register(server: FastMCP) -> None:
             updated = await execute_google_request(
                 service.users().labels().patch(userId="me", id=update_request.label_id, body=payload)
             )
-            return {"status": "ok", "action": action, "label": updated}
+            return {"status": "ok", "action": action, "label": label_envelope(updated)}
         delete_request = LabelDeleteRequest(label_id=label_id)
         LOGGER.debug(f"Deleting label {delete_request.label_id}.")
         await execute_google_request(

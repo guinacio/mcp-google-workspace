@@ -445,3 +445,143 @@ def clean_message_content(
     """
     clean, quoted_messages = cleaned_message_body(message)
     return {**paged_text(clean, offset=offset, limit=limit), "quoted_messages_collapsed": quoted_messages}
+
+
+# ---------------------------------------------------------------------------
+# Drafts, labels, filters and settings
+# ---------------------------------------------------------------------------
+
+
+def draft_summary(draft: dict[str, Any]) -> dict[str, Any]:
+    """The draft a save returns: the draft_id the other draft tools take and its message's IDs."""
+    message = draft.get("message") or {}
+    return {
+        "id": draft.get("id"),
+        "message_id": message.get("id"),
+        "thread_id": message.get("threadId"),
+        "label_ids": message.get("labelIds"),
+    }
+
+
+def _sender(value: str | None) -> dict[str, str] | None:
+    if value is None:
+        return None
+    decoded = decode_rfc2047(value) or ""
+    name, email = parseaddr(decoded)
+    return {"name": name or decoded, "email": email}
+
+
+def draft_detail(draft: dict[str, Any], *, format: str, account_timezone: str) -> dict[str, Any]:
+    """One draft read with drafts.get, in the names gmail_read_emails uses.
+
+    Headers come only with formats 'full' and 'metadata', attachments only with
+    'full'; what the format did not fetch is null. 'full' adds the whole cleaned
+    body, 'raw' the base64url RFC 2822 message as raw.
+    """
+    message = draft.get("message") or {}
+    payload = message.get("payload")
+    headers = header_map(payload) if isinstance(payload, dict) else None
+    snippet = message.get("snippet")
+
+    def header(name: str) -> str | None:
+        if headers is None or name not in headers:
+            return None
+        return decode_rfc2047(headers[name])
+
+    item: dict[str, Any] = {
+        "id": draft.get("id"),
+        "message_id": message.get("id"),
+        "thread_id": message.get("threadId"),
+        "label_ids": message.get("labelIds"),
+        "date": _received_at_in_account_timezone(message, headers or {}, account_timezone),
+        "from": _sender(headers.get("from")) if headers is not None else None,
+        "to": header("to"),
+        "cc": header("cc"),
+        "bcc": header("bcc"),
+        "subject": header("subject"),
+        "snippet": clean_snippet(snippet) if isinstance(snippet, str) else snippet,
+        "attachments": (
+            message_attachments(payload, include_download_id=True)
+            if format == "full" and isinstance(payload, dict)
+            else None
+        ),
+    }
+    if format == "full":
+        # The same cleaned text as gmail_read_emails, whole and unpaged.
+        item.update(clean_message_content(message, limit=None))
+    elif format == "raw":
+        item["raw"] = message.get("raw")
+    return item
+
+
+def label_envelope(label: dict[str, Any]) -> dict[str, Any]:
+    """A Gmail label: its ID for the other label tools, name, type and how Gmail shows it."""
+    color = label.get("color") or {}
+    return {
+        "id": label.get("id"),
+        "name": label.get("name"),
+        "type": label.get("type"),
+        "message_list_visibility": label.get("messageListVisibility"),
+        "label_list_visibility": label.get("labelListVisibility"),
+        "background_color": color.get("backgroundColor"),
+        "text_color": color.get("textColor"),
+    }
+
+
+# Gmail filter criteria and action fields, in the names gmail_manage_filters takes.
+_FILTER_CRITERIA = {
+    "from": "from",
+    "to": "to",
+    "subject": "subject",
+    "query": "query",
+    "negatedQuery": "negated_query",
+    "hasAttachment": "has_attachment",
+    "excludeChats": "exclude_chats",
+    "size": "size",
+    "sizeComparison": "size_comparison",
+}
+_FILTER_ACTION = {"addLabelIds": "add_label_ids", "removeLabelIds": "remove_label_ids", "forward": "forward"}
+
+
+def filter_envelope(gmail_filter: dict[str, Any]) -> dict[str, Any]:
+    """A Gmail filter: its id (for delete), the criteria a message must all match and the action taken.
+
+    Criteria and action list only the fields the filter sets: an absent one is
+    not a condition, so it is left out rather than reported as null.
+    """
+    criteria = gmail_filter.get("criteria") or {}
+    action = gmail_filter.get("action") or {}
+    return {
+        "id": gmail_filter.get("id"),
+        "criteria": {name: criteria[key] for key, name in _FILTER_CRITERIA.items() if key in criteria},
+        "action": {name: action[key] for key, name in _FILTER_ACTION.items() if key in action},
+    }
+
+
+def forwarding_address_envelope(address: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "forwarding_email": address.get("forwardingEmail"),
+        "verification_status": address.get("verificationStatus"),
+    }
+
+
+def _epoch_millis(value: Any) -> int | None:
+    """Gmail sends int64 values as strings; the tool takes and returns epoch milliseconds as numbers."""
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def vacation_envelope(settings: dict[str, Any]) -> dict[str, Any]:
+    """The vacation auto-reply, in the parameter names gmail_manage_vacation takes."""
+    return {
+        "enable_auto_reply": settings.get("enableAutoReply"),
+        "response_subject": settings.get("responseSubject"),
+        "response_body_plain_text": settings.get("responseBodyPlainText"),
+        "response_body_html": settings.get("responseBodyHtml"),
+        "restrict_to_contacts": settings.get("restrictToContacts"),
+        "restrict_to_domain": settings.get("restrictToDomain"),
+        "start_time": _epoch_millis(settings.get("startTime")),
+        "end_time": _epoch_millis(settings.get("endTime")),
+    }

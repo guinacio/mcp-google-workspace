@@ -1,0 +1,14 @@
+{
+  "filter": [
+    {
+      "id": "ANe1BmhvXy0aB2c3d4E5f6G7h8I9j0",
+      "criteria": {"from": "billing@example.com", "hasAttachment": true},
+      "action": {"addLabelIds": ["Label_2"], "removeLabelIds": ["INBOX"]}
+    },
+    {
+      "id": "ANe1BmiKq9rS8tU7vW6xY5zA4bC3d2",
+      "criteria": {"query": "list:newsletter.example.com", "negatedQuery": "from:boss@example.com", "size": 5000000, "sizeComparison": "larger"},
+      "action": {"removeLabelIds": ["UNREAD", "INBOX"], "forward": "archive@example.com"}
+    }
+  ]
+}

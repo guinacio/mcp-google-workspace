@@ -1,0 +1,66 @@
+{
+  "count": 5,
+  "next_page_token": null,
+  "permissions": [
+    {
+      "allow_file_discovery": null,
+      "deleted": false,
+      "display_name": "Ana Souza",
+      "domain": null,
+      "email_address": "ana@example.com",
+      "expires_at": null,
+      "id": "01234567890123456789",
+      "pending_owner": false,
+      "role": "owner",
+      "type": "user"
+    },
+    {
+      "allow_file_discovery": null,
+      "deleted": false,
+      "display_name": "Bruno Costa",
+      "domain": null,
+      "email_address": "bruno@example.com",
+      "expires_at": "2026-12-01T12:00:00-03:00",
+      "id": "09876543210987654321",
+      "pending_owner": false,
+      "role": "writer",
+      "type": "user"
+    },
+    {
+      "allow_file_discovery": null,
+      "deleted": false,
+      "display_name": "Reviewers",
+      "domain": null,
+      "email_address": "reviewers@example.com",
+      "expires_at": null,
+      "id": "02468024680246802468",
+      "pending_owner": null,
+      "role": "commenter",
+      "type": "group"
+    },
+    {
+      "allow_file_discovery": false,
+      "deleted": null,
+      "display_name": "Example Org",
+      "domain": "example.com",
+      "email_address": null,
+      "expires_at": null,
+      "id": "13579135791357913579k",
+      "pending_owner": null,
+      "role": "reader",
+      "type": "domain"
+    },
+    {
+      "allow_file_discovery": false,
+      "deleted": null,
+      "display_name": null,
+      "domain": null,
+      "email_address": null,
+      "expires_at": null,
+      "id": "anyoneWithLink",
+      "pending_owner": null,
+      "role": "reader",
+      "type": "anyone"
+    }
+  ]
+}

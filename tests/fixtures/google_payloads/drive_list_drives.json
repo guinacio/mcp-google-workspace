@@ -1,0 +1,70 @@
+{
+  "nextPageToken": "~!!~AI9FV7TgYk3mZq",
+  "drives": [
+    {
+      "id": "0AFinanceDriveUk9PVA",
+      "name": "Finance",
+      "hidden": false,
+      "createdTime": "2024-03-01T15:04:05.123Z",
+      "orgUnitId": "03ph8a2z1k2v4m",
+      "restrictions": {
+        "adminManagedRestrictions": true,
+        "copyRequiresWriterPermission": false,
+        "domainUsersOnly": true,
+        "driveMembersOnly": false,
+        "sharingFoldersRequiresOrganizerPermission": true,
+        "downloadRestriction": {"restrictedForReaders": false, "restrictedForWriters": false}
+      },
+      "capabilities": {
+        "canAddChildren": true,
+        "canChangeCopyRequiresWriterPermissionRestriction": false,
+        "canChangeDomainUsersOnlyRestriction": false,
+        "canChangeDriveBackground": true,
+        "canChangeDriveMembersOnlyRestriction": false,
+        "canChangeSharingFoldersRequiresOrganizerPermissionRestriction": false,
+        "canComment": true,
+        "canCopy": true,
+        "canDeleteChildren": false,
+        "canDeleteDrive": false,
+        "canDownload": true,
+        "canEdit": true,
+        "canListChildren": true,
+        "canManageMembers": false,
+        "canReadRevisions": true,
+        "canRename": true,
+        "canRenameDrive": false,
+        "canResetDriveRestrictions": false,
+        "canShare": true,
+        "canTrashChildren": true
+      }
+    },
+    {
+      "id": "0AMarketingDriveUk9PVA",
+      "name": "Marketing assets",
+      "hidden": true,
+      "createdTime": "2025-08-19T12:30:00.000Z",
+      "restrictions": {
+        "adminManagedRestrictions": false,
+        "copyRequiresWriterPermission": true,
+        "domainUsersOnly": false,
+        "driveMembersOnly": true,
+        "sharingFoldersRequiresOrganizerPermission": false
+      },
+      "capabilities": {
+        "canAddChildren": false,
+        "canComment": true,
+        "canCopy": false,
+        "canDeleteDrive": false,
+        "canDownload": false,
+        "canEdit": false,
+        "canListChildren": true,
+        "canManageMembers": false,
+        "canReadRevisions": false,
+        "canRename": false,
+        "canRenameDrive": false,
+        "canShare": false,
+        "canTrashChildren": false
+      }
+    }
+  ]
+}

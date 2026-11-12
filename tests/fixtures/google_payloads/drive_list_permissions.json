@@ -1,0 +1,45 @@
+{
+  "permissions": [
+    {
+      "id": "01234567890123456789",
+      "type": "user",
+      "role": "owner",
+      "emailAddress": "ana@example.com",
+      "displayName": "Ana Souza",
+      "deleted": false,
+      "pendingOwner": false
+    },
+    {
+      "id": "09876543210987654321",
+      "type": "user",
+      "role": "writer",
+      "emailAddress": "bruno@example.com",
+      "displayName": "Bruno Costa",
+      "deleted": false,
+      "pendingOwner": false,
+      "expirationTime": "2026-12-01T15:00:00.000Z"
+    },
+    {
+      "id": "02468024680246802468",
+      "type": "group",
+      "role": "commenter",
+      "emailAddress": "reviewers@example.com",
+      "displayName": "Reviewers",
+      "deleted": false
+    },
+    {
+      "id": "13579135791357913579k",
+      "type": "domain",
+      "role": "reader",
+      "domain": "example.com",
+      "displayName": "Example Org",
+      "allowFileDiscovery": false
+    },
+    {
+      "id": "anyoneWithLink",
+      "type": "anyone",
+      "role": "reader",
+      "allowFileDiscovery": false
+    }
+  ]
+}

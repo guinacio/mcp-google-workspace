@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from mcp_google_workspace.drive.server import drive_mcp
-from mcp_google_workspace.drive.presentation import file_envelope, file_summary
+from mcp_google_workspace.drive.presentation import drive_envelope, drive_summary, file_envelope, file_summary
 from mcp_google_workspace.drive.tools import drives as drive_drives
 from mcp_google_workspace.drive.tools import files as drive_files
 from mcp_google_workspace.drive.tools import permissions as drive_permissions
@@ -105,6 +105,22 @@ def test_file_envelope_keeps_fetched_false_and_empty_values():
     assert result["last_modified_by"] == {"name": "Ada", "email": "ada@example.com"}
 
 
+# Every field of a normalized grant or shared drive, as null: Google returned none of them.
+_NO_PERMISSION = dict.fromkeys(
+    (
+        "id", "type", "role", "email_address", "domain", "display_name",
+        "allow_file_discovery", "pending_owner", "expires_at", "deleted",
+    )
+)
+_NO_DRIVE = dict.fromkeys(
+    (
+        "id", "name", "hidden", "created_at", "org_unit_id", "can_add_children", "can_edit", "can_share",
+        "can_manage_members", "can_download", "can_delete_drive", "admin_managed_restrictions",
+        "domain_users_only", "drive_members_only", "copy_requires_writer_permission",
+    )
+)
+
+
 # ---------------------------------------------------------------------------
 # Fakes: the raw tool functions over a recording Drive service
 # ---------------------------------------------------------------------------
@@ -177,7 +193,8 @@ def drive(monkeypatch: pytest.MonkeyPatch) -> _FakeDrive:
     for module in (drive_files, drive_permissions, drive_drives):
         monkeypatch.setattr(module, "drive_service", lambda: fake)
         monkeypatch.setattr(module, "execute_google_request", _execute)
-    monkeypatch.setattr(drive_files, "resolve_user_timezone", _timezone)
+    for module in (drive_files, drive_permissions, drive_drives):
+        monkeypatch.setattr(module, "resolve_user_timezone", _timezone)
     return fake
 
 
@@ -539,7 +556,8 @@ def test_share_file_creates_a_grant_after_the_create_permission_confirmation(
             "Access expires 2026-12-31T00:00:00Z. No notification email.",
         )
     ]
-    assert result == {"status": "ok", "mode": "created", "permission": {"id": "perm-1", "type": "user", "role": "writer"}}
+    assert result["status"] == "ok" and result["mode"] == "created"
+    assert result["permission"] == {**_NO_PERMISSION, "id": "perm-1", "type": "user", "role": "writer"}
     (create,) = drive.called("permissions.create")
     assert create["body"] == {"type": "user", "role": "writer", "emailAddress": "ada@example.com", "expirationTime": "2026-12-31T00:00:00Z"}
     assert create["sendNotificationEmail"] is False and create["emailMessage"] == "Here you go"
@@ -589,7 +607,8 @@ def test_share_file_with_permission_id_updates_after_the_update_permission_confi
             "no expiration, discoverable True?",
         )
     ]
-    assert result == {"status": "ok", "mode": "updated", "permission": {"id": "perm-1", "role": "commenter"}}
+    assert result["status"] == "ok" and result["mode"] == "updated"
+    assert result["permission"] == {**_NO_PERMISSION, "id": "perm-1", "role": "commenter"}
     (update,) = drive.called("permissions.update")
     assert update["permissionId"] == "perm-1"
     assert update["body"] == {"role": "commenter", "allowFileDiscovery": True, "expirationTime": None}
@@ -671,15 +690,31 @@ def test_unshare_file_confirms_with_delete_permission(
 
 def test_list_permissions_lists_or_returns_one_permission(drive: _FakeDrive) -> None:
     drive.responses["permissions.list"] = {"permissions": [{"id": "a"}, {"id": "b"}], "nextPageToken": "next"}
-    drive.responses["permissions.get"] = {"id": "b", "role": "reader"}
+    drive.responses["permissions.get"] = {
+        "id": "b",
+        "role": "reader",
+        "emailAddress": "ana@example.com",
+        "expirationTime": "2026-12-01T12:00:00Z",
+    }
     list_permissions = _tools(drive_permissions)["list_permissions"]
 
     page = _run(list_permissions, file_id="file-1", page_size=2)
-    assert page == {"permissions": [{"id": "a"}, {"id": "b"}], "next_page_token": "next", "count": 2}
+    assert page == {
+        "permissions": [{**_NO_PERMISSION, "id": "a"}, {**_NO_PERMISSION, "id": "b"}],
+        "next_page_token": "next",
+        "count": 2,
+    }
     assert drive.called("permissions.list")[0]["pageSize"] == 2
 
     one = _run(list_permissions, file_id="file-1", permission_id="b", page_token="ignored")
-    assert one == {"permissions": [{"id": "b", "role": "reader"}], "next_page_token": None, "count": 1}
+    expected = {
+        **_NO_PERMISSION,
+        "id": "b",
+        "role": "reader",
+        "email_address": "ana@example.com",
+        "expires_at": "2026-12-01T09:00:00-03:00",
+    }
+    assert one == {"permissions": [expected], "next_page_token": None, "count": 1}
     (get,) = drive.called("permissions.get")
     assert get["fileId"] == "file-1" and get["permissionId"] == "b" and "expirationTime" in get["fields"]
     assert len(drive.called("permissions.list")) == 1
@@ -692,15 +727,32 @@ def test_list_permissions_lists_or_returns_one_permission(drive: _FakeDrive) -> 
 
 def test_list_drives_lists_or_returns_one_drive(drive: _FakeDrive) -> None:
     drive.responses["drives.list"] = {"drives": [{"id": "d1"}], "nextPageToken": None}
-    drive.responses["drives.get"] = {"id": "d2", "name": "Finance", "orgUnitId": "ou-1"}
+    drive.responses["drives.get"] = {
+        "id": "d2",
+        "name": "Finance",
+        "orgUnitId": "ou-1",
+        "createdTime": "2024-03-01T15:00:00.000Z",
+        "capabilities": {"canEdit": True, "canManageMembers": False, "canRename": True},
+        "restrictions": {"domainUsersOnly": True},
+    }
     list_drives = _tools(drive_drives)["list_drives"]
 
     page = _run(list_drives, query="hidden = true")
-    assert page == {"drives": [{"id": "d1"}], "next_page_token": None, "count": 1}
+    assert page == {"drives": [{**_NO_DRIVE, "id": "d1"}], "next_page_token": None, "count": 1}
     assert drive.called("drives.list")[0]["q"] == "hidden = true"
 
     one = _run(list_drives, drive_id="d2")
-    assert one == {"drives": [{"id": "d2", "name": "Finance", "orgUnitId": "ou-1"}], "next_page_token": None, "count": 1}
+    expected = {
+        **_NO_DRIVE,
+        "id": "d2",
+        "name": "Finance",
+        "org_unit_id": "ou-1",
+        "created_at": "2024-03-01T12:00:00-03:00",
+        "can_edit": True,
+        "can_manage_members": False,
+        "domain_users_only": True,
+    }
+    assert one == {"drives": [expected], "next_page_token": None, "count": 1}
     (get,) = drive.called("drives.get")
     assert get["driveId"] == "d2" and "orgUnitId" in get["fields"] and get["useDomainAdminAccess"] is False
 
@@ -710,5 +762,34 @@ def test_update_drive_hides_and_unhides(drive: _FakeDrive, hidden: bool, method:
     drive.responses[method] = {"id": "d1", "hidden": hidden}
     result = _run(_tools(drive_drives)["update_drive"], drive_id="d1", hidden=hidden)
 
-    assert result == {"status": "ok", "drive": {"id": "d1", "hidden": hidden}}
-    assert drive.calls == [(method, {"driveId": "d1"})]
+    assert result == {"status": "ok", "drive": {"id": "d1", "name": None, "hidden": hidden}}
+    assert drive.calls == [(method, {"driveId": "d1", "fields": "id,name,hidden"})]
+
+
+def test_permissions_resolve_the_account_zone_only_for_an_expiring_grant(
+    monkeypatch: pytest.MonkeyPatch, drive: _FakeDrive
+) -> None:
+    lookups: list[str] = []
+
+    async def counted_timezone() -> str:
+        lookups.append("tz")
+        return "America/Sao_Paulo"
+
+    monkeypatch.setattr(drive_permissions, "resolve_user_timezone", counted_timezone)
+    drive.responses["permissions.list"] = {"permissions": [{"id": "a", "role": "reader"}]}
+    _run(_tools(drive_permissions)["list_permissions"], file_id="file-1")
+    assert lookups == []
+
+    drive.responses["permissions.list"] = {
+        "permissions": [{"id": "a"}, {"id": "b", "expirationTime": "2026-12-01T15:00:00Z"}]
+    }
+    page = _run(_tools(drive_permissions)["list_permissions"], file_id="file-1")
+    assert lookups == ["tz"]
+    assert [item["expires_at"] for item in page["permissions"]] == [None, "2026-12-01T12:00:00-03:00"]
+
+
+def test_drive_envelope_reports_unreturned_flags_as_null() -> None:
+    envelope = drive_envelope({"id": "d1", "capabilities": {"canShare": False}}, account_timezone="UTC")
+    assert envelope["can_share"] is False
+    assert envelope["can_edit"] is None and envelope["domain_users_only"] is None and envelope["created_at"] is None
+    assert drive_summary({"id": "d1", "hidden": True, "kind": "drive#drive"}) == {"id": "d1", "name": None, "hidden": True}
