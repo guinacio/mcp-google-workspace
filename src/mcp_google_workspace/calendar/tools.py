@@ -575,7 +575,7 @@ def register_tools(server: FastMCP) -> None:
             ),
         ] = True,
     ) -> dict[str, Any]:
-        """Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as "tomorrow at 3pm" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone and timezone_name (both the IANA name), utc_offset, current_local_time, current_utc_time (also as utc_datetime), count, has_more (false), next_page_token, fetched_at and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone and hidden."""
+        """Get the account's Calendar time zone, the current date and time in it, and the user's calendars. Call it before turning relative phrases such as "tomorrow at 3pm" into the times other calendar tools take, or to find a calendar_id other than 'primary'. Returns current_date, current_time, day_of_week, timezone and timezone_name (both the IANA name), utc_offset, current_local_time, current_utc_time (also as utc_datetime), count, has_more (false), next_page_token, fetched_at and calendars: each with id (the calendar_id), name, description, primary, access_role (owner, writer, reader or freeBusyReader), time_zone, hidden and selected (shown in the user's Google Calendar view)."""
         user_tz = await resolve_user_timezone()
         now_local = user_now(user_tz)
         now_utc = now_local.astimezone(pytz.UTC)

@@ -7,6 +7,7 @@
       "id": "user@example.com",
       "name": "user@example.com",
       "primary": true,
+      "selected": true,
       "time_zone": "America/Sao_Paulo"
     },
     {
@@ -16,6 +17,7 @@
       "id": "c_team0123456789abcdef@group.calendar.google.com",
       "name": "Team",
       "primary": false,
+      "selected": true,
       "time_zone": "America/Sao_Paulo"
     },
     {
@@ -25,6 +27,7 @@
       "id": "en.brazilian#holiday@group.v.calendar.google.com",
       "name": "Holidays",
       "primary": false,
+      "selected": false,
       "time_zone": "America/Sao_Paulo"
     }
   ],
