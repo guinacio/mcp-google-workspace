@@ -436,6 +436,7 @@ CALENDAR_PAGES = {
                 "primary": True,
                 "accessRole": "owner",
                 "timeZone": "Europe/Berlin",
+                "selected": True,
                 "colorId": "14",
                 "etag": "x",
             }
@@ -499,6 +500,7 @@ def test_get_calendar_context_lists_every_calendar_across_pages(monkeypatch) -> 
             "access_role": "owner",
             "time_zone": "Europe/Berlin",
             "hidden": False,
+            "selected": True,
         },
         {
             "id": "team@group.calendar.google.com",
@@ -508,6 +510,7 @@ def test_get_calendar_context_lists_every_calendar_across_pages(monkeypatch) -> 
             "access_role": "reader",
             "time_zone": "UTC",
             "hidden": True,
+            "selected": False,
         },
     ]
     # The shared list envelope (2.0.1); every page was read.

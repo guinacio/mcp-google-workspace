@@ -124,6 +124,8 @@ def calendar_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "access_role": entry.get("accessRole"),
         "time_zone": entry.get("timeZone"),
         "hidden": bool(entry.get("hidden", False)),
+        # Checked (shown) in the Google Calendar UI; Google omits it when false.
+        "selected": bool(entry.get("selected", False)),
     }
 
 
