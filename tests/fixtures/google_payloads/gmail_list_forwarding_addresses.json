@@ -1,0 +1,6 @@
+{
+  "forwardingAddresses": [
+    {"forwardingEmail": "archive@example.com", "verificationStatus": "accepted"},
+    {"forwardingEmail": "assistant@example.org", "verificationStatus": "pending"}
+  ]
+}

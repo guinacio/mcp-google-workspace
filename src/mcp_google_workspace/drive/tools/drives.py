@@ -9,7 +9,9 @@ from typing import Annotated, Any
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
+from ...common.timezone import resolve_user_timezone
 from ..client import drive_service
+from ..presentation import drive_envelope, drive_summary
 from ..schemas import ListDrivesRequest, UpdateDriveRequest
 
 LOGGER = logging.getLogger(__name__)
@@ -17,6 +19,7 @@ LOGGER = logging.getLogger(__name__)
 # Calls act as the user, never with domain-administrator access.
 _DRIVE_LIST_FIELDS = "nextPageToken,drives(id,name,hidden,createdTime,orgUnitId,restrictions,capabilities)"
 _DRIVE_FIELDS = "id,name,hidden,createdTime,orgUnitId,restrictions,capabilities"
+_DRIVE_SUMMARY_FIELDS = "id,name,hidden"
 
 
 def register(server: FastMCP) -> None:
@@ -40,7 +43,7 @@ def register(server: FastMCP) -> None:
         ] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List the shared drives the user is a member of, or look up one by drive_id. Use it to get a drive_id for drive_list_files; to search the files inside drives use drive_list_files. Returns drives (id, name, hidden, createdTime, orgUnitId, restrictions, capabilities, where capabilities says what the user may do in it), count and next_page_token."""
+        """List the shared drives the user is a member of, or look up one by drive_id. Use it to get a drive_id for drive_list_files; to search the files inside drives use drive_list_files. Returns drives (id, name, hidden, created_at, org_unit_id; what the user may do: can_add_children, can_edit, can_share, can_manage_members, can_download, can_delete_drive; restrictions: admin_managed_restrictions, domain_users_only, drive_members_only, copy_requires_writer_permission), count and next_page_token."""
         request = ListDrivesRequest(
             drive_id=drive_id,
             page_size=page_size,
@@ -48,6 +51,7 @@ def register(server: FastMCP) -> None:
             query=query,
         )
         service = drive_service()
+        account_timezone = await resolve_user_timezone()
         if request.drive_id is not None:
             LOGGER.debug(f"Fetching Shared Drive {request.drive_id}.")
             drive = await execute_google_request(
@@ -58,7 +62,11 @@ def register(server: FastMCP) -> None:
                     fields=_DRIVE_FIELDS,
                 )
             )
-            return {"drives": [drive], "next_page_token": None, "count": 1}  # nosec B105 -- no next page, not a credential
+            return {
+                "drives": [drive_envelope(drive, account_timezone=account_timezone)],
+                "next_page_token": None,  # nosec B105 -- no next page, not a credential
+                "count": 1,
+            }
         LOGGER.debug("Listing Shared Drives.")
         result = await execute_google_request(
             service.drives()
@@ -70,7 +78,7 @@ def register(server: FastMCP) -> None:
                 fields=_DRIVE_LIST_FIELDS,
             )
         )
-        items = result.get("drives", [])
+        items = [drive_envelope(item, account_timezone=account_timezone) for item in result.get("drives", [])]
         if ctx is not None:
             await ctx.report_progress(len(items), request.page_size, "Shared Drives page loaded")
         return {
@@ -91,14 +99,14 @@ def register(server: FastMCP) -> None:
         ],
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Hide a shared drive from the user's default Drive view, or show a hidden one again; membership and content are unchanged. The change affects only this user; find drive IDs and the current hidden state with drive_list_drives. Returns status 'ok' and drive, the shared drive resource Google returns."""
+        """Hide a shared drive from the user's default Drive view, or show a hidden one again; membership and content are unchanged. The change affects only this user; find drive IDs and the current hidden state with drive_list_drives. Returns status 'ok' and drive (id, name, hidden)."""
         request = UpdateDriveRequest(drive_id=drive_id, hidden=hidden)
         service = drive_service()
         drives = service.drives()
         if request.hidden:
             LOGGER.debug(f"Hiding Shared Drive {request.drive_id}.")
-            drive = await execute_google_request(drives.hide(driveId=request.drive_id))
+            drive = await execute_google_request(drives.hide(driveId=request.drive_id, fields=_DRIVE_SUMMARY_FIELDS))
         else:
             LOGGER.debug(f"Unhiding Shared Drive {request.drive_id}.")
-            drive = await execute_google_request(drives.unhide(driveId=request.drive_id))
-        return {"status": "ok", "drive": drive}
+            drive = await execute_google_request(drives.unhide(driveId=request.drive_id, fields=_DRIVE_SUMMARY_FIELDS))
+        return {"status": "ok", "drive": drive_summary(drive)}

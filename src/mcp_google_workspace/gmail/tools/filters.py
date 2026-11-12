@@ -11,6 +11,7 @@ from fastmcp import Context, FastMCP
 from ...common.async_ops import execute_google_request
 from ..client import gmail_service
 from ..label_resolver import LabelResolver
+from ..presentation import filter_envelope
 from ..schemas import CreateFilterRequest, DeleteFilterRequest, FilterActionInput, FilterCriteriaInput
 
 LOGGER = logging.getLogger(__name__)
@@ -37,11 +38,11 @@ def register(server: FastMCP) -> None:
         filter_id: Annotated[str | None, "For delete: the filter's id, as returned by action 'list'."] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List, create or delete Gmail filters, the rules that label, archive, mark read or forward incoming mail as it arrives. A filter acts only on mail that arrives afterwards; to change existing messages use gmail_modify_messages. Returns action with filters and count for list, status 'ok' and filter (including its id) for create, or status 'ok' and filter_id for delete; status 'cancelled' if the user declines. Deleting, and creating a filter that forwards or trashes mail, asks the user to confirm first; mail a filter already labeled or moved stays as it is."""
+        """List, create or delete Gmail filters, the rules that label, archive, mark read or forward incoming mail as it arrives. A filter acts only on mail that arrives afterwards; to change existing messages use gmail_modify_messages. Returns action with filters (id, criteria and action, each with only the fields set, named as the inputs, labels as add_label_ids and remove_label_ids) and count for list, status 'ok' and filter for create, or status 'ok' and filter_id for delete; status 'cancelled' if the user declines. Deleting, and creating a filter that forwards or trashes mail, asks the user to confirm first; mail a filter already labeled or moved stays as it is."""
         if action == "list":
             LOGGER.debug("Listing Gmail filters.")
             result = await execute_google_request(gmail_service().users().settings().filters().list(userId="me"))
-            filters = result.get("filter", [])
+            filters = [filter_envelope(item) for item in result.get("filter", [])]
             return {"action": action, "filters": filters, "count": len(filters)}
         if action == "create":
             if criteria is None or filter_action is None:
@@ -65,7 +66,7 @@ def register(server: FastMCP) -> None:
                 .filters()
                 .create(userId="me", body={"criteria": criteria_api, "action": action_api})
             )
-            return {"status": "ok", "action": action, "filter": created}
+            return {"status": "ok", "action": action, "filter": filter_envelope(created)}
         if not filter_id:
             raise ValueError("action 'delete' requires filter_id.")
         delete_request = DeleteFilterRequest(filter_id=filter_id)

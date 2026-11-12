@@ -59,7 +59,7 @@ def test_get_forwarding_address_action_does_not_request_confirmation(
 
     result = anyio.run(call_get)
 
-    assert result["forwarding_address"]["verificationStatus"] == "accepted"
+    assert result["forwarding_address"] == {"forwarding_email": "forward@example.com", "verification_status": "accepted"}
     assert answers.asked == []  # a read-only getter never asks
 
 

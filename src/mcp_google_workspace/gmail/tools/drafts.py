@@ -9,6 +9,7 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
+from ...common.timezone import resolve_user_timezone
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
 from ..mime_utils import build_email_message, decode_rfc2047, email_to_gmail_raw
@@ -18,7 +19,7 @@ from ..helpers import (
     TEXT_BODY_DESCRIPTION,
     recipient_set,
 )
-from ..presentation import clean_message_content, clean_snippet, header_map
+from ..presentation import draft_detail, draft_summary, header_map
 from .messages import _MESSAGE_ID_PATTERN, _reply_references
 from ..schemas import (
     AttachmentInput,
@@ -146,10 +147,10 @@ def register(server: FastMCP) -> None:
         format: Annotated[
             Literal["full", "metadata", "minimal", "raw"],
             (
-                "With draft_id only: Gmail API format of the draft's message under draft: 'full' (default) with "
-                "headers and base64url-encoded body parts, and the cleaned body text added as body; 'metadata' "
-                "with headers only; 'minimal' with IDs and labels only; 'raw' with the whole RFC 2822 message "
-                "base64url-encoded in draft.message.raw."
+                "With draft_id only: how much of the draft to read: 'full' (default) adds the headers, "
+                "attachments and the whole cleaned body text as body; 'metadata' the headers only; 'minimal' "
+                "IDs, labels, date and snippet only; 'raw' also the whole RFC 2822 message base64url-encoded "
+                "as raw."
             ),
         ] = "full",
         max_results: Annotated[int, "Drafts per page, 1 to 500 (default 25)."] = 25,
@@ -157,7 +158,7 @@ def register(server: FastMCP) -> None:
         include_spam_trash: bool = False,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List the account's Gmail drafts a page at a time, or read one draft in full with draft_id. Change a draft with gmail_save_draft and send it with gmail_send_draft. Returns drafts and next_page_token: without draft_id each draft has id, message_id and thread_id only; with draft_id the one draft also has label_ids, snippet, Gmail's draft resource under draft and, with format 'full', the whole cleaned body text as body with body_chars."""
+        """List the account's Gmail drafts a page at a time, or read one draft in full with draft_id. Change a draft with gmail_save_draft and send it with gmail_send_draft. Returns drafts and next_page_token: without draft_id each draft has id, message_id and thread_id only; with draft_id the one draft also has label_ids, date, from, to, cc, bcc, subject, snippet, attachments (with download_id) and, with format 'full', the whole cleaned body text as body with body_chars; fields a format does not read are null."""
         service = gmail_service()
         if draft_id is not None:
             request = GetDraftRequest(draft_id=draft_id, format=format)
@@ -171,19 +172,7 @@ def register(server: FastMCP) -> None:
                     format=request.format,
                 )
             )
-            message = draft.get("message", {})
-            snippet = message.get("snippet")
-            item: dict[str, Any] = {
-                "id": draft.get("id"),
-                "message_id": message.get("id"),
-                "thread_id": message.get("threadId"),
-                "label_ids": message.get("labelIds", []),
-                "snippet": clean_snippet(snippet) if isinstance(snippet, str) else snippet,
-                "draft": draft,
-            }
-            if request.format == "full":
-                # The same cleaned text as gmail_read_emails, whole and unpaged.
-                item.update(clean_message_content(message, limit=None))
+            item = draft_detail(draft, format=request.format, account_timezone=await resolve_user_timezone())
             return {"drafts": [item], "count": 1, "next_page_token": None, "result_size_estimate": 1}  # nosec B105 -- no next page, not a credential
         list_request = ListDraftsRequest(
             max_results=max_results,
@@ -241,7 +230,7 @@ def register(server: FastMCP) -> None:
         thread_id: Annotated[str | None, _DRAFT_THREAD_ID] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and gmail_reply replies in a thread right away with the reply recipients filled in. Returns status 'ok', mode ('created' or 'updated') and draft, the Gmail draft resource: its id (the draft_id the other draft tools take) and message (id, threadId)."""
+        """Save mail as a Gmail draft without sending it, so the user can review or edit it in Gmail first: a new draft, or with draft_id a full rewrite of an existing one (pass again everything to keep). Send it later with gmail_send_draft; gmail_send_email sends right away, and gmail_reply replies in a thread right away with the reply recipients filled in. Returns status 'ok', mode ('created' or 'updated') and draft: id (the draft_id the other draft tools take), message_id, thread_id and label_ids."""
         recipients = recipient_set(to=to, cc=cc, bcc=bcc)
         service = gmail_service()
         if draft_id is None:
@@ -291,14 +280,14 @@ def register(server: FastMCP) -> None:
                     body={"id": request.draft_id, "message": message_payload},
                 )
             )
-            return {"status": "ok", "mode": "updated", "draft": saved}
+            return {"status": "ok", "mode": "updated", "draft": draft_summary(saved)}
         LOGGER.debug("Creating Gmail draft.")
         saved = await execute_google_request(
             service.users()
             .drafts()
             .create(userId="me", body={"message": message_payload})
         )
-        return {"status": "ok", "mode": "created", "draft": saved}
+        return {"status": "ok", "mode": "created", "draft": draft_summary(saved)}
 
     @server.tool(name="delete_draft")
     async def delete_draft(

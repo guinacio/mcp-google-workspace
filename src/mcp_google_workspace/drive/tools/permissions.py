@@ -9,7 +9,9 @@ from typing import Annotated, Any
 from fastmcp import Context, FastMCP
 
 from ...common.async_ops import execute_google_request
+from ...common.timezone import resolve_user_timezone
 from ..client import drive_service
+from ..presentation import needs_account_timezone, permission_envelope
 from ..schemas import (
     CreatePermissionRequest,
     DeletePermissionRequest,
@@ -30,6 +32,15 @@ _WRITTEN_PERMISSION_FIELDS = "id,type,role,emailAddress,domain,displayName,allow
 # Parameters that describe a new grant; an existing grant's grantee and
 # notification cannot change, so update mode rejects them.
 _CREATE_ONLY_PARAMETERS = ("type", "email_address", "domain", "email_message", "send_notification_email")
+
+
+async def _account_timezone(permissions: list[dict[str, Any]]) -> str | None:
+    """The account zone, looked up only when a grant has an expiration to show in it."""
+    return await resolve_user_timezone() if needs_account_timezone(permissions) else None
+
+
+async def _present(permission: dict[str, Any]) -> dict[str, Any]:
+    return permission_envelope(permission, account_timezone=await _account_timezone([permission]))
 
 
 async def _create_permission(request: CreatePermissionRequest) -> dict[str, Any]:
@@ -63,7 +74,7 @@ async def _create_permission(request: CreatePermissionRequest) -> dict[str, Any]
             fields=_WRITTEN_PERMISSION_FIELDS,
         )
     )
-    return {"status": "ok", "mode": "created", "permission": created}
+    return {"status": "ok", "mode": "created", "permission": await _present(created)}
 
 
 async def _update_permission(request: UpdatePermissionRequest) -> dict[str, Any]:
@@ -93,7 +104,7 @@ async def _update_permission(request: UpdatePermissionRequest) -> dict[str, Any]
             fields=_WRITTEN_PERMISSION_FIELDS,
         )
     )
-    return {"status": "ok", "mode": "updated", "permission": updated}
+    return {"status": "ok", "mode": "updated", "permission": await _present(updated)}
 
 
 def register(server: FastMCP) -> None:
@@ -111,7 +122,7 @@ def register(server: FastMCP) -> None:
         page_token: str | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """List who has access to a Drive file or folder and at what level, or look up one grant by permission_id. Use it before drive_share_file (update mode) or drive_unshare_file to find the permission_id. Returns permissions (id, type, role, emailAddress, domain, displayName, allowFileDiscovery, pendingOwner, expirationTime, deleted), count and next_page_token."""
+        """List who has access to a Drive file or folder and at what level, or look up one grant by permission_id. Use it before drive_share_file (update mode) or drive_unshare_file to find the permission_id. Returns permissions (id, type, role, email_address, domain, display_name, allow_file_discovery, pending_owner, expires_at in the account time zone, deleted), count and next_page_token."""
         request = ListPermissionsRequest(
             file_id=file_id,
             permission_id=permission_id,
@@ -131,7 +142,7 @@ def register(server: FastMCP) -> None:
                     fields=_PERMISSION_FIELDS,
                 )
             )
-            return {"permissions": [permission], "next_page_token": None, "count": 1}  # nosec B105 -- no next page, not a credential
+            return {"permissions": [await _present(permission)], "next_page_token": None, "count": 1}  # nosec B105 -- no next page, not a credential
         LOGGER.debug(f"Listing permissions for file {request.file_id}.")
         result = await execute_google_request(
             service.permissions()
@@ -144,7 +155,9 @@ def register(server: FastMCP) -> None:
                 fields=_PERMISSION_LIST_FIELDS,
             )
         )
-        items = result.get("permissions", [])
+        listed = result.get("permissions", [])
+        account_timezone = await _account_timezone(listed)
+        items = [permission_envelope(item, account_timezone=account_timezone) for item in listed]
         if ctx is not None:
             await ctx.report_progress(len(items), request.page_size, "Permissions page loaded")
         return {
@@ -210,7 +223,7 @@ def register(server: FastMCP) -> None:
         transfer_ownership: bool | None = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, emailAddress, domain, displayName, expirationTime, pendingOwner), or status 'cancelled' if the user declines. Every share or change asks the user to confirm first, shown who gets which access; Google emails new user and group grantees by default."""
+        """Share a Drive file or folder with a person, group, domain or anyone with the link, or with permission_id change an existing grant's role, expiry or discoverability. To revoke access use drive_unshare_file; find permission_id with drive_list_permissions. Returns status 'ok', mode 'created' or 'updated' and permission (id, type, role, email_address, domain, display_name, allow_file_discovery, pending_owner, expires_at; deleted is null), or status 'cancelled' if the user declines. Every share or change asks the user to confirm first, shown who gets which access; Google emails new user and group grantees by default."""
         if permission_id is not None:
             rejected = [
                 name

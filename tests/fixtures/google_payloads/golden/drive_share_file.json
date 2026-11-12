@@ -1,0 +1,16 @@
+{
+  "mode": "created",
+  "permission": {
+    "allow_file_discovery": null,
+    "deleted": false,
+    "display_name": "Bruno Costa",
+    "domain": null,
+    "email_address": "bruno@example.com",
+    "expires_at": "2026-12-01T12:00:00-03:00",
+    "id": "09876543210987654321",
+    "pending_owner": false,
+    "role": "writer",
+    "type": "user"
+  },
+  "status": "ok"
+}

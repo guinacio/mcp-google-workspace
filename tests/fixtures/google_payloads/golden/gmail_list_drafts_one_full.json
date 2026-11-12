@@ -1,0 +1,39 @@
+{
+  "count": 1,
+  "drafts": [
+    {
+      "attachments": [
+        {
+          "download_id": "ANGjdJ8_q4budget_attachment_id",
+          "filename": "q4-budget.pdf",
+          "mime_type": "application/pdf",
+          "size": 46120
+        }
+      ],
+      "bcc": null,
+      "body": "Hi Bruno,\n\nAttached is the Q4 budget for Thursday's review.\n\nAna",
+      "body_chars": 64,
+      "body_sha256": "9676ae7693c81a648f9c0b14cd0db4d50f12840d62ee7de99e56761a5601d22d",
+      "cc": "João Lima <joao@example.com>",
+      "date": "2026-11-03T12:00:00-03:00",
+      "from": {
+        "email": "ana@example.com",
+        "name": "Ana Souza"
+      },
+      "id": "r-8392017465538291",
+      "label_ids": [
+        "DRAFT"
+      ],
+      "message_id": "19a40b7c8d9e0f12",
+      "next_offset": null,
+      "quoted_messages_collapsed": 0,
+      "snippet": "Hi Bruno, Attached is the Q4 budget for Thursday's review. Ana",
+      "subject": "Re: Agenda for Thursday's review",
+      "thread_id": "19a3f0c2d4e5b6a7",
+      "to": "Bruno Costa <bruno@example.com>",
+      "truncated": false
+    }
+  ],
+  "next_page_token": null,
+  "result_size_estimate": 1
+}

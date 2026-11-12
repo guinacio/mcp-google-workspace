@@ -1,0 +1,14 @@
+{
+  "action": "list",
+  "count": 2,
+  "forwarding_addresses": [
+    {
+      "forwarding_email": "archive@example.com",
+      "verification_status": "accepted"
+    },
+    {
+      "forwarding_email": "assistant@example.org",
+      "verification_status": "pending"
+    }
+  ]
+}

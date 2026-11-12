@@ -1,0 +1,40 @@
+{
+  "count": 2,
+  "drives": [
+    {
+      "admin_managed_restrictions": true,
+      "can_add_children": true,
+      "can_delete_drive": false,
+      "can_download": true,
+      "can_edit": true,
+      "can_manage_members": false,
+      "can_share": true,
+      "copy_requires_writer_permission": false,
+      "created_at": "2024-03-01T12:04:05.123000-03:00",
+      "domain_users_only": true,
+      "drive_members_only": false,
+      "hidden": false,
+      "id": "0AFinanceDriveUk9PVA",
+      "name": "Finance",
+      "org_unit_id": "03ph8a2z1k2v4m"
+    },
+    {
+      "admin_managed_restrictions": false,
+      "can_add_children": false,
+      "can_delete_drive": false,
+      "can_download": false,
+      "can_edit": false,
+      "can_manage_members": false,
+      "can_share": false,
+      "copy_requires_writer_permission": true,
+      "created_at": "2025-08-19T09:30:00-03:00",
+      "domain_users_only": false,
+      "drive_members_only": true,
+      "hidden": true,
+      "id": "0AMarketingDriveUk9PVA",
+      "name": "Marketing assets",
+      "org_unit_id": null
+    }
+  ],
+  "next_page_token": "~!!~AI9FV7TgYk3mZq"
+}

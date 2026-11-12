@@ -110,3 +110,62 @@ def file_summary(file: dict[str, Any]) -> dict[str, Any]:
         "web_url": clean_web_url(file.get("webViewLink")),
         "trashed": file.get("trashed"),
     }
+
+
+def drive_envelope(drive: dict[str, Any], *, account_timezone: str) -> dict[str, Any]:
+    """A shared drive: identity, visibility, what the user may do in it and its main restrictions.
+
+    Google's ``capabilities`` and ``restrictions`` objects are reduced to the
+    flags that decide the next action; a flag Google did not return is null.
+    """
+    capabilities = drive.get("capabilities") or {}
+    restrictions = drive.get("restrictions") or {}
+    return {
+        "id": drive.get("id"),
+        "name": drive.get("name"),
+        "hidden": drive.get("hidden"),
+        "created_at": in_account_timezone(drive.get("createdTime"), account_timezone),
+        "org_unit_id": drive.get("orgUnitId"),
+        "can_add_children": capabilities.get("canAddChildren"),
+        "can_edit": capabilities.get("canEdit"),
+        "can_share": capabilities.get("canShare"),
+        "can_manage_members": capabilities.get("canManageMembers"),
+        "can_download": capabilities.get("canDownload"),
+        "can_delete_drive": capabilities.get("canDeleteDrive"),
+        "admin_managed_restrictions": restrictions.get("adminManagedRestrictions"),
+        "domain_users_only": restrictions.get("domainUsersOnly"),
+        "drive_members_only": restrictions.get("driveMembersOnly"),
+        "copy_requires_writer_permission": restrictions.get("copyRequiresWriterPermission"),
+    }
+
+
+def drive_summary(drive: dict[str, Any]) -> dict[str, Any]:
+    """The shared drive a hide or unhide returns: identity and the new visibility."""
+    return {"id": drive.get("id"), "name": drive.get("name"), "hidden": drive.get("hidden")}
+
+
+def permission_envelope(permission: dict[str, Any], *, account_timezone: str | None) -> dict[str, Any]:
+    """One sharing grant, in the names drive_share_file takes.
+
+    ``expires_at`` is in the account time zone. Callers resolve the zone only
+    when a grant has an expiration (``needs_account_timezone``); without one the
+    value is null anyway.
+    """
+    expiration = permission.get("expirationTime")
+    return {
+        "id": permission.get("id"),
+        "type": permission.get("type"),
+        "role": permission.get("role"),
+        "email_address": permission.get("emailAddress"),
+        "domain": permission.get("domain"),
+        "display_name": permission.get("displayName"),
+        "allow_file_discovery": permission.get("allowFileDiscovery"),
+        "pending_owner": permission.get("pendingOwner"),
+        "expires_at": in_account_timezone(expiration, account_timezone) if account_timezone else expiration,
+        "deleted": permission.get("deleted"),
+    }
+
+
+def needs_account_timezone(permissions: list[dict[str, Any]]) -> bool:
+    """Whether any grant carries a time to convert, so the account zone must be looked up."""
+    return any(permission.get("expirationTime") for permission in permissions)

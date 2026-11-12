@@ -135,6 +135,136 @@ _TASK: Final[dict[str, Any]] = _s(
 )
 
 
+_SHARED_DRIVE: Final[dict[str, Any]] = _s(
+    "object",
+    "Shared drive; a flag Google did not return is null.",
+    properties={
+        "id": _s(_STR_OR_NULL, "Shared drive ID, the drive_id drive_list_files takes."),
+        "name": _s(_STR_OR_NULL, "Shared drive name."),
+        "hidden": _s(_BOOL_OR_NULL, "Whether the drive is hidden from the user's default view."),
+        "created_at": _s(_STR_OR_NULL, "Creation time in the account time zone."),
+        "org_unit_id": _s(_STR_OR_NULL, "Organizational unit the drive belongs to."),
+        "can_add_children": _s(_BOOL_OR_NULL, "Whether the user can add files and folders."),
+        "can_edit": _s(_BOOL_OR_NULL, "Whether the user can edit its files."),
+        "can_share": _s(_BOOL_OR_NULL, "Whether the user can share its files."),
+        "can_manage_members": _s(_BOOL_OR_NULL, "Whether the user can add and remove members."),
+        "can_download": _s(_BOOL_OR_NULL, "Whether the user can download its files."),
+        "can_delete_drive": _s(_BOOL_OR_NULL, "Whether the user can delete the drive."),
+        "admin_managed_restrictions": _s(_BOOL_OR_NULL, "Whether only administrators can change the restrictions."),
+        "domain_users_only": _s(_BOOL_OR_NULL, "Whether access is limited to the drive's domain."),
+        "drive_members_only": _s(_BOOL_OR_NULL, "Whether access is limited to drive members."),
+        "copy_requires_writer_permission": _s(
+            _BOOL_OR_NULL, "Whether copying, printing and downloading need writer access."
+        ),
+    },
+)
+
+_DRIVE_SUMMARY: Final[dict[str, Any]] = _s(
+    "object",
+    "The shared drive after the change.",
+    properties={
+        "id": _s(_STR_OR_NULL, "Shared drive ID."),
+        "name": _s(_STR_OR_NULL, "Shared drive name."),
+        "hidden": _s(_BOOL_OR_NULL, "Whether the drive is now hidden."),
+    },
+)
+
+_PERMISSION: Final[dict[str, Any]] = _s(
+    "object",
+    "Sharing grant; a field Google did not return is null.",
+    properties={
+        "id": _s(_STR_OR_NULL, "Permission ID, the permission_id drive_share_file and drive_unshare_file take."),
+        "type": _s(_STR_OR_NULL, "user, group, domain or anyone."),
+        "role": _s(_STR_OR_NULL, "owner, organizer, fileOrganizer, writer, commenter or reader."),
+        "email_address": _s(_STR_OR_NULL, "Grantee email for a user or group."),
+        "domain": _s(_STR_OR_NULL, "Grantee domain for a domain grant."),
+        "display_name": _s(_STR_OR_NULL, "Grantee display name."),
+        "allow_file_discovery": _s(_BOOL_OR_NULL, "Whether a domain or anyone grant makes the file findable in search."),
+        "pending_owner": _s(_BOOL_OR_NULL, "Whether the grantee is the pending owner of an ownership transfer."),
+        "expires_at": _s(_STR_OR_NULL, "When the grant ends, in the account time zone."),
+        "deleted": _s(_BOOL_OR_NULL, "Whether the grantee's account was deleted."),
+    },
+)
+
+_LABEL: Final[dict[str, Any]] = _s(
+    "object",
+    "Gmail label.",
+    properties={
+        "id": _s(_STR_OR_NULL, "Label ID (system name or Label_...)."),
+        "name": _s(_STR_OR_NULL, "Label name; '/' separates nested labels."),
+        "type": _s(_STR_OR_NULL, "'system' or 'user'."),
+        "message_list_visibility": _s(_STR_OR_NULL, "show or hide."),
+        "label_list_visibility": _s(_STR_OR_NULL, "labelShow, labelShowIfUnread or labelHide."),
+        "background_color": _s(_STR_OR_NULL, "Background color hex, null when unset."),
+        "text_color": _s(_STR_OR_NULL, "Text color hex, null when unset."),
+    },
+)
+
+_DRAFT_IDS: Final[dict[str, Any]] = {
+    "id": _s(_STR_OR_NULL, "Draft ID, the draft_id the other draft tools take."),
+    "message_id": _s(_STR_OR_NULL, "ID of the draft's current message."),
+    "thread_id": _s(_STR_OR_NULL, "Thread the draft belongs to."),
+}
+
+_DRAFT: Final[dict[str, Any]] = _s(
+    "object",
+    "Draft: IDs only in a list; read by draft_id it adds the fields below, null when the format did not read them.",
+    properties={
+        **_DRAFT_IDS,
+        "label_ids": _s(["array", "null"], "Label IDs on the draft message.", items={"type": "string"}),
+        "date": _s(_STR_OR_NULL, "Last save time in the account time zone."),
+        "from": _s(["object", "null"], "Sender name and email."),
+        "to": _s(_STR_OR_NULL, "Decoded To header."),
+        "cc": _s(_STR_OR_NULL, "Decoded Cc header."),
+        "bcc": _s(_STR_OR_NULL, "Decoded Bcc header."),
+        "subject": _s(_STR_OR_NULL, "Decoded subject."),
+        "snippet": _s(_STR_OR_NULL, "Short plain-text preview."),
+        "attachments": _s(
+            ["array", "null"], "Attachments (filename, mime_type, size, download_id); format 'full' only.", items={}
+        ),
+        "raw": _s(_STR_OR_NULL, "Format 'raw' only: the RFC 2822 message, base64url-encoded."),
+    },
+)
+
+_FILTER: Final[dict[str, Any]] = _s(
+    "object",
+    "Gmail filter.",
+    properties={
+        "id": _s(_STR_OR_NULL, "Filter ID, the filter_id delete takes."),
+        "criteria": _s(
+            "object",
+            "Set criteria only, in the create names: from, to, subject, query, negated_query, has_attachment, "
+            "exclude_chats, size, size_comparison.",
+        ),
+        "action": _s("object", "Set actions only: add_label_ids, remove_label_ids (label IDs) and forward."),
+    },
+)
+
+_FORWARDING_ADDRESS: Final[dict[str, Any]] = _s(
+    "object",
+    "Forwarding address.",
+    properties={
+        "forwarding_email": _s(_STR_OR_NULL, "The address."),
+        "verification_status": _s(_STR_OR_NULL, "'accepted' or 'pending'."),
+    },
+)
+
+_VACATION: Final[dict[str, Any]] = _s(
+    "object",
+    "Vacation auto-reply, in the update parameter names; a field Google did not return is null.",
+    properties={
+        "enable_auto_reply": _s(_BOOL_OR_NULL, "Whether the auto-reply is on."),
+        "response_subject": _s(_STR_OR_NULL, "Auto-reply subject."),
+        "response_body_plain_text": _s(_STR_OR_NULL, "Plain-text body."),
+        "response_body_html": _s(_STR_OR_NULL, "HTML body."),
+        "restrict_to_contacts": _s(_BOOL_OR_NULL, "Whether only contacts get the reply."),
+        "restrict_to_domain": _s(_BOOL_OR_NULL, "Whether only the account's domain gets the reply."),
+        "start_time": _s(["integer", "null"], "Start as epoch milliseconds."),
+        "end_time": _s(["integer", "null"], "End as epoch milliseconds."),
+    },
+)
+
+
 def _array(item: dict[str, Any], description: str) -> dict[str, Any]:
     return _s("array", description, items=copy.deepcopy(item))
 
@@ -167,6 +297,32 @@ OUTPUT_FIELD_DOCS: Final[dict[str, dict[str, dict[str, Any]]]] = {
         "files": _array(_FILE, "Files on this page."),
         "account_timezone": _TIMEZONE,
     },
+    "drive_list_drives": {"drives": _array(_SHARED_DRIVE, "Shared drives on this page.")},
+    "drive_update_drive": {"drive": copy.deepcopy(_DRIVE_SUMMARY)},
+    "drive_list_permissions": {"permissions": _array(_PERMISSION, "Grants on this page.")},
+    "drive_share_file": {"permission": copy.deepcopy(_PERMISSION)},
+    "gmail_list_labels": {"labels": _array(_LABEL, "Every label in the mailbox.")},
+    "gmail_manage_labels": {"label": copy.deepcopy(_LABEL)},
+    "gmail_list_drafts": {"drafts": _array(_DRAFT, "Drafts on this page, or the one draft read.")},
+    "gmail_save_draft": {
+        "draft": _s(
+            "object",
+            "The saved draft.",
+            properties={
+                **copy.deepcopy(_DRAFT_IDS),
+                "label_ids": _s(["array", "null"], "Label IDs on the draft message.", items={"type": "string"}),
+            },
+        )
+    },
+    "gmail_manage_filters": {
+        "filters": _array(_FILTER, "Every filter (action 'list')."),
+        "filter": copy.deepcopy(_FILTER),
+    },
+    "gmail_manage_forwarding": {
+        "forwarding_addresses": _array(_FORWARDING_ADDRESS, "Every forwarding address (action 'list')."),
+        "forwarding_address": copy.deepcopy(_FORWARDING_ADDRESS),
+    },
+    "gmail_manage_vacation": {"vacation": copy.deepcopy(_VACATION)},
     "gmail_get_mail_digest": {
         "messages": _array(_FEED_MESSAGE, "Received and sent messages in the window; drafts excluded."),
         "window": _s("string", "The lookback window that was applied, e.g. '3d'."),

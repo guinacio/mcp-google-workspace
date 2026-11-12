@@ -90,8 +90,18 @@ def test_out_of_range_argument_is_a_structured_invalid_input() -> None:
     assert result.structured_content["field_errors"][0]["field"] == "max_results"
 
 
-def test_documented_result_fields_reach_the_published_schema() -> None:
-    tools = _tools(workspace_mcp)
+def test_documented_result_fields_reach_the_published_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    import mcp_google_workspace.server as server_module
+
+    # Some documented tools (Gmail settings, drive_update_drive) are published from the extended tier.
+    monkeypatch.setenv("MCP_TOOL_TIER", "extended")
+    try:
+        tools = _tools(importlib.reload(server_module).workspace_mcp)
+    finally:
+        monkeypatch.delenv("MCP_TOOL_TIER")
+        importlib.reload(server_module)
     for tool, fields in OUTPUT_FIELD_DOCS.items():
         properties = tools[tool].output_schema["properties"]
         for field, documented in fields.items():

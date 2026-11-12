@@ -437,7 +437,8 @@ def test_save_draft_creates_or_rewrites_and_list_drafts_reads_one(monkeypatch: p
         }
     )
     created = _call(monkeypatch, gmail_drafts, gmail, "save_draft", {"subject": "Hello", "to": ["a@example.com"], "text_body": "Hi"})
-    assert created["mode"] == "created" and created["draft"]["id"] == "d1"
+    assert created["mode"] == "created"
+    assert created["draft"] == {"id": "d1", "message_id": "m1", "thread_id": "t1", "label_ids": None}
     updated = _call(monkeypatch, gmail_drafts, gmail, "save_draft", {"draft_id": "d1", "subject": "Hello again"})
     assert updated["mode"] == "updated"
     assert gmail.calls_to("users.drafts.update")[0].kwargs["id"] == "d1"
@@ -446,6 +447,7 @@ def test_save_draft_creates_or_rewrites_and_list_drafts_reads_one(monkeypatch: p
     assert listed["drafts"] == [{"id": "d1", "message_id": "m2", "thread_id": "t1"}]
     one = _call(monkeypatch, gmail_drafts, gmail, "list_drafts", {"draft_id": "d1", "format": "metadata"})
     assert one["count"] == 1 and one["drafts"][0]["label_ids"] == ["DRAFT"] and one["has_more"] is False
+    assert one["drafts"][0]["snippet"] == "Hi" and "draft" not in one["drafts"][0]
     assert gmail.calls_to("users.drafts.get")[0].kwargs["format"] == "metadata"
 
 
@@ -480,7 +482,15 @@ def test_save_draft_in_a_thread_sets_the_reply_headers(monkeypatch: pytest.Monke
 def test_manage_labels_creates_updates_by_name_and_deletes_after_confirming(monkeypatch: pytest.MonkeyPatch) -> None:
     gmail = _Gmail({"users.labels.create": {"id": "Label_9", "name": "New"}, "users.labels.patch": {"id": "Label_2"}})
     created = _call(monkeypatch, gmail_labels, gmail, "manage_labels", {"action": "create", "name": "New", "text_color": "#ffffff"})
-    assert created["label"]["id"] == "Label_9"
+    assert created["label"] == {
+        "id": "Label_9",
+        "name": "New",
+        "type": None,
+        "message_list_visibility": None,
+        "label_list_visibility": None,
+        "background_color": None,
+        "text_color": None,
+    }
     assert gmail.calls_to("users.labels.create")[0].kwargs["body"] == {"name": "New", "color": {"textColor": "#ffffff"}}
 
     _call(monkeypatch, gmail_labels, gmail, "manage_labels", {"action": "update", "label": "Receipts", "name": "Bills"})
@@ -518,9 +528,29 @@ def test_manage_labels_names_the_missing_parameter(
 
 
 def test_manage_filters_lists_creates_with_label_names_and_deletes(monkeypatch: pytest.MonkeyPatch) -> None:
-    gmail = _Gmail({"users.settings.filters.list": {"filter": [{"id": "f1"}]}, "users.settings.filters.create": {"id": "f2"}})
+    gmail = _Gmail(
+        {
+            "users.settings.filters.list": {
+                "filter": [
+                    {
+                        "id": "f1",
+                        "criteria": {"from": "news@example.com", "hasAttachment": True},
+                        "action": {"addLabelIds": ["Label_2"], "removeLabelIds": ["INBOX"]},
+                    }
+                ]
+            },
+            "users.settings.filters.create": {"id": "f2"},
+        }
+    )
     listed = _call(monkeypatch, gmail_filters, gmail, "manage_filters", {"action": "list"})
-    assert listed["filters"] == [{"id": "f1"}] and listed["count"] == 1
+    assert listed["filters"] == [
+        {
+            "id": "f1",
+            "criteria": {"from": "news@example.com", "has_attachment": True},
+            "action": {"add_label_ids": ["Label_2"], "remove_label_ids": ["INBOX"]},
+        }
+    ]
+    assert listed["count"] == 1
 
     created = _call(
         monkeypatch,
@@ -533,7 +563,7 @@ def test_manage_filters_lists_creates_with_label_names_and_deletes(monkeypatch: 
             "filter_action": {"add_labels": ["Receipts"], "remove_labels": ["inbox"]},
         },
     )
-    assert created["filter"] == {"id": "f2"}
+    assert created["filter"] == {"id": "f2", "criteria": {}, "action": {}}
     assert gmail.calls_to("users.settings.filters.create")[0].kwargs["body"] == {
         "criteria": {"from": "billing@example.com"},
         "action": {"addLabelIds": ["Label_2"], "removeLabelIds": ["INBOX"]},
@@ -556,7 +586,7 @@ def test_manage_forwarding_covers_list_get_create_and_confirmed_delete(monkeypat
     )
     assert _call(monkeypatch, gmail_settings, gmail, "manage_forwarding", {"action": "list"})["count"] == 1
     got = _call(monkeypatch, gmail_settings, gmail, "manage_forwarding", {"action": "get", "forwarding_email": "archive@example.com"})
-    assert got["forwarding_address"] == address
+    assert got["forwarding_address"] == {"forwarding_email": "archive@example.com", "verification_status": "accepted"}
     accepted = _Confirmations(True)
     made = _call(
         monkeypatch,
@@ -572,7 +602,7 @@ def test_manage_forwarding_covers_list_get_create_and_confirmed_delete(monkeypat
             "Add archive@example.com as a Gmail forwarding address? Gmail may email it a verification link.",
         )
     ]
-    assert made["forwarding_address"]["verificationStatus"] == "pending"
+    assert made["forwarding_address"]["verification_status"] == "pending"
     declined = _Confirmations(False)
     result = _call(
         monkeypatch,
@@ -590,8 +620,22 @@ def test_manage_forwarding_covers_list_get_create_and_confirmed_delete(monkeypat
 
 
 def test_manage_vacation_reads_and_updates_the_auto_reply(monkeypatch: pytest.MonkeyPatch) -> None:
-    gmail = _Gmail({"users.settings.getVacation": {"enableAutoReply": False}, "users.settings.updateVacation": {"enableAutoReply": True}})
-    assert _call(monkeypatch, gmail_settings, gmail, "manage_vacation", {"action": "get"})["vacation"] == {"enableAutoReply": False}
+    gmail = _Gmail(
+        {
+            "users.settings.getVacation": {"enableAutoReply": False, "startTime": "1767225600000"},
+            "users.settings.updateVacation": {"enableAutoReply": True},
+        }
+    )
+    assert _call(monkeypatch, gmail_settings, gmail, "manage_vacation", {"action": "get"})["vacation"] == {
+        "enable_auto_reply": False,
+        "response_subject": None,
+        "response_body_plain_text": None,
+        "response_body_html": None,
+        "restrict_to_contacts": None,
+        "restrict_to_domain": None,
+        "start_time": 1767225600000,
+        "end_time": None,
+    }
     accepted = _Confirmations(True)
     updated = _call(
         monkeypatch,
@@ -615,3 +659,37 @@ def test_manage_vacation_reads_and_updates_the_auto_reply(monkeypatch: pytest.Mo
         "responseSubject": "Away",
         "endTime": 1,
     }
+
+
+def test_list_drafts_raw_format_returns_the_raw_message_without_the_draft_resource(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_message = {"id": "m2", "threadId": "t1", "labelIds": ["DRAFT"], "internalDate": "0", "raw": "U3ViamVjdDogSGk="}
+    gmail = _Gmail({"users.drafts.get": {"id": "d1", "message": raw_message}})
+    (draft,) = _call(monkeypatch, gmail_drafts, gmail, "list_drafts", {"draft_id": "d1", "format": "raw"})["drafts"]
+    assert draft["raw"] == "U3ViamVjdDogSGk=" and draft["date"] == "1970-01-01T00:00:00+00:00"
+    # A raw read has no parsed headers: they are unknown (null), not empty.
+    assert draft["from"] is None and draft["subject"] is None and draft["attachments"] is None
+    assert "draft" not in draft and "body" not in draft
+
+
+def test_list_labels_returns_snake_case_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    label = {
+        "id": "Label_2",
+        "name": "Receipts",
+        "type": "user",
+        "labelListVisibility": "labelShow",
+        "color": {"backgroundColor": "#16a766", "textColor": "#ffffff"},
+    }
+    listed = _call(monkeypatch, gmail_labels, _Gmail({"users.labels.list": {"labels": [label]}}), "list_labels", {})
+    assert listed["labels"] == [
+        {
+            "id": "Label_2",
+            "name": "Receipts",
+            "type": "user",
+            "message_list_visibility": None,
+            "label_list_visibility": "labelShow",
+            "background_color": "#16a766",
+            "text_color": "#ffffff",
+        }
+    ]
