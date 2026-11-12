@@ -5,9 +5,9 @@
       "name": "calendar_list_calendars",
       "fixture": "calendar_list_calendars.json",
       "payload_tokens": 410,
-      "response_tokens": 153,
+      "response_tokens": 165,
       "items": 3,
-      "tokens_per_item": 47
+      "tokens_per_item": 52
     },
     {
       "name": "calendar_check_time_availability",
