@@ -5,6 +5,23 @@ UTC. Entries trace to `docs/MIGRATION_FASTMCP4_MCP_2026-07-28.md` (the
 migration plan; sections cited below are `9.x` implementation records unless
 noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
+## Unreleased
+
+### Changed
+
+- **Send confirmations show the whole e-mail.** The consent text of
+  `gmail_send_draft` now reads the draft in full and shows its attachments
+  (names and sizes) and its body; before, it showed recipients and subject
+  only. `gmail_send_email` and `gmail_reply` show the body with its line
+  breaks up to 3,000 characters (was 300, on one line) and an `html_body` as
+  text (was a character count). Recipients are named up to 10 per line (was
+  5), attachments by name and size (was a count). Body lines are indented
+  under a `Body:` label; see `docs/CONSENT.md` ("Previews"). A draft that
+  cannot be read is said to be unreadable, with its body unknown. The
+  descriptions of the three tools say what the confirmation shows. Hosts that
+  cut the elicitation message short (the Sentinel bridge at 600 characters)
+  show only the start of a long body.
+
 ## 2.1.0 — 2026-11-04
 
 A minor release: two capabilities 2.0.0 removed come back as opt-in

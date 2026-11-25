@@ -90,10 +90,16 @@ class _HTMLText(HTMLParser):
 
     Every step is amortized constant time per tag or text node (running
     counters instead of rescans), because the markup comes from any sender.
+
+    ``as_sent`` renders everything the message carries instead: text hidden by
+    inline styles or attributes is kept and links keep their whole target
+    (query included); head, script, style, template and noscript content is
+    still skipped.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, as_sent: bool = False) -> None:
         super().__init__(convert_charrefs=True)
+        self.as_sent = as_sent
         self.chunks: list[str] = []
         self.stack: list[_Frame] = [_Frame("#root")]
         self.open_tags: Counter[str] = Counter()
@@ -135,6 +141,12 @@ class _HTMLText(HTMLParser):
     def _child_frame(self, tag: str, attrs: list[tuple[str, str | None]]) -> _Frame:
         parent = self._top
         attributes = {name.lower(): (value or "") for name, value in attrs}
+        if self.as_sent:
+            frame = _Frame(tag, hidden=parent.hidden or tag in _SKIPPED_TAGS, pre=parent.pre or tag == "pre")
+            if tag == "a":
+                frame.href = attributes.get("href", "").strip()
+                frame.link_start = len(self.chunks)
+            return frame
         style = re.sub(r"\s+", "", attributes.get("style", "").lower())
         frame = _Frame(
             tag,
@@ -169,7 +181,7 @@ class _HTMLText(HTMLParser):
         if frame.href is None or frame.hidden or frame.invisible or frame.tiny:
             return
         # Tracking queries and fragments are dropped, as clean_whitespace does for text.
-        url = _bare_link(frame.href)
+        url = frame.href if self.as_sent else _bare_link(frame.href)
         if not _LINK_SCHEME.match(url) or url in self.links_seen:
             return
         # Only a short link text is inspected; a longer one always shows the URL.
@@ -271,6 +283,36 @@ def html_to_text(value: str) -> str:
     return clean_text(unescape(parser.text()))
 
 
+def sent_text(value: str) -> str:
+    """Plain text as it is sent, safe to show a person who approves the send.
+
+    Drops invisible, bidirectional-override and control characters (they could
+    disguise the text), normalizes line endings, trims trailing spaces and
+    caps blank-line runs at one blank line. Nothing else is rewritten: links
+    keep their queries and punctuation is left alone.
+    """
+    value = remove_invisible_characters(value.replace("\r\n", "\n").replace("\r", "\n"))
+    value = re.sub(r"[ \t]+$", "", value, flags=re.M)
+    return re.sub(r"\n{3,}", "\n\n", value).strip()
+
+
+def html_to_sent_text(value: str) -> str:
+    """An HTML body as readable text, for the person who approves sending it.
+
+    Unlike :func:`html_to_text` (the text a reader sees), it keeps text hidden
+    by inline styles or attributes, since that text is sent too, and every
+    link's whole target. Head, script, style, template and noscript content is
+    skipped; character references are decoded exactly once.
+    """
+    parser = _HTMLText(as_sent=True)
+    try:
+        parser.feed(value)
+        parser.close()
+    except (AssertionError, ValueError):  # pragma: no cover - malformed markup
+        pass
+    return sent_text(parser.text())
+
+
 def clean_whitespace(value: str) -> str:
     value = value.replace("\r\n", "\n").replace("\r", "\n")
     value = re.sub(r"(https?://[^\s?#]+)(?:\?[^\s#]*)?(?:#[^\s]*)?", r"\1", value)
@@ -324,11 +366,16 @@ def message_attachments(payload: dict[str, Any], *, include_download_id: bool = 
     return attachments
 
 
+def is_html_placeholder(text: str) -> bool:
+    """Whether a text/plain part only says the message is HTML."""
+    return clean_text(text).casefold() in _HTML_PLACEHOLDERS
+
+
 def message_body(message: dict[str, Any]) -> str:
     """Prefer meaningful text, falling back to converted HTML when text is a MIME placeholder."""
     bodies = extract_message_bodies(message.get("payload", {}))
     text = (bodies.get("text") or "").strip()
-    if text and clean_text(text).casefold() not in _HTML_PLACEHOLDERS:
+    if text and not is_html_placeholder(text):
         return text
     return html_to_text(bodies.get("html", "")) or text
 

@@ -123,6 +123,22 @@ the source message or the draft to show the real recipients; those reads are
 made once per call and reused by the tool. `MCP_EMAIL_PREPARE_RECIPIENTS`
 (default 10) only adds a "large send" line to a send preview.
 
+The three mail sends (`gmail_send_email`, `gmail_reply`, `gmail_send_draft`)
+show the whole e-mail as plain text with line breaks: a headline, then
+labelled lines at the start of a line (`To:`, `Cc:`, `Bcc:` naming up to 10
+addresses each before "and N more", `Recipients:`, `Subject:`,
+`Attachments:` with names and sizes), then `Body:` and the body, every body
+line indented by two spaces so no body text can pass for a label. The body is
+the plain text, else the HTML as text (head, script and style skipped,
+character references decoded once, text hidden by styles kept and links
+shown with their whole target, since all of it is sent); an HTML alternative
+whose words differ from the plain text is shown after it. Invisible,
+bidirectional-override and control characters are dropped. A body longer than
+3,000 characters ends with "... (N more characters, the full text is sent)".
+`gmail_send_draft` reads the draft in full for this; if it cannot be read the
+preview says so and that the body is unknown (a disconnected account still
+fails with its reconnect step).
+
 `gmail_modify_messages`, `gmail_delete` and the four `*_batch_update_*` tools
 take `dry_run: true`: the result is `{"status": "dry_run", "preview",
 "consent_required", "action"}` and nothing is sent to Google. A dry run never
