@@ -18,9 +18,8 @@ noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
   5), attachments by name and size (was a count). Body lines are indented
   under a `Body:` label; see `docs/CONSENT.md` ("Previews"). A draft that
   cannot be read is said to be unreadable, with its body unknown. The
-  descriptions of the three tools say what the confirmation shows. Hosts that
-  cut the elicitation message short (the Sentinel bridge at 600 characters)
-  show only the start of a long body.
+  descriptions of the three tools say what the confirmation shows. A host that
+  cuts the confirmation message short shows only the start of a long body.
 
 ## 2.1.0 — 2026-11-04
 
