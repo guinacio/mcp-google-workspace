@@ -51,6 +51,7 @@ from datetime import datetime, timezone
 import hmac
 import logging
 import os
+import re
 from typing import TYPE_CHECKING, Any, Final, Literal, cast
 
 from fastmcp.server.middleware import Middleware
@@ -75,6 +76,12 @@ BULK_THRESHOLD: Final[int] = 10
 
 _LIST_LIMIT = 5
 _TEXT_LIMIT = 300
+#: Recipients and attachments a send preview names before "and N more".
+_SEND_LIST_LIMIT = 10
+#: Characters of an e-mail body a send preview shows; the rest is counted.
+BODY_PREVIEW_LIMIT: Final[int] = 3000
+#: Indent of body lines, so body text can never pass for a labelled line.
+_BODY_INDENT = "  "
 
 
 def consent_mode(environ: Mapping[str, str] | None = None) -> ConsentMode:
@@ -250,11 +257,11 @@ def _meet_opens_space(arguments: Arguments) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _listing(values: Sequence[str], *, empty: str = "(none)") -> str:
+def _listing(values: Sequence[str], *, empty: str = "(none)", limit: int = _LIST_LIMIT) -> str:
     if not values:
         return empty
-    shown = ", ".join(values[:_LIST_LIMIT])
-    rest = len(values) - _LIST_LIMIT
+    shown = ", ".join(values[:limit])
+    rest = len(values) - limit
     return f"{shown} and {rest} more" if rest > 0 else shown
 
 
@@ -288,20 +295,87 @@ def _guest_notice(arguments: Arguments) -> str:
     }.get(str(arguments.get("send_updates")), "Google emails no one (send_updates not set).")
 
 
-def _body_line(arguments: Arguments) -> str:
-    if arguments.get("text_body"):
-        return f"Text: {_excerpt(arguments.get('text_body'))}"
-    if arguments.get("html_body"):
-        return f"HTML body: {len(str(arguments.get('html_body')))} characters"
-    return "Body: (empty)"
+# Send previews (mail): every labelled line ("To:", "Subject:", "Body:") starts
+# at column 0 and every body line is indented, so a client can format the
+# labels and nothing in a body can pass for one. The body is plain text with
+# its line breaks; markup in it is shown as text, never interpreted.
+
+
+def _one_line(value: Any) -> str:
+    from ..gmail.presentation import sent_text
+
+    return " ".join(sent_text(str(value or "")).split())
+
+
+def _size(size: int) -> str:
+    if size < 1024:
+        return f"{size} bytes"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
+
+
+def _attachment_line(attachments: Sequence[tuple[str, int | None]]) -> str:
+    labels = [
+        _one_line(name) if size is None else f"{_one_line(name)} ({_size(size)})" for name, size in attachments
+    ]
+    return f"Attachments: {_listing(labels, limit=_SEND_LIST_LIMIT)}"
+
+
+def _body_block(label: str, text: str) -> list[str]:
+    """``label`` then ``text`` indented, cut after ``BODY_PREVIEW_LIMIT`` characters."""
+    cut = len(text)
+    if cut > BODY_PREVIEW_LIMIT:
+        # Back off to a line or word break near the limit when there is one.
+        floor = BODY_PREVIEW_LIMIT - 200
+        cut = max(text.rfind("\n", floor, BODY_PREVIEW_LIMIT), text.rfind(" ", floor, BODY_PREVIEW_LIMIT))
+        if cut <= 0:
+            cut = BODY_PREVIEW_LIMIT
+    lines = [label]
+    lines += [f"{_BODY_INDENT}{line}" if line else "" for line in text[:cut].rstrip().split("\n")]
+    if cut < len(text):
+        lines.append(f"... ({len(text) - cut} more characters, the full text is sent)")
+    return lines
+
+
+def _same_words(first: str, second: str) -> bool:
+    """Whether two renderings of a body say the same, ignoring links, punctuation and layout."""
+
+    def words(value: str) -> str:
+        return "".join(re.findall(r"\w+", re.sub(r"(?:https?://|mailto:)\S+", "", value).casefold()))
+
+    return words(first) == words(second)
+
+
+def _mail_body_lines(text_body: Any, html_body: Any) -> list[str]:
+    """The body as sent: the plain text, else the HTML as text.
+
+    An HTML alternative whose text differs from the plain text is shown too,
+    since mail apps that show HTML display that one.
+    """
+    from ..gmail.presentation import html_to_sent_text, sent_text
+
+    plain = sent_text(str(text_body or ""))
+    html = str(html_body or "")
+    converted = html_to_sent_text(html) if html else ""
+    if plain:
+        lines = _body_block("Body:", plain)
+        if converted and not _same_words(plain, converted):
+            lines += _body_block("HTML version: (differs from the plain text; mail apps that show HTML show this)", converted)
+        return lines
+    if converted:
+        return _body_block("Body: (HTML, shown as text)", converted)
+    if html:
+        return [f"Body: (HTML without text, {len(html)} characters)"]
+    return ["Body: (empty)"]
 
 
 def _recipient_lines(to: Sequence[str], cc: Sequence[str], bcc: Sequence[str]) -> list[str]:
     total = len(_addresses([*to, *cc, *bcc]))
     lines = [
-        f"To: {_listing(to)}",
-        f"Cc: {_listing(cc)}",
-        f"Bcc: {_listing(bcc)}",
+        f"To: {_listing(to, limit=_SEND_LIST_LIMIT)}",
+        f"Cc: {_listing(cc, limit=_SEND_LIST_LIMIT)}",
+        f"Bcc: {_listing(bcc, limit=_SEND_LIST_LIMIT)}",
         f"Recipients: {total} in total",
     ]
     if total >= large_send_threshold():
@@ -311,6 +385,7 @@ def _recipient_lines(to: Sequence[str], cc: Sequence[str], bcc: Sequence[str]) -
 
 async def _send_email_preview(arguments: Arguments, _action: str | None) -> str:
     from ..gmail.helpers import recipient_set
+    from ..gmail.tools.drafts import describe_attachments
 
     # Validates every address before anyone is asked.
     recipients = recipient_set(to=arguments.get("to"), cc=arguments.get("cc"), bcc=arguments.get("bcc"))
@@ -319,14 +394,15 @@ async def _send_email_preview(arguments: Arguments, _action: str | None) -> str:
         _addresses(recipients.to), _addresses(recipients.cc), _addresses(recipients.bcc)
     )
     lines += [
-        f"Subject: {arguments.get('subject')}",
-        _body_line(arguments),
-        f"Attachments: {len(arguments.get('attachments') or [])}",
+        f"Subject: {_one_line(arguments.get('subject'))}",
+        _attachment_line(describe_attachments(list(arguments.get("attachments") or []))),
     ]
+    lines += _mail_body_lines(arguments.get("text_body"), arguments.get("html_body"))
     return "\n".join(lines)
 
 
 async def _reply_preview(arguments: Arguments, _action: str | None) -> str:
+    from ..gmail.tools.drafts import describe_attachments
     from ..gmail.tools.messages import load_reply_context
 
     reply_all = bool(arguments.get("reply_all"))
@@ -334,21 +410,48 @@ async def _reply_preview(arguments: Arguments, _action: str | None) -> str:
     lines = [f"{'Reply all' if reply_all else 'Reply'} to this email?"]
     lines += _recipient_lines(context.to, context.cc, [])
     lines += [
-        f"Subject: {context.subject}",
-        _body_line(arguments),
-        f"Attachments: {len(arguments.get('attachments') or [])}",
+        f"Subject: {_one_line(context.subject)}",
+        _attachment_line(describe_attachments(list(arguments.get("attachments") or []))),
     ]
+    lines += _mail_body_lines(arguments.get("text_body"), arguments.get("html_body"))
     return "\n".join(lines)
 
 
 async def _send_draft_preview(arguments: Arguments, _action: str | None) -> str:
-    from ..gmail.tools.drafts import load_draft_headers
+    from ..gmail.tools.drafts import load_draft_content
+    from .errors import classify_error
 
-    headers = await load_draft_headers(str(arguments.get("draft_id")))
-    lines = [f"Send Gmail draft {arguments.get('draft_id')} as saved?"]
-    lines += _recipient_lines(headers["to"], headers["cc"], headers["bcc"])
-    lines.append(f"Subject: {headers['subject']}")
+    draft_id = str(arguments.get("draft_id"))
+    headline = f"Send Gmail draft {_one_line(draft_id)} as saved?"
+    try:
+        draft = await load_draft_content(draft_id)
+    except Exception as error:  # noqa: BLE001 - classified below
+        rpc_code, envelope = classify_error(error)
+        code = str(envelope.get("code"))
+        if code in _RECONNECT_CODES or (rpc_code is not None and code != "internal_error"):
+            raise  # not connected or refused: the call fails with its recovery step, as any read would
+        LOGGER.warning("Could not read Gmail draft %s for its send preview (%s).", draft_id, code)
+        status = envelope.get("provider_status")
+        return _unreadable_draft(headline, f"{code}, HTTP {status}" if status else code)
+    lines = [headline]
+    lines += _recipient_lines(draft["to"], draft["cc"], draft["bcc"])
+    lines += [f"Subject: {_one_line(draft['subject'])}", _attachment_line(draft["attachments"])]
+    lines += _mail_body_lines(draft["text"], draft["html"])
     return "\n".join(lines)
+
+
+_RECONNECT_CODES: Final = frozenset({"reauth_required", "missing_capability"})
+
+
+def _unreadable_draft(headline: str, reason: str) -> str:
+    return "\n".join(
+        [
+            headline,
+            f"The draft could not be read ({reason}), so its recipients, subject, attachments and body are "
+            "unknown. Approving sends whatever the draft holds in Gmail.",
+            "Body: (unknown: the draft could not be read)",
+        ]
+    )
 
 
 async def _gmail_delete_preview(arguments: Arguments, _action: str | None) -> str:

@@ -247,7 +247,7 @@ def register(server: FastMCP) -> None:
         attachments: Annotated[list[AttachmentInput] | None, _ATTACHMENTS] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Compose and send a new Gmail message, with a plain-text and/or HTML body and optional attachments. To answer an existing message inside its thread use gmail_reply; to save mail for review instead of sending it, use gmail_save_draft. Returns status 'sent' with the new message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is always asked to approve the send first (recipients, subject, the start of the text and the attachment count)."""
+        """Compose and send a new Gmail message, with a plain-text and/or HTML body and optional attachments. To answer an existing message inside its thread use gmail_reply; to save mail for review instead of sending it, use gmail_save_draft. Returns status 'sent' with the new message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is always asked to approve the send first (recipients, subject, attachments and the body)."""
         request = SendEmailRequest(
             recipients=recipient_set(to=to, cc=cc, bcc=bcc),
             subject=subject,
@@ -358,7 +358,7 @@ def register(server: FastMCP) -> None:
         attachments: Annotated[list[AttachmentInput] | None, _ATTACHMENTS] = None,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Reply to one Gmail message inside its existing thread, to the sender only or with reply_all to everyone on it: the subject is reused and In-Reply-To and References point at that message, leaving out the account's own and send-as addresses (on your own sent mail the original recipients are kept). gmail_send_email starts a new conversation instead, and gmail_save_draft saves mail for review without sending. Returns status 'sent' with mode ('reply' or 'reply_all'), the new message_id, thread_id, to, cc and subject, or status 'cancelled' if the user declines. The user is always asked to approve the reply first, with its recipients."""
+        """Reply to one Gmail message inside its existing thread, to the sender only or with reply_all to everyone on it: the subject is reused and In-Reply-To and References point at that message, leaving out the account's own and send-as addresses (on your own sent mail the original recipients are kept). gmail_send_email starts a new conversation instead, and gmail_save_draft saves mail for review without sending. Returns status 'sent' with mode ('reply' or 'reply_all'), the new message_id, thread_id, to, cc and subject, or status 'cancelled' if the user declines. The user is always asked to approve the reply first, shown its recipients, subject, attachments and body."""
         sent = await _send_reply(
             message_id=message_id,
             text_body=text_body,

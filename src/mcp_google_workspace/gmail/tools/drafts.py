@@ -3,23 +3,31 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
+from fastmcp.server.dependencies import get_access_token
 
 from ...common.async_ops import execute_google_request
 from ...common.timezone import resolve_user_timezone
 from ...file_uploads import require_local_filesystem, workspace_file_upload
 from ..client import gmail_service
-from ..mime_utils import build_email_message, decode_rfc2047, email_to_gmail_raw
+from ..mime_utils import (
+    build_email_message,
+    decode_rfc2047,
+    email_to_gmail_raw,
+    extract_message_bodies,
+    flatten_parts,
+)
 from ..helpers import (
     ATTACHMENTS_DESCRIPTION,
     HTML_BODY_DESCRIPTION,
     TEXT_BODY_DESCRIPTION,
     recipient_set,
 )
-from ..presentation import draft_detail, draft_summary, header_map
+from ..presentation import draft_detail, draft_summary, header_map, is_html_placeholder
 from .messages import _MESSAGE_ID_PATTERN, _reply_references
 from ..schemas import (
     AttachmentInput,
@@ -42,24 +50,74 @@ _SAVE_ATTACHMENTS = (
 )
 
 
-async def load_draft_headers(draft_id: str) -> dict[str, Any]:
-    """The saved draft's recipients and subject, for the send preview."""
+async def load_draft_content(draft_id: str) -> dict[str, Any]:
+    """Everything the saved draft sends, for the send preview.
+
+    Recipients, subject, attachments (``(filename, size)``) and the raw
+    ``text`` and ``html`` bodies; a MIME placeholder text part counts as no text.
+    """
     from email.utils import getaddresses
 
     draft = await execute_google_request(
-        gmail_service().users().drafts().get(userId="me", id=draft_id, format="metadata")
+        gmail_service().users().drafts().get(userId="me", id=draft_id, format="full")
     )
-    headers = header_map(((draft.get("message") or {}).get("payload")) or {})
+    payload = ((draft.get("message") or {}).get("payload")) or {}
+    headers = header_map(payload)
 
     def addresses(name: str) -> list[str]:
         return [address for _, address in getaddresses([headers.get(name, "")]) if address]
 
+    bodies = extract_message_bodies(payload)
+    text = bodies.get("text") or ""
+    if is_html_placeholder(text):
+        text = ""
+    attachments: list[tuple[str, int | None]] = []
+    for part in flatten_parts(payload):
+        body = part.get("body")
+        if part.get("filename"):
+            size = body.get("size") if isinstance(body, dict) else None
+            attachments.append((decode_rfc2047(str(part["filename"])), size if isinstance(size, int) else None))
     return {
         "to": addresses("to"),
         "cc": addresses("cc"),
         "bcc": addresses("bcc"),
         "subject": decode_rfc2047(headers.get("subject")) or "(no subject)",
+        "attachments": attachments,
+        "text": text,
+        "html": bodies.get("html") or "",
     }
+
+
+def describe_attachments(items: list[Any]) -> list[tuple[str, int | None]]:
+    """``(name recipients see, size or None)`` of attachment arguments, for a send preview.
+
+    Never fails: a size that cannot be read is None. A server-local path is
+    only measured on a local server, so a remote caller cannot probe the
+    server's files through a preview.
+    """
+    described: list[tuple[str, int | None]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("filename") or "")
+        size: int | None = None
+        if item.get("uploaded_file"):
+            handle = str(item["uploaded_file"])
+            try:
+                uploaded = workspace_file_upload.get_file(handle)
+                name, size = name or uploaded.name, uploaded.size
+            except Exception:  # noqa: BLE001 - the send itself reports a bad handle
+                name = name or handle
+        elif item.get("file_path"):
+            path = str(item["file_path"])
+            name = name or os.path.basename(path)
+            if get_access_token() is None:
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = None
+        described.append((name or "(unnamed)", size))
+    return described
 
 
 def _build_raw_message_payload(
@@ -306,7 +364,7 @@ def register(server: FastMCP) -> None:
         draft_id: str,
         ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Send an existing Gmail draft exactly as saved; Gmail removes it from Drafts once sent. Check its content with gmail_list_drafts (draft_id) and change it with gmail_save_draft first; gmail_send_email sends new mail without a draft. Returns status 'sent' with the sent message's message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is asked to approve the send first, shown the draft's recipients and subject."""
+        """Send an existing Gmail draft exactly as saved; Gmail removes it from Drafts once sent. Check its content with gmail_list_drafts (draft_id) and change it with gmail_save_draft first; gmail_send_email sends new mail without a draft. Returns status 'sent' with the sent message's message_id, thread_id and label_ids, or status 'cancelled' if the user declines. The user is asked to approve the send first, shown the draft's recipients, subject, attachments and body."""
         request = SendDraftRequest(draft_id=draft_id)
         service = gmail_service()
         LOGGER.debug(f"Sending Gmail draft {request.draft_id}.")

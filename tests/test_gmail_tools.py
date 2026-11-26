@@ -161,7 +161,7 @@ def test_send_email_always_asks_before_sending(monkeypatch, accepted) -> None:
         (
             "send_email",
             "Send this email?\nTo: a@example.com\nCc: (none)\nBcc: (none)\nRecipients: 1 in total\n"
-            "Subject: Test\nText: Hello\nAttachments: 0",
+            "Subject: Test\nAttachments: (none)\nBody:\n  Hello",
         )
     ]
     assert len(sent_bodies) == (1 if accepted else 0)
@@ -297,8 +297,8 @@ def test_declined_reply_sends_nothing(monkeypatch, reply_all) -> None:
         (
             "reply_all_email" if reply_all else "reply_email",
             f"{'Reply all' if reply_all else 'Reply'} to this email?\nTo: alice@example.com\nCc: (none)\n"
-            "Bcc: (none)\nRecipients: 1 in total\nSubject: Project update\nText: Thanks for the update.\n"
-            "Attachments: 0",
+            "Bcc: (none)\nRecipients: 1 in total\nSubject: Project update\nAttachments: (none)\n"
+            "Body:\n  Thanks for the update.",
         )
     ]
     assert sent_bodies == []
