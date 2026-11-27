@@ -7,6 +7,14 @@ noted) and its `docs/migration/W*_CATALOG_DIFF.md` contract diffs.
 
 ## Unreleased
 
+## 2.2.0 — 2026-11-27
+
+A minor release: the confirmation asked before an e-mail is sent now shows the
+whole message. No tool, parameter or response key changed; the descriptions of
+the three send tools say what the confirmation shows. `dnspython` is updated to
+2.9.2 for CVE-2026-128089. Upgrading needs no reconnect: scopes, the token
+store, the upload store and the operation records are unchanged.
+
 ### Changed
 
 - **Send confirmations show the whole e-mail.** The consent text of
